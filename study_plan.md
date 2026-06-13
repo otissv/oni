@@ -51,7 +51,7 @@ This is not your final backend, but it teaches the API shape you want:
 - [   ] `draw_rect`,
 - [   ] `draw_texture`
 - [   ] `draw_geometry`
-- [   ] presentation. 
+- [ *  ] presentation. 
 
 
 Use the SDL3 renderer examples and the [Odin SDL3 basic setup](https://github.com/simon-robertson/odin-sdl3-basic-setup) repo.  

@@ -136,7 +136,7 @@ point_inside_player :: proc(px, py: f32, player: Player) -> bool {
 	)
 }
 
-player_render :: proc() {
+player_render :: proc(renderer: ^sdl.Renderer, player: Player) {
 	player_rect := sdl.FRect {
 		x = g.player.x,
 		y = g.player.y,
@@ -144,11 +144,11 @@ player_render :: proc() {
 		h = g.player.h,
 	}
 
+	color: [4]u8 = {255, 80, 80, 255}
+
 	if g.input.mouse_left_down {
-		sdl.SetRenderDrawColor(g.renderer, 80, 180, 255, 255)
-	} else {
-		sdl.SetRenderDrawColor(g.renderer, 255, 80, 80, 255)
+		color = {80, 180, 255, 255}
 	}
 
-	sdl.RenderFillRect(g.renderer, &player_rect)
+	draw_rect(renderer, player_rect, color)
 }

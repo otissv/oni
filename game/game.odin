@@ -148,19 +148,6 @@ fixed_update :: proc(dt: f32) {
 	player_movement(dt)
 }
 
-render :: proc() {
-	if !g.can_render {
-		return
-	}
-
-	sdl.SetRenderDrawColor(g.renderer, 20, 20, 24, 255)
-	sdl.RenderClear(g.renderer)
-	structure_render(g.platforms)
-	structure_render(g.walls)
-	player_render()
-	sdl.RenderPresent(g.renderer)
-}
-
 frame_time :: proc() -> f64 {
 	current_counter := sdl.GetPerformanceCounter()
 	elapsed := f64(current_counter - g.last_counter) / f64(g.perf_frequency)

@@ -1,6 +1,5 @@
 package game
 
-import "core:fmt"
 import sdl "vendor:sdl3"
 
 Platform :: distinct sdl.FRect
@@ -14,39 +13,19 @@ Structure :: union {
 	Walls,
 }
 
-structure_render :: proc(structure: Structure) -> bool {
-	if g.renderer == nil {
-		return false
+
+platforms_render :: proc(renderer: ^sdl.Renderer, platforms: Platforms) {
+	if renderer == nil do return
+
+	for &platform in platforms {
+		draw_rect(renderer, cast(sdl.FRect)platform, color = {90, 220, 120, 255})
 	}
+}
 
-	switch rects in structure {
-	case Platforms:
-		for &platform in rects {
-			if !sdl.SetRenderDrawColor(g.renderer, 90, 220, 120, 255) {
-				fmt.eprintln("SDL_SetRenderDrawColor failed:", sdl.GetError())
-				return false
-			}
+walls_render :: proc(renderer: ^sdl.Renderer, walls: Walls) {
+	if renderer == nil do return
 
-			frect := sdl.FRect(platform)
-			if !sdl.RenderFillRect(g.renderer, &frect) {
-				fmt.eprintln("SDL_RenderFillRect failed:", sdl.GetError())
-				return false
-			}
-		}
-	case Walls:
-		for &wall in rects {
-			if !sdl.SetRenderDrawColor(g.renderer, 255, 0, 120, 255) {
-				fmt.eprintln("SDL_SetRenderDrawColor failed:", sdl.GetError())
-				return false
-			}
-
-			frect := sdl.FRect(wall)
-			if !sdl.RenderFillRect(g.renderer, &frect) {
-				fmt.eprintln("SDL_RenderFillRect failed:", sdl.GetError())
-				return false
-			}
-		}
+	for &wall in walls {
+		draw_rect(renderer, cast(sdl.FRect)wall, {255, 0, 120, 255}, false)
 	}
-
-	return true
 }
