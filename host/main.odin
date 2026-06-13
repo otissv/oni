@@ -7,7 +7,6 @@ package main
 
 import "core:dynlib"
 import "core:fmt"
-import "core:c/libc"
 import "core:log"
 import "core:mem"
 import "core:os"
@@ -94,6 +93,11 @@ unload_game_api :: proc(api: ^Game_API) {
 	if os.remove(copy_path) != nil {
 		fmt.printfln("Failed to remove {0}", copy_path)
 	}
+}
+
+wait_for_enter :: proc() {
+	buf: [1]u8
+	os.read(os.stdin, buf[:])
 }
 
 reset_tracking_allocator :: proc(tracking: ^mem.Tracking_Allocator) -> bool {
@@ -201,7 +205,7 @@ main :: proc() {
 			for bad in tracking.bad_free_array {
 				log.errorf("Bad free at: %v", bad.location)
 			}
-			libc.getchar()
+			wait_for_enter()
 			panic("Bad free detected")
 		}
 	}
@@ -211,7 +215,7 @@ main :: proc() {
 	game_api.shutdown()
 
 	if reset_tracking_allocator(&tracking) {
-		libc.getchar()
+		wait_for_enter()
 	}
 
 	for &old in old_apis {

@@ -1,5 +1,6 @@
 package game
 
+import "core:c"
 import "core:fmt"
 import "core:mem"
 import sdl "vendor:sdl3"
@@ -7,6 +8,13 @@ import sdl "vendor:sdl3"
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
 WINDOW_TITLE :: "Odin + SDL3"
+
+LOGICAL_BASE_W :: 1280
+LOGICAL_BASE_H :: 720
+LOGICAL_BASE_ASPECT :: f32(LOGICAL_BASE_W) / f32(LOGICAL_BASE_H)
+
+MIN_WINDOW_W :: 320
+MIN_WINDOW_H :: 180
 
 FIXED_TIMESTEP :: 1.0 / 60.0
 MAX_FRAME_TIME :: 0.25
@@ -44,6 +52,11 @@ Game_Memory :: struct {
 	last_counter:        u64,
 	accumulator:         f64,
 	fullscreen:          bool,
+	drawable_w:          c.int,
+	drawable_h:          c.int,
+	logical_w:           c.int,
+	logical_h:           c.int,
+	can_render:          bool,
 	gamepad:             ^sdl.Gamepad,
 	gamepad_instance_id: sdl.JoystickID,
 	force_reload:        bool,
@@ -51,6 +64,67 @@ Game_Memory :: struct {
 }
 
 g: ^Game_Memory
+
+apply_logical_presentation :: proc(drawable_w, drawable_h: c.int) {
+	if g.renderer == nil {
+		return
+	}
+
+	if drawable_w <= 0 || drawable_h <= 0 {
+		g.drawable_w = drawable_w
+		g.drawable_h = drawable_h
+		g.can_render = false
+		return
+	}
+
+	g.drawable_w = drawable_w
+	g.drawable_h = drawable_h
+	g.can_render = true
+
+	aspect := f32(drawable_w) / f32(drawable_h)
+
+	logical_w: c.int
+	logical_h: c.int
+	mode: sdl.RendererLogicalPresentation
+
+	// Keep one world-space coordinate system: fixed logical height, width derived
+	// from the current aspect ratio. This makes rendering and input scale
+	// consistently on both wide and tall windows instead of falling back to a
+	// separate letterboxed 1280x720 presentation.
+	logical_h = LOGICAL_BASE_H
+	logical_w = max(c.int(f32(logical_h) * aspect), 1)
+	mode = .STRETCH
+
+	g.logical_w = logical_w
+	g.logical_h = logical_h
+
+	if !sdl.SetRenderLogicalPresentation(g.renderer, logical_w, logical_h, mode) {
+		fmt.eprintln("SDL_SetRenderLogicalPresentation failed:", sdl.GetError())
+		g.can_render = false
+	}
+}
+
+sync_logical_presentation :: proc() {
+	if g.renderer == nil {
+		return
+	}
+
+	dw, dh: c.int
+	if !sdl.GetRenderOutputSize(g.renderer, &dw, &dh) {
+		fmt.eprintln("SDL_GetRenderOutputSize failed:", sdl.GetError())
+		g.can_render = false
+		return
+	}
+
+	apply_logical_presentation(dw, dh)
+}
+
+convert_mouse_event :: proc(event: ^sdl.Event) -> bool {
+	if g.renderer == nil || !g.can_render {
+		return false
+	}
+	return sdl.ConvertEventToRenderCoordinates(g.renderer, event)
+}
 
 set_fullscreen :: proc(fullscreen: bool) -> bool {
 	if g.window == nil {
@@ -75,11 +149,16 @@ fixed_update :: proc(dt: f32) {
 }
 
 render :: proc() {
+	if !g.can_render {
+		return
+	}
+
 	sdl.SetRenderDrawColor(g.renderer, 20, 20, 24, 255)
 	sdl.RenderClear(g.renderer)
 	structure_render(g.platforms)
 	structure_render(g.walls)
 	player_render()
+	sdl.RenderPresent(g.renderer)
 }
 
 frame_time :: proc() -> f64 {
@@ -146,10 +225,12 @@ poll_events :: proc() {
 			}
 
 		case .MOUSE_MOTION:
+			if !convert_mouse_event(&event) do break
 			g.input.mouse_x = event.motion.x
 			g.input.mouse_y = event.motion.y
 
 		case .MOUSE_BUTTON_DOWN:
+			if !convert_mouse_event(&event) do break
 			g.input.mouse_x = event.button.x
 			g.input.mouse_y = event.button.y
 
@@ -169,6 +250,7 @@ poll_events :: proc() {
 			}
 
 		case .MOUSE_BUTTON_UP:
+			if !convert_mouse_event(&event) do break
 			g.input.mouse_x = event.button.x
 			g.input.mouse_y = event.button.y
 
@@ -178,6 +260,7 @@ poll_events :: proc() {
 			}
 
 		case .MOUSE_WHEEL:
+			if !convert_mouse_event(&event) do break
 			scale_amount: f32 = 8
 
 			if event.wheel.y > 0 {
@@ -242,7 +325,16 @@ poll_events :: proc() {
 			}
 
 		case .WINDOW_PIXEL_SIZE_CHANGED:
-			fmt.println("Window pixel size changed:", event.window.data1, event.window.data2)
+			apply_logical_presentation(event.window.data1, event.window.data2)
+
+		case .WINDOW_DISPLAY_SCALE_CHANGED:
+			sync_logical_presentation()
+
+		case .WINDOW_ENTER_FULLSCREEN:
+			g.fullscreen = true
+
+		case .WINDOW_LEAVE_FULLSCREEN:
+			g.fullscreen = false
 
 		case .WINDOW_FOCUS_LOST:
 			g.input.move_left = false
@@ -256,11 +348,21 @@ poll_events :: proc() {
 }
 
 unload_world_state :: proc() {
-	delete(g.platforms)
-	delete(g.walls)
-	clear(&g.platforms)
-	clear(&g.walls)
-	close_gamepad()
+	// Free with context.allocator, not the array's stored allocator. After a hot
+	// reload the stored procedure pointer may belong to an unloaded .so copy.
+	if cap(g.platforms) > 0 {
+		mem.free_with_size(
+			raw_data(g.platforms),
+			cap(g.platforms) * size_of(Platform),
+			context.allocator,
+		)
+	}
+	g.platforms = {}
+
+	if cap(g.walls) > 0 {
+		mem.free_with_size(raw_data(g.walls), cap(g.walls) * size_of(Wall), context.allocator)
+	}
+	g.walls = {}
 }
 
 load_world_state :: proc() {
@@ -279,10 +381,10 @@ load_world_state :: proc() {
 		&g.platforms,
 		Platform{x = 0, y = 500, w = 500, h = 200},
 		Platform{x = 800, y = 500, w = 500, h = 200},
-		Platform{x = 1300, y = 500, w = 500, h = 200},
+		Platform{x = 1600, y = 500, w = 500, h = 200},
 	)
 
-	append(&g.walls, Wall{x = 1200, y = 400, w = 100, h = 100})
+	append(&g.walls, Wall{x = 100, y = 100, w = 100, h = 100})
 
 	g.input = {}
 	g.dragging_player = false
@@ -323,6 +425,9 @@ create_window :: proc() -> bool {
 	g.last_counter = sdl.GetPerformanceCounter()
 	g.fullscreen = false
 
+	sdl.SetWindowMinimumSize(g.window, MIN_WINDOW_W, MIN_WINDOW_H)
+	sync_logical_presentation()
+
 	sdl.ShowWindow(g.window)
 	return true
 }
@@ -334,6 +439,8 @@ realloc_memory :: proc(new_size: int) {
 	perf_frequency := g.perf_frequency
 	last_counter := g.last_counter
 	running := g.running
+	gamepad := g.gamepad
+	gamepad_instance_id := g.gamepad_instance_id
 
 	unload_world_state()
 	free(g)
@@ -354,8 +461,11 @@ realloc_memory :: proc(new_size: int) {
 	g.perf_frequency = perf_frequency
 	g.last_counter = last_counter
 	g.running = running
+	g.gamepad = gamepad
+	g.gamepad_instance_id = gamepad_instance_id
 
 	load_world_state()
+	sync_logical_presentation()
 }
 
 @(export)
@@ -381,12 +491,17 @@ game_init :: proc() {
 	}
 
 	load_world_state()
+	sync_logical_presentation()
 }
 
 @(export)
 game_update :: proc() {
 	elapsed := frame_time()
 	poll_events()
+
+	if !g.can_render {
+		return
+	}
 
 	g.accumulator += elapsed
 
@@ -410,6 +525,7 @@ game_shutdown :: proc() {
 	}
 
 	unload_world_state()
+	close_gamepad()
 
 	if g.renderer != nil {
 		sdl.DestroyRenderer(g.renderer)
@@ -445,6 +561,7 @@ game_memory_size :: proc() -> int {
 @(export)
 game_hot_reloaded :: proc(mem: rawptr) {
 	g = cast(^Game_Memory)mem
+	sync_logical_presentation()
 }
 
 @(export)

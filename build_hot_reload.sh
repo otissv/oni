@@ -134,7 +134,7 @@ watch)
 	;;
 
 stop)
-	stop_watch
+	stop_watc
 	stop_game
 	;;
 

@@ -151,5 +151,4 @@ player_render :: proc() {
 	}
 
 	sdl.RenderFillRect(g.renderer, &player_rect)
-	sdl.RenderPresent(g.renderer)
 }
