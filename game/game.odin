@@ -395,15 +395,23 @@ create_window :: proc() -> bool {
 	)
 	if g.window == nil {
 		fmt.eprintln("SDL_CreateWindow failed:", sdl.GetError())
+
+		sdl.Quit()
+
 		return false
 	}
 
 	g.renderer = sdl.CreateRenderer(g.window, nil)
 	if g.renderer == nil {
 		fmt.eprintln("SDL_CreateRenderer failed:", sdl.GetError())
+
+		sdl.DestroyWindow(g.window)
+		g.window = nil
+
+		sdl.Quit()
+
 		return false
 	}
-
 	if !sdl.SetRenderVSync(g.renderer, 1) {
 		fmt.eprintln("SDL_SetRenderVSync failed:", sdl.GetError())
 	}
@@ -430,15 +438,15 @@ realloc_memory :: proc(new_size: int) {
 	gamepad_instance_id := g.gamepad_instance_id
 
 	unload_world_state()
-	free(g)
-	g = nil
 
 	ptr, err := mem.alloc(new_size)
 	if err != nil {
 		fmt.eprintln("Failed to allocate Game_Memory:", err)
+		load_world_state()
 		return
 	}
 
+	old := g
 	g = cast(^Game_Memory)ptr
 	mem.zero(g, new_size)
 
@@ -451,6 +459,7 @@ realloc_memory :: proc(new_size: int) {
 	g.gamepad = gamepad
 	g.gamepad_instance_id = gamepad_instance_id
 
+	free(old)
 	load_world_state()
 	sync_logical_presentation()
 }

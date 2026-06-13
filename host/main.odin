@@ -25,22 +25,22 @@ GAME_LIB_DIR :: "build/hot_reload/"
 GAME_LIB_PATH :: GAME_LIB_DIR + "game" + GAME_LIB_EXT
 
 Game_API :: struct {
-	lib:               dynlib.Library,
-	init_window:       proc(),
-	init:              proc(),
-	update:            proc(),
-	should_run:        proc() -> bool,
-	shutdown:          proc(),
-	shutdown_window:   proc(),
-	memory:            proc() -> rawptr,
-	memory_size:       proc() -> int,
-	hot_reloaded:      proc(mem: rawptr),
-	reset:             proc(),
-	realloc:           proc(new_size: int),
-	force_reload:      proc() -> bool,
-	force_restart:     proc() -> bool,
-	loaded_mod_nsec:   i64,
-	api_version:       int,
+	lib:             dynlib.Library,
+	init_window:     proc(),
+	init:            proc(),
+	update:          proc(),
+	should_run:      proc() -> bool,
+	shutdown:        proc(),
+	shutdown_window: proc(),
+	memory:          proc() -> rawptr,
+	memory_size:     proc() -> int,
+	hot_reloaded:    proc(mem: rawptr),
+	reset:           proc(),
+	realloc:         proc(new_size: int),
+	force_reload:    proc() -> bool,
+	force_restart:   proc() -> bool,
+	loaded_mod_nsec: i64,
+	api_version:     int,
 }
 
 copy_game_lib :: proc(to: string) -> bool {
@@ -72,6 +72,10 @@ load_game_api :: proc(api_version: int) -> (api: Game_API, ok: bool) {
 	_, ok = dynlib.initialize_symbols(&api, lib_name, "game_", "lib")
 	if !ok {
 		fmt.printfln("Failed to initialize game API from {0}: {1}", lib_name, dynlib.last_error())
+
+		api.api_version = api_version
+		unload_game_api(&api)
+
 		return
 	}
 
@@ -149,6 +153,7 @@ main :: proc() {
 	tracking: mem.Tracking_Allocator
 	mem.tracking_allocator_init(&tracking, default_allocator)
 	context.allocator = mem.tracking_allocator(&tracking)
+	defer mem.tracking_allocator_destroy(&tracking)
 
 	api_version := 0
 	game_api, loaded := load_game_api(api_version)
@@ -206,8 +211,21 @@ main :: proc() {
 				log.errorf("Bad free at: %v", bad.location)
 			}
 			wait_for_enter()
+
+			game_api.shutdown()
+
+			for &old in old_apis {
+				unload_game_api(&old)
+			}
+			delete(old_apis)
+			unload_game_api(&game_api)
+
+			free_all(context.temp_allocator)
+
 			panic("Bad free detected")
 		}
+		free_all(context.temp_allocator)
+
 	}
 
 	free_all(context.temp_allocator)
@@ -225,5 +243,4 @@ main :: proc() {
 
 	game_api.shutdown_window()
 	unload_game_api(&game_api)
-	mem.tracking_allocator_destroy(&tracking)
 }
