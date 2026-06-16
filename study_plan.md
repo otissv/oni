@@ -4,9 +4,9 @@
 ## Overview
 For a general renderer for **2D games + desktop UI + editor/tools**, learn in this order: 
 1. **SDL3 basics**  
-2. **2D collision & movement** — AABB, platforms, walls, climb, ceiling cling (playable game checkpoint)  
-3. **SDL_Renderer as a beginner-friendly high-level drawing API**  
-4. **SDL_GPU as your real backend**  
+2. **SDL_Renderer as a beginner-friendly high-level drawing API**  
+3. **SDL_GPU as your real backend**  
+4. **2D collision & movement** — AABB, platforms, walls, climb, ceiling cling (playable game checkpoint)  
 5. **Coordinate spaces** — viewports, camera, and clipping  
 6. **Renderer systems** like batching, text, atlases, render targets, and UI/vector drawing.  
 7. **Enemies & NPCs** — entity AI, combat, and a full playable game loop (before text and audio polish).  
@@ -48,8 +48,8 @@ The SDL wiki says the best simple SDL3 tutorials are currently `examples.libsdl.
 ## 3. Use SDL_Renderer briefly as the “model” of a high-level renderer
 
 This is not your final backend, but it teaches the API shape you want: 
-- [   ] `draw_rect`,
-- [   ] `draw_texture`
+- [ * ] `draw_rect`,
+- [ * ] `draw_texture`
 - [   ] `draw_geometry`
 - [ *  ] presentation. 
 
@@ -58,7 +58,33 @@ Use the SDL3 renderer examples and the [Odin SDL3 basic setup](https://github.co
 
 Focus on how a simple renderer is created, how events are handled, and how textures/shapes are drawn, not on memorizing C syntax.
 
-## 4. 2D collision & movement — make the game playable first
+## 4. Then move to SDL_GPU in Odin
+
+Use Nadako’s **Odin SDL3 GPU Tutorial** playlist as your main Odin-first GPU resource; 
+Focus on:
+- [   ] Part 1 “Basic Setup, A Red Triangle”
+- [   ] Part 4 “Indexed Drawing, A Quad”
+- [   ] Part 5 “Texture Sampling”, 
+
+Later Part 10 only when you care about Dear ImGui/editor UI. 
+
+Skip the 3D-heavy episodes at first because you want a 2D/UI/tool renderer, not a 3D engine. 
+
+([Odin SDL3 GPU Tutorial](https://www.youtube.com/playlist?list=PLI3kBEQ3yd-CbQfRchF70BPLF9G1HEzhy))
+
+## 5. Use C/C++ SDL_GPU resources only for concepts, not as your main path
+
+The best non-Odin beginner resource is **GPUForBeginners**, because it starts from blank window and first triangle using SDL3’s GPU API. 
+
+Use it to understand words like command buffer, swapchain, pipeline, texture, sampler, and render pass. 
+
+Also keep SDL’s official GPU docs open because SDL_GPU targets broad hardware support and is designed so apps usually do not need lots of feature-branching. 
+
+- [   ] GPUForBeginners
+
+([GPUForBeginners](https://gpuforbeginners.com/))
+
+## 6. 2D collision & movement — make the game playable first
 
 You already have a window, input, timing, and rects on screen — now turn that into a **playable side-scroller** with solid feel.
 
@@ -71,7 +97,7 @@ Your project already has the starting points:
 
 Build in this order so each step is testable in the running game.
 
-### 4.1 AABB overlap — the foundation
+### 6.1 AABB overlap — the foundation
 
 Every solid in this plan starts as an axis-aligned box (`x`, `y`, `w`, `h`).
 
@@ -86,9 +112,9 @@ Mini demo: drag the player with the mouse; print which platform index overlaps.
 
 Resources:
 - Your `player_overlaps_platform_x` in `game/player.odin` — already half of an AABB test
-- [Metanet N tutorial — Advanced Collision Detection](https://www.metanetsoftware.com/technique/tutorialA.html) — swept AABB and multi-axis resolution (read 3.1–3.2 first; return for 3.6)
+- [Metanet N tutorial — Advanced Collision Detection](https://www.metanetsoftware.com/technique/tutorialA.html) — swept AABB and multi-axis resolution (read 6.1–6.2 first; return for 6.6)
 
-### 4.2 Jumping on platforms — vertical resolution
+### 6.2 Jumping on platforms — vertical resolution
 
 You already land on platforms from above. Harden this before adding walls.
 
@@ -102,7 +128,7 @@ Focus on:
 
 Mini demo: stack three platforms; jump up through a one-way platform, land on the one above.
 
-### 4.3 Walking into walls — horizontal resolution
+### 6.3 Walking into walls — horizontal resolution
 
 `Wall` rects exist in `game/structure.odin` but do not block movement yet. Add **left/right resolution** after vertical platform landing.
 
@@ -110,11 +136,11 @@ Focus on:
 - [   ] **Resolve X before Y** (or Y before X — pick one order and stay consistent; try X-first for platformers)
 - [   ] **Wall contact from the side** — stop horizontal velocity; nudge player out by penetration depth on X
 - [   ] **Corner cases** — landing on a platform edge while pressed into a wall; head bonk on ceiling (short ceiling rects)
-- [   ] **Slope teaser** — AABB on slopes needs extra math; defer to 3.6 or use stair-step walls made of small rects
+- [   ] **Slope teaser** — AABB on slopes needs extra math; defer to 6.6 or use stair-step walls made of small rects
 
 Mini demo: corridor of `Wall` rects; player cannot pass through but can jump over low walls.
 
-### 4.4 Climbing walls — wall cling & vertical crawl
+### 6.4 Climbing walls — wall cling & vertical crawl
 
 Once horizontal walls work, add **wall state** separate from ground.
 
@@ -127,7 +153,7 @@ Focus on:
 
 Mini demo: tall vertical shaft; jump in, cling, climb up, wall-jump to the next ledge.
 
-### 4.5 Clinging to the ceiling — inverted gravity zone
+### 6.5 Clinging to the ceiling — inverted gravity zone
 
 Ceiling cling is the same AABB machinery with **contact from below** and flipped movement feel.
 
@@ -140,9 +166,9 @@ Focus on:
 
 Mini demo: room with a ceiling bar; jump up, cling, crawl, drop onto a platform below.
 
-### 4.6 Beyond AABB — when boxes are not enough
+### 6.6 Beyond AABB — when boxes are not enough
 
-Stay on AABB until 3.2–3.5 feel good. Then know what comes next without blocking the playable game.
+Stay on AABB until 6.2–6.5 feel good. Then know what comes next without blocking the playable game.
 
 Focus on (later, not required for first playable build):
 - [   ] **Swept AABB** — test motion from `old_pos` to `new_pos` so fast movement does not tunnel through thin walls
@@ -155,9 +181,9 @@ Resources:
 - [Metanet N — Advanced Collision Detection](https://www.metanetsoftware.com/technique/tutorialA.html) — swept tests and tunneling
 - [Handmade Hero collision notes](https://handmadehero.org/) — practical entity–tile resolution (concept reference)
 
-### 4.7 Playable game checkpoint
+### 6.7 Playable game checkpoint
 
-Before Section 4 (SDL_Renderer deep dive), you should be able to play this in your hot-reload build:
+Before Section 7 (viewports & camera), you should be able to play this in your hot-reload build:
 
 - [   ] Move left/right, jump (and double jump)
 - [   ] Land on platforms without sinking or jitter
@@ -166,33 +192,6 @@ Before Section 4 (SDL_Renderer deep dive), you should be able to play this in yo
 - [   ] Level built from `Platform` / `Wall` / ceiling rects in code (editor comes much later)
 
 Then continue the renderer study path — collision feel stays in the game DLL; rendering backend can swap underneath.
-
-
-## 5. Then move to SDL_GPU in Odin
-
-Use Nadako’s **Odin SDL3 GPU Tutorial** playlist as your main Odin-first GPU resource; 
-Focus on:
-- [   ] Part 1 “Basic Setup, A Red Triangle”
-- [   ] Part 4 “Indexed Drawing, A Quad”
-- [   ] Part 5 “Texture Sampling”, 
-
-Later Part 10 only when you care about Dear ImGui/editor UI. 
-
-Skip the 3D-heavy episodes at first because you want a 2D/UI/tool renderer, not a 3D engine. 
-
-([Odin SDL3 GPU Tutorial](https://www.youtube.com/playlist?list=PLI3kBEQ3yd-CbQfRchF70BPLF9G1HEzhy))
-
-## 6. Use C/C++ SDL_GPU resources only for concepts, not as your main path
-
-The best non-Odin beginner resource is **GPUForBeginners**, because it starts from blank window and first triangle using SDL3’s GPU API. 
-
-Use it to understand words like command buffer, swapchain, pipeline, texture, sampler, and render pass. 
-
-Also keep SDL’s official GPU docs open because SDL_GPU targets broad hardware support and is designed so apps usually do not need lots of feature-branching. 
-
-- [   ] GPUForBeginners
-
-([GPUForBeginners](https://gpuforbeginners.com/))
 
 ## 7. Viewports, camera & clipping
 
@@ -431,12 +430,12 @@ Mini demo: three colored rects patrol the same platforms as the player; no AI ye
 
 ### 9.2 World collision for non-player entities
 
-Enemies should respect the same AABB rules as the player (Section 3), without copy-pasting every proc.
+Enemies should respect the same AABB rules as the player (Section 6), without copy-pasting every proc.
 
 Focus on:
 - [   ] **Shared collision** — extract or generalize platform landing and wall blocking for any `Entity`
 - [   ] **Gravity toggle** — flyers or ghosts skip vertical resolution; ground enemies use the same gravity constant
-- [   ] **One-way platforms** — if you added them in 3.2, enemies fall through from below too
+- [   ] **One-way platforms** — if you added them in 6.2, enemies fall through from below too
 - [   ] **Separation from player** — optional push-apart so entities do not stack inside each other
 - [   ] **Debug draw** — contact side per entity when stuck or clipping
 
@@ -460,7 +459,7 @@ Mini demo: two patrol slimes on different platforms; a third chases only when th
 Make failure and success feel real before you add HUD text or hit sounds.
 
 Focus on:
-- [   ] **Hitbox vs hurtbox** — attack rect vs vulnerable body rect; reuse AABB overlap from 3.1
+- [   ] **Hitbox vs hurtbox** — attack rect vs vulnerable body rect; reuse AABB overlap from 6.1
 - [   ] **Damage** — subtract health or instant kill; invulnerability frames after hit
 - [   ] **Knockback** — impulse on X/Y when struck; respect collision so knockback does not tunnel
 - [   ] **Stomp** — classic platformer: player feet overlap enemy top while falling → defeat enemy, bounce player up
@@ -512,7 +511,7 @@ Then add `draw_text` and SFX — polish layers on top of a game that already pla
 
 Resources:
 - Your `Entity` in `game/entity.odin` — extend, do not fork a second hierarchy
-- Section 3 collision — generalize for all moving bodies
+- Section 6 collision — generalize for all moving bodies
 - [Handmade Hero entity model](https://handmadehero.org/) — entities as typed records + update functions (concept reference)
 - [Metanet N — game feel](https://www.metanetsoftware.com/technique/tutorialA.html) — knockback and invuln timing
 
@@ -582,9 +581,9 @@ Skip SDL2_mixer tutorials unless you are willing to translate every call to SDL3
 
 Make these mini-projects in order: 
 - SDL3 window and input viewer; SDL_Renderer rectangle/texture demo
-- **Playable platformer** — platforms, walls, jump, wall/ceiling cling (Section 3)
-- Viewport & clip demo — game view in a sub-rect, UI chrome around it (Section 7.1)
 - SDL_GPU red triangle; SDL_GPU quad; textured quad; `draw_sprite`
+- **Playable platformer** — platforms, walls, jump, wall/ceiling cling (Section 6)
+- Viewport & clip demo — game view in a sub-rect, UI chrome around it (Section 7.1)
 - Camera follow / pan-zoom demo — player moves past screen edge (Section 7.2)
 - Y-sort & structure layers demo — player passes in front/behind NPCs and foreground walls (Section 7.5)
 - Sprite batcher; texture atlas; clipping/scissor demo

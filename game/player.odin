@@ -150,5 +150,6 @@ player_render :: proc(renderer: ^sdl.Renderer, player: Player) {
 		color = {80, 180, 255, 255}
 	}
 
+
 	draw_rect(renderer, player_rect, color)
 }

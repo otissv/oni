@@ -61,6 +61,7 @@ Game_Memory :: struct {
 	gamepad_instance_id: sdl.JoystickID,
 	force_reload:        bool,
 	force_restart:       bool,
+	textures:            [Texture_Id]Texture_Asset,
 }
 
 g: ^Game_Memory
@@ -366,12 +367,12 @@ load_world_state :: proc() {
 
 	append(
 		&g.platforms,
-		Platform{x = 0, y = 500, w = 500, h = 200},
-		Platform{x = 800, y = 500, w = 500, h = 200},
-		Platform{x = 1600, y = 500, w = 500, h = 200},
+		Platform{x = 0, y = 500, w = 500, h = 200, tileset = Brown.B},
+		Platform{x = 650, y = 500, w = 500, h = 200, tileset = Green.A},
+		Platform{x = 1600, y = 500, w = 500, h = 200, tileset = Green.B},
 	)
 
-	append(&g.walls, Wall{x = 100, y = 100, w = 100, h = 100})
+	// append(&g.walls, Wall{x = 100, y = 100, w = 100, h = 100})
 
 	g.input = {}
 	g.dragging_player = false
@@ -477,11 +478,15 @@ game_init_window :: proc() {
 
 @(export)
 game_init :: proc() {
-	if g == nil {
-		game_init_window()
-	}
+	if g == nil do game_init_window()
+
 
 	if g.window == nil {
+		g.running = false
+		return
+	}
+
+	if !textures_load_all(g.renderer, &g.textures) {
 		g.running = false
 		return
 	}
@@ -516,12 +521,12 @@ game_should_run :: proc() -> bool {
 
 @(export)
 game_shutdown :: proc() {
-	if g == nil {
-		return
-	}
+	if g == nil do return
 
 	unload_world_state()
 	close_gamepad()
+
+	textures_destroy_all(&g.textures)
 
 	if g.renderer != nil {
 		sdl.DestroyRenderer(g.renderer)
