@@ -1,4 +1,4 @@
-package game
+package app
 
 Vec2 :: [2]f32
 

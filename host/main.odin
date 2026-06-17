@@ -1,6 +1,6 @@
 /*
-Hot-reload host. Loads build/hot_reload/game.so and reloads it when the file
-changes. Game state lives in heap-allocated App_State inside the game library.
+Hot-reload host. Loads build/hot_reload/app.so and reloads it when the file
+changes. App state lives in heap-allocated App_State inside the app library.
 */
 
 package main
@@ -18,17 +18,17 @@ import sdl "vendor:sdl3"
 default_context: runtime.Context
 
 when ODIN_OS == .Windows {
-	GAME_LIB_EXT :: ".dll"
+	APP_LIB_EXT :: ".dll"
 } else when ODIN_OS == .Darwin {
-	GAME_LIB_EXT :: ".dylib"
+	APP_LIB_EXT :: ".dylib"
 } else {
-	GAME_LIB_EXT :: ".so"
+	APP_LIB_EXT :: ".so"
 }
 
-GAME_LIB_DIR :: "build/hot_reload/"
-GAME_LIB_PATH :: GAME_LIB_DIR + "game" + GAME_LIB_EXT
+APP_LIB_DIR :: "build/hot_reload/"
+APP_LIB_PATH :: APP_LIB_DIR + "app" + APP_LIB_EXT
 
-Game_API :: struct {
+App_API :: struct {
 	lib:             dynlib.Library,
 	init_window:     proc(),
 	init:            proc(),
@@ -47,38 +47,38 @@ Game_API :: struct {
 	api_version:     int,
 }
 
-copy_game_lib :: proc(to: string) -> bool {
-	if err := os.copy_file(to, GAME_LIB_PATH); err != nil {
-		fmt.printfln("Failed to copy {0} to {1}: {2}", GAME_LIB_PATH, to, err)
+copy_app_lib :: proc(to: string) -> bool {
+	if err := os.copy_file(to, APP_LIB_PATH); err != nil {
+		fmt.printfln("Failed to copy {0} to {1}: {2}", APP_LIB_PATH, to, err)
 		return false
 	}
 	return true
 }
 
-load_game_lib_mtime :: proc() -> (nsec: i64, ok: bool) {
-	mod_time, err := os.last_write_time_by_name(GAME_LIB_PATH)
+load_app_lib_mtime :: proc() -> (nsec: i64, ok: bool) {
+	mod_time, err := os.last_write_time_by_name(APP_LIB_PATH)
 	if err != os.ERROR_NONE {
-		fmt.printfln("Failed to read modification time of {0}: {1}", GAME_LIB_PATH, err)
+		fmt.printfln("Failed to read modification time of {0}: {1}", APP_LIB_PATH, err)
 		return 0, false
 	}
 	return time.time_to_unix_nano(mod_time), true
 }
 
-load_game_api :: proc(api_version: int) -> (api: Game_API, ok: bool) {
-	mod_nsec, mod_ok := load_game_lib_mtime()
+load_app_api :: proc(api_version: int) -> (api: App_API, ok: bool) {
+	mod_nsec, mod_ok := load_app_lib_mtime()
 	if !mod_ok {
 		return
 	}
 
-	lib_name := fmt.tprintf(GAME_LIB_DIR + "game_{0}" + GAME_LIB_EXT, api_version)
-	copy_game_lib(lib_name) or_return
+	lib_name := fmt.tprintf(APP_LIB_DIR + "app_{0}" + APP_LIB_EXT, api_version)
+	copy_app_lib(lib_name) or_return
 
-	_, ok = dynlib.initialize_symbols(&api, lib_name, "game_", "lib")
+	_, ok = dynlib.initialize_symbols(&api, lib_name, "app_", "lib")
 	if !ok {
-		fmt.printfln("Failed to initialize game API from {0}: {1}", lib_name, dynlib.last_error())
+		fmt.printfln("Failed to initialize app API from {0}: {1}", lib_name, dynlib.last_error())
 
 		api.api_version = api_version
-		unload_game_api(&api)
+		unload_app_api(&api)
 
 		return
 	}
@@ -89,15 +89,15 @@ load_game_api :: proc(api_version: int) -> (api: Game_API, ok: bool) {
 	return
 }
 
-unload_game_api :: proc(api: ^Game_API) {
+unload_app_api :: proc(api: ^App_API) {
 	if api.lib != nil {
 		if !dynlib.unload_library(api.lib) {
-			fmt.printfln("Failed to unload game library: {0}", dynlib.last_error())
+			fmt.printfln("Failed to unload app library: {0}", dynlib.last_error())
 		}
 		api.lib = nil
 	}
 
-	copy_path := fmt.tprintf(GAME_LIB_DIR + "game_{0}" + GAME_LIB_EXT, api.api_version)
+	copy_path := fmt.tprintf(APP_LIB_DIR + "app_{0}" + APP_LIB_EXT, api.api_version)
 	if os.remove(copy_path) != nil {
 		fmt.printfln("Failed to remove {0}", copy_path)
 	}
@@ -121,25 +121,25 @@ reset_tracking_allocator :: proc(tracking: ^mem.Tracking_Allocator) -> bool {
 }
 
 perform_reload :: proc(
-	game_api: ^Game_API,
-	new_api: Game_API,
+	app_api: ^App_API,
+	new_api: App_API,
 	want_restart: bool,
 	reason: string,
-	old_apis: ^[dynamic]Game_API,
+	old_apis: ^[dynamic]App_API,
 ) {
-	layout_changed := game_api.memory_size() != new_api.memory_size()
+	layout_changed := app_api.memory_size() != new_api.memory_size()
 	full_restart := want_restart || layout_changed
 
-	append(old_apis, game_api^)
-	game_memory := game_api.memory()
-	game_api^ = new_api
-	game_api.hot_reloaded(game_memory)
+	append(old_apis, app_api^)
+	app_memory := app_api.memory()
+	app_api^ = new_api
+	app_api.hot_reloaded(app_memory)
 
 	if full_restart && layout_changed {
-		game_api.realloc(new_api.memory_size())
+		app_api.realloc(new_api.memory_size())
 		fmt.printfln("Reload ({0}): memory layout changed, state reset", reason)
 	} else if full_restart {
-		game_api.reset()
+		app_api.reset()
 		fmt.printfln("Reload ({0}): full restart", reason)
 	} else {
 		fmt.printfln("Reload ({0}): hot reload complete", reason)
@@ -175,35 +175,35 @@ main :: proc() {
 	defer mem.tracking_allocator_destroy(&tracking)
 
 	api_version := 0
-	game_api, loaded := load_game_api(api_version)
+	app_api, loaded := load_app_api(api_version)
 	if !loaded {
-		fmt.println("Failed to load game library. Run ./build_hot_reload.sh first.")
+		fmt.println("Failed to load app library. Run ./build_hot_reload.sh first.")
 		return
 	}
 
 	api_version += 1
-	game_api.init_window()
-	game_api.init()
+	app_api.init_window()
+	app_api.init()
 
-	if !game_api.should_run() {
-		fmt.println("Game exited during init. Check build/hot_reload/game.log for details.")
-		game_api.shutdown()
-		unload_game_api(&game_api)
+	if !app_api.should_run() {
+		fmt.println("App exited during init. Check build/hot_reload/app.log for details.")
+		app_api.shutdown()
+		unload_app_api(&app_api)
 		return
 	}
 
-	old_apis := make([dynamic]Game_API, default_allocator)
+	old_apis := make([dynamic]App_API, default_allocator)
 	reload_cooldown: int
 
-	for game_api.should_run() {
-		game_api.update()
+	for app_api.should_run() {
+		app_api.update()
 
 		if reload_cooldown > 0 {
 			reload_cooldown -= 1
 		}
 
-		want_reload := game_api.force_reload()
-		want_restart := game_api.force_restart()
+		want_reload := app_api.force_reload()
+		want_restart := app_api.force_restart()
 		reload := want_reload || want_restart
 		reason := "manual"
 
@@ -214,17 +214,17 @@ main :: proc() {
 		}
 
 		if reload_cooldown == 0 {
-			mod_nsec, mod_ok := load_game_lib_mtime()
-			if mod_ok && game_api.loaded_mod_nsec != mod_nsec {
+			mod_nsec, mod_ok := load_app_lib_mtime()
+			if mod_ok && app_api.loaded_mod_nsec != mod_nsec {
 				reload = true
-				reason = "game.so changed"
+				reason = "app.so changed"
 			}
 		}
 
 		if reload {
-			new_api, new_loaded := load_game_api(api_version)
+			new_api, new_loaded := load_app_api(api_version)
 			if new_loaded {
-				perform_reload(&game_api, new_api, want_restart, reason, &old_apis)
+				perform_reload(&app_api, new_api, want_restart, reason, &old_apis)
 				api_version += 1
 				reload_cooldown = 2
 			} else {
@@ -238,13 +238,13 @@ main :: proc() {
 			}
 			wait_for_enter()
 
-			game_api.shutdown()
+			app_api.shutdown()
 
 			for &old in old_apis {
-				unload_game_api(&old)
+				unload_app_api(&old)
 			}
 			delete(old_apis)
-			unload_game_api(&game_api)
+			unload_app_api(&app_api)
 
 			free_all(context.temp_allocator)
 
@@ -256,17 +256,17 @@ main :: proc() {
 
 	free_all(context.temp_allocator)
 
-	game_api.shutdown()
+	app_api.shutdown()
 
 	if reset_tracking_allocator(&tracking) {
 		wait_for_enter()
 	}
 
 	for &old in old_apis {
-		unload_game_api(&old)
+		unload_app_api(&old)
 	}
 	delete(old_apis)
 
-	game_api.shutdown_window()
-	unload_game_api(&game_api)
+	app_api.shutdown_window()
+	unload_app_api(&app_api)
 }

@@ -1,4 +1,4 @@
-package game
+package app
 
 import "core:c"
 import "core:fmt"
@@ -377,7 +377,7 @@ realloc_memory :: proc(new_size: int) {
 }
 
 @(export)
-game_init_window :: proc() {
+app_init_window :: proc() {
 	if g == nil {
 		g = new(App_State)
 	}
@@ -388,8 +388,8 @@ game_init_window :: proc() {
 }
 
 @(export)
-game_init :: proc() {
-	if g == nil do game_init_window()
+app_init :: proc() {
+	if g == nil do app_init_window()
 	if g.window == nil {
 		g.running = false
 		return
@@ -408,7 +408,7 @@ game_init :: proc() {
 }
 
 @(export)
-game_update :: proc() {
+app_update :: proc() {
 	dt := frame_time()
 	input_begin_frame()
 	poll_events()
@@ -420,12 +420,12 @@ game_update :: proc() {
 }
 
 @(export)
-game_should_run :: proc() -> bool {
+app_should_run :: proc() -> bool {
 	return g != nil && g.running
 }
 
 @(export)
-game_shutdown :: proc() {
+app_shutdown :: proc() {
 	if g == nil do return
 
 	gamepad_close()
@@ -452,39 +452,39 @@ game_shutdown :: proc() {
 }
 
 @(export)
-game_shutdown_window :: proc() {}
+app_shutdown_window :: proc() {}
 
 @(export)
-game_memory :: proc() -> rawptr {
+app_memory :: proc() -> rawptr {
 	return g
 }
 
 @(export)
-game_memory_size :: proc() -> int {
+app_memory_size :: proc() -> int {
 	return size_of(App_State)
 }
 
 @(export)
-game_hot_reloaded :: proc(mem: rawptr) {
+app_hot_reloaded :: proc(mem: rawptr) {
 	g = cast(^App_State)mem
 	gpu_reload()
 	dpi_sync()
 }
 
 @(export)
-game_reset :: proc() {
+app_reset :: proc() {
 	if g == nil do return
 	reset_user_state()
 }
 
 @(export)
-game_realloc :: proc(new_size: int) {
+app_realloc :: proc(new_size: int) {
 	if g == nil do return
 	realloc_memory(new_size)
 }
 
 @(export)
-game_force_reload :: proc() -> bool {
+app_force_reload :: proc() -> bool {
 	if g == nil do return false
 	reload := g.force_reload
 	g.force_reload = false
@@ -492,7 +492,7 @@ game_force_reload :: proc() -> bool {
 }
 
 @(export)
-game_force_restart :: proc() -> bool {
+app_force_restart :: proc() -> bool {
 	if g == nil do return false
 	restart := g.force_restart
 	g.force_restart = false

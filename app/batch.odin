@@ -1,4 +1,4 @@
-package game
+package app
 
 import "core:fmt"
 import "core:mem"

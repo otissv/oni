@@ -9,7 +9,7 @@ HOST_EXE="game_hot_reload"
 WATCH_PID_FILE="build/hot_reload/.watch.pid"
 BUILD_LOCK_FILE="build/hot_reload/.build.lock"
 
-SHADER_DIR="game/shaders"
+SHADER_DIR="app/shaders"
 UI_FRAG="${SHADER_DIR}/ui.frag"
 UI_VERT="${SHADER_DIR}/ui.vert"
 UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
@@ -18,7 +18,7 @@ UI_SPV_VERT="${SHADER_DIR}/ui.spv.vert"
 when_os() {
 	case "$(uname -s)" in
 	Darwin) echo "darwin" ;;
-MINGW* | MSYS* | CYGWIN*) echo "windows" ;;
+	MINGW* | MSYS* | CYGWIN*) echo "windows" ;;
 	*) echo "linux" ;;
 	esac
 }
@@ -34,13 +34,13 @@ esac
 ODIN_FLAGS=(-vet -strict-style -debug)
 FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
 
-is_game_running() {
+is_app_running() {
 	local pid
 	pid="$(pgrep -x "$HOST_EXE" 2>/dev/null | head -1)"
 	[[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
-game_pid() {
+app_pid() {
 	pgrep -x "$HOST_EXE" 2>/dev/null | head -1
 }
 
@@ -69,11 +69,11 @@ build_shaders() {
 	fi
 }
 
-build_game_locked() {
+build_app_locked() {
 	mkdir -p "$OUT_DIR"
 
 	build_shaders
-	echo "Building game${LIB_EXT}"
+	echo "Building app${LIB_EXT}"
 
 	staging="$(mktemp -d "${OUT_DIR}/staging.XXXXXX")"
 	cleanup_staging() {
@@ -81,20 +81,20 @@ build_game_locked() {
 	}
 	trap cleanup_staging RETURN
 
-	odin build game -build-mode:dll "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/game${LIB_EXT}"
-	mv -f "${staging}/game${LIB_EXT}" "${OUT_DIR}/game${LIB_EXT}"
+	odin build app -build-mode:dll "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/app${LIB_EXT}"
+	mv -f "${staging}/app${LIB_EXT}" "${OUT_DIR}/app${LIB_EXT}"
 
 	# Drop stale intermediate objects from older build naming schemes.
-	rm -f "${OUT_DIR}"/game_tmp-*.o "${OUT_DIR}"/game_test-*.o 2>/dev/null || true
+	rm -f "${OUT_DIR}"/app_tmp-*.o "${OUT_DIR}"/app_test-*.o "${OUT_DIR}"/game*.so "${OUT_DIR}"/game*.dll "${OUT_DIR}"/game*.dylib 2>/dev/null || true
 }
 
-build_game() {
+build_app() {
 	mkdir -p "$OUT_DIR"
 
 	# Serialize builds so the watcher and manual invocations cannot stomp shared .o files.
 	(
 		flock -x 9 || exit 1
-		build_game_locked
+		build_app_locked
 	) 9>"$BUILD_LOCK_FILE"
 }
 
@@ -103,9 +103,9 @@ build_host() {
 	odin build host "${ODIN_FLAGS[@]}" -out:"${HOST_EXE}"
 }
 
-start_game() {
-	if is_game_running; then
-		echo "Game already running (PID $(game_pid))"
+start_app() {
+	if is_app_running; then
+		echo "App already running (PID $(app_pid))"
 		return
 	fi
 
@@ -115,18 +115,18 @@ start_game() {
 
 	mkdir -p "$OUT_DIR"
 	echo "Starting ${HOST_EXE}"
-	nohup ./"$HOST_EXE" >>"${OUT_DIR}/game.log" 2>&1 &
+	nohup ./"$HOST_EXE" >>"${OUT_DIR}/app.log" 2>&1 &
 	disown -h $! 2>/dev/null || true
-	echo "Game PID $!"
-	echo "Log: ${OUT_DIR}/game.log"
+	echo "App PID $!"
+	echo "Log: ${OUT_DIR}/app.log"
 }
 
-stop_game() {
-	if is_game_running; then
+stop_app() {
+	if is_app_running; then
 		pkill -x "$HOST_EXE"
 		echo "Stopped ${HOST_EXE}"
 	else
-		echo "Game is not running"
+		echo "App is not running"
 	fi
 }
 
@@ -155,15 +155,15 @@ start_watch() {
 		fi
 	fi
 
-	echo "Watching game/ for changes (save to auto-rebuild)"
+	echo "Watching app/ for changes (save to auto-rebuild)"
 	(
 		while inotifywait \
 			-e close_write,move_self,create \
-			-r game \
+			-r app \
 			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
 			--format '%w%f' > /dev/null; do
-			build_game
-			if is_game_running; then
+			build_app
+			if is_app_running; then
 				echo "Hot reloading..."
 			fi
 		done
@@ -176,35 +176,35 @@ cmd="${1:-run}"
 
 case "$cmd" in
 run)
-	build_game
+	build_app
 
-	if is_game_running; then
-		echo "Hot reloading... (game already running, PID $(game_pid))"
+	if is_app_running; then
+		echo "Hot reloading... (app already running, PID $(app_pid))"
 		echo "No new window will open. Use './build_hot_reload.sh restart' for a fresh window."
 		exit 0
 	fi
 
 	build_host
-	start_game
+	start_app
 	start_watch || true
 	echo ""
-	echo "Save game/*.odin to auto-rebuild. F5/F6 reload in the game window."
+	echo "Save app/*.odin to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 restart)
 	stop_watch
-	stop_game
-	build_game
+	stop_app
+	build_app
 	build_host
-	start_game
+	start_app
 	start_watch || true
 	echo ""
-	echo "Restarted. Save game/*.odin to auto-rebuild. F5/F6 reload in the game window."
+	echo "Restarted. Save app/*.odin to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 build)
-	build_game
-	if is_game_running; then
+	build_app
+	if is_app_running; then
 		echo "Hot reloading..."
 	fi
 	;;
@@ -215,16 +215,16 @@ watch)
 
 stop)
 	stop_watch
-	stop_game
+	stop_app
 	;;
 
 *)
 	echo "Usage: $0 [run|restart|build|watch|stop]"
-	echo "  run      Build and start the game with auto-rebuild watcher (default)"
-	echo "  restart  Stop any running game, rebuild, and open a fresh window"
-	echo "  build    Rebuild game${LIB_EXT} only"
+	echo "  run      Build and start the app with auto-rebuild watcher (default)"
+	echo "  restart  Stop any running app, rebuild, and open a fresh window"
+	echo "  build    Rebuild app${LIB_EXT} only"
 	echo "  watch    Start auto-rebuild watcher"
-	echo "  stop     Stop game and watcher"
+	echo "  stop     Stop app and watcher"
 	exit 1
 	;;
 esac

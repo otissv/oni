@@ -1,4 +1,4 @@
-package game
+package app
 
 import "core:fmt"
 import sdl "vendor:sdl3"
@@ -30,6 +30,9 @@ render_frame :: proc() {
 	}
 
 	draw_record_begin(g.dpi)
+
+	draw_rect({100, 100, 200, 80}, theme_color(&g.theme, .Accent), g.theme.radius_sm)
+
 	draw_record_end()
 
 	if len(g.gpu_state.batch.vertices) > 0 {

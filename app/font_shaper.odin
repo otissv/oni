@@ -1,4 +1,4 @@
-package game
+package app
 
 import "core:c"
 import "core:hash"

@@ -1,4 +1,4 @@
-package game
+package app
 
 import "core:strings"
 import sdl "vendor:sdl3"
