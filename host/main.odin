@@ -5,6 +5,7 @@ changes. Game state lives in heap-allocated Game_Memory inside the game library.
 
 package main
 
+import "base:runtime"
 import "core:dynlib"
 import "core:fmt"
 import "core:log"
@@ -12,6 +13,9 @@ import "core:mem"
 import "core:os"
 import "core:path/filepath"
 import "core:time"
+import sdl "vendor:sdl3"
+
+default_context: runtime.Context
 
 when ODIN_OS == .Windows {
 	GAME_LIB_EXT :: ".dll"
@@ -148,6 +152,21 @@ main :: proc() {
 	os.set_working_directory(exe_dir)
 
 	context.logger = log.create_console_logger()
+	default_context = context
+
+	sdl.SetLogPriorities(.VERBOSE)
+	sdl.SetLogOutputFunction(
+		proc "c" (
+			userdata: rawptr,
+			category: sdl.LogCategory,
+			priority: sdl.LogPriority,
+			message: cstring,
+		) {
+			context = default_context
+			log.debugf("SDL {} [{}]: {}", category, priority, message)
+		},
+		nil,
+	)
 
 	default_allocator := context.allocator
 	tracking: mem.Tracking_Allocator

@@ -10,7 +10,8 @@ For a general renderer for **2D games + desktop UI + editor/tools**, learn in th
 5. **Coordinate spaces** — viewports, camera, and clipping  
 6. **Renderer systems** like batching, text, atlases, render targets, and UI/vector drawing.  
 7. **Enemies & NPCs** — entity AI, combat, and a full playable game loop (before text and audio polish).  
-8. **Audio** — SDL3_mixer for decode, mix, and playback (parallel to graphics; not tied to SDL_GPU).
+8. **Custom UI & widgets** — build panels, buttons, text, images, dropdowns, selects, and lists on your own renderer (no Dear ImGui or other GUI libraries).  
+9. **Audio** — SDL3_mixer for decode, mix, and playback (parallel to graphics; not tied to SDL_GPU).
 
 
 
@@ -65,8 +66,6 @@ Focus on:
 - [   ] Part 1 “Basic Setup, A Red Triangle”
 - [   ] Part 4 “Indexed Drawing, A Quad”
 - [   ] Part 5 “Texture Sampling”, 
-
-Later Part 10 only when you care about Dear ImGui/editor UI. 
 
 Skip the 3D-heavy episodes at first because you want a 2D/UI/tool renderer, not a 3D engine. 
 
@@ -385,12 +384,15 @@ Then Section 9 enemies and NPCs plug into the same sort bucket without redraw bu
   - [   ] `draw_clip_rect`
   - [   ] `draw_render_target`
 
- **Layer 4**: editor/UI features: 
-  - [   ] clipping, scrolling panels (see Section 7.1 / 7.4)
-  - [   ] text input
-  - [   ] cursor
-  - [   ] selection
-  - [   ] docking later.
+ **Layer 4**: custom UI & widgets (no third-party GUI library): 
+  - [   ] layout rects — parent/child bounds, padding, hit areas (see Section 7.1 / 7.4)
+  - [   ] `ui_panel`, `ui_label`, `ui_text`, `ui_image`, `ui_button` — draw + hover/pressed states
+  - [   ] `ui_select`, `ui_dropdown` — pick one option from a list
+  - [   ] scrolling panels — clip rect + content offset
+  - [   ] text input — caret, selection, keyboard routing (`ui_text_field`)
+  - [   ] lists & asset browser rows — click, scroll, selection
+  - [   ] focus & active widget — one keyboard target at a time
+  - [   ] editor chrome — toolbar, property fields, viewport frame (all built from the widgets above)
 
   **Layer 5**: production systems
   - [   ] asset loading
@@ -515,16 +517,77 @@ Resources:
 - [Handmade Hero entity model](https://handmadehero.org/) — entities as typed records + update functions (concept reference)
 - [Metanet N — game feel](https://www.metanetsoftware.com/technique/tutorialA.html) — knockback and invuln timing
 
-## 10. For text and UI, delay the hard path
+## 10. Text and a custom UI system — no existing GUI library
+
+Do **not** use Dear ImGui, Clay, or other off-the-shelf GUI toolkits. Build UI on top of your renderer primitives: rectangles, text, images, clipping, and layers. The editor in Section 12 is assembled from widgets you write yourself.
+
+### 10.1 Text first
 
 Start with `vendor:sdl3/ttf` or a bitmap font so you can build `draw_text` early. Wire it to NPC interact stubs from Section 9.5 (`pending_interaction_id` → dialogue lines) and combat feedback (health, level complete) from Section 9.4–9.6.
 
-Later learn FreeType + HarfBuzz if you need professional text shaping. 
+Later learn FreeType + HarfBuzz if you need professional text shaping.
 
-- [   ]vendor:sdl3/ttf
-- [   ]FreeType + HarfBuzz 
+Focus on:
+- [   ] `vendor:sdl3/ttf` — load font, render glyph atlas or per-frame quads
+- [   ] FreeType + HarfBuzz — only when you need shaping beyond SDL_ttf
 
-For UI, you can render Clay or your own immediate-mode UI using your renderer, but your renderer should only need primitives: rectangles, rounded rectangles later, text, images, clipping, and layers.
+### 10.2 UI core — layout and input
+
+A small immediate-mode layer is enough: each frame you declare widgets; the system tracks hover, click, and focus.
+
+Focus on:
+- [   ] **Screen-space UI pass** — reset viewport/clip; do not mix with world camera (Section 7.4)
+- [   ] **Widget rect** — `x`, `y`, `w`, `h`; optional parent for nested layout
+- [   ] **Hit test** — mouse in rect; top-most widget wins
+- [   ] **Hot/active IDs** — which button is hovered, which field has keyboard focus
+- [   ] **Consume input** — clicked widget eats the event so widgets below do not also fire
+
+Mini demo: three stacked buttons; hover tint and click log the button id.
+
+### 10.3 Widgets to build in order
+
+Each widget is draw calls plus a thin behavior proc. Reuse the same rect/hit-test helpers.
+
+Focus on:
+- [   ] **Panel** — background rect, optional border, clip children
+- [   ] **Label** — short single-line caption (`draw_text` in a rect)
+- [   ] **Text** — static read-only block; multi-line and word-wrap optional
+- [   ] **Image** — `draw_texture` in a rect; fit, fill, or stretch; optional tint
+- [   ] **Button** — normal / hover / pressed colors; `on_click` callback or returned id
+- [   ] **Checkbox / toggle** — bool state, click to flip
+- [   ] **Slider** — drag along axis, map position to value
+- [   ] **Text field** — editable; SDL text input or key events; caret and selection rects
+- [   ] **Select** — listbox; several options visible, one selected (e.g. layer enum, entity type)
+- [   ] **Dropdown** — combobox; shows current choice, click expands a popup list to pick one
+- [   ] **Scroll view** — clip rect, wheel delta adjusts content offset, scrollbar thumb optional
+- [   ] **List row** — selectable row for asset names or entity ids
+
+
+Mini demo: property panel with one label, one slider, and one text field editing a platform’s `x` position.
+
+### 10.4 Game UI vs editor UI
+
+Same widget code serves both; only layout and data binding differ.
+
+| Use | Examples |
+|-----|----------|
+| **In-game HUD** | health bar (`ui_panel` + fill), dialogue box (`ui_panel` + `ui_text`), item icon (`ui_image`), pause menu |
+| **Editor** | toolbar (`ui_button` row), asset list (`scroll view` + list rows), inspector (`ui_label` + sliders + `ui_text_field` + `ui_dropdown` for enums), viewport frame (Section 7.4) |
+
+Focus on:
+- [   ] **Data binding** — widget reads/writes game structs (platform `x`, enemy `speed`, etc.)
+- [   ] **Modal vs mode** — editor overlays game view; F1 toggles edit mode without tearing down widgets
+- [   ] **Debug overlay** — optional `ui_label` FPS and collision flags using the same system (not a separate library)
+
+### 10.5 Checkpoint before the tiny editor
+
+- [   ] `draw_text` works in screen space
+- [   ] Button, label, and panel with hover/click
+- [   ] One text field or slider that mutates live game data
+- [   ] Scroll view or clipped panel
+- [   ] No Dear ImGui / Clay / other GUI dependency in the build
+
+Then Section 12’s editor is just more widgets and layout, not a new UI stack.
 
 ## 11. Audio & SDL3_mixer
 
@@ -591,6 +654,6 @@ Make these mini-projects in order:
 - **Full playable level** — enemies, NPC interact stub, combat, respawn, exit (Section 9)
 - Font rendering demo
 - Audio demo — load WAV/OGG, play SFX on input, loop music, volume + mute (Section 11)
-- Simple UI panel system; 
-- A tiny editor with viewport, toolbar, asset list, and property panel.
+- Custom widget library — panel, label, text, image, button, slider, text field, select, dropdown, scroll view (Section 10)
+- Tiny level editor built from those widgets — viewport, toolbar, asset list, property panel (no Dear ImGui)
 - SVG / paths

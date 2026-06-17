@@ -7,6 +7,13 @@ cd "$ROOT"
 OUT_DIR="build/hot_reload"
 HOST_EXE="game_hot_reload"
 WATCH_PID_FILE="build/hot_reload/.watch.pid"
+BUILD_LOCK_FILE="build/hot_reload/.build.lock"
+
+SHADER_DIR="game/shaders"
+TRIANGLE_FRAG="${SHADER_DIR}/triangle.frag"
+TRIANGLE_VERT="${SHADER_DIR}/triangle.vert"
+TRIANGLE_SPV_FRAG="${SHADER_DIR}/triangle.spv.frag"
+TRIANGLE_SPV_VERT="${SHADER_DIR}/triangle.spv.vert"
 
 when_os() {
 	case "$(uname -s)" in
@@ -30,11 +37,58 @@ is_game_running() {
 	pgrep -x "$HOST_EXE" > /dev/null 2>&1
 }
 
+build_shaders() {
+	if ! command -v glslc > /dev/null 2>&1; then
+		echo "glslc not found. Install the Vulkan SDK (or a package that provides glslc)."
+		exit 1
+	fi
+
+	local compiled=false
+
+	if [[ ! -f "$TRIANGLE_SPV_FRAG" || "$TRIANGLE_FRAG" -nt "$TRIANGLE_SPV_FRAG" ]]; then
+		echo "Compiling triangle.frag"
+		glslc "$TRIANGLE_FRAG" -o "$TRIANGLE_SPV_FRAG"
+		compiled=true
+	fi
+
+	if [[ ! -f "$TRIANGLE_SPV_VERT" || "$TRIANGLE_VERT" -nt "$TRIANGLE_SPV_VERT" ]]; then
+		echo "Compiling triangle.vert"
+		glslc "$TRIANGLE_VERT" -o "$TRIANGLE_SPV_VERT"
+		compiled=true
+	fi
+
+	if [[ "$compiled" == false ]]; then
+		echo "Shaders up to date"
+	fi
+}
+
+build_game_locked() {
+	mkdir -p "$OUT_DIR"
+
+	build_shaders
+	echo "Building game${LIB_EXT}"
+
+	staging="$(mktemp -d "${OUT_DIR}/staging.XXXXXX")"
+	cleanup_staging() {
+		rm -rf "$staging"
+	}
+	trap cleanup_staging RETURN
+
+	odin build game -build-mode:dll "${ODIN_FLAGS[@]}" -out:"${staging}/game${LIB_EXT}"
+	mv -f "${staging}/game${LIB_EXT}" "${OUT_DIR}/game${LIB_EXT}"
+
+	# Drop stale intermediate objects from older build naming schemes.
+	rm -f "${OUT_DIR}"/game_tmp-*.o "${OUT_DIR}"/game_test-*.o 2>/dev/null || true
+}
+
 build_game() {
 	mkdir -p "$OUT_DIR"
-	echo "Building game${LIB_EXT}"
-	odin build game -build-mode:dll "${ODIN_FLAGS[@]}" -out:"${OUT_DIR}/game_tmp${LIB_EXT}"
-	mv -f "${OUT_DIR}/game_tmp${LIB_EXT}" "${OUT_DIR}/game${LIB_EXT}"
+
+	# Serialize builds so the watcher and manual invocations cannot stomp shared .o files.
+	(
+		flock -x 9 || exit 1
+		build_game_locked
+	) 9>"$BUILD_LOCK_FILE"
 }
 
 build_host() {
@@ -93,7 +147,11 @@ start_watch() {
 
 	echo "Watching game/ for changes (save to auto-rebuild)"
 	(
-		while inotifywait -e close_write,move_self,create -r game --format '%w%f' > /dev/null; do
+		while inotifywait \
+			-e close_write,move_self,create \
+			-r game \
+			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
+			--format '%w%f' > /dev/null; do
 			build_game
 			if is_game_running; then
 				echo "Hot reloading..."
@@ -134,7 +192,7 @@ watch)
 	;;
 
 stop)
-	stop_watc
+	stop_watch
 	stop_game
 	;;
 

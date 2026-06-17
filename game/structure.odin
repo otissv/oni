@@ -25,7 +25,6 @@ Platform_Tileset :: union {
 	Blue,
 }
 
-
 Platform :: struct {
 	using _: sdl.FRect,
 	tileset: Platform_Tileset,

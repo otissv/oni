@@ -41,7 +41,8 @@ Input_State :: struct {
 
 Game_Memory :: struct {
 	window:              ^sdl.Window,
-	renderer:            ^sdl.Renderer,
+	gpu:                 ^sdl.GPUDevice,
+	gpu_state:           GPU_State,
 	running:             bool,
 	input:               Input_State,
 	player:              Player,
@@ -67,10 +68,6 @@ Game_Memory :: struct {
 g: ^Game_Memory
 
 apply_logical_presentation :: proc(drawable_w, drawable_h: c.int) {
-	if g.renderer == nil {
-		return
-	}
-
 	if drawable_w <= 0 || drawable_h <= 0 {
 		g.drawable_w = drawable_w
 		g.drawable_h = drawable_h
@@ -81,50 +78,25 @@ apply_logical_presentation :: proc(drawable_w, drawable_h: c.int) {
 	g.drawable_w = drawable_w
 	g.drawable_h = drawable_h
 	g.can_render = true
-
-	aspect := f32(drawable_w) / f32(drawable_h)
-
-	logical_w: c.int
-	logical_h: c.int
-	mode: sdl.RendererLogicalPresentation
-
-	// Keep one world-space coordinate system: fixed logical height, width derived
-	// from the current aspect ratio. This makes rendering and input scale
-	// consistently on both wide and tall windows instead of falling back to a
-	// separate letterboxed 1280x720 presentation.
-	logical_h = LOGICAL_BASE_H
-	logical_w = max(c.int(f32(logical_h) * aspect), 1)
-	mode = .STRETCH
-
-	g.logical_w = logical_w
-	g.logical_h = logical_h
-
-	if !sdl.SetRenderLogicalPresentation(g.renderer, logical_w, logical_h, mode) {
-		fmt.eprintln("SDL_SetRenderLogicalPresentation failed:", sdl.GetError())
-		g.can_render = false
-	}
+	gpu_update_projection()
 }
 
 sync_logical_presentation :: proc() {
-	if g.renderer == nil {
-		return
-	}
+	if g.window == nil do return
 
-	dw, dh: c.int
-	if !sdl.GetRenderOutputSize(g.renderer, &dw, &dh) {
-		fmt.eprintln("SDL_GetRenderOutputSize failed:", sdl.GetError())
+	win_w, win_h: i32
+	if !sdl.GetWindowSize(g.window, &win_w, &win_h) {
+		fmt.eprintln("SDL_GetWindowSize failed:", sdl.GetError())
 		g.can_render = false
 		return
 	}
 
-	apply_logical_presentation(dw, dh)
+	apply_logical_presentation(c.int(win_w), c.int(win_h))
 }
 
 convert_mouse_event :: proc(event: ^sdl.Event) -> bool {
-	if g.renderer == nil || !g.can_render {
-		return false
-	}
-	return sdl.ConvertEventToRenderCoordinates(g.renderer, event)
+	_ = event
+	return g.window != nil && g.can_render
 }
 
 set_fullscreen :: proc(fullscreen: bool) -> bool {
@@ -383,7 +355,7 @@ load_world_state :: proc() {
 }
 
 create_window :: proc() -> bool {
-	if !sdl.Init(sdl.INIT_VIDEO | sdl.INIT_GAMEPAD) {
+	if !sdl.Init({.VIDEO, .GAMEPAD}) {
 		fmt.eprintln("SDL_Init failed:", sdl.GetError())
 		return false
 	}
@@ -402,9 +374,9 @@ create_window :: proc() -> bool {
 		return false
 	}
 
-	g.renderer = sdl.CreateRenderer(g.window, nil)
-	if g.renderer == nil {
-		fmt.eprintln("SDL_CreateRenderer failed:", sdl.GetError())
+	g.gpu = sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	if g.gpu == nil {
+		fmt.eprintln("SDL_CreateGPUDevice failed:", sdl.GetError())
 
 		sdl.DestroyWindow(g.window)
 		g.window = nil
@@ -413,10 +385,36 @@ create_window :: proc() -> bool {
 
 		return false
 	}
-	if !sdl.SetRenderVSync(g.renderer, 1) {
-		fmt.eprintln("SDL_SetRenderVSync failed:", sdl.GetError())
+
+	if !sdl.ClaimWindowForGPUDevice(g.gpu, g.window) {
+		fmt.eprintln("SDL_ClaimWindowForGPUDevice failed:", sdl.GetError())
+
+		sdl.DestroyGPUDevice(g.gpu)
+		g.gpu = nil
+
+		sdl.DestroyWindow(g.window)
+		g.window = nil
+
+		sdl.Quit()
+
+		return false
 	}
 
+	if !sdl.SetGPUSwapchainParameters(g.gpu, g.window, .SDR, .VSYNC) {
+		fmt.eprintln("SDL_SetGPUSwapchainParameters failed:", sdl.GetError())
+
+		sdl.DestroyGPUDevice(g.gpu)
+		g.gpu = nil
+
+		sdl.DestroyWindow(g.window)
+		g.window = nil
+
+		sdl.Quit()
+
+		return false
+	}
+
+	g.can_render = true
 	g.perf_frequency = sdl.GetPerformanceFrequency()
 	g.last_counter = sdl.GetPerformanceCounter()
 	g.fullscreen = false
@@ -430,7 +428,9 @@ create_window :: proc() -> bool {
 
 realloc_memory :: proc(new_size: int) {
 	window := g.window
-	renderer := g.renderer
+	gpu := g.gpu
+	gpu_state := g.gpu_state
+	can_render := g.can_render
 	fullscreen := g.fullscreen
 	perf_frequency := g.perf_frequency
 	last_counter := g.last_counter
@@ -452,7 +452,9 @@ realloc_memory :: proc(new_size: int) {
 	mem.zero(g, new_size)
 
 	g.window = window
-	g.renderer = renderer
+	g.gpu = gpu
+	g.gpu_state = gpu_state
+	g.can_render = can_render
 	g.fullscreen = fullscreen
 	g.perf_frequency = perf_frequency
 	g.last_counter = last_counter
@@ -486,11 +488,13 @@ game_init :: proc() {
 		return
 	}
 
-	if !textures_load_all(g.renderer, &g.textures) {
-		g.running = false
-		return
-	}
+	// Texture loading is disabled until the GPU sprite path is implemented.
+	// if !textures_load_all(g.renderer, &g.textures) {
+	// 	g.running = false
+	// 	return
+	// }
 
+	gpu_init()
 	load_world_state()
 	sync_logical_presentation()
 }
@@ -511,7 +515,7 @@ game_update :: proc() {
 		g.accumulator -= FIXED_TIMESTEP
 	}
 
-	render()
+	render(f32(elapsed))
 }
 
 @(export)
@@ -527,10 +531,11 @@ game_shutdown :: proc() {
 	close_gamepad()
 
 	textures_destroy_all(&g.textures)
+	gpu_destroy()
 
-	if g.renderer != nil {
-		sdl.DestroyRenderer(g.renderer)
-		g.renderer = nil
+	if g.gpu != nil {
+		sdl.DestroyGPUDevice(g.gpu)
+		g.gpu = nil
 	}
 
 	if g.window != nil {
@@ -562,6 +567,7 @@ game_memory_size :: proc() -> int {
 @(export)
 game_hot_reloaded :: proc(mem: rawptr) {
 	g = cast(^Game_Memory)mem
+	gpu_reload()
 	sync_logical_presentation()
 }
 
