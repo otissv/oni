@@ -1,6 +1,6 @@
 /*
 Hot-reload host. Loads build/hot_reload/game.so and reloads it when the file
-changes. Game state lives in heap-allocated Game_Memory inside the game library.
+changes. Game state lives in heap-allocated App_State inside the game library.
 */
 
 package main
@@ -184,6 +184,13 @@ main :: proc() {
 	api_version += 1
 	game_api.init_window()
 	game_api.init()
+
+	if !game_api.should_run() {
+		fmt.println("Game exited during init. Check build/hot_reload/game.log for details.")
+		game_api.shutdown()
+		unload_game_api(&game_api)
+		return
+	}
 
 	old_apis := make([dynamic]Game_API, default_allocator)
 	reload_cooldown: int

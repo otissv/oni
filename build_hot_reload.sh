@@ -10,10 +10,10 @@ WATCH_PID_FILE="build/hot_reload/.watch.pid"
 BUILD_LOCK_FILE="build/hot_reload/.build.lock"
 
 SHADER_DIR="game/shaders"
-TRIANGLE_FRAG="${SHADER_DIR}/triangle.frag"
-TRIANGLE_VERT="${SHADER_DIR}/triangle.vert"
-TRIANGLE_SPV_FRAG="${SHADER_DIR}/triangle.spv.frag"
-TRIANGLE_SPV_VERT="${SHADER_DIR}/triangle.spv.vert"
+UI_FRAG="${SHADER_DIR}/ui.frag"
+UI_VERT="${SHADER_DIR}/ui.vert"
+UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
+UI_SPV_VERT="${SHADER_DIR}/ui.spv.vert"
 
 when_os() {
 	case "$(uname -s)" in
@@ -32,9 +32,16 @@ windows) LIB_EXT=".dll" ;;
 esac
 
 ODIN_FLAGS=(-vet -strict-style -debug)
+FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
 
 is_game_running() {
-	pgrep -x "$HOST_EXE" > /dev/null 2>&1
+	local pid
+	pid="$(pgrep -x "$HOST_EXE" 2>/dev/null | head -1)"
+	[[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+game_pid() {
+	pgrep -x "$HOST_EXE" 2>/dev/null | head -1
 }
 
 build_shaders() {
@@ -45,15 +52,15 @@ build_shaders() {
 
 	local compiled=false
 
-	if [[ ! -f "$TRIANGLE_SPV_FRAG" || "$TRIANGLE_FRAG" -nt "$TRIANGLE_SPV_FRAG" ]]; then
-		echo "Compiling triangle.frag"
-		glslc "$TRIANGLE_FRAG" -o "$TRIANGLE_SPV_FRAG"
+	if [[ ! -f "$UI_SPV_FRAG" || "$UI_FRAG" -nt "$UI_SPV_FRAG" ]]; then
+		echo "Compiling ui.frag"
+		glslc "$UI_FRAG" -o "$UI_SPV_FRAG"
 		compiled=true
 	fi
 
-	if [[ ! -f "$TRIANGLE_SPV_VERT" || "$TRIANGLE_VERT" -nt "$TRIANGLE_SPV_VERT" ]]; then
-		echo "Compiling triangle.vert"
-		glslc "$TRIANGLE_VERT" -o "$TRIANGLE_SPV_VERT"
+	if [[ ! -f "$UI_SPV_VERT" || "$UI_VERT" -nt "$UI_SPV_VERT" ]]; then
+		echo "Compiling ui.vert"
+		glslc "$UI_VERT" -o "$UI_SPV_VERT"
 		compiled=true
 	fi
 
@@ -74,7 +81,7 @@ build_game_locked() {
 	}
 	trap cleanup_staging RETURN
 
-	odin build game -build-mode:dll "${ODIN_FLAGS[@]}" -out:"${staging}/game${LIB_EXT}"
+	odin build game -build-mode:dll "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/game${LIB_EXT}"
 	mv -f "${staging}/game${LIB_EXT}" "${OUT_DIR}/game${LIB_EXT}"
 
 	# Drop stale intermediate objects from older build naming schemes.
@@ -98,7 +105,7 @@ build_host() {
 
 start_game() {
 	if is_game_running; then
-		echo "Game already running"
+		echo "Game already running (PID $(game_pid))"
 		return
 	fi
 
@@ -106,9 +113,12 @@ start_game() {
 		build_host
 	fi
 
+	mkdir -p "$OUT_DIR"
 	echo "Starting ${HOST_EXE}"
-	./"$HOST_EXE" &
+	nohup ./"$HOST_EXE" >>"${OUT_DIR}/game.log" 2>&1 &
+	disown -h $! 2>/dev/null || true
 	echo "Game PID $!"
+	echo "Log: ${OUT_DIR}/game.log"
 }
 
 stop_game() {
@@ -169,7 +179,8 @@ run)
 	build_game
 
 	if is_game_running; then
-		echo "Hot reloading..."
+		echo "Hot reloading... (game already running, PID $(game_pid))"
+		echo "No new window will open. Use './build_hot_reload.sh restart' for a fresh window."
 		exit 0
 	fi
 
@@ -178,6 +189,17 @@ run)
 	start_watch || true
 	echo ""
 	echo "Save game/*.odin to auto-rebuild. F5/F6 reload in the game window."
+	;;
+
+restart)
+	stop_watch
+	stop_game
+	build_game
+	build_host
+	start_game
+	start_watch || true
+	echo ""
+	echo "Restarted. Save game/*.odin to auto-rebuild. F5/F6 reload in the game window."
 	;;
 
 build)
@@ -197,11 +219,12 @@ stop)
 	;;
 
 *)
-	echo "Usage: $0 [run|build|watch|stop]"
-	echo "  run    Build and start the game with auto-rebuild watcher (default)"
-	echo "  build  Rebuild game${LIB_EXT} only"
-	echo "  watch  Start auto-rebuild watcher"
-	echo "  stop   Stop game and watcher"
+	echo "Usage: $0 [run|restart|build|watch|stop]"
+	echo "  run      Build and start the game with auto-rebuild watcher (default)"
+	echo "  restart  Stop any running game, rebuild, and open a fresh window"
+	echo "  build    Rebuild game${LIB_EXT} only"
+	echo "  watch    Start auto-rebuild watcher"
+	echo "  stop     Stop game and watcher"
 	exit 1
 	;;
 esac
