@@ -3,8 +3,8 @@ package engine
 import "core:math"
 
 View :: struct {
-	zoom:   f32,
-	pan:    Vec2,
+	zoom:     f32,
+	pan:      Vec2,
 	zoom_min: f32,
 	zoom_max: f32,
 }
@@ -16,12 +16,7 @@ VIEW_ZOOM_DEFAULT :: f32(1.0)
 VIEW_ZOOM_STEP :: f32(1.1)
 
 view_default :: proc() -> View {
-	return {
-		zoom     = VIEW_ZOOM_DEFAULT,
-		pan      = {},
-		zoom_min = VIEW_ZOOM_MIN,
-		zoom_max = VIEW_ZOOM_MAX,
-	}
+	return {zoom = VIEW_ZOOM_DEFAULT, pan = {}, zoom_min = VIEW_ZOOM_MIN, zoom_max = VIEW_ZOOM_MAX}
 }
 
 view_quantize_zoom :: proc(zoom: f32) -> f32 {

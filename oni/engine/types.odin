@@ -41,12 +41,12 @@ Font_Handle :: struct {
 }
 
 Theme :: struct {
-	bg, surface, border, text, text_muted: Color,
-	accent, accent_hover, accent_pressed: Color,
-	danger, success: Color,
+	bg, surface, border, text, text_muted:          Color,
+	accent, accent_hover, accent_pressed:           Color,
+	danger, success:                                Color,
 	spacing_xs, spacing_sm, spacing_md, spacing_lg: f32,
-	radius_sm, radius_md: f32,
-	font_body, font_heading: Font_Handle,
+	radius_sm, radius_md:                           f32,
+	font_body, font_heading:                        Font_Handle,
 }
 
 INVALID_ASSET_ID :: Asset_Id(-1)

@@ -115,7 +115,7 @@ ui_text_draw :: proc(
 	)
 }
 
-ui_label_measure :: proc(
+ui_label_layout :: proc(
 	id: ngin.UI_Id,
 	text: string,
 	font: ngin.Font_Handle,
@@ -124,10 +124,10 @@ ui_label_measure :: proc(
 	space: ngin.Draw_Space = .Screen,
 	flags: Widget_Text_Flags = {},
 ) -> ngin.Vec2 {
-	return ui_text_measure(id, text, font, 0, .LTR, font_size, line_height, space, flags)
+	return ui_text_layout(id, text, font, 0, .LTR, font_size, line_height, space, flags)
 }
 
-ui_text_measure :: proc(
+ui_text_layout :: proc(
 	id: ngin.UI_Id,
 	text: string,
 	font: ngin.Font_Handle,
