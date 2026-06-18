@@ -1,4 +1,4 @@
-package app
+package engine
 
 import "core:c"
 import "core:hash"
@@ -77,20 +77,16 @@ Shaped_Text_Pool :: struct {
 	access_seq: u64,
 }
 
-INTER_FONT_PATH :: "assets/fonts/Inter-VariableFont_opsz,wght.ttf"
-FONT_BODY_SIZE :: f32(16)
-FONT_HEADING_SIZE :: f32(20)
-
 font_init :: proc() -> bool {
-	if g.fonts.library != nil do return true
+	if state.fonts.library != nil do return true
 
-	if !ft_ok(Init_FreeType(&g.fonts.library)) {
+	if !ft_ok(Init_FreeType(&state.fonts.library)) {
 		log_error("FT_Init_FreeType failed")
 		return false
 	}
 
-	if g.fonts.glyph_cache == nil {
-		g.fonts.glyph_cache = make(map[Font_Glyph_Key]Font_Glyph_Entry)
+	if state.fonts.glyph_cache == nil {
+		state.fonts.glyph_cache = make(map[Font_Glyph_Key]Font_Glyph_Entry)
 	}
 
 	return true
@@ -120,38 +116,38 @@ shaped_text_key_valid :: proc(cache: ^Shaped_Text, key: Shaped_Text_Key, text: s
 }
 
 shaped_text_pool_touch :: proc(cache: ^Shaped_Text) {
-	g.fonts.shape_pool.access_seq += 1
-	cache.last_access = g.fonts.shape_pool.access_seq
+	state.fonts.shape_pool.access_seq += 1
+	cache.last_access = state.fonts.shape_pool.access_seq
 }
 
 shaped_text_pool_unregister :: proc(cache: ^Shaped_Text) {
 	if cache.pool_slot == INVALID_SHAPE_POOL_SLOT do return
 
 	slot := cache.pool_slot
-	last := g.fonts.shape_pool.count - 1
+	last := state.fonts.shape_pool.count - 1
 	if slot != last {
-		moved := g.fonts.shape_pool.entries[last]
-		g.fonts.shape_pool.entries[slot] = moved
+		moved := state.fonts.shape_pool.entries[last]
+		state.fonts.shape_pool.entries[slot] = moved
 		moved.pool_slot = slot
 	}
-	g.fonts.shape_pool.count -= 1
+	state.fonts.shape_pool.count -= 1
 	cache.pool_slot = INVALID_SHAPE_POOL_SLOT
 }
 
 shaped_text_pool_evict_lru :: proc() {
-	if g.fonts.shape_pool.count <= 0 do return
+	if state.fonts.shape_pool.count <= 0 do return
 
 	oldest_slot := 0
-	oldest_access := g.fonts.shape_pool.entries[0].last_access
-	for i in 1 ..< g.fonts.shape_pool.count {
-		entry := g.fonts.shape_pool.entries[i]
+	oldest_access := state.fonts.shape_pool.entries[0].last_access
+	for i in 1 ..< state.fonts.shape_pool.count {
+		entry := state.fonts.shape_pool.entries[i]
 		if entry.last_access < oldest_access {
 			oldest_access = entry.last_access
 			oldest_slot = i
 		}
 	}
 
-	shaped_text_release(g.fonts.shape_pool.entries[oldest_slot])
+	shaped_text_release(state.fonts.shape_pool.entries[oldest_slot])
 }
 
 shaped_text_pool_register :: proc(cache: ^Shaped_Text) {
@@ -160,14 +156,14 @@ shaped_text_pool_register :: proc(cache: ^Shaped_Text) {
 		return
 	}
 
-	if g.fonts.shape_pool.count >= TEXT_SHAPE_POOL_CAPACITY {
+	if state.fonts.shape_pool.count >= TEXT_SHAPE_POOL_CAPACITY {
 		shaped_text_pool_evict_lru()
 	}
 
-	slot := g.fonts.shape_pool.count
-	g.fonts.shape_pool.entries[slot] = cache
+	slot := state.fonts.shape_pool.count
+	state.fonts.shape_pool.entries[slot] = cache
 	cache.pool_slot = slot
-	g.fonts.shape_pool.count += 1
+	state.fonts.shape_pool.count += 1
 	shaped_text_pool_touch(cache)
 }
 
@@ -184,8 +180,8 @@ shaped_text_release :: proc(cache: ^Shaped_Text) {
 }
 
 shaped_text_pool_clear :: proc() {
-	for i in 0 ..< g.fonts.shape_pool.count {
-		cache := g.fonts.shape_pool.entries[i]
+	for i in 0 ..< state.fonts.shape_pool.count {
+		cache := state.fonts.shape_pool.entries[i]
 		if cache == nil do continue
 
 		font_destroy_shaped_lines(cache.lines)
@@ -196,8 +192,8 @@ shaped_text_pool_clear :: proc() {
 		cache.pool_slot = INVALID_SHAPE_POOL_SLOT
 		cache.last_access = 0
 	}
-	g.fonts.shape_pool.count = 0
-	g.fonts.shape_pool.access_seq = 0
+	state.fonts.shape_pool.count = 0
+	state.fonts.shape_pool.access_seq = 0
 }
 
 // Returns lines owned by cache. Do not free the result.
@@ -236,21 +232,21 @@ shaped_text_ensure :: proc(
 font_shutdown :: proc() {
 	font_destroy_faces()
 
-	if g.fonts.library != nil {
-		Done_FreeType(g.fonts.library)
-		g.fonts.library = nil
+	if state.fonts.library != nil {
+		Done_FreeType(state.fonts.library)
+		state.fonts.library = nil
 	}
 
-	for key, _ in g.fonts.glyph_cache {
-		delete_key(&g.fonts.glyph_cache, key)
+	for key, _ in state.fonts.glyph_cache {
+		delete_key(&state.fonts.glyph_cache, key)
 	}
-	delete(g.fonts.glyph_cache)
-	g.fonts.glyph_cache = nil
+	delete(state.fonts.glyph_cache)
+	state.fonts.glyph_cache = nil
 
 	shaped_text_pool_clear()
 
-	delete(g.fonts.faces)
-	g.fonts.faces = nil
+	delete(state.fonts.faces)
+	state.fonts.faces = nil
 }
 
 Font_Reload_Entry :: struct {
@@ -267,7 +263,7 @@ font_reload_faces :: proc() {
 		delete(saved)
 	}
 
-	for face in g.fonts.faces {
+	for face in state.fonts.faces {
 		append_elem(&saved, Font_Reload_Entry{strings.clone(face.path), face.size_px})
 	}
 
@@ -286,7 +282,7 @@ font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 
 	cpath := strings.clone_to_cstring(path, context.temp_allocator)
 	ft_face: FT_Face
-	if !ft_ok(New_Face(g.fonts.library, cpath, 0, &ft_face)) {
+	if !ft_ok(New_Face(state.fonts.library, cpath, 0, &ft_face)) {
 		log_errorf("FT_New_Face failed for %q", path)
 		return {}, false
 	}
@@ -318,24 +314,24 @@ font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 		line_height = line_height,
 	}
 
-	append(&g.fonts.faces, entry)
-	face_id := Asset_Id(len(g.fonts.faces) - 1)
+	append(&state.fonts.faces, entry)
+	face_id := Asset_Id(len(state.fonts.faces) - 1)
 
 	return Font_Handle{id = face_id, size_px = size_px}, true
 }
 
 font_destroy_faces :: proc() {
-	for &face in g.fonts.faces {
+	for &face in state.fonts.faces {
 		font_destroy_face(&face)
 	}
-	clear(&g.fonts.faces)
+	clear(&state.fonts.faces)
 
 	shaped_text_pool_clear()
 
-	for key, _ in g.fonts.glyph_cache {
-		delete_key(&g.fonts.glyph_cache, key)
+	for key, _ in state.fonts.glyph_cache {
+		delete_key(&state.fonts.glyph_cache, key)
 	}
-	clear(&g.fonts.glyph_cache)
+	clear(&state.fonts.glyph_cache)
 }
 
 font_destroy_face :: proc(face: ^Font_Face) {
@@ -357,12 +353,12 @@ font_destroy_face :: proc(face: ^Font_Face) {
 
 font_face_from_handle :: proc(handle: Font_Handle) -> ^Font_Face {
 	index := int(handle.id)
-	if index < 0 || index >= len(g.fonts.faces) do return nil
-	return &g.fonts.faces[index]
+	if index < 0 || index >= len(state.fonts.faces) do return nil
+	return &state.fonts.faces[index]
 }
 
 font_pixel_size :: proc(size_px: f32) -> i32 {
-	scale := g.dpi.scale
+	scale := state.dpi.scale
 	if scale <= 0 do scale = 1
 	return max(i32(math.round(size_px * scale)), 1)
 }
@@ -507,8 +503,8 @@ font_destroy_shaped_lines :: proc(lines: []Shaped_Line) {
 
 shaped_line_width :: proc(glyphs: []Shaped_Glyph) -> f32 {
 	width: f32
-	for g in glyphs {
-		width += g.x_advance
+	for glyph in glyphs {
+		width += glyph.x_advance
 	}
 	return width
 }

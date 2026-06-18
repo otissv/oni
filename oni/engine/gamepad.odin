@@ -1,4 +1,4 @@
-package app
+package engine
 
 import "core:c"
 import "core:fmt"
@@ -22,31 +22,31 @@ gamepad_apply_deadzone :: proc(value: f32) -> f32 {
 }
 
 gamepad_clear_input :: proc() {
-	g.input.gamepad = {}
+	state.input.gamepad = {}
 }
 
 gamepad_sync_from_device :: proc() {
-	if g.gamepad == nil do return
+	if state.gamepad == nil do return
 
-	g.input.gamepad.connected = true
+	state.input.gamepad.connected = true
 	gamepad_clear_input()
-	g.input.gamepad.connected = true
+	state.input.gamepad.connected = true
 
 	for axis in sdl.GamepadAxis {
 		if axis == .INVALID do continue
-		value := sdl.GetGamepadAxis(g.gamepad, axis)
+		value := sdl.GetGamepadAxis(state.gamepad, axis)
 		gamepad_set_axis(axis, value)
 	}
 
 	for button in sdl.GamepadButton {
 		if button == .INVALID do continue
-		down := sdl.GetGamepadButton(g.gamepad, button)
+		down := sdl.GetGamepadButton(state.gamepad, button)
 		gamepad_set_button(button, down)
 	}
 }
 
 gamepad_open_first_available :: proc() {
-	if g.gamepad != nil do return
+	if state.gamepad != nil do return
 
 	count: c.int
 	ids := sdl.GetGamepads(&count)
@@ -57,7 +57,7 @@ gamepad_open_first_available :: proc() {
 }
 
 gamepad_open :: proc(instance_id: sdl.JoystickID) {
-	if g.gamepad != nil do return
+	if state.gamepad != nil do return
 
 	gamepad := sdl.OpenGamepad(instance_id)
 	if gamepad == nil {
@@ -65,17 +65,17 @@ gamepad_open :: proc(instance_id: sdl.JoystickID) {
 		return
 	}
 
-	g.gamepad = gamepad
-	g.gamepad_instance_id = instance_id
+	state.gamepad = gamepad
+	state.gamepad_instance_id = instance_id
 	gamepad_sync_from_device()
 }
 
 gamepad_close :: proc() {
-	if g.gamepad == nil do return
+	if state.gamepad == nil do return
 
-	sdl.CloseGamepad(g.gamepad)
-	g.gamepad = nil
-	g.gamepad_instance_id = 0
+	sdl.CloseGamepad(state.gamepad)
+	state.gamepad = nil
+	state.gamepad_instance_id = 0
 	gamepad_clear_input()
 }
 
@@ -84,34 +84,34 @@ gamepad_set_axis :: proc(axis: sdl.GamepadAxis, value: i16) {
 
 	#partial switch axis {
 	case .LEFTX:
-		g.input.gamepad.left_stick_x = normalized
+		state.input.gamepad.left_stick_x = normalized
 	case .LEFTY:
-		g.input.gamepad.left_stick_y = normalized
+		state.input.gamepad.left_stick_y = normalized
 	case .RIGHTX:
-		g.input.gamepad.right_stick_x = normalized
+		state.input.gamepad.right_stick_x = normalized
 	case .RIGHTY:
-		g.input.gamepad.right_stick_y = normalized
+		state.input.gamepad.right_stick_y = normalized
 	case .LEFT_TRIGGER:
-		g.input.gamepad.left_trigger = f32(value) / 32767.0 if value > 0 else 0
+		state.input.gamepad.left_trigger = f32(value) / 32767.0 if value > 0 else 0
 	case .RIGHT_TRIGGER:
-		g.input.gamepad.right_trigger = f32(value) / 32767.0 if value > 0 else 0
+		state.input.gamepad.right_trigger = f32(value) / 32767.0 if value > 0 else 0
 	}
 }
 
 gamepad_set_button :: proc(button: sdl.GamepadButton, down: bool) {
 	idx, ok := gamepad_button_index(button)
 	if ok {
-		g.input.gamepad.buttons_down[idx] = down
+		state.input.gamepad.buttons_down[idx] = down
 	}
 
 	#partial switch button {
 	case .DPAD_LEFT:
-		g.input.gamepad.dpad_left = down
+		state.input.gamepad.dpad_left = down
 	case .DPAD_RIGHT:
-		g.input.gamepad.dpad_right = down
+		state.input.gamepad.dpad_right = down
 	case .DPAD_UP:
-		g.input.gamepad.dpad_up = down
+		state.input.gamepad.dpad_up = down
 	case .DPAD_DOWN:
-		g.input.gamepad.dpad_down = down
+		state.input.gamepad.dpad_down = down
 	}
 }

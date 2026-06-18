@@ -1,4 +1,4 @@
-package app
+package engine
 
 import "core:fmt"
 import "core:math/linalg"
@@ -148,7 +148,7 @@ gpu_upload_white_pixel :: proc(
 	texture: ^sdl.GPUTexture,
 	transfer: ^sdl.GPUTransferBuffer,
 ) -> bool {
-	cmd := sdl.AcquireGPUCommandBuffer(g.gpu)
+	cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
 	if cmd == nil {
 		fmt.eprintln("SDL_AcquireGPUCommandBuffer failed:", sdl.GetError())
 		return false
@@ -222,55 +222,55 @@ gpu_update_projection :: proc(dpi: Dpi_Info) {
 	h := f32(dpi.logical_h)
 	if w <= 0 || h <= 0 do return
 
-	g.gpu_state.proj_mat = linalg.matrix_ortho3d_f32(0, w, h, 0, -1, 1)
+	state.gpu_state.proj_mat = linalg.matrix_ortho3d_f32(0, w, h, 0, -1, 1)
 }
 
 gpu_destroy :: proc() {
-	if g == nil do return
+	if state == nil do return
 
 	batch_destroy()
-	if g.gpu == nil do return
+	if state.gpu == nil do return
 
-	if g.gpu_state.white_texture != nil {
-		sdl.ReleaseGPUTexture(g.gpu, g.gpu_state.white_texture)
-		g.gpu_state.white_texture = nil
+	if state.gpu_state.white_texture != nil {
+		sdl.ReleaseGPUTexture(state.gpu, state.gpu_state.white_texture)
+		state.gpu_state.white_texture = nil
 	}
-	if g.gpu_state.sampler != nil {
-		sdl.ReleaseGPUSampler(g.gpu, g.gpu_state.sampler)
-		g.gpu_state.sampler = nil
+	if state.gpu_state.sampler != nil {
+		sdl.ReleaseGPUSampler(state.gpu, state.gpu_state.sampler)
+		state.gpu_state.sampler = nil
 	}
-	if g.gpu_state.pipeline != nil {
-		sdl.ReleaseGPUGraphicsPipeline(g.gpu, g.gpu_state.pipeline)
-		g.gpu_state.pipeline = nil
+	if state.gpu_state.pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, state.gpu_state.pipeline)
+		state.gpu_state.pipeline = nil
 	}
 }
 
 gpu_init :: proc() {
-	if g.gpu == nil || g.window == nil || g.gpu_state.pipeline != nil do return
+	if state.gpu == nil || state.window == nil || state.gpu_state.pipeline != nil do return
 
-	pipeline := gpu_create_pipeline(g.gpu, g.window)
+	pipeline := gpu_create_pipeline(state.gpu, state.window)
 	if pipeline == nil do return
 
-	sampler := gpu_create_sampler(g.gpu)
+	sampler := gpu_create_sampler(state.gpu)
 	if sampler == nil {
-		sdl.ReleaseGPUGraphicsPipeline(g.gpu, pipeline)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
 		return
 	}
 
-	white_texture := gpu_create_white_texture(g.gpu)
+	white_texture := gpu_create_white_texture(state.gpu)
 	if white_texture == nil {
-		sdl.ReleaseGPUSampler(g.gpu, sampler)
-		sdl.ReleaseGPUGraphicsPipeline(g.gpu, pipeline)
+		sdl.ReleaseGPUSampler(state.gpu, sampler)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
 		return
 	}
 
-	g.gpu_state.pipeline = pipeline
-	g.gpu_state.sampler = sampler
-	g.gpu_state.white_texture = white_texture
+	state.gpu_state.pipeline = pipeline
+	state.gpu_state.sampler = sampler
+	state.gpu_state.white_texture = white_texture
 
-	assets_init(g.gpu)
+	assets_init(state.gpu)
 	batch_init()
-	gpu_update_projection(g.dpi)
+	gpu_update_projection(state.dpi)
 }
 
 gpu_reload :: proc() {

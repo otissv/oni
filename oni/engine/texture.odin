@@ -1,4 +1,4 @@
-package app
+package engine
 
 import "core:strings"
 import sdl "vendor:sdl3"
@@ -32,20 +32,20 @@ Texture_State :: struct {
 }
 
 texture_init :: proc() {
-	if len(g.textures.records) == 0 {
-		append(&g.textures.records, Texture_Record{})
+	if len(state.textures.records) == 0 {
+		append(&state.textures.records, Texture_Record{})
 	}
-	if g.textures.atlas.texture_id == TEXTURE_WHITE_ID && g.textures.atlas.width == 0 {
-		g.textures.atlas.texture_id = INVALID_ASSET_ID
+	if state.textures.atlas.texture_id == TEXTURE_WHITE_ID && state.textures.atlas.width == 0 {
+		state.textures.atlas.texture_id = INVALID_ASSET_ID
 	}
 }
 
 texture_shutdown :: proc() {
 	texture_atlas_shutdown()
 
-	for entry, i in g.textures.records {
-		if i > 0 && entry.gpu != nil && g.gpu != nil {
-			sdl.ReleaseGPUTexture(g.gpu, entry.gpu)
+	for entry, i in state.textures.records {
+		if i > 0 && entry.gpu != nil && state.gpu != nil {
+			sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
 		}
 		if entry.surface != nil {
 			sdl.DestroySurface(entry.surface)
@@ -54,32 +54,32 @@ texture_shutdown :: proc() {
 			delete(entry.path)
 		}
 	}
-	clear(&g.textures.records)
-	delete(g.textures.records)
-	g.textures.records = nil
+	clear(&state.textures.records)
+	delete(state.textures.records)
+	state.textures.records = nil
 }
 
 texture_release_gpu :: proc() {
-	if g.gpu == nil do return
+	if state.gpu == nil do return
 
-	for &entry in g.textures.records {
+	for &entry in state.textures.records {
 		if entry.gpu != nil {
-			sdl.ReleaseGPUTexture(g.gpu, entry.gpu)
+			sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
 			entry.gpu = nil
 		}
 	}
 }
 
 texture_reload_gpu :: proc() {
-	if g.gpu == nil do return
+	if state.gpu == nil do return
 
-	for &entry in g.textures.records[1:] {
+	for &entry in state.textures.records[1:] {
 		if entry.surface != nil {
 			texture_upload_record(&entry) or_continue
 		}
 	}
 
-	if g.textures.atlas.texture_id != INVALID_ASSET_ID {
+	if state.textures.atlas.texture_id != INVALID_ASSET_ID {
 		texture_atlas_rebuild_gpu()
 	}
 }
@@ -101,20 +101,20 @@ texture_register_surface :: proc(
 		entry.path = strings.clone(path)
 	}
 
-	append(&g.textures.records, entry)
-	entry_index := len(g.textures.records) - 1
+	append(&state.textures.records, entry)
+	entry_index := len(state.textures.records) - 1
 	id := Asset_Id(entry_index)
 
-	if !texture_upload_record(&g.textures.records[entry_index]) {
-		sdl.DestroySurface(g.textures.records[entry_index].surface)
-		if len(g.textures.records[entry_index].path) > 0 {
-			delete(g.textures.records[entry_index].path)
+	if !texture_upload_record(&state.textures.records[entry_index]) {
+		sdl.DestroySurface(state.textures.records[entry_index].surface)
+		if len(state.textures.records[entry_index].path) > 0 {
+			delete(state.textures.records[entry_index].path)
 		}
-		ordered_remove(&g.textures.records, entry_index)
+		ordered_remove(&state.textures.records, entry_index)
 		return {}, {}, false
 	}
 
-	loaded := g.textures.records[entry_index]
+	loaded := state.textures.records[entry_index]
 	handle := Texture_Handle {
 		id = id,
 		w  = f32(loaded.w),
@@ -124,19 +124,19 @@ texture_register_surface :: proc(
 }
 
 texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
-	if g.gpu == nil || entry.surface == nil do return false
+	if state.gpu == nil || entry.surface == nil do return false
 
 	w := entry.surface.w
 	h := entry.surface.h
 	if w <= 0 || h <= 0 do return false
 
 	if entry.gpu != nil {
-		sdl.ReleaseGPUTexture(g.gpu, entry.gpu)
+		sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
 		entry.gpu = nil
 	}
 
 	texture := sdl.CreateGPUTexture(
-		g.gpu,
+		state.gpu,
 		{
 			type = .D2,
 			format = .R8G8B8A8_UNORM,
@@ -152,8 +152,8 @@ texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 		return false
 	}
 
-	if !texture_upload_surface(g.gpu, texture, entry.surface, 0, 0, w, h) {
-		sdl.ReleaseGPUTexture(g.gpu, texture)
+	if !texture_upload_surface(state.gpu, texture, entry.surface, 0, 0, w, h) {
+		sdl.ReleaseGPUTexture(state.gpu, texture)
 		return false
 	}
 
@@ -251,12 +251,12 @@ texture_upload_surface :: proc(
 
 texture_get_gpu :: proc(id: Asset_Id) -> ^sdl.GPUTexture {
 	if id == TEXTURE_WHITE_ID {
-		return g.gpu_state.white_texture
+		return state.gpu_state.white_texture
 	}
 
 	index := int(id)
-	if index <= 0 || index >= len(g.textures.records) do return nil
-	return g.textures.records[index].gpu
+	if index <= 0 || index >= len(state.textures.records) do return nil
+	return state.textures.records[index].gpu
 }
 
 texture_handle :: proc(id: Asset_Id) -> Texture_Handle {
@@ -265,8 +265,8 @@ texture_handle :: proc(id: Asset_Id) -> Texture_Handle {
 	}
 
 	index := int(id)
-	if index <= 0 || index >= len(g.textures.records) do return {}
-	entry := g.textures.records[index]
+	if index <= 0 || index >= len(state.textures.records) do return {}
+	entry := state.textures.records[index]
 	return {id = id, w = f32(entry.w), h = f32(entry.h)}
 }
 
@@ -279,8 +279,8 @@ atlas_region_handle :: proc(region: Atlas_Region) -> Texture_Handle {
 }
 
 texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
-	if g.textures.atlas.texture_id != INVALID_ASSET_ID && g.textures.atlas.width > 0 do return true
-	if g.gpu == nil do return false
+	if state.textures.atlas.texture_id != INVALID_ASSET_ID && state.textures.atlas.width > 0 do return true
+	if state.gpu == nil do return false
 
 	surface := sdl.CreateSurface(size, size, .RGBA8888)
 	if surface == nil {
@@ -294,7 +294,7 @@ texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
 		return false
 	}
 
-	g.textures.atlas = {
+	state.textures.atlas = {
 		texture_id = id,
 		width      = size,
 		height     = size,
@@ -303,17 +303,17 @@ texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
 }
 
 texture_atlas_shutdown :: proc() {
-	delete(g.textures.atlas.shelves)
-	g.textures.atlas = {}
+	delete(state.textures.atlas.shelves)
+	state.textures.atlas = {}
 }
 
 texture_atlas_rebuild_gpu :: proc() {
-	if g.textures.atlas.texture_id == INVALID_ASSET_ID do return
+	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
 
-	index := int(g.textures.atlas.texture_id)
-	if index <= 0 || index >= len(g.textures.records) do return
+	index := int(state.textures.atlas.texture_id)
+	if index <= 0 || index >= len(state.textures.records) do return
 
-	entry := &g.textures.records[index]
+	entry := &state.textures.records[index]
 	if entry.surface == nil do return
 
 	if !texture_upload_record(entry) {
@@ -325,7 +325,7 @@ texture_atlas_alloc :: proc(w, h: i32) -> (Atlas_Region, bool) {
 	if w <= 0 || h <= 0 do return {}, false
 	if !texture_atlas_init() do return {}, false
 
-	atlas := &g.textures.atlas
+	atlas := &state.textures.atlas
 	pad := i32(ATLAS_PADDING)
 	need_w := w + pad
 	need_h := h + pad
@@ -367,13 +367,13 @@ texture_atlas_alloc :: proc(w, h: i32) -> (Atlas_Region, bool) {
 }
 
 texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> bool {
-	if g.textures.atlas.texture_id == INVALID_ASSET_ID do return false
-	if region.texture_id != g.textures.atlas.texture_id do return false
+	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return false
+	if region.texture_id != state.textures.atlas.texture_id do return false
 	if surface == nil do return false
 
-	index := int(g.textures.atlas.texture_id)
-	if index <= 0 || index >= len(g.textures.records) do return false
-	entry := &g.textures.records[index]
+	index := int(state.textures.atlas.texture_id)
+	if index <= 0 || index >= len(state.textures.records) do return false
+	entry := &state.textures.records[index]
 	if entry.gpu == nil do return false
 
 	dst_x := i32(region.x)
@@ -381,7 +381,7 @@ texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> boo
 	dst_w := i32(region.w)
 	dst_h := i32(region.h)
 
-	if !texture_upload_surface(g.gpu, entry.gpu, surface, dst_x, dst_y, dst_w, dst_h) {
+	if !texture_upload_surface(state.gpu, entry.gpu, surface, dst_x, dst_y, dst_w, dst_h) {
 		return false
 	}
 
@@ -410,12 +410,12 @@ texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> boo
 texture_atlas_pack :: proc(surface: ^sdl.Surface) -> (Atlas_Region, bool) {
 	if surface == nil do return {}, false
 
-	shelf_count := len(g.textures.atlas.shelves)
+	shelf_count := len(state.textures.atlas.shelves)
 	region, ok := texture_atlas_alloc(surface.w, surface.h)
 	if !ok do return {}, false
 
 	if !texture_atlas_upload(region, surface) {
-		resize(&g.textures.atlas.shelves, shelf_count)
+		resize(&state.textures.atlas.shelves, shelf_count)
 		return {}, false
 	}
 

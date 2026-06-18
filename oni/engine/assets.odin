@@ -1,4 +1,4 @@
-package app
+package engine
 
 import "core:strings"
 import sdl "vendor:sdl3"
@@ -10,18 +10,18 @@ Asset_Cache :: struct {
 
 assets_init :: proc(gpu: ^sdl.GPUDevice) {
 	_ = gpu
-	if g.assets.paths == nil {
-		g.assets.paths = make(map[string]Asset_Id)
+	if state.assets.paths == nil {
+		state.assets.paths = make(map[string]Asset_Id)
 	}
 	texture_init()
 }
 
 assets_shutdown :: proc() {
-	for path, _ in g.assets.paths {
+	for path, _ in state.assets.paths {
 		delete(path)
 	}
-	delete(g.assets.paths)
-	g.assets.paths = nil
+	delete(state.assets.paths)
+	state.assets.paths = nil
 	texture_shutdown()
 }
 
@@ -32,7 +32,7 @@ assets_reload_gpu :: proc(gpu: ^sdl.GPUDevice) {
 }
 
 assets_load_texture :: proc(path: string) -> (Texture_Handle, bool) {
-	if id, ok := g.assets.paths[path]; ok {
+	if id, ok := state.assets.paths[path]; ok {
 		return assets_get_texture(id), true
 	}
 
@@ -45,7 +45,7 @@ assets_load_texture :: proc(path: string) -> (Texture_Handle, bool) {
 		return {}, false
 	}
 
-	g.assets.paths[strings.clone(path)] = id
+	state.assets.paths[strings.clone(path)] = id
 	return handle, true
 }
 

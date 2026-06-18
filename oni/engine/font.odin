@@ -1,15 +1,15 @@
-package app
+package engine
 
 import "core:c"
 import "core:math"
 import sdl "vendor:sdl3"
 
 font_atlas_reset :: proc() {
-	if g.textures.atlas.texture_id == INVALID_ASSET_ID do return
+	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
 
-	index := int(g.textures.atlas.texture_id)
-	if index > 0 && index < len(g.textures.records) {
-		entry := &g.textures.records[index]
+	index := int(state.textures.atlas.texture_id)
+	if index > 0 && index < len(state.textures.records) {
+		entry := &state.textures.records[index]
 		if entry.surface != nil {
 			pixels := cast([^]u8)entry.surface.pixels
 			size := int(entry.surface.pitch) * int(entry.surface.h)
@@ -19,7 +19,7 @@ font_atlas_reset :: proc() {
 		}
 	}
 
-	clear(&g.textures.atlas.shelves)
+	clear(&state.textures.atlas.shelves)
 }
 
 font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
@@ -28,11 +28,11 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 
 	for glyph in glyphs {
 		key := Font_Glyph_Key{face_id = face_id, glyph_id = glyph.glyph_id}
-		if key in g.fonts.glyph_cache do continue
+		if key in state.fonts.glyph_cache do continue
 
 		entry, ok := font_rasterize_glyph(face, key.glyph_id)
 		if !ok do return false
-		g.fonts.glyph_cache[key] = entry
+		state.fonts.glyph_cache[key] = entry
 	}
 
 	return true
@@ -208,7 +208,7 @@ font_draw_shaped_line :: proc(
 
 	for glyph in line.glyphs {
 		key := Font_Glyph_Key{face_id = face_id, glyph_id = glyph.glyph_id}
-		entry, ok := g.fonts.glyph_cache[key]
+		entry, ok := state.fonts.glyph_cache[key]
 		if !ok do continue
 
 		glyph_x: f32
