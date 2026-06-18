@@ -10,6 +10,11 @@ Color :: struct {
 	r, g, b, a: u8,
 }
 
+Draw_Space :: enum {
+	Screen,
+	Artboard,
+}
+
 Dpi_Info :: struct {
 	scale:                  f32,
 	logical_w, logical_h:   i32,

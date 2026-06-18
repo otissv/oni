@@ -32,6 +32,7 @@ Batch_State :: struct {
 	indices:         [dynamic]u16,
 	segments:        [dynamic]Batch_Segment,
 	clip_stack:      [dynamic]Rect,
+	space_stack:     [dynamic]Draw_Space,
 	current_key:     Batch_Key,
 	has_current_key: bool,
 
@@ -105,10 +106,12 @@ batch_destroy :: proc() {
 	delete(state.gpu_state.batch.indices)
 	delete(state.gpu_state.batch.segments)
 	delete(state.gpu_state.batch.clip_stack)
+	delete(state.gpu_state.batch.space_stack)
 	state.gpu_state.batch.vertices = nil
 	state.gpu_state.batch.indices = nil
 	state.gpu_state.batch.segments = nil
 	state.gpu_state.batch.clip_stack = nil
+	state.gpu_state.batch.space_stack = nil
 
 	state.gpu_state.batch.vertex_capacity = 0
 	state.gpu_state.batch.index_capacity = 0
@@ -120,6 +123,7 @@ batch_reset :: proc() {
 	clear(&state.gpu_state.batch.indices)
 	clear(&state.gpu_state.batch.segments)
 	clear(&state.gpu_state.batch.clip_stack)
+	clear(&state.gpu_state.batch.space_stack)
 	state.gpu_state.batch.has_current_key = false
 }
 
@@ -137,10 +141,13 @@ batch_ensure_capacity :: proc(extra_verts: int) -> bool {
 }
 
 batch_current_clip :: proc() -> Rect {
+	clip: Rect
 	if len(state.gpu_state.batch.clip_stack) == 0 {
-		return {0, 0, f32(state.gpu_state.batch.dpi.logical_w), f32(state.gpu_state.batch.dpi.logical_h)}
+		clip = {0, 0, f32(state.gpu_state.batch.dpi.logical_w), f32(state.gpu_state.batch.dpi.logical_h)}
+	} else {
+		clip = state.gpu_state.batch.clip_stack[len(state.gpu_state.batch.clip_stack) - 1]
 	}
-	return state.gpu_state.batch.clip_stack[len(state.gpu_state.batch.clip_stack) - 1]
+	return view_transform_rect(clip)
 }
 
 batch_check_key :: proc(texture_id: Asset_Id) {
@@ -218,8 +225,10 @@ batch_push_axis_quad :: proc(
 	radius: f32,
 	mode: Draw_Mode,
 ) {
-	x0, y0 := r.x, r.y
-	x1, y1 := r.x + r.w, r.y + r.h
+	screen := view_transform_rect(r)
+	x0, y0 := screen.x, screen.y
+	x1, y1 := screen.x + screen.w, screen.y + screen.h
+	screen_size := Vec2{screen.w, screen.h}
 	u0, v0 := uv_rect.x, uv_rect.y
 	u1, v1 := uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h
 
@@ -232,7 +241,7 @@ batch_push_axis_quad :: proc(
 		uvs = [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 	}
 
-	batch_push_quad(corners, uvs, color, rect_size, radius, mode)
+	batch_push_quad(corners, uvs, color, screen_size, radius, mode)
 }
 
 batch_finalize_segments :: proc() {

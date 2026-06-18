@@ -68,6 +68,15 @@ input_set_mouse_position :: proc(px_x, px_y: f32) {
 	state.input.mouse_y = logical.y
 }
 
+input_mouse_screen :: proc() -> Vec2 {
+	if state == nil do return {}
+	return {state.input.mouse_x, state.input.mouse_y}
+}
+
+input_mouse_world :: proc() -> Vec2 {
+	return view_screen_to_world(input_mouse_screen())
+}
+
 set_fullscreen :: proc(fullscreen: bool) -> bool {
 	if state.window == nil do return false
 
@@ -126,6 +135,18 @@ poll_events :: proc() {
 				state.force_restart = true
 			case .F11:
 				toggle_fullscreen()
+			case .EQUALS, .KP_PLUS:
+				if state.input.modifiers.ctrl {
+					view_zoom_in_screen(input_mouse_screen())
+				}
+			case .MINUS, .KP_MINUS:
+				if state.input.modifiers.ctrl {
+					view_zoom_out_screen(input_mouse_screen())
+				}
+			case ._0, .KP_0:
+				if state.input.modifiers.ctrl {
+					view_reset()
+				}
 			}
 
 		case .KEY_UP:
@@ -142,7 +163,17 @@ poll_events :: proc() {
 			}
 
 		case .MOUSE_MOTION:
+			prev_x := state.input.mouse_x
+			prev_y := state.input.mouse_y
 			input_set_mouse_position(event.motion.x, event.motion.y)
+
+			if state.input.mouse_middle ||
+			   (state.input.mouse_left && state.input.modifiers.alt) {
+				view_pan_by({
+					state.input.mouse_x - prev_x,
+					state.input.mouse_y - prev_y,
+				})
+			}
 
 		case .MOUSE_BUTTON_DOWN:
 			input_set_mouse_position(event.button.x, event.button.y)
@@ -283,6 +314,7 @@ create_window :: proc(config: Window_Config) -> bool {
 	state.perf_frequency = sdl.GetPerformanceFrequency()
 	state.last_counter = sdl.GetPerformanceCounter()
 	state.fullscreen = false
+	state.view = view_default()
 
 	sdl.SetWindowMinimumSize(state.window, config.min_width, config.min_height)
 	dpi_sync()
@@ -299,6 +331,10 @@ init_window :: proc(config: Window_Config) -> bool {
 
 init :: proc() -> bool {
 	if state == nil || state.window == nil do return false
+
+	if state.view.zoom <= 0 {
+		state.view = view_default()
+	}
 
 	gpu_init()
 	if !font_init() {
@@ -377,6 +413,7 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.textures = src.textures
 	dst.fonts = src.fonts
 	dst.dpi = src.dpi
+	dst.view = src.view
 	dst.can_render = src.can_render
 	dst.fullscreen = src.fullscreen
 	dst.perf_frequency = src.perf_frequency

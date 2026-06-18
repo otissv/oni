@@ -4,6 +4,44 @@ import "core:c"
 import "core:math"
 import sdl "vendor:sdl3"
 
+font_find_or_load :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
+	for &face, i in state.fonts.faces {
+		if face.size_px == size_px && face.path == path {
+			return Font_Handle{id = Asset_Id(i), size_px = size_px}, true
+		}
+	}
+	return font_load_face(path, size_px)
+}
+
+font_resolve :: proc(
+	font: Font_Handle,
+	logical_size: f32,
+	space: Draw_Space,
+) -> (
+	resolved: Font_Handle,
+	layout_scale: f32,
+	ok: bool,
+) {
+	base := font_face_from_handle(font)
+	if base == nil do return {}, 1, false
+
+	size := logical_size > 0 ? logical_size : font.size_px
+	zoom: f32 = 1
+	if space == .Artboard {
+		zoom = view_effective_zoom()
+	}
+
+	raster_size := max(size * zoom, 1)
+	resolved, ok = font_find_or_load(base.path, raster_size)
+	if !ok do return {}, 1, false
+
+	layout_scale = 1
+	if space == .Artboard && zoom > 0 {
+		layout_scale = 1 / zoom
+	}
+	return resolved, layout_scale, true
+}
+
 font_atlas_reset :: proc() {
 	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
 
@@ -145,32 +183,25 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	}
 }
 
-font_text_scale :: proc(face: ^Font_Face, font_size: f32) -> f32 {
-	if face == nil || font_size <= 0 || face.size_px <= 0 do return 1
-	return font_size / face.size_px
-}
-
-font_text_line_height :: proc(face: ^Font_Face, line_height, font_size: f32) -> f32 {
-	scale := font_text_scale(face, font_size)
+font_text_line_height :: proc(face: ^Font_Face, line_height: f32, layout_scale: f32) -> f32 {
 	if line_height > 0 do return line_height
-	return face.line_height * scale
+	return face.line_height * layout_scale
 }
 
 font_measure_lines :: proc(
 	face: ^Font_Face,
 	lines: []Shaped_Line,
 	line_height: f32 = 0,
-	font_size: f32 = 0,
+	layout_scale: f32 = 1,
 ) -> Vec2 {
 	if face == nil || len(lines) == 0 do return {}
 
 	width: f32
-	scale := font_text_scale(face, font_size)
 	for line in lines {
-		width = max(width, line.width * scale)
+		width = max(width, line.width * layout_scale)
 	}
 
-	lh := font_text_line_height(face, line_height, font_size)
+	lh := font_text_line_height(face, line_height, layout_scale)
 	return {width, f32(len(lines)) * lh}
 }
 
@@ -214,15 +245,15 @@ font_draw_shaped_line :: proc(
 	line: Shaped_Line,
 	pos: Vec2,
 	color: Color,
-	scale: f32 = 1,
+	layout_scale: f32 = 1,
 ) {
 	if face == nil || len(line.glyphs) == 0 do return
 	if !font_ensure_glyphs(face, face_id, line.glyphs) do return
 
-	baseline_y := snap_logical(pos.y + face.ascent * scale)
+	baseline_y := snap_logical(pos.y + face.ascent * layout_scale)
 	pen_x := pos.x
 	if line.direction == .RTL {
-		pen_x = pos.x + line.width * scale
+		pen_x = pos.x + line.width * layout_scale
 	}
 
 	for glyph in line.glyphs {
@@ -232,19 +263,19 @@ font_draw_shaped_line :: proc(
 
 		glyph_x: f32
 		if line.direction == .RTL {
-			pen_x -= glyph.x_advance * scale
-			glyph_x = pen_x + glyph.x_offset * scale
+			pen_x -= glyph.x_advance * layout_scale
+			glyph_x = pen_x + glyph.x_offset * layout_scale
 		} else {
-			glyph_x = pen_x + glyph.x_offset * scale
-			pen_x += glyph.x_advance * scale
+			glyph_x = pen_x + glyph.x_offset * layout_scale
+			pen_x += glyph.x_advance * layout_scale
 		}
 
-		glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
+		glyph_y := baseline_y + glyph.y_offset * layout_scale - entry.bearing_y * layout_scale
 		dst := Rect {
-			x = snap_logical(glyph_x + entry.bearing_x * scale),
+			x = snap_logical(glyph_x + entry.bearing_x * layout_scale),
 			y = snap_logical(glyph_y),
-			w = entry.region.w * scale,
-			h = entry.region.h * scale,
+			w = entry.region.w * layout_scale,
+			h = entry.region.h * layout_scale,
 		}
 
 		draw_atlas_region(entry.region, dst, color)
@@ -259,22 +290,21 @@ font_draw_shaped_lines :: proc(
 	color: Color,
 	max_w: f32 = 0,
 	line_height: f32 = 0,
-	font_size: f32 = 0,
+	layout_scale: f32 = 1,
 ) -> Vec2 {
 	if face == nil || len(lines) == 0 do return {}
 
-	scale := font_text_scale(face, font_size)
-	lh := font_text_line_height(face, line_height, font_size)
+	lh := font_text_line_height(face, line_height, layout_scale)
 
 	width: f32
 	cursor := pos
 	for line in lines {
-		width = max(width, line.width * scale)
+		width = max(width, line.width * layout_scale)
 		line_pos := cursor
 		if line.direction == .RTL && max_w > 0 {
-			line_pos.x = pos.x + max_w - line.width * scale
+			line_pos.x = pos.x + max_w - line.width * layout_scale
 		}
-		font_draw_shaped_line(face, handle.id, line, line_pos, color, scale)
+		font_draw_shaped_line(face, handle.id, line, line_pos, color, layout_scale)
 		cursor.y += lh
 	}
 

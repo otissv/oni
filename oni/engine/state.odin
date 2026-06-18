@@ -20,6 +20,7 @@ State :: struct {
 	assets:              Asset_Cache,
 	textures:            Texture_State,
 	fonts:               Font_State,
+	view:                View,
 	running:             bool,
 	input:               Input_State,
 	dpi:                 Dpi_Info,

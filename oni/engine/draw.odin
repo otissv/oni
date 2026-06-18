@@ -57,10 +57,30 @@ draw_pop_clip :: proc() {
 	}
 }
 
+draw_current_space :: proc() -> Draw_Space {
+	if state == nil || len(state.gpu_state.batch.space_stack) == 0 do return .Screen
+	return state.gpu_state.batch.space_stack[len(state.gpu_state.batch.space_stack) - 1]
+}
+
+draw_push_space :: proc(space: Draw_Space) {
+	append(&state.gpu_state.batch.space_stack, space)
+}
+
+draw_pop_space :: proc() {
+	if len(state.gpu_state.batch.space_stack) > 0 {
+		ordered_remove(&state.gpu_state.batch.space_stack, len(state.gpu_state.batch.space_stack) - 1)
+	}
+}
+
+draw_push_artboard :: proc() { draw_push_space(.Artboard) }
+draw_pop_artboard :: proc() { draw_pop_space() }
+draw_push_screen :: proc() { draw_push_space(.Screen) }
+draw_pop_screen :: proc() { draw_pop_space() }
+
 draw_rect :: proc(r: Rect, color: Color, radius: f32 = 0) {
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(TEXTURE_WHITE_ID)
-	batch_push_axis_quad(r, {}, color, {r.w, r.h}, radius, .Solid)
+	batch_push_axis_quad(r, {}, color, {r.w, r.h}, radius * view_artboard_zoom(), .Solid)
 }
 
 draw_rect_outline :: proc(r: Rect, color: Color, thickness: f32) {
@@ -74,21 +94,26 @@ draw_rect_outline :: proc(r: Rect, color: Color, thickness: f32) {
 }
 
 draw_line :: proc(a, b: Vec2, color: Color, thickness: f32) {
-	dir := b - a
+	a_screen := view_transform_point(a)
+	b_screen := view_transform_point(b)
+	scale := view_artboard_zoom()
+	line_thickness := thickness * scale
+
+	dir := b_screen - a_screen
 	length := math.sqrt(dir.x * dir.x + dir.y * dir.y)
 	if length <= 0 do return
 
 	inv_len := 1 / length
 	norm := Vec2{dir.x * inv_len, dir.y * inv_len}
-	half_t := thickness * 0.5
+	half_t := line_thickness * 0.5
 	perp := Vec2{-norm.y * half_t, norm.x * half_t}
 
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(TEXTURE_WHITE_ID)
 
-	corners := [4]Vec2{a + perp, b + perp, b - perp, a - perp}
+	corners := [4]Vec2{a_screen + perp, b_screen + perp, b_screen - perp, a_screen - perp}
 	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	batch_push_quad(corners, uvs, color, {length, thickness}, 0, .Line)
+	batch_push_quad(corners, uvs, color, {length, line_thickness}, 0, .Line)
 }
 
 draw_texture :: proc(tex: Texture_Handle, src, dst: Rect, tint: Color = {255, 255, 255, 255}) {
