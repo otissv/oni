@@ -145,15 +145,33 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	}
 }
 
-font_measure_lines :: proc(face: ^Font_Face, lines: []Shaped_Line) -> Vec2 {
+font_text_scale :: proc(face: ^Font_Face, font_size: f32) -> f32 {
+	if face == nil || font_size <= 0 || face.size_px <= 0 do return 1
+	return font_size / face.size_px
+}
+
+font_text_line_height :: proc(face: ^Font_Face, line_height, font_size: f32) -> f32 {
+	scale := font_text_scale(face, font_size)
+	if line_height > 0 do return line_height
+	return face.line_height * scale
+}
+
+font_measure_lines :: proc(
+	face: ^Font_Face,
+	lines: []Shaped_Line,
+	line_height: f32 = 0,
+	font_size: f32 = 0,
+) -> Vec2 {
 	if face == nil || len(lines) == 0 do return {}
 
 	width: f32
+	scale := font_text_scale(face, font_size)
 	for line in lines {
-		width = max(width, line.width)
+		width = max(width, line.width * scale)
 	}
 
-	return {width, f32(len(lines)) * face.line_height}
+	lh := font_text_line_height(face, line_height, font_size)
+	return {width, f32(len(lines)) * lh}
 }
 
 font_measure_cached :: proc(
@@ -196,14 +214,15 @@ font_draw_shaped_line :: proc(
 	line: Shaped_Line,
 	pos: Vec2,
 	color: Color,
+	scale: f32 = 1,
 ) {
 	if face == nil || len(line.glyphs) == 0 do return
 	if !font_ensure_glyphs(face, face_id, line.glyphs) do return
 
-	baseline_y := snap_logical(pos.y + face.ascent)
+	baseline_y := snap_logical(pos.y + face.ascent * scale)
 	pen_x := pos.x
 	if line.direction == .RTL {
-		pen_x = pos.x + line.width
+		pen_x = pos.x + line.width * scale
 	}
 
 	for glyph in line.glyphs {
@@ -213,19 +232,19 @@ font_draw_shaped_line :: proc(
 
 		glyph_x: f32
 		if line.direction == .RTL {
-			pen_x -= glyph.x_advance
-			glyph_x = pen_x + glyph.x_offset
+			pen_x -= glyph.x_advance * scale
+			glyph_x = pen_x + glyph.x_offset * scale
 		} else {
-			glyph_x = pen_x + glyph.x_offset
-			pen_x += glyph.x_advance
+			glyph_x = pen_x + glyph.x_offset * scale
+			pen_x += glyph.x_advance * scale
 		}
 
-		glyph_y := baseline_y + glyph.y_offset - entry.bearing_y
+		glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
 		dst := Rect {
-			x = snap_logical(glyph_x + entry.bearing_x),
+			x = snap_logical(glyph_x + entry.bearing_x * scale),
 			y = snap_logical(glyph_y),
-			w = entry.region.w,
-			h = entry.region.h,
+			w = entry.region.w * scale,
+			h = entry.region.h * scale,
 		}
 
 		draw_atlas_region(entry.region, dst, color)
@@ -239,20 +258,25 @@ font_draw_shaped_lines :: proc(
 	pos: Vec2,
 	color: Color,
 	max_w: f32 = 0,
+	line_height: f32 = 0,
+	font_size: f32 = 0,
 ) -> Vec2 {
 	if face == nil || len(lines) == 0 do return {}
+
+	scale := font_text_scale(face, font_size)
+	lh := font_text_line_height(face, line_height, font_size)
 
 	width: f32
 	cursor := pos
 	for line in lines {
-		width = max(width, line.width)
+		width = max(width, line.width * scale)
 		line_pos := cursor
 		if line.direction == .RTL && max_w > 0 {
-			line_pos.x = pos.x + max_w - line.width
+			line_pos.x = pos.x + max_w - line.width * scale
 		}
-		font_draw_shaped_line(face, handle.id, line, line_pos, color)
-		cursor.y += face.line_height
+		font_draw_shaped_line(face, handle.id, line, line_pos, color, scale)
+		cursor.y += lh
 	}
 
-	return {width, f32(len(lines)) * face.line_height}
+	return {width, f32(len(lines)) * lh}
 }

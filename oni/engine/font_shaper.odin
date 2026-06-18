@@ -368,6 +368,9 @@ font_metrics_from_face :: proc(ft_face: FT_Face) -> (ascent, descent, line_heigh
 		ascent = f32(metrics.ascender) / 64.0
 		descent = f32(-metrics.descender) / 64.0
 		line_height = f32(metrics.height) / 64.0
+		if line_height <= 0 {
+			line_height = ascent + descent
+		}
 		return
 	}
 
@@ -445,6 +448,27 @@ font_shape_line_build :: proc(
 
 	for i < len(shaped) {
 		glyph := shaped[i]
+
+		if font_is_newline_cluster(text, glyph.cluster) {
+			if i > line_start {
+				line_glyphs := make([]Shaped_Glyph, i - line_start)
+				copy(line_glyphs, shaped[line_start:i])
+				append(
+					&lines,
+					Shaped_Line {
+						glyphs = line_glyphs,
+						width = shaped_line_width(line_glyphs),
+						direction = direction,
+					},
+				)
+			}
+			line_start = i + 1
+			line_width = 0
+			last_break = line_start
+			i += 1
+			continue
+		}
+
 		next_width := line_width + glyph.x_advance
 
 		if i > line_start && next_width > max_w {
@@ -512,5 +536,10 @@ shaped_line_width :: proc(glyphs: []Shaped_Glyph) -> f32 {
 font_is_break_cluster :: proc(text: string, cluster: u32) -> bool {
 	if int(cluster) >= len(text) do return false
 	b := text[cluster]
-	return b == ' ' || b == '\t' || b == '\n'
+	return b == ' ' || b == '\t'
+}
+
+font_is_newline_cluster :: proc(text: string, cluster: u32) -> bool {
+	if int(cluster) >= len(text) do return false
+	return text[cluster] == '\n'
 }

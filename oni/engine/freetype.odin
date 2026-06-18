@@ -32,15 +32,22 @@ FT_Bitmap :: struct {
 	palette:      rawptr,
 }
 
+FT_Fixed :: c.long
+
+FT_Generic :: struct {
+	data:      rawptr,
+	finalizer: rawptr,
+}
+
 FT_Size_Metrics :: struct {
 	x_ppem, y_ppem: c.ushort,
-	x_scale, y_scale: c.ulong,
+	x_scale, y_scale: FT_Fixed,
 	ascender, descender, height, max_advance: FT_Pos,
 }
 
 FT_SizeRec :: struct {
 	face:     FT_Face,
-	generic:  rawptr,
+	generic:  FT_Generic,
 	metrics:  FT_Size_Metrics,
 	internal: rawptr,
 }
