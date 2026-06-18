@@ -1,22 +1,22 @@
 package app
 
-import "oni:engine"
+import oni "../oni"
 
 INTER_FONT_PATH :: "assets/fonts/Inter-VariableFont_opsz,wght.ttf"
 FONT_BODY_SIZE :: f32(16)
 FONT_HEADING_SIZE :: f32(20)
 
-build_theme :: proc() -> engine.Theme {
-	body, body_ok := engine.Load_Font_Face(INTER_FONT_PATH, FONT_BODY_SIZE)
-	heading, heading_ok := engine.Load_Font_Face(INTER_FONT_PATH, FONT_HEADING_SIZE)
+build_theme :: proc() -> oni.Theme {
+	body, body_ok := oni.Load_Font_Face(INTER_FONT_PATH, FONT_BODY_SIZE)
+	heading, heading_ok := oni.Load_Font_Face(INTER_FONT_PATH, FONT_HEADING_SIZE)
 	if !body_ok {
-		engine.Log_Errorf("build_theme: failed to load body font %q", INTER_FONT_PATH)
+		oni.Log_Errorf("build_theme: failed to load body font %q", INTER_FONT_PATH)
 	}
 	if !heading_ok {
-		engine.Log_Errorf("build_theme: failed to load heading font %q", INTER_FONT_PATH)
+		oni.Log_Errorf("build_theme: failed to load heading font %q", INTER_FONT_PATH)
 	}
 
-	return engine.Theme {
+	return oni.Theme {
 		bg              = {30, 30, 35, 255},
 		surface         = {42, 42, 48, 255},
 		border          = {64, 64, 72, 255},

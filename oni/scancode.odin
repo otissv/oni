@@ -1,4 +1,4 @@
-package ui
+package oni
 
 import "core:c"
 

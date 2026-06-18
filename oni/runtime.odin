@@ -1,4 +1,4 @@
-package engine
+package oni
 
 Tick_Proc :: proc(dt: f32)
 Ready_Proc :: proc() -> bool

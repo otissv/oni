@@ -1,6 +1,6 @@
 package app
 
-import "oni:engine"
+import oni "../oni"
 
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720
@@ -10,5 +10,5 @@ MIN_WINDOW_W :: 320
 MIN_WINDOW_H :: 180
 
 App_State :: struct {
-	theme: engine.Theme,
+	theme: oni.Theme,
 }

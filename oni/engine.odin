@@ -1,4 +1,4 @@
-package engine
+package oni
 
 import "core:c"
 import "core:fmt"

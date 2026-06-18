@@ -1,4 +1,4 @@
-package host
+package oni
 
 import "base:runtime"
 import "core:dynlib"

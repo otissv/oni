@@ -9,9 +9,8 @@ OUT_DIR="build/hot_reload"
 HOST_EXE="game_hot_reload"
 WATCH_PID_FILE="build/hot_reload/.watch.pid"
 BUILD_LOCK_FILE="build/hot_reload/.build.lock"
-ODIN_COLLECTION=(-collection:oni="${ONI_DIR}")
 
-SHADER_DIR="${ONI_DIR}/engine/shaders"
+SHADER_DIR="${ONI_DIR}/shaders"
 UI_FRAG="${SHADER_DIR}/ui.frag"
 UI_VERT="${SHADER_DIR}/ui.vert"
 UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
@@ -83,7 +82,7 @@ build_app_locked() {
 	}
 	trap cleanup_staging RETURN
 
-	odin build app -build-mode:dll "${ODIN_COLLECTION[@]}" "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/app${LIB_EXT}"
+	odin build app -build-mode:dll "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/app${LIB_EXT}"
 	mv -f "${staging}/app${LIB_EXT}" "${OUT_DIR}/app${LIB_EXT}"
 
 	rm -f "${OUT_DIR}"/app_tmp-*.o "${OUT_DIR}"/app_test-*.o "${OUT_DIR}"/game*.so "${OUT_DIR}"/game*.dll "${OUT_DIR}"/game*.dylib 2>/dev/null || true
@@ -100,7 +99,7 @@ build_app() {
 
 build_host() {
 	echo "Building ${HOST_EXE}"
-	odin build . "${ODIN_COLLECTION[@]}" "${ODIN_FLAGS[@]}" -out:"${HOST_EXE}"
+	odin build . "${ODIN_FLAGS[@]}" -out:"${HOST_EXE}"
 }
 
 start_app() {
@@ -155,11 +154,11 @@ start_watch() {
 		fi
 	fi
 
-	echo "Watching ${ONI_DIR}/engine and app/ for changes (save to auto-rebuild)"
+	echo "Watching ${ONI_DIR} and app/ for changes (save to auto-rebuild)"
 	(
 		while inotifywait \
 			-e close_write,move_self,create \
-			-r "${ONI_DIR}/engine" app \
+			-r "${ONI_DIR}" app \
 			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
 			--format '%w%f' > /dev/null; do
 			build_app
@@ -188,7 +187,7 @@ run)
 	start_app
 	start_watch || true
 	echo ""
-	echo "Save ${ONI_DIR}/engine or app/ sources to auto-rebuild. F5/F6 reload in the app window."
+	echo "Save ${ONI_DIR} or app/ sources to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 restart)

@@ -1,4 +1,4 @@
-package engine
+package oni
 
 import sdl "vendor:sdl3"
 

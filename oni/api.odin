@@ -1,9 +1,7 @@
-package engine
+package oni
 
 Bind :: bind
 Theme_Access :: theme
-
-Register_UI :: register_ui
 
 Init_Window_Only :: init_window_only
 Init_Runtime :: init_runtime

@@ -2,9 +2,9 @@ package app
 
 import "core:fmt"
 import "core:mem"
-import "oni:engine"
+import oni "../oni"
 
-window_config :: proc() -> engine.Window_Config {
+window_config :: proc() -> oni.Window_Config {
 	return {
 		title      = WINDOW_TITLE,
 		width      = WINDOW_WIDTH,
@@ -22,7 +22,7 @@ reset_app_state :: proc() {
 @(export)
 app_init_window :: proc() {
 	ensure_persistent()
-	if !engine.Init_Window_Only(window_config()) {
+	if !oni.Init_Window_Only(window_config()) {
 		persistent.engine.running = false
 	}
 }
@@ -35,7 +35,7 @@ app_init :: proc() {
 		return
 	}
 
-	if !engine.Init_Runtime(proc() -> bool {
+	if !oni.Init_Runtime(proc() -> bool {
 		persistent.app.theme = build_theme()
 		return true
 	}) {
@@ -47,21 +47,21 @@ app_init :: proc() {
 app_update :: proc() {
 	if persistent == nil do return
 	bind()
-	engine.Run_Frame(app_tick, app_draw)
+	oni.Run_Frame(app_tick, app_draw)
 }
 
 @(export)
 app_should_run :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return engine.Should_Run()
+	return oni.Should_Run()
 }
 
 @(export)
 app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
-	engine.Shutdown()
+	oni.Shutdown()
 	free(persistent)
 	persistent = nil
 }
@@ -83,14 +83,14 @@ app_memory_size :: proc() -> int {
 app_hot_reloaded :: proc(mem: rawptr) {
 	persistent = cast(^Persistent)mem
 	bind()
-	engine.On_Reload()
+	oni.On_Reload()
 }
 
 @(export)
 app_reset :: proc() {
 	if persistent == nil do return
 	bind()
-	engine.Reset_Input_State()
+	oni.Reset_Input_State()
 	reset_app_state()
 }
 
@@ -102,7 +102,7 @@ app_realloc :: proc(new_size: int) {
 	if err != nil {
 		fmt.eprintln("Failed to allocate Persistent:", err)
 		bind()
-		engine.Realloc_Failed()
+		oni.Realloc_Failed()
 		reset_app_state()
 		return
 	}
@@ -111,11 +111,11 @@ app_realloc :: proc(new_size: int) {
 	persistent = cast(^Persistent)ptr
 	mem.zero(persistent, new_size)
 
-	engine.Migrate_State(&persistent.engine, &old.engine)
+	oni.Migrate_State(&persistent.engine, &old.engine)
 	free(old)
 
 	bind()
-	engine.After_Realloc()
+	oni.After_Realloc()
 	reset_app_state()
 }
 
@@ -123,12 +123,12 @@ app_realloc :: proc(new_size: int) {
 app_force_reload :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return engine.Take_Force_Reload()
+	return oni.Take_Force_Reload()
 }
 
 @(export)
 app_force_restart :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return engine.Take_Force_Restart()
+	return oni.Take_Force_Restart()
 }
