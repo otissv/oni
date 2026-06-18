@@ -3,6 +3,8 @@ package engine
 Bind :: bind
 Theme_Access :: theme
 
+Register_UI :: register_ui
+
 Init_Window_Only :: init_window_only
 Init_Runtime :: init_runtime
 Shutdown :: shutdown
@@ -37,15 +39,6 @@ draw_rectangle_outline :: draw_rect_outline
 draw_line_segment :: draw_line
 draw_texture_region :: draw_texture
 draw_atlas :: draw_atlas_region
-
-ui_label_widget :: ui_label
-ui_text_widget :: ui_text
-ui_measure_text :: ui_text_measure
-ui_measure_label :: ui_label_measure
-
-ui_push_id_scope :: ui_push_scope
-ui_pop_id_scope :: ui_pop_scope
-ui_make_id :: ui_id
 
 Load_Texture :: assets_load_texture
 Get_Texture :: assets_get_texture

@@ -58,7 +58,7 @@ App_API :: struct {
 	api_version:     int,
 }
 
-reload_loop :: proc(
+reloader :: proc(
 	app_api: ^App_API,
 	api_version: ^int,
 	reload_cooldown: ^int,
@@ -145,7 +145,13 @@ load_app_api :: proc(api_version: int) -> (api: App_API, ok: bool) {
 		return
 	}
 
-	lib_name := fmt.tprintf("{0}{1}_{2}{3}", config.lib_dir, config.lib_name, api_version, APP_LIB_EXT)
+	lib_name := fmt.tprintf(
+		"{0}{1}_{2}{3}",
+		config.lib_dir,
+		config.lib_name,
+		api_version,
+		APP_LIB_EXT,
+	)
 	copy_app_lib(lib_name) or_return
 
 	_, ok = dynlib.initialize_symbols(&api, lib_name, config.prefix, "lib")
@@ -172,7 +178,13 @@ unload_app_api :: proc(api: ^App_API) {
 		api.lib = nil
 	}
 
-	copy_path := fmt.tprintf("{0}{1}_{2}{3}", config.lib_dir, config.lib_name, api.api_version, APP_LIB_EXT)
+	copy_path := fmt.tprintf(
+		"{0}{1}_{2}{3}",
+		config.lib_dir,
+		config.lib_name,
+		api.api_version,
+		APP_LIB_EXT,
+	)
 	if os.remove(copy_path) != nil {
 		fmt.printfln("Failed to remove {0}", copy_path)
 	}

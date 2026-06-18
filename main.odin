@@ -24,7 +24,7 @@ main :: proc() {
 	reload_cooldown: int
 
 	for app_api.should_run() {
-		host.reload_loop(&app_api, &api_version, &reload_cooldown, &old_apis, &tracking)
+		host.reloader(&app_api, &api_version, &reload_cooldown, &old_apis, &tracking)
 		free_all(context.temp_allocator)
 	}
 

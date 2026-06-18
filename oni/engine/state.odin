@@ -2,6 +2,17 @@ package engine
 
 import sdl "vendor:sdl3"
 
+UI_Widget_Entry :: struct {
+	shaped:     Shaped_Text,
+	last_frame: u64,
+}
+
+UI_State :: struct {
+	frame:       u64,
+	scope_stack: [dynamic]UI_Id,
+	widgets:     map[UI_Id]UI_Widget_Entry,
+}
+
 State :: struct {
 	window:              ^sdl.Window,
 	gpu:                 ^sdl.GPUDevice,
