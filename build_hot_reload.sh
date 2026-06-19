@@ -74,7 +74,7 @@ build_app_locked() {
 	mkdir -p "$OUT_DIR"
 
 	build_shaders
-	echo "Building app${LIB_EXT}"
+	echo "Compiling app${LIB_EXT}"
 
 	staging="$(mktemp -d "${OUT_DIR}/staging.XXXXXX")"
 	cleanup_staging() {
@@ -90,11 +90,18 @@ build_app_locked() {
 
 build_app() {
 	mkdir -p "$OUT_DIR"
+	echo "Building app${LIB_EXT}..."
 
-	(
-		flock -x 9 || exit 1
+	if ! (
+		flock -x -w 120 9 || {
+			echo "Timed out waiting for build lock (${BUILD_LOCK_FILE})."
+			echo "Another build may be stuck. Try: pkill -f 'build_hot_reload.sh' && rm -f '${BUILD_LOCK_FILE}'"
+			exit 1
+		}
 		build_app_locked
-	) 9>"$BUILD_LOCK_FILE"
+	) 9>"$BUILD_LOCK_FILE"; then
+		exit 1
+	fi
 }
 
 build_host() {
@@ -215,6 +222,9 @@ watch)
 stop)
 	stop_watch
 	stop_app
+	pkill -f './build_hot_reload.sh' 2>/dev/null || true
+	rm -f "$BUILD_LOCK_FILE"
+	echo "Stopped app, watcher, and build lock"
 	;;
 
 *)

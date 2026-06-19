@@ -22,9 +22,9 @@ Batch_Key :: struct {
 }
 
 Batch_Segment :: struct {
-	key:          Batch_Key,
-	first_index:  u32,
-	index_count:  u32,
+	key:         Batch_Key,
+	first_index: u32,
+	index_count: u32,
 }
 
 Batch_State :: struct {
@@ -35,15 +35,13 @@ Batch_State :: struct {
 	space_stack:     [dynamic]Draw_Space,
 	current_key:     Batch_Key,
 	has_current_key: bool,
-
-	vertex_buffer: ^sdl.GPUBuffer,
-	index_buffer:  ^sdl.GPUBuffer,
+	vertex_buffer:   ^sdl.GPUBuffer,
+	index_buffer:    ^sdl.GPUBuffer,
 	vertex_capacity: u32,
 	index_capacity:  u32,
-
-	cmd:  ^sdl.GPUCommandBuffer,
-	pass: ^sdl.GPURenderPass,
-	dpi:  Dpi_Info,
+	cmd:             ^sdl.GPUCommandBuffer,
+	pass:            ^sdl.GPURenderPass,
+	dpi:             Dpi_Info,
 }
 
 batch_init :: proc() {
@@ -143,7 +141,12 @@ batch_ensure_capacity :: proc(extra_verts: int) -> bool {
 batch_current_clip :: proc() -> Rect {
 	clip: Rect
 	if len(state.gpu_state.batch.clip_stack) == 0 {
-		clip = {0, 0, f32(state.gpu_state.batch.dpi.logical_w), f32(state.gpu_state.batch.dpi.logical_h)}
+		clip = {
+			0,
+			0,
+			f32(state.gpu_state.batch.dpi.logical_w),
+			f32(state.gpu_state.batch.dpi.logical_h),
+		}
 	} else {
 		clip = state.gpu_state.batch.clip_stack[len(state.gpu_state.batch.clip_stack) - 1]
 	}
@@ -152,7 +155,10 @@ batch_current_clip :: proc() -> Rect {
 
 batch_check_key :: proc(texture_id: Asset_Id) {
 	clip := batch_current_clip()
-	key := Batch_Key{texture_id = texture_id, clip = clip}
+	key := Batch_Key {
+		texture_id = texture_id,
+		clip       = clip,
+	}
 
 	if state.gpu_state.batch.has_current_key &&
 	   state.gpu_state.batch.current_key.texture_id == key.texture_id &&
@@ -175,7 +181,15 @@ batch_check_key :: proc(texture_id: Asset_Id) {
 }
 
 batch_push_indices :: proc(base: u16) {
-	append(&state.gpu_state.batch.indices, base + 0, base + 1, base + 2, base + 0, base + 2, base + 3)
+	append(
+		&state.gpu_state.batch.indices,
+		base + 0,
+		base + 1,
+		base + 2,
+		base + 0,
+		base + 2,
+		base + 3,
+	)
 }
 
 batch_push_vertex :: proc(
@@ -201,14 +215,14 @@ batch_push_vertex :: proc(
 batch_push_quad :: proc(
 	corners: [4]Vec2,
 	uvs: [4]Vec2,
-	color: Color,
+	color: RGBA,
 	rect_size: Vec2,
 	radius: f32,
 	mode: Draw_Mode,
 ) {
 	if !batch_ensure_capacity(4) do return
 
-	tint := color_to_f32(color)
+	tint := rgba_to_f32(color)
 	base := u16(len(state.gpu_state.batch.vertices))
 
 	for i in 0 ..< 4 {
@@ -220,7 +234,7 @@ batch_push_quad :: proc(
 batch_push_axis_quad :: proc(
 	r: Rect,
 	uv_rect: Rect,
-	color: Color,
+	color: RGBA,
 	rect_size: Vec2,
 	radius: f32,
 	mode: Draw_Mode,
@@ -318,7 +332,9 @@ batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
 	if len(state.gpu_state.batch.segments) == 0 do return
 
-	ubo := GPU_Proj_UBO{proj = state.gpu_state.proj_mat}
+	ubo := GPU_Proj_UBO {
+		proj = state.gpu_state.proj_mat,
+	}
 	sdl.BindGPUGraphicsPipeline(state.gpu_state.batch.pass, state.gpu_state.pipeline)
 	sdl.PushGPUVertexUniformData(state.gpu_state.batch.cmd, 0, &ubo, u32(size_of(ubo)))
 
@@ -349,6 +365,13 @@ batch_flush_draws :: proc() {
 		scissor := clip_to_scissor(seg.key.clip, state.gpu_state.batch.dpi)
 		sdl.SetGPUScissor(state.gpu_state.batch.pass, scissor)
 
-		sdl.DrawGPUIndexedPrimitives(state.gpu_state.batch.pass, seg.index_count, 1, seg.first_index, 0, 0)
+		sdl.DrawGPUIndexedPrimitives(
+			state.gpu_state.batch.pass,
+			seg.index_count,
+			1,
+			seg.first_index,
+			0,
+			0,
+		)
 	}
 }

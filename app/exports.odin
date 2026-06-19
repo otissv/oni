@@ -24,7 +24,9 @@ app_init_window :: proc() {
 	ensure_persistent()
 	if !oni.Init_Window_Only(window_config()) {
 		persistent.engine.running = false
+		return
 	}
+	persistent.engine.running = true
 }
 
 @(export)

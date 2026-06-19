@@ -36,13 +36,9 @@ State :: struct {
 }
 
 state: ^State
-theme_ref: ^Theme
+theme: ^Theme
 
-bind :: proc(s: ^State, theme: ^Theme) {
+bind :: proc(s: ^State, t: ^Theme) {
 	state = s
-	theme_ref = theme
-}
-
-theme :: proc() -> ^Theme {
-	return theme_ref
+	theme = t
 }

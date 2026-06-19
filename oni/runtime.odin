@@ -27,6 +27,7 @@ init_window_only :: proc(config: Window_Config) -> bool {
 		return false
 	}
 
+	state.running = true
 	return true
 }
 

@@ -11,9 +11,9 @@ Text_Direction :: enum {
 }
 
 Shaped_Glyph :: struct {
-	glyph_id:           u32,
-	cluster:            u32,
-	x_offset, y_offset: f32,
+	glyph_id:             u32,
+	cluster:              u32,
+	x_offset, y_offset:   f32,
 	x_advance, y_advance: f32,
 }
 
@@ -24,12 +24,14 @@ Shaped_Line :: struct {
 }
 
 Font_Face :: struct {
-	ft_face:                FT_Face,
-	hb_font:                hb_font_t,
-	path:                   string,
-	size_px:                f32,
-	pixel_size:             i32,
-	ascent, descent, line_height: f32,
+	ft_face:     FT_Face,
+	hb_font:     hb_font_t,
+	path:        string,
+	size_px:     f32,
+	pixel_size:  i32,
+	ascent:      f32,
+	descent:     f32,
+	line_height: f32,
 }
 
 Font_Glyph_Entry :: struct {
@@ -304,13 +306,13 @@ font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 	ascent, descent, line_height := font_metrics_from_face(ft_face)
 
 	entry := Font_Face {
-		ft_face    = ft_face,
-		hb_font    = hb_font,
-		path       = strings.clone(path),
-		size_px    = size_px,
-		pixel_size = pixel_size,
-		ascent     = ascent,
-		descent    = descent,
+		ft_face     = ft_face,
+		hb_font     = hb_font,
+		path        = strings.clone(path),
+		size_px     = size_px,
+		pixel_size  = pixel_size,
+		ascent      = ascent,
+		descent     = descent,
 		line_height = line_height,
 	}
 
@@ -385,7 +387,13 @@ font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) ->
 	defer buffer_destroy(buffer)
 
 	buffer_reset(buffer)
-	buffer_add_utf8(buffer, strings.clone_to_cstring(text, context.temp_allocator), c.int(len(text)), 0, c.int(len(text)))
+	buffer_add_utf8(
+		buffer,
+		strings.clone_to_cstring(text, context.temp_allocator),
+		c.int(len(text)),
+		0,
+		c.int(len(text)),
+	)
 	buffer_guess_segment_properties(buffer)
 	buffer_set_direction(buffer, hb_to_direction(direction))
 
@@ -406,10 +414,10 @@ font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) ->
 	glyphs := make([]Shaped_Glyph, n)
 	for i in 0 ..< n {
 		glyphs[i] = {
-			glyph_id = u32(infos[i].codepoint),
-			cluster = infos[i].cluster,
-			x_offset = hb_pos_to_px(positions[i].x_offset),
-			y_offset = hb_pos_to_px(positions[i].y_offset),
+			glyph_id  = u32(infos[i].codepoint),
+			cluster   = infos[i].cluster,
+			x_offset  = hb_pos_to_px(positions[i].x_offset),
+			y_offset  = hb_pos_to_px(positions[i].y_offset),
 			x_advance = hb_pos_to_px(positions[i].x_advance),
 			y_advance = hb_pos_to_px(positions[i].y_advance),
 		}

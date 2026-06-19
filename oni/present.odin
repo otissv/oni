@@ -8,7 +8,7 @@ Draw_Proc :: proc()
 present_frame :: proc(draw: Draw_Proc) {
 	if !state.can_render || state.window == nil || state.gpu == nil do return
 	if state.gpu_state.pipeline == nil do return
-	if theme_ref == nil do return
+	if theme == nil do return
 
 	cmd_buf := sdl.AcquireGPUCommandBuffer(state.gpu)
 	if cmd_buf == nil {
@@ -45,11 +45,10 @@ present_frame :: proc(draw: Draw_Proc) {
 		}
 	}
 
-	clear := theme_ref.bg
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = swapchain_tex,
 		load_op     = .CLEAR,
-		clear_color = sdl.FColor(color_to_f32(clear)),
+		clear_color = sdl.FColor(color_to_f32(theme.bg)),
 		store_op    = .STORE,
 	}
 

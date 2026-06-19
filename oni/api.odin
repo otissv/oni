@@ -1,7 +1,6 @@
 package oni
 
 Bind :: bind
-Theme_Access :: theme
 
 Init_Window_Only :: init_window_only
 Init_Runtime :: init_runtime
@@ -63,5 +62,5 @@ View_World_To_Screen :: view_world_to_screen
 Input_Mouse_Screen :: input_mouse_screen
 Input_Mouse_World :: input_mouse_world
 
-Color_Role :: Theme_Color_Role
-Theme_Get_Color :: theme_color
+// Color_Role :: Theme_Color_Role
+// Theme_Get_Color :: theme_color

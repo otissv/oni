@@ -65,7 +65,10 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 	if !texture_atlas_init() do return false
 
 	for glyph in glyphs {
-		key := Font_Glyph_Key{face_id = face_id, glyph_id = glyph.glyph_id}
+		key := Font_Glyph_Key {
+			face_id  = face_id,
+			glyph_id = glyph.glyph_id,
+		}
 		if key in state.fonts.glyph_cache do continue
 
 		entry, ok := font_rasterize_glyph(face, key.glyph_id)
@@ -124,10 +127,11 @@ font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Ent
 	}
 
 	return Font_Glyph_Entry {
-		region    = region,
-		bearing_x = f32(ft_slot_bitmap_left(slot)),
-		bearing_y = f32(ft_slot_bitmap_top(slot)),
-	}, true
+			region = region,
+			bearing_x = f32(ft_slot_bitmap_left(slot)),
+			bearing_y = f32(ft_slot_bitmap_top(slot)),
+		},
+		true
 }
 
 font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
@@ -244,7 +248,7 @@ font_draw_shaped_line :: proc(
 	face_id: Asset_Id,
 	line: Shaped_Line,
 	pos: Vec2,
-	color: Color,
+	color: RGBA,
 	layout_scale: f32 = 1,
 ) {
 	if face == nil || len(line.glyphs) == 0 do return
@@ -257,7 +261,10 @@ font_draw_shaped_line :: proc(
 	}
 
 	for glyph in line.glyphs {
-		key := Font_Glyph_Key{face_id = face_id, glyph_id = glyph.glyph_id}
+		key := Font_Glyph_Key {
+			face_id  = face_id,
+			glyph_id = glyph.glyph_id,
+		}
 		entry, ok := state.fonts.glyph_cache[key]
 		if !ok do continue
 
@@ -287,7 +294,7 @@ font_draw_shaped_lines :: proc(
 	face: ^Font_Face,
 	lines: []Shaped_Line,
 	pos: Vec2,
-	color: Color,
+	color: RGBA,
 	max_w: f32 = 0,
 	line_height: f32 = 0,
 	layout_scale: f32 = 1,
