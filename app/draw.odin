@@ -32,8 +32,7 @@ app_draw :: proc() {
 	y += 32
 
 	text_rect := oni.Rect{x, y, 480, 200}
-	w.Text(
-		{
+	w.Text({
 			id = oni.ui_id("paragraph"),
 			rect = text_rect,
 			text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
@@ -45,8 +44,12 @@ app_draw :: proc() {
 			space = .Artboard,
 			flags = {},
 			max_w = text_rect.w,
-		},
-	)
+			color = proc(state: comp.UI_State, event: comp.UI_Event(comp.UI_State)) -> comp.Colors {
+				if state.is_Pressed do return comp.RGBA{0, 255, 40, 255}
+				if state.is_hovered do return comp.RGBA{210, 60, 60, 255}
+				return comp.RGBA{0, 80, 255, 255}
+			},
+		})
 
 	oni.Draw_Pop_Artboard()
 

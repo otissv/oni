@@ -1,6 +1,7 @@
 package widgets
 
 import oni ".."
+import sdl "vendor:sdl3"
 
 
 Widget_Text_Flag :: enum {
@@ -26,26 +27,14 @@ Text_Size :: enum {
 	Icon,
 }
 
+
 Text_Config :: struct {
-	kind:           string,
-	id:             oni.UI_Id,
-	rect:           oni.Rect,
-	align:          oni.Text_Align,
-	auto_focus:     bool,
-	color:          oni.Colors,
-	direction:      oni.Text_Direction,
-	disabled:       bool,
-	flags:          Widget_Text_Flags,
-	font_size:      f32,
-	font:           oni.Font_Handle,
-	letter_spacing: f32,
-	line_height:    f32,
-	space:          oni.Draw_Space,
-	wrap:           oni.Text_Warp,
-	size:           Text_Size,
-	text:           string,
-	variant:        Text_Variant,
-	max_w:          f32,
+	using _: oni.Widget_config,
+	flags:   Widget_Text_Flags,
+	max_w:   f32,
+	size:    Text_Size,
+	text:    string,
+	variant: Text_Variant,
 }
 
 Text_State :: struct {
@@ -73,16 +62,215 @@ Text_Props :: struct {
 	on_key_released:   proc(event: Text_Event),
 }
 
+@(private)
+text_event :: proc(
+	state: Text_State,
+	config: Text_Config,
+	mouse_button: u8 = 0,
+	key: oni.Scancode = oni.Scancode(0),
+) -> Text_Event {
+	return merge_state_event(state, config, mouse_button, key)
+}
+
+text_config :: proc(props: Text_Props, state: ^Text_State) -> oni.Widget_config {
+
+	color := oni.Color{}
+
+	if state.is_disabled && color == {} {
+		color = oni.Color.Text_muted
+	}
+
+	decl := Text_Config {
+		bg = 0,
+		pd = 0,
+		rd = 0,
+		bd = 0,
+		alignChild = oni.Align_Pos{x = .Left, y = .Top},
+		color = color,
+	}
+
+	style_event := oni.Widget_Event(Text_State) {
+		state = state^,
+	}
+	decl = merge_element_declaration(
+		decl,
+		oni.Widget_config {
+			bdColor = props.bdColor,
+			bg = props.bg,
+			pd = props.pd,
+			rd = props.rd,
+			bd = props.bd,
+			aspectRatio = props.aspectRatio,
+			gap = props.gap,
+			alignChild = props.alignChild,
+			direction = props.direction,
+		},
+		state,
+		style_event,
+	)
+
+
+	return decl
+}
+
+
 Text :: proc(props: Text_Props) -> oni.Vec2 {
+	key := element_key(props.id)
+
+	// event := Text_Event {
+	// 	state = state,
+	// }
+
+	was_focused := w_ctx.focused_id == key
+	should_auto_focus := props.auto_focus && w_ctx.auto_focused_id != key
+
+	if should_auto_focus {
+		w_ctx.focused_id = key
+		w_ctx.auto_focused_id = key
+	}
+
 
 	state := Text_Merged_State {
-		state = Text_State {
-			is_disabled = props.disabled,
-			// is_focused  = ui_ctx.focused_id.id == key.id,
-		},
+		state = Text_State{is_disabled = props.disabled, is_focused = w_ctx.focused_id == key},
 	}
-	event := Text_Event {
-		state = state,
+
+	// Dynamic style callbacks are resolved while building the declaration,
+	// so populate the interaction snapshot before configuring the text element.
+	state.is_hovered = PointerOver(key)
+	state.is_left_clicked = state.is_hovered && w_ctx.left_mouse.pressed
+	state.is_right_clicked = state.is_hovered && w_ctx.right_mouse.pressed
+	state.is_middle_clicked = state.is_hovered && w_ctx.middle_mouse.pressed
+	state.is_left_released = state.is_hovered && w_ctx.left_mouse.released
+	state.is_right_released = state.is_hovered && w_ctx.right_mouse.released
+	state.is_Pressed = state.is_hovered && w_ctx.left_mouse.down
+
+
+	config := text_config(props, &state)
+	event := text_event(state, config)
+
+	if !state.is_disabled {
+		entered, left := consume_hover_transition(key, state.is_hovered)
+
+		if entered && props.on_mouse_enter != nil {
+			props.on_mouse_enter(event)
+		}
+		if left && props.on_mouse_leave != nil {
+			props.on_mouse_leave(event)
+		}
+
+		if state.is_hovered && w_ctx.mouse_moved && props.on_mouse_move != nil {
+			props.on_mouse_move(event)
+		}
+
+		if state.is_hovered && w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+			props.on_contextmenu(text_event(state, config, mouse_button = sdl.BUTTON_RIGHT))
+		}
+
+		if state.is_hovered && w_ctx.left_mouse.pressed && !state.is_focused {
+			w_ctx.focused_id = key
+			state.is_focused = true
+
+			if props.on_focus != nil {
+				props.on_focus(text_event(state, config, mouse_button = sdl.BUTTON_LEFT))
+			}
+		}
+
+		if was_focused && !state.is_hovered && w_ctx.left_mouse.pressed {
+			w_ctx.focused_id = {}
+			state.is_focused = false
+
+			if props.on_blur != nil {
+				props.on_blur(text_event(state, config, mouse_button = sdl.BUTTON_LEFT))
+			}
+		}
+
+		state.is_focused = w_ctx.focused_id == key
+
+		if state.is_hovered && props.on_mouse_pressed != nil {
+			if w_ctx.left_mouse.pressed {
+				props.on_mouse_pressed(text_event(state, config, mouse_button = sdl.BUTTON_LEFT))
+			}
+			if w_ctx.right_mouse.pressed {
+				props.on_mouse_pressed(text_event(state, config, mouse_button = sdl.BUTTON_RIGHT))
+			}
+			if w_ctx.middle_mouse.pressed {
+				props.on_mouse_pressed(text_event(state, config, mouse_button = sdl.BUTTON_MIDDLE))
+			}
+		}
+
+		if state.is_hovered && props.on_mouse_down != nil {
+			if w_ctx.left_mouse.down {
+				props.on_mouse_down(text_event(state, config, mouse_button = sdl.BUTTON_LEFT))
+			}
+			if w_ctx.right_mouse.down {
+				props.on_mouse_down(text_event(state, config, mouse_button = sdl.BUTTON_RIGHT))
+			}
+			if w_ctx.middle_mouse.down {
+				props.on_mouse_down(text_event(state, config, mouse_button = sdl.BUTTON_MIDDLE))
+			}
+		}
+
+		if state.is_hovered && props.on_mouse_released != nil {
+			if w_ctx.left_mouse.released {
+				props.on_mouse_released(text_event(state, config, mouse_button = sdl.BUTTON_LEFT))
+			}
+			if w_ctx.right_mouse.released {
+				props.on_mouse_released(text_event(state, config, mouse_button = sdl.BUTTON_RIGHT))
+			}
+			if w_ctx.middle_mouse.released {
+				props.on_mouse_released(
+					text_event(state, config, mouse_button = sdl.BUTTON_MIDDLE),
+				)
+			}
+		}
+
+		clicked := consume_pointer_click(
+			key,
+			state.is_hovered,
+			w_ctx.left_mouse.pressed,
+			w_ctx.left_mouse.released,
+		)
+		click_event := text_event(state, config, mouse_button = sdl.BUTTON_LEFT)
+
+		if state.is_focused && props.on_click != nil {
+			enter_key := w_ctx.keys[int(sdl.Scancode.RETURN)]
+			space_key := w_ctx.keys[int(sdl.Scancode.SPACE)]
+
+			if enter_key.pressed {
+				clicked = true
+				click_event.key = oni.Scancode(sdl.Scancode.RETURN)
+			} else if space_key.pressed {
+				clicked = true
+				click_event.key = oni.Scancode(sdl.Scancode.SPACE)
+			}
+		}
+
+		if clicked && props.on_click != nil {
+			props.on_click(click_event)
+		}
+
+		if state.is_focused {
+			for scancode in 0 ..< oni.KEY_COUNT {
+				key := w_ctx.keys[scancode]
+				event := text_event(state, config, key = oni.Scancode(scancode))
+
+				if props.on_key_pressed != nil && key.pressed {
+					props.on_key_pressed(event)
+				}
+				if props.on_key_down != nil && key.down {
+					props.on_key_down(event)
+				}
+				if props.on_key_released != nil && key.released {
+					props.on_key_released(event)
+				}
+			}
+		}
+	}
+
+	config := text_config(props, &state)
+
+	if should_auto_focus && !was_focused && props.on_focus != nil {
+		props.on_focus(text_event(state, config))
 	}
 
 
@@ -143,7 +331,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		)
 	}
 
-	cache := oni.ui_widget_shaped(props.id)
+	cache := oni.widget_shaped(props.id)
 	lines := oni.shaped_text_ensure(
 		cache,
 		resolved_font.id,

@@ -56,12 +56,43 @@ Widget_State :: struct {
 	is_disabled:       bool,
 }
 
+Widget_config :: struct {
+	id:             string,
+	kind:           string,
+	align:          Text_Align,
+	alignChild:     Align,
+	aspectRatio:    AspectRatio,
+	auto_focus:     bool,
+	bd:             Border,
+	bdColor:        Colors,
+	bg:             Colors,
+	gap:            Gap,
+	color:          Colors,
+	text_direction: Text_Direction,
+	direction:      Direction,
+	disabled:       bool,
+	font:           Font_Handle,
+	font_size:      f32,
+	letter_spacing: f32,
+	line_height:    f32,
+	pd:             Padding,
+	rd:             Radius,
+	rect:           Rect,
+	space:          Draw_Space,
+	wrap:           Text_Warp,
+}
+
 Widget_Merged_State :: struct($S: typeid, $C: typeid) {
 	using state: S,
 	config:      C,
 }
 
+
 // Padding
+Pd :: struct {
+	t, b, l, r: f32,
+}
+
 Pd_pos :: struct {
 	x, y: f32,
 }
@@ -73,18 +104,28 @@ Pd_struct :: struct {
 	sm, md, lg, xl: bool,
 }
 
+
 Padding :: union {
 	struct{},
 	f32,
+	Pd,
 	Pd_pos,
 	Pd_struct,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding,
 }
 
 // Radius
+
+Radius_corners :: struct {
+	tl: f32,
+	tr: f32,
+	bl: f32,
+	br: f32,
+}
+
 Radius_struct :: struct {
-	t, b, l, r:     f32,
 	tl, tr, bl, br: f32,
+	t, b, l, r:     f32,
 	x, y:           f32,
 	sm, md, lg, xl: bool,
 }
@@ -93,7 +134,12 @@ Radius :: union {
 	struct{},
 	f32,
 	Radius_struct,
+	Radius_corners,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Radius,
+}
+
+Bd :: struct {
+	t, b, l, r: f32,
 }
 
 // Border
@@ -106,6 +152,7 @@ Border :: union {
 	struct{},
 	f32,
 	Bd_struct,
+	Bd,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border,
 }
 
@@ -130,10 +177,10 @@ Height :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height,
 }
 
-ChildGap :: union {
+Gap :: union {
 	struct{},
 	u16,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> ChildGap,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap,
 }
 
 Text_Warp :: enum {
@@ -148,7 +195,6 @@ Text_Align :: enum {
 	Right,
 }
 
-@(private)
 Align_X :: enum {
 	Unset,
 	Left,
@@ -156,7 +202,6 @@ Align_X :: enum {
 	Center,
 }
 
-@(private)
 Align_Y :: enum {
 	Unset,
 	Top,
@@ -181,7 +226,6 @@ Direction_Layout :: enum {
 }
 
 Direction :: union {
-	struct{},
 	Direction_Layout,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction,
 }
@@ -207,6 +251,44 @@ Image :: union {
 // 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Transition,
 // }
 
+
+SizingType :: enum {
+	Fit,
+	Grow,
+	Percent,
+	Fixed,
+}
+
+SizingConstraintsMinMax :: struct {
+	min: f32,
+	max: f32,
+}
+
+SizingConstraints :: struct #raw_union {
+	sizeMinMax:  SizingConstraintsMinMax,
+	sizePercent: f32,
+}
+
+SizingAxis :: struct {
+	constraints: SizingConstraints,
+	type:        SizingType,
+}
+
+SizingFit :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
+	return SizingAxis{type = SizingType.Fit, constraints = {sizeMinMax = sizeMinMax}}
+}
+
+SizingGrow :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
+	return SizingAxis{type = SizingType.Grow, constraints = {sizeMinMax = sizeMinMax}}
+}
+
+SizingFixed :: proc(size: f32) -> SizingAxis {
+	return SizingAxis{type = SizingType.Fixed, constraints = {sizeMinMax = {size, size}}}
+}
+
+SizingPercent :: proc(sizePercent: f32) -> SizingAxis {
+	return SizingAxis{type = SizingType.Percent, constraints = {sizePercent = sizePercent}}
+}
 
 Rect :: struct {
 	x, y, w, h: f32,
@@ -253,7 +335,7 @@ Theme :: struct {
 	bd:           Border,
 	bdColor:      Colors,
 	bg:           Colors,
-	childGap:     ChildGap,
+	gap:          Gap,
 	color:        Colors,
 	direction:    Direction,
 	font_body:    Font_Handle,

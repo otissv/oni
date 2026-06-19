@@ -69,18 +69,3 @@ ui_id :: proc(label: string) -> UI_Id {
 	parent := ui_parent_hash()
 	return UI_Id(label_hash ~ parent)
 }
-
-ui_widget_shaped :: proc(id: UI_Id) -> ^Shaped_Text {
-	entry: ^UI_Widget_Entry
-	if e, ok := &state.ui.widgets[id]; ok {
-		entry = e
-	} else {
-		state.ui.widgets[id] = {
-			shaped = {pool_slot = INVALID_SHAPE_POOL_SLOT},
-		}
-		entry = &state.ui.widgets[id]
-	}
-
-	entry.last_frame = state.ui.frame
-	return &entry.shaped
-}

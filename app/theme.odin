@@ -20,7 +20,7 @@ build_theme :: proc() -> oni.Theme {
 		palette = oni.palette,
 		font_body = body,
 		font_heading = heading,
-		childGap = 20,
+		gap = 20,
 		alignChild = oni.Align_Pos{x = .Left, y = .Top},
 		direction = .Horizontal,
 		bdColor = .Black,
