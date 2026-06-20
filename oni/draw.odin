@@ -74,8 +74,8 @@ draw_pop_space :: proc() {
 	}
 }
 
-draw_push_artboard :: proc() {draw_push_space(.Artboard)}
-draw_pop_artboard :: proc() {draw_pop_space()}
+begin_artboard :: proc() {draw_push_space(.Artboard)}
+end_artboard :: proc() {draw_pop_space()}
 draw_push_screen :: proc() {draw_push_space(.Screen)}
 draw_pop_screen :: proc() {draw_pop_space()}
 

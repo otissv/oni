@@ -37,10 +37,10 @@ draw_line_segment :: draw_line
 draw_texture_region :: draw_texture
 draw_atlas :: draw_atlas_region
 
-Draw_Push_Artboard :: draw_push_artboard
-Draw_Pop_Artboard :: draw_pop_artboard
-Draw_Push_Screen :: draw_push_screen
-Draw_Pop_Screen :: draw_pop_screen
+Begin_Artboard :: begin_artboard
+End_Artboard :: end_artboard
+Begin_Screen :: draw_push_screen
+End_Screen :: draw_pop_screen
 
 Load_Texture :: assets_load_texture
 Get_Texture :: assets_get_texture

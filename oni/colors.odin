@@ -656,7 +656,7 @@ Colors :: union {
 	HWBA,
 	LCHA,
 	OKLCHA,
-	proc(state: UI_State, event: Widget_Event(UI_State)) -> Colors,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors,
 }
 
 color_clamp01 :: proc(v: f32) -> f32 {
@@ -849,8 +849,12 @@ resolve_color :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: R
 		return to_rgba_color(v), true
 	case OKLCHA:
 		return to_rgba_color(v), true
-	case proc(widget: UI_State, widget_event: Widget_Event(UI_State)) -> Colors:
-		return resolve_color(v({}, {}), state, event)
+	case proc(state: Widget_State, widget_event: Widget_Event(Widget_State)) -> Colors:
+		ui_state := (^Widget_State)(cast(rawptr)state)^
+		ui_event := Widget_Event(Widget_State) {
+			state = ui_state,
+		}
+		return resolve_color(v(ui_state, ui_event), state, event)
 	}
 	return {}, false
 }
@@ -859,7 +863,7 @@ rgba_to_f32 :: proc(c: RGBA) -> [4]f32 {
 	return {f32(c.r) / 255, f32(c.g) / 255, f32(c.b) / 255, f32(c.a) / 255}
 }
 
-color_to_f32 :: proc(c: Colors) -> [4]f32 {
+color_to_f32_static :: proc(c: Colors) -> [4]f32 {
 	rgba: RGBA
 
 	#partial switch v in c {
@@ -878,9 +882,13 @@ color_to_f32 :: proc(c: Colors) -> [4]f32 {
 		rgba = to_rgba_color(v)
 	case OKLCHA:
 		rgba = to_rgba_color(v)
-	case proc(widget: UI_State, widget_event: Widget_Event(UI_State)) -> Colors:
-		return color_to_f32(v({}, {}))
 	}
 
+	return rgba_to_f32(rgba)
+}
+
+color_to_f32 :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> [4]f32 {
+	rgba, ok := resolve_color(c, state, event)
+	if !ok do return {}
 	return rgba_to_f32(rgba)
 }

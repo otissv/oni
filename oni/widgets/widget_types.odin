@@ -2,6 +2,7 @@ package widgets
 
 import oni ".."
 import "core:fmt"
+import "core:hash"
 import sdl "vendor:sdl3"
 
 
@@ -231,10 +232,26 @@ ProcessEvent :: proc(event: ^sdl.Event) {
 	}
 }
 
-SetPointerState :: proc(position: [2]f32, pointerDown: bool)
+SetPointerState :: proc(position: [2]f32, pointerDown: bool) {
+	_ = position
+	_ = pointerDown
+}
 
 SyncPointer :: proc() {
 	SetPointerState({w_ctx.mouse_x, w_ctx.mouse_y}, w_ctx.left_mouse.down)
+}
+
+pointer_over :: proc(rect: oni.Rect, space: oni.Draw_Space) -> bool {
+	mouse := oni.Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
+	if space == .Artboard {
+		mouse = oni.View_Screen_To_World(mouse)
+	}
+	return(
+		mouse.x >= rect.x &&
+		mouse.x < rect.x + rect.w &&
+		mouse.y >= rect.y &&
+		mouse.y < rect.y + rect.h \
+	)
 }
 
 to_ui_state :: proc(state: ^$S) -> oni.Widget_State {
@@ -667,7 +684,7 @@ element_config_to_declaration :: proc(
 	state: ^$S,
 	event: oni.Widget_Event(S),
 ) -> oni.Widget_config {
-	decl := oni.Widget_config{}
+	decl := config
 
 
 	if padding, padding_ok := resolve_padding(config.pd, state, event); padding_ok {
@@ -692,15 +709,17 @@ element_config_to_declaration :: proc(
 		decl.bdColor = color
 	}
 	if bg, bg_ok := oni.resolve_color(config.bg, state, event); bg_ok {
-		decl.bdColor = bg
+		decl.bg = bg
+	}
+	if color, color_ok := oni.resolve_color(config.color, state, event); color_ok {
+		decl.color = color
 	}
 
 	if gap, gap_ok := resolve_child_gap(config.gap, state, event); gap_ok {
 		decl.gap = gap
 	}
 	if align, align_ok := resolve_align(config.alignChild, state, event); align_ok {
-		//TODO: Resolve Text_Align to Align_Pos
-		decl.align = align
+		decl.alignChild = align
 	}
 	if direction, direction_ok := resolve_direction(config.direction, state, event); direction_ok {
 		decl.direction = direction
@@ -778,13 +797,19 @@ merge_element_declaration :: proc(
 	if override.rd != nil {
 		result.rd = override.rd
 	}
-	if override.space != nil {
-		result.space = override.space
+	if override.id != "" {
+		result.id = override.id
 	}
+	if override.rect != {} {
+		result.rect = override.rect
+	}
+	result.space = override.space
 	if override.wrap != nil {
 		result.wrap = override.wrap
 	}
-
+	if override.text_direction != .LTR {
+		result.text_direction = override.text_direction
+	}
 
 	return element_config_to_declaration(result, state, event)
 }
@@ -813,16 +838,16 @@ consume_pointer_click :: proc(
 
 
 widget_shaped :: proc(id: Widget_ID) -> ^oni.Shaped_Text {
-	entry: ^oni.UI_Widget_Entry
-	if e, ok := &state.ui.widgets[id]; ok {
-		entry = e
-	} else {
-		state.ui.widgets[id] = {
-			shaped = {pool_slot = INVALID_SHAPE_POOL_SLOT},
+	oni.ui_init()
+
+	ui_id := oni.UI_Id(hash.crc32(transmute([]u8)id))
+	if _, ok := oni.state.ui.widgets[ui_id]; !ok {
+		oni.state.ui.widgets[ui_id] = oni.UI_Widget_Entry {
+			shaped = {pool_slot = oni.INVALID_SHAPE_POOL_SLOT},
 		}
-		entry = &state.ui.widgets[id]
 	}
 
-	entry.last_frame = state.ui.frame
+	entry := &oni.state.ui.widgets[ui_id]
+	entry.last_frame = oni.state.ui.frame
 	return &entry.shaped
 }

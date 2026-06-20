@@ -48,7 +48,7 @@ present_frame :: proc(draw: Draw_Proc) {
 	color_target := sdl.GPUColorTargetInfo {
 		texture     = swapchain_tex,
 		load_op     = .CLEAR,
-		clear_color = sdl.FColor(color_to_f32(theme.bg)),
+		clear_color = sdl.FColor(color_to_f32_static(theme.bg)),
 		store_op    = .STORE,
 	}
 
