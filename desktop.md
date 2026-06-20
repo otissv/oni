@@ -55,7 +55,7 @@ Texture_Handle :: struct { id: Asset_Id, w, h: f32 }
 Font_Handle    :: struct { id: Asset_Id, size_px: f32 }
 
 Theme :: struct {
-    bg, surface, border, text, text_muted: Color,
+    background, surface, border, text, text_muted: Color,
     accent, accent_hover, accent_pressed: Color,
     danger, success: Color,
     spacing_xs, spacing_sm, spacing_md, spacing_lg: f32,
@@ -96,7 +96,7 @@ UI_Id :: distinct u64
 | Replace | `Game_Memory` → `App_State` with fields: `window`, `gpu`, `running`, `input`, `dpi`, `perf_*`, `force_reload/restart`, `theme` (empty until Section 5) |
 | Simplify loop | Drop fixed-timestep gameplay; `app_update` = `poll_events` + `app_tick(dt)` + placeholder `render_clear_frame()` |
 | Events | Keep: quit, resize, focus lost (clear keys/mouse), F5/F6 reload, F11 fullscreen. |
-| `render.odin` | Clear swapchain to `theme.bg` (hardcoded `{30,30,35,255}` until Section 5); no triangle draw |
+| `render.odin` | Clear swapchain to `theme.background` (hardcoded `{30,30,35,255}` until Section 5); no triangle draw |
 
 ### `Input_State` (final shape)
 

@@ -37,6 +37,43 @@ HEIGHT_XL :: f32(64)
 
 KEY_COUNT :: 512
 
+Widget_ID :: string
+
+Widget_Mouse_Button_State :: struct {
+	down:     bool,
+	pressed:  bool,
+	released: bool,
+}
+
+Widget_Mouse_Key_State :: struct {
+	down:     bool,
+	pressed:  bool,
+	released: bool,
+}
+
+
+Widget_Context :: struct {
+	auto_focused_id:      Widget_ID,
+	focused_id:           Widget_ID,
+	auto_element_index:   u32,
+	static_ids:           map[string]Widget_ID,
+	mouse_x:              f32,
+	mouse_y:              f32,
+	mouse_moved:          bool,
+	left_mouse:           Widget_Mouse_Button_State,
+	right_mouse:          Widget_Mouse_Button_State,
+	middle_mouse:         Widget_Mouse_Button_State,
+	keys:                 [KEY_COUNT]Widget_Mouse_Key_State,
+	element_was_hovered:  map[string]bool,
+	element_pointer_down: map[string]bool,
+}
+
+Widget_Merged_State :: struct($S: typeid, $C: typeid) {
+	using state: S,
+	config:      C,
+}
+
+w_ctx: Widget_Context
 
 Widget_Event :: struct($S: typeid) {
 	state:        S,
@@ -56,16 +93,21 @@ Widget_State :: struct {
 	is_disabled:       bool,
 }
 
+Widget_Kind :: enum {
+	RECT,
+	TEXT,
+}
+
 Widget_config :: struct {
 	id:             string,
-	kind:           string,
+	kind:           Widget_Kind,
 	align:          Text_Align,
-	alignChild:     Align,
-	aspectRatio:    AspectRatio,
+	justify:        Justify,
+	aspect_ratio:   Aspect_Ratio,
 	auto_focus:     bool,
-	bd:             Border,
-	bdColor:        Colors,
-	bg:             Colors,
+	border:         Border,
+	border_color:   Colors,
+	background:     Colors,
 	gap:            Gap,
 	color:          Colors,
 	text_direction: Text_Direction,
@@ -75,16 +117,14 @@ Widget_config :: struct {
 	font_size:      f32,
 	letter_spacing: f32,
 	line_height:    f32,
-	pd:             Padding,
-	rd:             Radius,
-	rect:           Rect,
+	padding:        Padding,
+	radius:         Radius,
+	x:              f32,
+	y:              f32,
+	width:          f32,
+	height:         f32,
 	space:          Draw_Space,
 	wrap:           Text_Warp,
-}
-
-Widget_Merged_State :: struct($S: typeid, $C: typeid) {
-	using state: S,
-	config:      C,
 }
 
 
@@ -195,29 +235,29 @@ Text_Align :: enum {
 	Right,
 }
 
-Align_X :: enum {
+Justify_X :: enum {
 	Unset,
 	Left,
 	Right,
 	Center,
 }
 
-Align_Y :: enum {
+Justify_Y :: enum {
 	Unset,
 	Top,
 	Bottom,
 	Center,
 }
 
-Align_Pos :: struct {
-	x: Align_X,
-	y: Align_Y,
+Justify_Pos :: struct {
+	x: Justify_X,
+	y: Justify_Y,
 }
 
-Align :: union {
+Justify :: union {
 	struct{},
-	Align_Pos,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Align,
+	Justify_Pos,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify,
 }
 
 Direction_Layout :: enum {
@@ -231,9 +271,9 @@ Direction :: union {
 }
 
 
-AspectRatio :: union {
+Aspect_Ratio :: union {
 	f32,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> AspectRatio,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Aspect_Ratio,
 }
 
 Image :: union {
@@ -331,18 +371,18 @@ Font_Handle :: struct {
 
 Theme :: struct {
 	palette:      Palette,
-	alignChild:   Align,
-	bd:           Border,
-	bdColor:      Colors,
-	bg:           Colors,
+	justify:      Justify,
+	border:       Border,
+	border_color: Colors,
+	background:   Colors,
 	gap:          Gap,
 	color:        Colors,
 	direction:    Direction,
 	font_body:    Font_Handle,
 	font_heading: Font_Handle,
 	height:       Height,
-	pd:           Padding,
-	rd:           Radius,
+	padding:      Padding,
+	radius:       Radius,
 	width:        Width,
 }
 

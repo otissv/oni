@@ -112,19 +112,22 @@ text_apply_size :: proc(config: ^Text_Config) {
 text_props_override :: proc(props: Text_Props) -> Text_Config {
 	return Text_Config {
 		id = props.id,
-		rect = props.rect,
+		x = props.x,
+		y = props.y,
+		width = props.width,
+		height = props.height,
 		text = props.text,
 		flags = props.flags,
 		max_w = props.max_w,
 		size = props.size,
 		variant = props.variant,
 		align = props.align,
-		alignChild = props.alignChild,
-		aspectRatio = props.aspectRatio,
+		justify = props.justify,
+		aspect_ratio = props.aspect_ratio,
 		auto_focus = props.auto_focus,
-		bd = props.bd,
-		bdColor = props.bdColor,
-		bg = props.bg,
+		border = props.border,
+		border_color = props.border_color,
+		background = props.background,
 		gap = props.gap,
 		color = props.color,
 		text_direction = props.text_direction,
@@ -134,8 +137,8 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 		font_size = props.font_size,
 		letter_spacing = props.letter_spacing,
 		line_height = props.line_height,
-		pd = props.pd,
-		rd = props.rd,
+		padding = props.padding,
+		radius = props.radius,
 		space = props.space,
 		wrap = props.wrap,
 	}
@@ -150,13 +153,14 @@ text_theme_base :: proc(merged: ^Text_Merged_State) -> Text_Config {
 	}
 
 	return Text_Config {
+		kind = .TEXT,
 		font = oni.theme.font_body,
 		font_size = oni.theme.font_body.size_px,
 		color = color,
 		line_height = 1,
 		text_direction = .LTR,
 		space = .Screen,
-		alignChild = oni.theme.alignChild,
+		justify = oni.theme.justify,
 		gap = oni.theme.gap,
 	}
 }
@@ -173,13 +177,13 @@ text_config :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Text_Confi
 	resolved := merge_element_declaration(base, override, merged, event)
 
 	override.color = resolved.color
-	override.bg = resolved.bg
-	override.bdColor = resolved.bdColor
-	override.pd = resolved.pd
-	override.rd = resolved.rd
-	override.bd = resolved.bd
+	override.background = resolved.background
+	override.border_color = resolved.border_color
+	override.padding = resolved.padding
+	override.radius = resolved.radius
+	override.border = resolved.border
 	override.gap = resolved.gap
-	override.alignChild = resolved.alignChild
+	override.justify = resolved.justify
 	override.direction = resolved.direction
 	override.font = resolved.font
 	override.font_size = resolved.font_size
@@ -197,26 +201,33 @@ text_refresh_merged :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Te
 Text :: proc(props: Text_Props) -> oni.Vec2 {
 	key := element_key(props.id)
 
-	was_focused := w_ctx.focused_id == key
-	should_auto_focus := props.auto_focus && w_ctx.auto_focused_id != key
+	was_focused := oni.w_ctx.focused_id == key
+	should_auto_focus := props.auto_focus && oni.w_ctx.auto_focused_id != key
 
 	if should_auto_focus {
-		w_ctx.focused_id = key
-		w_ctx.auto_focused_id = key
+		oni.w_ctx.focused_id = key
+		oni.w_ctx.auto_focused_id = key
 	}
 
 	merged := Text_Merged_State {
 		is_disabled = props.disabled,
-		is_focused  = w_ctx.focused_id == key,
+		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
-	merged.is_hovered = pointer_over(props.rect, props.space)
-	merged.is_left_clicked = merged.is_hovered && w_ctx.left_mouse.pressed
-	merged.is_right_clicked = merged.is_hovered && w_ctx.right_mouse.pressed
-	merged.is_middle_clicked = merged.is_hovered && w_ctx.middle_mouse.pressed
-	merged.is_left_released = merged.is_hovered && w_ctx.left_mouse.released
-	merged.is_right_released = merged.is_hovered && w_ctx.right_mouse.released
-	merged.is_Pressed = merged.is_hovered && w_ctx.left_mouse.down
+	rect := oni.Rect {
+		x = props.x,
+		y = props.y,
+		w = props.width,
+		h = props.height,
+	}
+
+	merged.is_hovered = pointer_over(rect, props.space)
+	merged.is_left_clicked = merged.is_hovered && oni.w_ctx.left_mouse.pressed
+	merged.is_right_clicked = merged.is_hovered && oni.w_ctx.right_mouse.pressed
+	merged.is_middle_clicked = merged.is_hovered && oni.w_ctx.middle_mouse.pressed
+	merged.is_left_released = merged.is_hovered && oni.w_ctx.left_mouse.released
+	merged.is_right_released = merged.is_hovered && oni.w_ctx.right_mouse.released
+	merged.is_Pressed = merged.is_hovered && oni.w_ctx.left_mouse.down
 
 	event := text_refresh_merged(props, &merged)
 
@@ -230,16 +241,16 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			props.on_mouse_leave(event)
 		}
 
-		if merged.is_hovered && w_ctx.mouse_moved && props.on_mouse_move != nil {
+		if merged.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
 			props.on_mouse_move(event)
 		}
 
-		if merged.is_hovered && w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+		if merged.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
 			props.on_contextmenu(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
 		}
 
-		if merged.is_hovered && w_ctx.left_mouse.pressed && !merged.is_focused {
-			w_ctx.focused_id = key
+		if merged.is_hovered && oni.w_ctx.left_mouse.pressed && !merged.is_focused {
+			oni.w_ctx.focused_id = key
 			merged.is_focused = true
 			event = text_refresh_merged(props, &merged)
 
@@ -248,8 +259,8 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			}
 		}
 
-		if was_focused && !merged.is_hovered && w_ctx.left_mouse.pressed {
-			w_ctx.focused_id = {}
+		if was_focused && !merged.is_hovered && oni.w_ctx.left_mouse.pressed {
+			oni.w_ctx.focused_id = {}
 			merged.is_focused = false
 			event = text_refresh_merged(props, &merged)
 
@@ -258,41 +269,41 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			}
 		}
 
-		merged.is_focused = w_ctx.focused_id == key
+		merged.is_focused = oni.w_ctx.focused_id == key
 		event = text_refresh_merged(props, &merged)
 
 		if merged.is_hovered && props.on_mouse_pressed != nil {
-			if w_ctx.left_mouse.pressed {
+			if oni.w_ctx.left_mouse.pressed {
 				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
 			}
-			if w_ctx.right_mouse.pressed {
+			if oni.w_ctx.right_mouse.pressed {
 				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
 			}
-			if w_ctx.middle_mouse.pressed {
+			if oni.w_ctx.middle_mouse.pressed {
 				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if merged.is_hovered && props.on_mouse_down != nil {
-			if w_ctx.left_mouse.down {
+			if oni.w_ctx.left_mouse.down {
 				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
 			}
-			if w_ctx.right_mouse.down {
+			if oni.w_ctx.right_mouse.down {
 				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
 			}
-			if w_ctx.middle_mouse.down {
+			if oni.w_ctx.middle_mouse.down {
 				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if merged.is_hovered && props.on_mouse_released != nil {
-			if w_ctx.left_mouse.released {
+			if oni.w_ctx.left_mouse.released {
 				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
 			}
-			if w_ctx.right_mouse.released {
+			if oni.w_ctx.right_mouse.released {
 				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
 			}
-			if w_ctx.middle_mouse.released {
+			if oni.w_ctx.middle_mouse.released {
 				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
@@ -300,14 +311,14 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		clicked := consume_pointer_click(
 			key,
 			merged.is_hovered,
-			w_ctx.left_mouse.pressed,
-			w_ctx.left_mouse.released,
+			oni.w_ctx.left_mouse.pressed,
+			oni.w_ctx.left_mouse.released,
 		)
 		click_event := text_event(merged, mouse_button = sdl.BUTTON_LEFT)
 
 		if merged.is_focused && props.on_click != nil {
-			enter_key := w_ctx.keys[int(sdl.Scancode.RETURN)]
-			space_key := w_ctx.keys[int(sdl.Scancode.SPACE)]
+			enter_key := oni.w_ctx.keys[int(sdl.Scancode.RETURN)]
+			space_key := oni.w_ctx.keys[int(sdl.Scancode.SPACE)]
 
 			if enter_key.pressed {
 				clicked = true
@@ -324,7 +335,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 		if merged.is_focused {
 			for scancode in 0 ..< oni.KEY_COUNT {
-				key_state := w_ctx.keys[scancode]
+				key_state := oni.w_ctx.keys[scancode]
 				key_event := text_event(merged, key = oni.Scancode(scancode))
 
 				if props.on_key_pressed != nil && key_state.pressed {
@@ -348,7 +359,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 	config := merged.config
 
-	rgbaColor, color_ok := oni.resolve_color(config.color, &merged, event)
+	rgbaColor, color_ok := oni.to_rgba(config.color, &merged, event)
 	if !color_ok do return {}
 
 	resolved_font, layout_scale, ok := oni.font_resolve(
@@ -361,8 +372,8 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	face := oni.font_face_from_handle(resolved_font)
 	if face == nil || len(config.text) == 0 do return {}
 
-	pos := oni.Vec2{config.rect.x, config.rect.y}
-	max_w := config.max_w
+	pos := oni.Vec2{config.x, config.y}
+	max_w := config.max_w != 0 ? config.max_w : config.width
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
 	if .Uncached in config.flags {

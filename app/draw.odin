@@ -13,7 +13,10 @@ Heading :: proc() {
 	w.Text(
 		{
 			id = "heading",
-			rect = {x, y, 480, 28},
+			x = x,
+			y = y,
+			width = 480,
+			height = 28,
 			text = "Artboard text — zoomable",
 			font = theme.font_heading,
 			color = oni.theme.palette[.Accent],
@@ -26,7 +29,7 @@ Heading :: proc() {
 
 Paragraph :: proc() {
 	theme := &persistent.app.theme
-	text_rect := oni.Rect{100, 132, 480, 200}
+	text_rect := oni.Rect{}
 
 
 	paragraph_color :: proc(
@@ -40,7 +43,10 @@ Paragraph :: proc() {
 
 	paragraph := w.Text_Props {
 		id          = "paragraph",
-		rect        = text_rect,
+		x           = 100,
+		y           = 132,
+		width       = 480,
+		height      = 200,
 		text        = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
 		font        = theme.font_body,
 		font_size   = 20,
@@ -64,7 +70,10 @@ Hud :: proc() {
 	w.Text(
 		{
 			id = "hud-zoom",
-			rect = {16, 16, 600, 24},
+			x = 16,
+			y = 6,
+			width = 600,
+			height = 24,
 			text = hud,
 			font = theme.font_body,
 			color = oni.theme.palette[.White],

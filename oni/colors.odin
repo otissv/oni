@@ -832,7 +832,7 @@ to_rgba_color :: proc {
 	oklcha_to_rgba,
 }
 
-resolve_color :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
+to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
 	#partial switch v in c {
 	case Color:
 		if v == .Invalid do return {}, false
@@ -854,7 +854,7 @@ resolve_color :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: R
 		ui_event := Widget_Event(Widget_State) {
 			state = ui_state,
 		}
-		return resolve_color(v(ui_state, ui_event), state, event)
+		return to_rgba(v(ui_state, ui_event), state, event)
 	}
 	return {}, false
 }
@@ -863,7 +863,7 @@ rgba_to_f32 :: proc(c: RGBA) -> [4]f32 {
 	return {f32(c.r) / 255, f32(c.g) / 255, f32(c.b) / 255, f32(c.a) / 255}
 }
 
-color_to_f32_static :: proc(c: Colors) -> [4]f32 {
+color_to_f32 :: proc(c: Colors) -> [4]f32 {
 	rgba: RGBA
 
 	#partial switch v in c {
@@ -884,11 +884,5 @@ color_to_f32_static :: proc(c: Colors) -> [4]f32 {
 		rgba = to_rgba_color(v)
 	}
 
-	return rgba_to_f32(rgba)
-}
-
-color_to_f32 :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> [4]f32 {
-	rgba, ok := resolve_color(c, state, event)
-	if !ok do return {}
 	return rgba_to_f32(rgba)
 }

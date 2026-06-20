@@ -6,45 +6,6 @@ import "core:hash"
 import sdl "vendor:sdl3"
 
 
-Widget_ID :: string
-
-Widget_Mouse_Button_State :: struct {
-	down:     bool,
-	pressed:  bool,
-	released: bool,
-}
-
-Widget_Mouse_Key_State :: struct {
-	down:     bool,
-	pressed:  bool,
-	released: bool,
-}
-
-
-Widget_Context :: struct {
-	auto_focused_id:      Widget_ID,
-	focused_id:           Widget_ID,
-	auto_element_index:   u32,
-	static_ids:           map[string]Widget_ID,
-	mouse_x:              f32,
-	mouse_y:              f32,
-	mouse_moved:          bool,
-	left_mouse:           Widget_Mouse_Button_State,
-	right_mouse:          Widget_Mouse_Button_State,
-	middle_mouse:         Widget_Mouse_Button_State,
-	keys:                 [oni.KEY_COUNT]Widget_Mouse_Key_State,
-	element_was_hovered:  map[string]bool,
-	element_pointer_down: map[string]bool,
-}
-
-Widget_Merged_State :: struct($S: typeid, $C: typeid) {
-	using state: S,
-	config:      C,
-}
-
-w_ctx: Widget_Context
-
-
 merge_state_config :: proc(state: $S, config: $C) -> Widget_Merged_State(S, C) {
 	return {state = state, config = config}
 }
@@ -58,33 +19,24 @@ merge_state_event :: proc(
 	return {state = merge_state_config(state, config), mouse_button = mouse_button, key = key}
 }
 
-// auto_element_id :: proc() -> Widget_ID {
-// 	idx := w_ctx.auto_element_index
-// 	w_ctx.auto_element_index += 1
 
-// 	// parent-scoped hashing so auto ids stay stable without
-// 	// allocating a fresh UUID string for every element on every frame.
-// 	return u64(auto_element_index)
-// }
-
-auto_element_id :: proc() -> Widget_ID {
-	idx := w_ctx.auto_element_index
-	w_ctx.auto_element_index += 1
+auto_element_id :: proc() -> oni.Widget_ID {
+	idx := oni.w_ctx.auto_element_index
+	oni.w_ctx.auto_element_index += 1
 
 	id := fmt.tprintf("__auto_element__{0}", idx)
 
 	return id
 }
 
-
 register_static_id :: proc(id: string, static_id: string) {
 	if id == "" do return
 
-	if w_ctx.static_ids == nil {
-		w_ctx.static_ids = make(map[string]Widget_ID)
+	if oni.w_ctx.static_ids == nil {
+		oni.w_ctx.static_ids = make(map[string]oni.Widget_ID)
 	}
 
-	w_ctx.static_ids[id] = static_id
+	oni.w_ctx.static_ids[id] = static_id
 }
 
 element_key :: proc(id: string) -> string {
@@ -94,8 +46,8 @@ element_key :: proc(id: string) -> string {
 }
 
 GetElementById :: proc(id: string) -> (static_id: string, ok: bool) {
-	if w_ctx.static_ids == nil do return {}, false
-	static_id, ok = w_ctx.static_ids[id]
+	if oni.w_ctx.static_ids == nil do return {}, false
+	static_id, ok = oni.w_ctx.static_ids[id]
 	return
 }
 
@@ -103,16 +55,16 @@ FocusElement :: proc(id: string) -> bool {
 	element_id, ok := GetElementById(id)
 	if !ok do return false
 
-	w_ctx.focused_id = element_id
+	oni.w_ctx.focused_id = element_id
 	return true
 }
 
-clear_button_transients :: proc(button: ^Widget_Mouse_Button_State) {
+clear_button_transients :: proc(button: ^oni.Widget_Mouse_Button_State) {
 	button.pressed = false
 	button.released = false
 }
 
-clear_key_transients :: proc(key: ^Widget_Mouse_Key_State) {
+clear_key_transients :: proc(key: ^oni.Widget_Mouse_Key_State) {
 	key.pressed = false
 	key.released = false
 }
@@ -121,14 +73,14 @@ sync_mouse_state :: proc() {
 	x, y: f32
 	buttons := sdl.GetMouseState(&x, &y)
 
-	w_ctx.mouse_x = x
-	w_ctx.mouse_y = y
-	w_ctx.left_mouse.down = .LEFT in buttons
-	w_ctx.right_mouse.down = .RIGHT in buttons
-	w_ctx.middle_mouse.down = .MIDDLE in buttons
+	oni.w_ctx.mouse_x = x
+	oni.w_ctx.mouse_y = y
+	oni.w_ctx.left_mouse.down = .LEFT in buttons
+	oni.w_ctx.right_mouse.down = .RIGHT in buttons
+	oni.w_ctx.middle_mouse.down = .MIDDLE in buttons
 }
 
-update_mouse_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
+update_mouse_button :: proc(button: ^oni.Widget_Mouse_Button_State, is_down: bool) {
 	if is_down {
 		if !button.down do button.pressed = true
 		button.down = true
@@ -138,7 +90,7 @@ update_mouse_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
 	}
 }
 
-update_key_state :: proc(key: ^Widget_Mouse_Key_State, is_down, is_repeat: bool) {
+update_key_state :: proc(key: ^oni.Widget_Mouse_Key_State, is_down, is_repeat: bool) {
 	if is_down {
 		if !key.down && !is_repeat do key.pressed = true
 		key.down = true
@@ -149,31 +101,31 @@ update_key_state :: proc(key: ^Widget_Mouse_Key_State, is_down, is_repeat: bool)
 }
 
 Shutdown :: proc() {
-	if w_ctx.static_ids != nil {
-		delete(w_ctx.static_ids)
+	if oni.w_ctx.static_ids != nil {
+		delete(oni.w_ctx.static_ids)
 	}
-	if w_ctx.element_was_hovered != nil {
-		delete(w_ctx.element_was_hovered)
+	if oni.w_ctx.element_was_hovered != nil {
+		delete(oni.w_ctx.element_was_hovered)
 	}
-	if w_ctx.element_pointer_down != nil {
-		delete(w_ctx.element_pointer_down)
+	if oni.w_ctx.element_pointer_down != nil {
+		delete(oni.w_ctx.element_pointer_down)
 	}
 }
 
 BeginFrame :: proc() {
-	w_ctx.auto_element_index = 0
+	oni.w_ctx.auto_element_index = 0
 
-	if w_ctx.static_ids != nil {
-		clear(&w_ctx.static_ids)
+	if oni.w_ctx.static_ids != nil {
+		clear(&oni.w_ctx.static_ids)
 	}
 
-	w_ctx.mouse_moved = false
+	oni.w_ctx.mouse_moved = false
 
-	clear_button_transients(&w_ctx.left_mouse)
-	clear_button_transients(&w_ctx.right_mouse)
-	clear_button_transients(&w_ctx.middle_mouse)
+	clear_button_transients(&oni.w_ctx.left_mouse)
+	clear_button_transients(&oni.w_ctx.right_mouse)
+	clear_button_transients(&oni.w_ctx.middle_mouse)
 
-	for &key in w_ctx.keys {
+	for &key in oni.w_ctx.keys {
 		clear_key_transients(&key)
 	}
 
@@ -183,50 +135,50 @@ BeginFrame :: proc() {
 ProcessEvent :: proc(event: ^sdl.Event) {
 	#partial switch event.type {
 	case .MOUSE_MOTION:
-		w_ctx.mouse_moved = true
-		w_ctx.mouse_x = event.motion.x
-		w_ctx.mouse_y = event.motion.y
+		oni.w_ctx.mouse_moved = true
+		oni.w_ctx.mouse_x = event.motion.x
+		oni.w_ctx.mouse_y = event.motion.y
 
 	case .MOUSE_BUTTON_DOWN:
-		w_ctx.mouse_x = event.button.x
-		w_ctx.mouse_y = event.button.y
+		oni.w_ctx.mouse_x = event.button.x
+		oni.w_ctx.mouse_y = event.button.y
 
 		switch event.button.button {
 		case sdl.BUTTON_LEFT:
-			update_mouse_button(&w_ctx.left_mouse, true)
+			update_mouse_button(&oni.w_ctx.left_mouse, true)
 		case sdl.BUTTON_RIGHT:
-			update_mouse_button(&w_ctx.right_mouse, true)
+			update_mouse_button(&oni.w_ctx.right_mouse, true)
 		case sdl.BUTTON_MIDDLE:
-			update_mouse_button(&w_ctx.middle_mouse, true)
+			update_mouse_button(&oni.w_ctx.middle_mouse, true)
 		}
 
 	case .MOUSE_BUTTON_UP:
-		w_ctx.mouse_x = event.button.x
-		w_ctx.mouse_y = event.button.y
+		oni.w_ctx.mouse_x = event.button.x
+		oni.w_ctx.mouse_y = event.button.y
 
 		switch event.button.button {
 		case sdl.BUTTON_LEFT:
-			update_mouse_button(&w_ctx.left_mouse, false)
+			update_mouse_button(&oni.w_ctx.left_mouse, false)
 		case sdl.BUTTON_RIGHT:
-			update_mouse_button(&w_ctx.right_mouse, false)
+			update_mouse_button(&oni.w_ctx.right_mouse, false)
 		case sdl.BUTTON_MIDDLE:
-			update_mouse_button(&w_ctx.middle_mouse, false)
+			update_mouse_button(&oni.w_ctx.middle_mouse, false)
 		}
 
 	case .KEY_DOWN:
 		idx := int(event.key.scancode)
 		if idx >= 0 && idx < oni.KEY_COUNT {
-			update_key_state(&w_ctx.keys[idx], true, event.key.repeat)
+			update_key_state(&oni.w_ctx.keys[idx], true, event.key.repeat)
 		}
 
 	case .KEY_UP:
 		idx := int(event.key.scancode)
 		if idx >= 0 && idx < oni.KEY_COUNT {
-			update_key_state(&w_ctx.keys[idx], false, false)
+			update_key_state(&oni.w_ctx.keys[idx], false, false)
 		}
 
 	case .WINDOW_FOCUS_LOST:
-		for &key in w_ctx.keys {
+		for &key in oni.w_ctx.keys {
 			key.down = false
 		}
 	}
@@ -238,11 +190,11 @@ SetPointerState :: proc(position: [2]f32, pointerDown: bool) {
 }
 
 SyncPointer :: proc() {
-	SetPointerState({w_ctx.mouse_x, w_ctx.mouse_y}, w_ctx.left_mouse.down)
+	SetPointerState({oni.w_ctx.mouse_x, oni.w_ctx.mouse_y}, oni.w_ctx.left_mouse.down)
 }
 
 pointer_over :: proc(rect: oni.Rect, space: oni.Draw_Space) -> bool {
-	mouse := oni.Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
+	mouse := oni.Vec2{oni.w_ctx.mouse_x, oni.w_ctx.mouse_y}
 	if space == .Artboard {
 		mouse = oni.View_Screen_To_World(mouse)
 	}
@@ -263,14 +215,14 @@ to_ui_event :: proc(state: ^$S) -> oni.Widget_Event(oni.Widget_State) {
 }
 
 consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered, left: bool) {
-	if w_ctx.element_was_hovered == nil {
-		w_ctx.element_was_hovered = make(map[string]bool)
+	if oni.w_ctx.element_was_hovered == nil {
+		oni.w_ctx.element_was_hovered = make(map[string]bool)
 	}
 
-	was_hovered := w_ctx.element_was_hovered[element_id]
+	was_hovered := oni.w_ctx.element_was_hovered[element_id]
 	entered = hovered && !was_hovered
 	left = was_hovered && !hovered
-	w_ctx.element_was_hovered[element_id] = hovered
+	oni.w_ctx.element_was_hovered[element_id] = hovered
 	return
 }
 
@@ -430,7 +382,7 @@ resolve_border :: proc(
 	state: ^$S,
 	event: oni.Widget_Event(S),
 ) -> (
-	bd: oni.Bd,
+	border: oni.Bd,
 	ok: bool,
 ) {
 	ui_state := to_ui_state(state)
@@ -570,10 +522,10 @@ resolve_child_gap :: proc(
 	return 0, false
 }
 
-resolve_align_pos :: proc(pos: oni.Align_Pos) -> (align: oni.Align_Pos, ok: bool) {
+resolve_align_pos :: proc(pos: oni.Justify_Pos) -> (align: oni.Justify_Pos, ok: bool) {
 	if pos.x == .Unset || pos.y == .Unset do return {}, false
 
-	x: oni.Align_X
+	x: oni.Justify_X
 	switch pos.x {
 	case .Unset:
 		return {}, false
@@ -585,7 +537,7 @@ resolve_align_pos :: proc(pos: oni.Align_Pos) -> (align: oni.Align_Pos, ok: bool
 		x = .Center
 	}
 
-	y: oni.Align_Y
+	y: oni.Justify_Y
 	switch pos.y {
 	case .Unset:
 		return {}, false
@@ -601,11 +553,11 @@ resolve_align_pos :: proc(pos: oni.Align_Pos) -> (align: oni.Align_Pos, ok: bool
 }
 
 resolve_align :: proc(
-	a: oni.Align,
+	a: oni.Justify,
 	state: ^$S,
 	event: oni.Widget_Event(S),
 ) -> (
-	align: oni.Align_Pos,
+	align: oni.Justify_Pos,
 	ok: bool,
 ) {
 	ui_state := to_ui_state(state)
@@ -613,9 +565,9 @@ resolve_align :: proc(
 	switch v in a {
 	case struct{}:
 		return {}, false
-	case oni.Align_Pos:
+	case oni.Justify_Pos:
 		return resolve_align_pos(v)
-	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Align:
+	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Justify:
 		return resolve_align(v(ui_state, ui_event), state, event)
 	}
 	return {}, false
@@ -643,11 +595,11 @@ resolve_direction :: proc(
 
 
 resolve_aspect_ratio :: proc(
-	a: oni.AspectRatio,
+	a: oni.Aspect_Ratio,
 	state: ^$S,
 	event: oni.Widget_Event(S),
 ) -> (
-	aspectRatio: f32,
+	aspect_ratio: f32,
 	ok: bool,
 ) {
 	ui_state := to_ui_state(state)
@@ -659,7 +611,7 @@ resolve_aspect_ratio :: proc(
 	case proc(
 		     state: oni.Widget_State,
 		     event: oni.Widget_Event(oni.Widget_State),
-	     ) -> oni.AspectRatio:
+	     ) -> oni.Aspect_Ratio:
 		return resolve_aspect_ratio(v(ui_state, ui_event), state, event)
 	}
 	return {}, false
@@ -687,39 +639,39 @@ element_config_to_declaration :: proc(
 	decl := config
 
 
-	if padding, padding_ok := resolve_padding(config.pd, state, event); padding_ok {
-		decl.pd = padding
+	if padding, padding_ok := resolve_padding(config.padding, state, event); padding_ok {
+		decl.padding = padding
 	}
 
-	if radius, radius_ok := resolve_radius(config.rd, state, event); radius_ok {
-		decl.rd = radius
+	if radius, radius_ok := resolve_radius(config.radius, state, event); radius_ok {
+		decl.radius = radius
 	}
 
 	border_width: oni.Border
 	border_ok := false
-	if width, width_ok := resolve_border(config.bd, state, event); width_ok {
+	if width, width_ok := resolve_border(config.border, state, event); width_ok {
 		border_width = width
 		border_ok = true
 	}
 
 	if border_ok {
-		decl.bd = border_width
+		decl.border = border_width
 	}
-	if color, color_ok := oni.resolve_color(config.bdColor, state, event); color_ok {
-		decl.bdColor = color
+	if color, color_ok := oni.to_rgba(config.border_color, state, event); color_ok {
+		decl.border_color = color
 	}
-	if bg, bg_ok := oni.resolve_color(config.bg, state, event); bg_ok {
-		decl.bg = bg
+	if background, bg_ok := oni.to_rgba(config.background, state, event); bg_ok {
+		decl.background = background
 	}
-	if color, color_ok := oni.resolve_color(config.color, state, event); color_ok {
+	if color, color_ok := oni.to_rgba(config.color, state, event); color_ok {
 		decl.color = color
 	}
 
 	if gap, gap_ok := resolve_child_gap(config.gap, state, event); gap_ok {
 		decl.gap = gap
 	}
-	if align, align_ok := resolve_align(config.alignChild, state, event); align_ok {
-		decl.alignChild = align
+	if align, align_ok := resolve_align(config.justify, state, event); align_ok {
+		decl.justify = align
 	}
 	if direction, direction_ok := resolve_direction(config.direction, state, event); direction_ok {
 		decl.direction = direction
@@ -749,23 +701,23 @@ merge_element_declaration :: proc(
 	}
 
 
-	if override.alignChild != nil {
-		result.alignChild = override.alignChild
+	if override.justify != nil {
+		result.justify = override.justify
 	}
-	if override.aspectRatio != nil {
-		result.aspectRatio = override.aspectRatio
+	if override.aspect_ratio != nil {
+		result.aspect_ratio = override.aspect_ratio
 	}
 	if override.auto_focus {
 		result.auto_focus = override.auto_focus
 	}
-	if override.bd != nil {
-		result.bd = override.bd
+	if override.border != nil {
+		result.border = override.border
 	}
-	if override.bdColor != nil {
-		result.bdColor = override.bdColor
+	if override.border_color != nil {
+		result.border_color = override.border_color
 	}
-	if override.bg != nil {
-		result.bg = override.bg
+	if override.background != nil {
+		result.background = override.background
 	}
 	if override.gap != nil {
 		result.gap = override.gap
@@ -791,17 +743,26 @@ merge_element_declaration :: proc(
 	if override.line_height != 0 {
 		result.line_height = override.line_height
 	}
-	if override.pd != nil {
-		result.pd = override.pd
+	if override.padding != nil {
+		result.padding = override.padding
 	}
-	if override.rd != nil {
-		result.rd = override.rd
+	if override.radius != nil {
+		result.radius = override.radius
 	}
 	if override.id != "" {
 		result.id = override.id
 	}
-	if override.rect != {} {
-		result.rect = override.rect
+	if override.x != {} {
+		result.x = override.x
+	}
+	if override.y != {} {
+		result.y = override.y
+	}
+	if override.width != {} {
+		result.width = override.width
+	}
+	if override.height != {} {
+		result.height = override.height
 	}
 	result.space = override.space
 	if override.wrap != nil {
@@ -820,24 +781,24 @@ consume_pointer_click :: proc(
 ) -> (
 	clicked: bool,
 ) {
-	if w_ctx.element_pointer_down == nil {
-		w_ctx.element_pointer_down = make(map[string]bool)
+	if oni.w_ctx.element_pointer_down == nil {
+		oni.w_ctx.element_pointer_down = make(map[string]bool)
 	}
 
 	if hovered && left_pressed {
-		w_ctx.element_pointer_down[element_id] = true
+		oni.w_ctx.element_pointer_down[element_id] = true
 	}
 
 	if left_released {
-		clicked = w_ctx.element_pointer_down[element_id] && hovered
-		w_ctx.element_pointer_down[element_id] = false
+		clicked = oni.w_ctx.element_pointer_down[element_id] && hovered
+		oni.w_ctx.element_pointer_down[element_id] = false
 	}
 
 	return
 }
 
 
-widget_shaped :: proc(id: Widget_ID) -> ^oni.Shaped_Text {
+widget_shaped :: proc(id: oni.Widget_ID) -> ^oni.Shaped_Text {
 	oni.ui_init()
 
 	ui_id := oni.UI_Id(hash.crc32(transmute([]u8)id))
