@@ -584,13 +584,12 @@ resolve_direction :: proc(
 	ui_state := to_ui_state(state)
 	ui_event := to_ui_event(state)
 	switch v in d {
-
 	case oni.Direction_Layout:
 		return v, true
 	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Direction:
 		return resolve_direction(v(ui_state, ui_event), state, event)
 	}
-	return .Horizontal, false
+	return oni.Direction_Layout.Horizontal, false
 }
 
 

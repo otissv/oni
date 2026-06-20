@@ -26,8 +26,8 @@ Keep the `game` package name and `build/hot_reload/game.{so,dll,dylib}` output s
 | `game/font.odin` | Glyph atlas upload, metrics, `measure_text` / `draw_text` via shaped runs |
 | `game/assets.odin` | Path resolution, load cache, stable `Asset_Id` handles |
 | `game/theme.odin` | Design tokens: colors, spacing, radii, typography |
-| `game/layout.odin` | Flex/stack layout solver (final layout engine) |
-| `game/ui.odin` | UI frame: IDs, rects, hit-test, focus, input consumption |
+| `game/layout.odin` | Pass-1 measure + flex/stack solve; writes `rect` on each tree node (not a widget) |
+| `game/ui.odin` | UI frame: two-pass build, IDs, hit-test, focus, input consumption |
 | `game/widgets.odin` | Panel, label, text, image, button, checkbox, slider, text field, select, dropdown, scroll view, list row |
 | `game/input.odin` | Keyboard routing, tab order, shortcuts, text-editing state |
 | `game/modal.odin` | Overlay stack: popups, tooltips, context menus, drag layer |
@@ -71,9 +71,10 @@ UI_Id :: distinct u64
 1. Poll SDL events → update `Input_State` and `Dpi_Info`
 2. Run app `update(dt)` (your screens)
 3. `ui_begin_frame()` — reset per-frame UI transient state
-4. Build UI (immediate-mode widget calls)
-5. `ui_end_frame()` — resolve focus, modal hit layers
-6. `render_frame()` — flush draw lists, present swapchain
+4. **Pass 1 — layout:** app calls widgets; each widget registers a tree node with layout config, intrinsic size is measured, solver writes final `rect` on every node
+5. **Pass 2 — draw:** same widget procs run again (or a dedicated draw walk) using computed rects — emit draw commands, register hit targets
+6. `ui_end_frame()` — resolve focus, modal hit layers
+7. `render_frame()` — flush draw lists, present swapchain
 
 ### Hot reload rules
 
@@ -322,80 +323,160 @@ theme_color   :: proc(t: ^Theme, role: Theme_Color_Role) -> Color
 
 ---
 
-## Section 6 — Layout engine
+## Section 6 — Layout (CSS-style, two-pass)
 
-**Goal:** Final flex/stack layout. Widgets never manually stack `y += height` in app code.
+**Goal:** Flex/stack layout like HTML/CSS — layout properties live on each widget, not in a separate layout widget. App code never manually stacks `y += height`. Every frame: **pass 1** builds a tree and computes rects; **pass 2** draws from those rects.
 
-### `layout.odin`
+### Layout on every widget (HTML/CSS model)
+
+There is no `ui_layout()` container and no separate “layout-only” widget type. **Every widget** — panel, label, button, text field — carries the same layout fields on its declaration:
 
 ```odin
-Layout_Axis :: enum { Horizontal, Vertical }
-Layout_Align :: enum { Start, Center, End, Stretch }
-Layout_Style :: struct {
-    axis:          Layout_Axis,
-    gap:           f32,
-    padding:       Rect, // use x/y/w/h as top/right/bottom/left or separate fields
-    align_main:    Layout_Align,
-    align_cross:   Layout_Align,
-    flex:          f32,  // 0 = hug content, 1 = fill remaining
-    min_w, min_h:  f32,
-    max_w, max_h:  f32,
-}
+Widget_config :: struct {
+    // sizing (participates in parent flex like any HTML element)
+    width, height:  Width,   // fixed px, %, grow, hug
+    min_w, max_w, min_h, max_h: f32,
+    flex:           f32,      // flex-grow within parent stack
+    aspect_ratio:   f32,
 
-Layout_Node :: struct {
-    style:    Layout_Style,
-    desired:  Vec2,
-    rect:     Rect,     // computed
-    children: []Layout_Node, // temp allocator per frame
-}
+    // box model — applies whether or not the widget has children
+    padding:        Padding,
+    gap:            Gap,      // space between children
+    direction:      Direction, // .Horizontal | .Vertical stack
+    justify:        Justify,   // main + cross axis alignment
 
-layout_solve :: proc(root: ^Layout_Node, bounds: Rect) -> Rect
-layout_hug   :: proc(node: ^Layout_Node) -> Vec2
+    // ... theme, border, clip, etc.
+}
 ```
 
-- Support horizontal/vertical stack, flex grow, padding, gap, min/max, cross-axis align
-- **Grid:** defer to a single `ui_grid(cols, rows, cell_w, cell_h)` helper built on stacks if needed; no second layout system later
+- **Any widget can have children.** Like HTML: a `<button>` holds an icon + label; a search `<input>` holds a leading icon and trailing clear button; a `<div>` holds rows. Same here — `ui_text_field`, `ui_button`, and `ui_panel` all accept an optional `body: proc()` for child widgets.
+- **Any widget can be a flex child.** A text field inside a horizontal toolbar uses `flex = 1` the same way a panel would; no special-case sizing API.
+- **Intrinsic vs container measure:** if a widget has no children, pass 1 uses widget-specific intrinsic measure (label → `font_measure`, image → texture size). If it has children (or a built-in child slot), pass 1 runs `layout_measure` over the child subtree like any other flex container. Widget behavior (click, keyboard, caret) is separate from layout role.
+- **Grid:** defer to a single `ui_grid(cols, rows, cell_w, cell_h)` helper built on nested stacks if needed; no second layout system later.
 
-### Integration
+### Pass 1 — measure + solve (`layout.odin`)
 
-- `ui.odin` provides `ui_layout(style, body: proc())` — body calls widgets; children register desired sizes; one solve pass per panel
+Build a transient tree each frame (temp allocator). Each widget call pushes a node; children are nodes appended under the current parent.
+
+```odin
+Layout_Node :: struct {
+    config:   Widget_config,  // resolved declaration for this instance
+    desired:  Vec2,           // intrinsic size from widget measure
+    rect:     Rect,           // written by solver
+    children: []Layout_Node,
+}
+
+layout_push_node :: proc(config: Widget_config) -> ^Layout_Node
+layout_pop_node  :: proc()
+layout_measure   :: proc(node: ^Layout_Node) -> Vec2  // bottom-up intrinsic size
+layout_solve     :: proc(root: ^Layout_Node, bounds: Rect)
+```
+
+Pass-1 flow per widget proc:
+
+1. Resolve dynamic config (`padding`, `direction`, etc. from theme/state callbacks)
+2. `layout_push_node(config)`
+3. Recurse into child widget procs (they push their own nodes)
+4. `layout_pop_node()` — on pop, measure this node: children present → `layout_measure` over subtree; no children → widget intrinsic measure (text → `font_measure`, image → texture size, text field default chrome → min size + padding)
+5. After the root subtree returns, `layout_solve(root, parent_bounds)` assigns final `rect` to every node
+
+Solver supports: horizontal/vertical stack, flex grow/shrink, padding, gap, min/max clamps, cross-axis align (start/center/end/stretch).
+
+### Pass 2 — draw (`ui.odin` + widgets)
+
+After pass 1, every node has a final `rect`. Pass 2 re-enters widget procs in draw mode:
+
+```odin
+ui_layout_rect :: proc(id: UI_Id) -> Rect  // rect from pass-1 node for this id
+```
+
+- Widgets read `ui_layout_rect(id)` instead of computing x/y themselves
+- Emit `draw_*` calls clipped to node rect; register hit targets at node rect
+- Input/hover uses pass-2 rects; no layout work during draw
+- single-pass render
+
+`ui_begin_frame()` resets the tree and sets pass to `.Layout`. A single `ui_end_layout_pass()` (or implicit boundary before draw) runs `layout_solve` on the root, then switches to pass `.Draw`.
+
+### Integration sketch
+
+All widgets share the same layout/draw split. Container-style (panel) and composite-style (text field with adornments) use the same pattern:
+
+```odin
+ui_widget :: proc(config: Widget_config, body: proc() = nil) {
+    id := ui_id(config.id)
+    if ui_pass() == .Layout {
+        layout_push_node(resolve_config(config))
+        if body != nil do body() // optional children — icon, label, etc.
+        layout_pop_node()
+        return
+    }
+    rect := ui_layout_rect(id)
+    draw_widget_chrome(rect, config) // border, background, focus ring
+    ui_push_clip(content_rect(rect, config.padding))
+    if body != nil do body()
+    else draw_widget_default_content(rect, config) // e.g. bare label text
+    ui_pop_clip()
+}
+```
+
+App code stays flat — only widget calls, no manual layout math:
+
+```odin
+ui_panel({ direction = .Horizontal, height = 48 }, proc() {
+    ui_panel({ width = 240 }, proc() { /* sidebar */ })
+    ui_text_field({ flex = 1, direction = .Horizontal, gap = 8 }, proc() {
+        ui_image({ width = 16, height = 16 }, search_icon)
+        // editable area fills remaining flex via default child slot or inner flex child
+    })
+})
+```
 
 ### Checkpoint
 
-- [ ] Toolbar (fixed height) + sidebar (fixed width) + content (flex 1) fills window on any resize without manual position math
-- [ ] `min_w` / `max_w` clamp a text field inside a narrow panel
+- [ ] Pass 1 builds a tree; pass 2 draws from stored rects — no widget reads mouse position during layout
+- [ ] Toolbar (fixed height) + sidebar (fixed width) + content (`flex = 1`) fills the window on resize without manual position math
+- [ ] `min_w` / `max_w` on a text field clamp correctly inside a narrow panel
+- [ ] Text field with `flex = 1` and horizontal `direction` lays out icon + editable area like an HTML input group
+- [ ] Padding and gap on any widget (panel, button, text field) affect child rects consistently
 - [ ] Layout results are deterministic and stable frame-to-frame
 
 ---
 
 ## Section 7 — UI core
 
-**Goal:** Immediate-mode UI foundation: IDs, hit testing, focus, input consumption. Widgets are thin wrappers over this.
+**Goal:** Immediate-mode UI foundation: pass coordination (Section 6), IDs, hit testing, focus, input consumption. Widgets are thin wrappers over this.
 
 ### `ui.odin`
 
 ```odin
-ui_begin_frame :: proc()
-ui_end_frame   :: proc()
+UI_Pass :: enum { Layout, Draw }
 
-ui_id          :: proc(label: string) -> UI_Id  // hash of label + parent scope
-ui_rect        :: proc(id: UI_Id, r: Rect) -> bool // registers hit target
+ui_begin_frame      :: proc()
+ui_end_layout_pass  :: proc() // runs layout_solve, switches to .Draw
+ui_end_frame        :: proc()
 
-ui_is_hovered  :: proc(id: UI_Id) -> bool
-ui_is_active   :: proc(id: UI_Id) -> bool // mouse down on widget
-ui_is_focused  :: proc(id: UI_Id) -> bool
+ui_pass             :: proc() -> UI_Pass
+ui_layout_rect      :: proc(id: UI_Id) -> Rect // pass-1 result; valid in .Draw
 
-ui_want_capture_mouse :: proc() -> bool
+ui_id               :: proc(label: string) -> UI_Id  // hash of label + parent scope
+ui_rect             :: proc(id: UI_Id, r: Rect) -> bool // registers hit target (draw pass only)
+
+ui_is_hovered       :: proc(id: UI_Id) -> bool
+ui_is_active        :: proc(id: UI_Id) -> bool // mouse down on widget
+ui_is_focused       :: proc(id: UI_Id) -> bool
+
+ui_want_capture_mouse    :: proc() -> bool
 ui_want_capture_keyboard :: proc() -> bool
 ```
 
-- **Hit test:** front-to-back = reverse declaration order within frame; modal layer (Section 10) inserts at top
+- **Two-pass build:** app calls the same widget tree twice per frame — layout pass registers nodes and measures; `ui_end_layout_pass()` solves; draw pass reads `ui_layout_rect` and emits geometry + hit targets
+- **Hit test:** front-to-back = reverse declaration order within draw pass; modal layer (Section 10) inserts at top
 - **Focus:** one `focused_id`; click sets focus; tab moves focus (Section 9)
 - **Input consumption:** if `ui_want_capture_mouse`, app does not receive clicks; events handled in `poll_events` by calling `ui_handle_event(event)`
 
 ### Scope stack
 
-`ui_push_parent_rect(r)` / `ui_pop_parent_rect()` — clip + layout bounds for children
+`ui_push_clip(r)` / `ui_pop_clip()` — clip children during pass 2; layout bounds come from pass-1 solved rects, not a separate parent-rect stack
 
 ### Checkpoint
 
@@ -407,24 +488,26 @@ ui_want_capture_keyboard :: proc() -> bool
 
 ## Section 8 — Widget library
 
-**Goal:** Complete widget set for desktop apps and tools. Each widget uses `Theme`, `layout`, and `draw` only — no ad-hoc SDL calls.
+**Goal:** Complete widget set for desktop apps and tools. Each widget owns layout config on its declaration (pass 1) and draw/hit-test (pass 2) — `Theme` + `draw` only; no ad-hoc SDL calls.
 
 ### `widgets.odin`
 
 | Widget | Behavior |
 |--------|----------|
-| `ui_panel` | Background + optional border + clip children |
-| `ui_label` | Single-line text, ellipsis overflow |
+| `ui_panel` | Background + optional border + clip; optional `body` for children |
+| `ui_label` | Single-line text, ellipsis overflow; optional `body` (icon + text row) |
 | `ui_text` | Multi-line read-only, wrap |
 | `ui_image` | Fit / fill / stretch modes |
-| `ui_button` | Normal / hover / pressed / disabled; `on_click` id |
-| `ui_checkbox` | Toggle bool ref |
+| `ui_button` | Normal / hover / pressed / disabled; `on_click` id; optional `body` (icon, label, badge) |
+| `ui_checkbox` | Toggle bool ref; optional `body` (box + label row) |
 | `ui_slider` | Drag axis → scalar ref in range |
-| `ui_text_field` | Caret, selection, editable string ref (keyboard in Section 9) |
+| `ui_text_field` | Caret, selection, editable string ref (Section 9); optional `body` (prefix icon, suffix clear, etc.) — `flex`/`direction`/`gap` layout like HTML |
 | `ui_select` | Listbox, visible rows, single selection index |
 | `ui_dropdown` | Closed row + popup list (uses modal layer) |
 | `ui_scroll_view` | Clip + content offset + wheel scroll + optional scrollbar |
 | `ui_list_row` | Selectable row for lists / asset browser |
+
+Every widget accepts the same `Widget_config` layout fields (`flex`, `padding`, `direction`, …). Composite widgets without a `body` draw their default content (e.g. plain label string); with a `body`, children are laid out via the shared flex solver from Section 6.
 
 ### States
 
@@ -641,7 +724,7 @@ flowchart TD
     S3[3 Draw API and batching]
     S4[4 Assets and textures]
     S5[5 Font shaping and theme]
-    S6[6 Layout engine]
+    S6[6 Layout two-pass]
     S7[7 UI core]
     S8[8 Widgets]
     S9[9 Keyboard and text]

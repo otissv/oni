@@ -102,31 +102,75 @@ Widget_config :: struct {
 	id:             string,
 	kind:           Widget_Kind,
 	align:          Text_Align,
-	justify:        Justify,
 	aspect_ratio:   Aspect_Ratio,
 	auto_focus:     bool,
+	background:     Colors,
 	border:         Border,
 	border_color:   Colors,
-	background:     Colors,
-	gap:            Gap,
 	color:          Colors,
-	text_direction: Text_Direction,
 	direction:      Direction,
 	disabled:       bool,
+	flex:           f32,
 	font:           Font_Handle,
 	font_size:      f32,
+	gap:            Gap,
+	height:         f32,
+	justify:        Justify,
 	letter_spacing: f32,
 	line_height:    f32,
+	max_h:          f32,
+	max_w:          f32,
+	min_h:          f32,
+	min_w:          f32,
 	padding:        Padding,
 	radius:         Radius,
+	space:          Draw_Space,
+	text_direction: Text_Direction,
+	width:          f32,
+	wrap:           Text_Warp,
 	x:              f32,
 	y:              f32,
-	width:          f32,
-	height:         f32,
-	space:          Draw_Space,
-	wrap:           Text_Warp,
+	overflow:       Overflow,
+	overflow_y:     Overflow,
+	overflow_x:     Overflow,
+	visibility:     Visibility,
+	z_index:        f32,
+	position:       Position,
 }
 
+Whitespace :: union {
+	enum {
+		Auto,
+		Wrap,
+	},
+}
+
+Position :: union {
+	enum {
+		Relative,
+		Absolute,
+		Fixed,
+		Sticky,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Position,
+}
+
+Visibility :: union {
+	enum {
+		Visible,
+		Hidden,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Visibility,
+}
+
+Overflow :: union {
+	enum {
+		Auto,
+		Scroll,
+		Hidden,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow,
+}
 
 // Padding
 Pd :: struct {
@@ -205,6 +249,12 @@ Dim_struct :: struct {
 
 Width :: union {
 	struct{},
+	enum {
+		Auto,
+		Fit_Content,
+		Min_Content,
+		Max_Content,
+	},
 	f32,
 	Dim_struct,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Width,
@@ -212,6 +262,12 @@ Width :: union {
 
 Height :: union {
 	struct{},
+	enum {
+		Auto,
+		Fit_Content,
+		Min_Content,
+		Max_Content,
+	},
 	f32,
 	Dim_struct,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height,
@@ -223,30 +279,46 @@ Gap :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap,
 }
 
-Text_Warp :: enum {
-	None,
-	Newlines,
-	Balance,
+Text_Warp :: union {
+	struct{},
+	enum {
+		None,
+		Newlines,
+		Balance,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Warp,
 }
 
-Text_Align :: enum {
-	Left,
-	Center,
-	Right,
+Text_Align :: union {
+	struct{},
+	enum {
+		Left,
+		Center,
+		Right,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align,
 }
 
-Justify_X :: enum {
-	Unset,
-	Left,
-	Right,
-	Center,
+Justify_X :: union {
+	struct{},
+	enum {
+		Start,
+		Center,
+		End,
+		Stretch,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_X,
 }
 
-Justify_Y :: enum {
-	Unset,
-	Top,
-	Bottom,
-	Center,
+Justify_Y :: union {
+	struct{},
+	enum {
+		Start,
+		Center,
+		End,
+		Stretch,
+	},
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_Y,
 }
 
 Justify_Pos :: struct {
@@ -260,23 +332,31 @@ Justify :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify,
 }
 
+
 Direction_Layout :: enum {
-	Stacked,
 	Horizontal,
+	Vertical,
 }
 
 Direction :: union {
+	struct{},
 	Direction_Layout,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction,
 }
 
 
 Aspect_Ratio :: union {
+	struct{},
+	enum {
+		Auto,
+		None,
+	},
 	f32,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Aspect_Ratio,
 }
 
 Image :: union {
+	struct{},
 	rawptr,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image,
 }

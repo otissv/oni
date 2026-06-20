@@ -35,6 +35,7 @@ OKLCHA :: struct {
 // Tailwind palette color names.
 Color :: enum {
 	Invalid,
+	Inherit,
 	Transparent,
 	Black,
 	White,
@@ -339,6 +340,7 @@ Color :: enum {
 
 palette: Palette = {
 	.Invalid        = {},
+	.Inherit        = {},
 	.Transparent    = RGBA{0, 0, 0, 0},
 	.Surface        = RGBA{42, 42, 48, 255},
 	.Border         = RGBA{64, 64, 72, 255},

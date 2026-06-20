@@ -15,6 +15,7 @@ Rectangle_Event :: oni.Widget_Event(Rectangle_State)
 
 Rectangle_Props :: struct {
 	using config:      Rectangle_Config,
+	child:             proc(state: Rectangle_State),
 	on_focus:          proc(event: Rectangle_Event),
 	on_blur:           proc(event: Rectangle_Event),
 	on_mouse_enter:    proc(event: Rectangle_Event),
@@ -283,7 +284,9 @@ Rectangle :: proc(props: Rectangle_Props) {
 		h = config.height,
 	}
 
-	// oni.Draw_Rectangle(rect, background, radius, border, border_color)
+	oni.Draw_Rectangle(rect, background, background, radius, border, border_color)
 
-	oni.Draw_Rectangle(rect, background, 10)
+	if props.child != nil {
+		props.child(state)
+	}
 }

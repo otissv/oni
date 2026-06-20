@@ -290,30 +290,28 @@ resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u
 }
 
 resolve_align_pos :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok: bool) {
-	if pos.x == .Unset || pos.y == .Unset do return {}, false
-
 	x: Justify_X
 	switch pos.x {
-	case .Unset:
-		return {}, false
-	case .Left:
-		x = .Left
-	case .Right:
-		x = .Right
+	case .Start:
+		x = .Start
 	case .Center:
 		x = .Center
+	case .End:
+		x = .End
+	case .Stretch:
+		x = .Stretch
 	}
 
 	y: Justify_Y
 	switch pos.y {
-	case .Unset:
-		return {}, false
-	case .Top:
-		y = .Top
-	case .Bottom:
-		y = .Bottom
+	case .Start:
+		y = .Start
 	case .Center:
 		y = .Center
+	case .End:
+		y = .End
+	case .Stretch:
+		y = .Stretch
 	}
 
 	return {x = x, y = y}, true
