@@ -2,8 +2,8 @@ package oni
 
 
 Layout_Measure :: struct {
-	text:   string,
-	max_w:  f32,
+	text:  string,
+	max_w: f32,
 }
 
 Layout_Node :: struct {
@@ -95,21 +95,38 @@ layout_measure_text :: proc(config: Resolved_Widget_config, text: string, max_w:
 
 layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	config := node.config
+	size: Vec2
 
 	if len(node.measure.text) > 0 {
 		max_w := node.measure.max_w
 		if max_w <= 0 && node.config.width.kind == .Fixed do max_w = node.config.width.value
 		if max_w <= 0 && node.config.max_w > 0 do max_w = node.config.max_w
-		return layout_measure_text(config, node.measure.text, max_w)
+		size = layout_measure_text(config, node.measure.text, max_w)
+	} else {
+		width := length_resolve(node.config.width, 0)
+		height := length_resolve(node.config.height, 0)
+		if width <= 0 do width = node.desired.x
+		if height <= 0 do height = node.desired.y
+		if width <= 0 do width = config.min_w
+		if height <= 0 do height = config.min_h
+		size = {
+			layout_clamp_axis(width, config.min_w, config.max_w),
+			layout_clamp_axis(height, config.min_h, config.max_h),
+		}
 	}
 
-	width := length_resolve(node.config.width, 0)
-	height := length_resolve(node.config.height, 0)
-	if width <= 0 do width = node.desired.x
-	if height <= 0 do height = node.desired.y
-	if width <= 0 do width = config.min_w
-	if height <= 0 do height = config.min_h
-	return {layout_clamp_axis(width, config.min_w, config.max_w), layout_clamp_axis(height, config.min_h, config.max_h)}
+	if length_is_definite(node.config.width) {
+		if width := length_resolve(node.config.width, 0); width > 0 {
+			size.x = layout_clamp_axis(width, config.min_w, config.max_w)
+		}
+	}
+	if length_is_definite(node.config.height) {
+		if height := length_resolve(node.config.height, 0); height > 0 {
+			size.y = layout_clamp_axis(height, config.min_h, config.max_h)
+		}
+	}
+
+	return size
 }
 
 layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
@@ -231,6 +248,12 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 	}
 }
 
+layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2) {
+	resolved := layout_resolve_node_size(node, bounds)
+	if length_is_definite(node.config.width) do size.x = resolved.x
+	if length_is_definite(node.config.height) do size.y = resolved.y
+}
+
 layout_child_main_size :: proc(
 	child: ^Layout_Node,
 	is_horizontal: bool,
@@ -335,6 +358,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		main := layout_child_main_size(child, is_horizontal, flex_unit, main_available)
 		cross := layout_child_cross_size(child, is_horizontal, cross_available, justify)
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
+		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
 
 	total_main: f32
@@ -348,9 +372,17 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	main_free := max(0, main_available - total_main)
 	main_start: f32
 	if is_horizontal {
-		main_start = layout_axis_main_offset(main_free, total_main, justify_axis_align_from_x(justify.x))
+		main_start = layout_axis_main_offset(
+			main_free,
+			total_main,
+			justify_axis_align_from_x(justify.x),
+		)
 	} else {
-		main_start = layout_axis_main_offset(main_free, total_main, justify_axis_align_from_y(justify.y))
+		main_start = layout_axis_main_offset(
+			main_free,
+			total_main,
+			justify_axis_align_from_y(justify.y),
+		)
 	}
 
 	main_cursor := main_start
@@ -364,19 +396,39 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		x, y: f32
 		if is_horizontal {
 			x = content.x + main_cursor
-			y = content.y + layout_axis_cross_offset(cross_available, cross, justify_axis_align_from_y(justify.y))
+			y =
+				content.y +
+				layout_axis_cross_offset(
+					cross_available,
+					cross,
+					justify_axis_align_from_y(justify.y),
+				)
 		} else {
-			x = content.x + layout_axis_cross_offset(cross_available, cross, justify_axis_align_from_x(justify.x))
+			x =
+				content.x +
+				layout_axis_cross_offset(
+					cross_available,
+					cross,
+					justify_axis_align_from_x(justify.x),
+				)
 			y = content.y + main_cursor
 		}
 
 		x += child.config.x
 		y += child.config.y
 
-		child.rect = {x = x, y = y, w = size.x, h = size.y}
+		child.rect = {
+			x = x,
+			y = y,
+			w = size.x,
+			h = size.y,
+		}
 
 		if len(child.child_indices) > 0 {
-			layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
+			layout_position_children(
+				child,
+				layout_inner_rect(child.rect, child.border, child.padding),
+			)
 		}
 
 		main_cursor += main
@@ -392,7 +444,12 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 	if node.config.x != 0 do x += node.config.x
 	if node.config.y != 0 do y += node.config.y
 
-	node.rect = {x = x, y = y, w = size.x, h = size.y}
+	node.rect = {
+		x = x,
+		y = y,
+		w = size.x,
+		h = size.y,
+	}
 
 	if len(node.child_indices) > 0 {
 		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))

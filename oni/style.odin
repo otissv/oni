@@ -193,6 +193,8 @@ resolve_cfg_colors :: proc(
 		#partial switch v in field.value {
 		case Color:
 			if v == .Inherit do return parent
+		case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+			return field.value
 		}
 		if rgba, ok := to_rgba(field.value, state, event); ok do return rgba
 		return field.value
@@ -297,14 +299,20 @@ finalize_resolved_procs :: proc(
 	if border, border_ok := resolve_border(config.border, state, event); border_ok {
 		config.border = border
 	}
-	if color, color_ok := to_rgba(config.border_color, state, event); color_ok {
-		config.border_color = color
+	if !colors_is_proc(config.border_color) {
+		if color, color_ok := to_rgba(config.border_color, state, event); color_ok {
+			config.border_color = color
+		}
 	}
-	if background, bg_ok := to_rgba(config.background, state, event); bg_ok {
-		config.background = background
+	if !colors_is_proc(config.background) {
+		if background, bg_ok := to_rgba(config.background, state, event); bg_ok {
+			config.background = background
+		}
 	}
-	if color, color_ok := to_rgba(config.color, state, event); color_ok {
-		config.color = color
+	if !colors_is_proc(config.color) {
+		if color, color_ok := to_rgba(config.color, state, event); color_ok {
+			config.color = color
+		}
 	}
 	if align, align_ok := resolve_text_align(config.align, state, event); align_ok {
 		config.align = align

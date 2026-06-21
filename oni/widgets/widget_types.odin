@@ -68,17 +68,6 @@ clear_key_transients :: proc(key: ^oni.Widget_Mouse_Key_State) {
 	key.released = false
 }
 
-sync_mouse_state :: proc() {
-	x, y: f32
-	buttons := sdl.GetMouseState(&x, &y)
-
-	oni.w_ctx.mouse_x = x
-	oni.w_ctx.mouse_y = y
-	oni.w_ctx.left_mouse.down = .LEFT in buttons
-	oni.w_ctx.right_mouse.down = .RIGHT in buttons
-	oni.w_ctx.middle_mouse.down = .MIDDLE in buttons
-}
-
 update_mouse_button :: proc(button: ^oni.Widget_Mouse_Button_State, is_down: bool) {
 	if is_down {
 		if !button.down do button.pressed = true
@@ -130,7 +119,7 @@ BeginFrame :: proc() {
 		clear_key_transients(&key)
 	}
 
-	sync_mouse_state()
+	oni.sync_widget_input()
 }
 
 EndLayoutPass :: proc() {

@@ -9,7 +9,7 @@ Widget_Text_Flag :: enum {
 	Uncached,
 }
 
-Widget_Text_Flags :: bit_set[Widget_Text_Flag; i32]
+Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
 
 Text_Variant :: enum {
 	DEFAULT,
@@ -206,8 +206,10 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	layout_id := oni.ui_id(layout_label)
 
 	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus := props.auto_focus.mode == .Value && props.auto_focus.value &&
-	     oni.w_ctx.auto_focused_id != key
+	should_auto_focus :=
+		props.auto_focus.mode == .Value &&
+		props.auto_focus.value &&
+		oni.w_ctx.auto_focused_id != key
 
 	if should_auto_focus {
 		oni.w_ctx.focused_id = key
@@ -232,14 +234,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		return {}
 	}
 
-	layout_rect := oni.ui_layout_rect(layout_id)
-	rect := layout_rect
-	if rect.w == 0 {
-		if w := oni.length_resolve(style.width, 0); w > 0 do rect.w = w
-	}
-	if rect.h == 0 {
-		if h := oni.length_resolve(style.height, 0); h > 0 do rect.h = h
-	}
+	rect := oni.widget_hit_rect(layout_id, style)
 
 	merged.is_hovered = oni.pointer_over(rect, style.space)
 	merged.is_left_clicked = merged.is_hovered && oni.w_ctx.left_mouse.pressed
@@ -380,11 +375,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	rgbaColor, color_ok := oni.to_rgba(style.color, &merged, event)
 	if !color_ok do return {}
 
-	resolved_font, layout_scale, ok := oni.font_resolve(
-		style.font,
-		style.font_size,
-		style.space,
-	)
+	resolved_font, layout_scale, ok := oni.font_resolve(style.font, style.font_size, style.space)
 	if !ok do return {}
 
 	face := oni.font_face_from_handle(resolved_font)

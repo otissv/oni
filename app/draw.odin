@@ -12,8 +12,8 @@ Heading :: proc() {
 	w.Text(
 		{
 			id = "heading",
-			width = 480,
-			height = 28,
+			width = set.Width(480),
+			height = set.Height(28),
 			text = "Artboard text — zoomable",
 			font = set.Font(theme.font_heading),
 			color = set.Colors(oni.theme.palette[.Accent]),
@@ -38,8 +38,8 @@ Paragraph :: proc() {
 	w.Text(
 		{
 			id = "paragraph",
-			width = 480,
-			height = 200,
+			width = set.Width(480),
+			height = set.Height(200),
 			text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
 			font = set.Font(theme.font_body),
 			font_size = set.F32(20),
@@ -85,8 +85,8 @@ Hud :: proc() {
 			id = "hud-zoom",
 			x = set.F32(16),
 			y = set.F32(6),
-			width = 600,
-			height = 24,
+			width = set.Width(600),
+			height = set.Height(24),
 			text = hud,
 			font = set.Font(theme.font_body),
 			color = set.Colors(oni.theme.palette[.White]),

@@ -661,6 +661,14 @@ Colors :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors,
 }
 
+colors_is_proc :: proc(c: Colors) -> bool {
+	#partial switch _ in c {
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+		return true
+	}
+	return false
+}
+
 color_clamp01 :: proc(v: f32) -> f32 {
 	return math.clamp(v, 0, 1)
 }

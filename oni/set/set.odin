@@ -27,6 +27,8 @@ Text_Direction :: proc(value: oni.Text_Direction) -> oni.Cfg(oni.Text_Direction)
 	return cfg_value(value)
 }
 F32 :: proc(value: f32) -> oni.Cfg(f32) {return cfg_value(value)}
+Width :: proc(value: f32) -> oni.Width {return oni.Width(value)}
+Height :: proc(value: f32) -> oni.Height {return oni.Height(value)}
 Font :: proc(font: oni.Font_Handle) -> oni.Cfg(oni.Font_Handle) {return cfg_value(font)}
 Bool :: proc(value: bool) -> oni.Cfg(bool) {return cfg_value(value)}
 Inherit :: proc($T: typeid) -> oni.Cfg(T) {return cfg_inherit(T)}

@@ -2,7 +2,6 @@ package oni
 
 import "core:fmt"
 import "core:hash"
-import sdl "vendor:sdl3"
 
 
 auto_element_id :: proc() -> Widget_ID {
@@ -41,15 +40,44 @@ clear_key_transients :: proc(key: ^Widget_Mouse_Key_State) {
 	key.released = false
 }
 
-sync_mouse_state :: proc() {
-	x, y: f32
-	buttons := sdl.GetMouseState(&x, &y)
+@(private)
+sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
+	if is_down {
+		if !button.down do button.pressed = true
+	} else {
+		if button.down do button.released = true
+	}
+	button.down = is_down
+}
 
-	w_ctx.mouse_x = x
-	w_ctx.mouse_y = y
-	w_ctx.left_mouse.down = .LEFT in buttons
-	w_ctx.right_mouse.down = .RIGHT in buttons
-	w_ctx.middle_mouse.down = .MIDDLE in buttons
+@(private)
+sync_widget_key :: proc(key: ^Widget_Mouse_Key_State, is_down: bool) {
+	if is_down {
+		if !key.down do key.pressed = true
+	} else {
+		if key.down do key.released = true
+	}
+	key.down = is_down
+}
+
+sync_widget_input :: proc() {
+	if state == nil do return
+
+	new_x := state.input.mouse_x
+	new_y := state.input.mouse_y
+	if new_x != w_ctx.mouse_x || new_y != w_ctx.mouse_y {
+		w_ctx.mouse_moved = true
+	}
+	w_ctx.mouse_x = new_x
+	w_ctx.mouse_y = new_y
+
+	sync_widget_button(&w_ctx.left_mouse, state.input.mouse_left)
+	sync_widget_button(&w_ctx.right_mouse, state.input.mouse_right)
+	sync_widget_button(&w_ctx.middle_mouse, state.input.mouse_middle)
+
+	for scancode in 0 ..< KEY_COUNT {
+		sync_widget_key(&w_ctx.keys[scancode], state.input.keys_down[scancode])
+	}
 }
 
 beginMouseFrame :: proc() {
@@ -69,7 +97,7 @@ beginMouseFrame :: proc() {
 		clear_key_transients(&key)
 	}
 
-	sync_mouse_state()
+	sync_widget_input()
 }
 
 pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
@@ -83,6 +111,24 @@ pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 		mouse.y >= rect.y &&
 		mouse.y < rect.y + rect.h \
 	)
+}
+
+widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_config) -> Rect {
+	rect := ui_layout_rect(layout_id)
+
+	if style.width.kind == .Fixed {
+		rect.w = style.width.value
+	} else if w := length_resolve(style.width, rect.w); w > 0 {
+		rect.w = w
+	}
+
+	if style.height.kind == .Fixed {
+		rect.h = style.height.value
+	} else if h := length_resolve(style.height, rect.h); h > 0 {
+		rect.h = h
+	}
+
+	return rect
 }
 
 to_ui_state :: proc(state: ^$S) -> Widget_State {
