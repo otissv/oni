@@ -609,3 +609,10 @@ end_children :: proc() {
 	}
 	ui_pop_scope()
 }
+
+Children :: proc(child: proc(state: $S), layout_id: UI_Id, config: Resolved_Widget_config, state: S) {
+	being_children(layout_id, config)
+	if child != nil do child(state)
+
+	end_children()
+}

@@ -48,6 +48,24 @@ ui_begin_frame :: proc() {
 	clear(&state.ui.scope_stack)
 	clear(&state.ui.style_stack)
 	layout_reset()
+
+	w_ctx.auto_element_index = 0
+
+	if w_ctx.static_ids != nil {
+		clear(&w_ctx.static_ids)
+	}
+
+	w_ctx.mouse_moved = false
+
+	clear_button_transients(&w_ctx.left_mouse)
+	clear_button_transients(&w_ctx.right_mouse)
+	clear_button_transients(&w_ctx.middle_mouse)
+
+	for &key in w_ctx.keys {
+		clear_key_transients(&key)
+	}
+
+	sync_widget_input()
 }
 
 ui_end_layout_pass :: proc() {
@@ -69,6 +87,16 @@ ui_end_frame :: proc() {
 			shaped_text_release(&entry.shaped)
 			delete_key(&state.ui.widgets, id)
 		}
+	}
+}
+
+render :: proc(ui: ..proc()) {
+	for u in ui {
+		u()
+		ui_end_layout_pass()
+
+		u()
+		ui_end_frame()
 	}
 }
 

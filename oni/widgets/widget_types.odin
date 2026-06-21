@@ -100,34 +100,22 @@ Shutdown :: proc() {
 	}
 }
 
-BeginFrame :: proc() {
-	oni.ui_begin_frame()
-
-	oni.w_ctx.auto_element_index = 0
-
-	if oni.w_ctx.static_ids != nil {
-		clear(&oni.w_ctx.static_ids)
-	}
-
-	oni.w_ctx.mouse_moved = false
-
-	clear_button_transients(&oni.w_ctx.left_mouse)
-	clear_button_transients(&oni.w_ctx.right_mouse)
-	clear_button_transients(&oni.w_ctx.middle_mouse)
-
-	for &key in oni.w_ctx.keys {
-		clear_key_transients(&key)
-	}
-
-	oni.sync_widget_input()
-}
-
 EndLayoutPass :: proc() {
 	oni.ui_end_layout_pass()
 }
 
 EndFrame :: proc() {
 	oni.ui_end_frame()
+}
+
+Render :: proc(ui: ..proc()) {
+	for u in ui {
+		u()
+		EndLayoutPass()
+
+		u()
+		EndFrame()
+	}
 }
 
 ProcessEvent :: proc(event: ^sdl.Event) {

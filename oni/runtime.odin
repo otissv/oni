@@ -12,7 +12,7 @@ run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc) {
 
 	if !can_render() do return
 
-	begin_frame()
+	ui_begin_frame()
 	if tick != nil do tick(f32(dt))
 	end_frame()
 	present_frame(draw)

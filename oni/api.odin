@@ -18,7 +18,7 @@ Can_Render :: can_render
 Frame_Time :: frame_time
 Input_Begin_Frame :: input_begin_frame
 Poll_Events :: poll_events
-Begin_Frame :: begin_frame
+Begin_Frame :: ui_begin_frame
 End_Frame :: end_frame
 Present_Frame :: present_frame
 On_Hot_Reload :: on_hot_reload
@@ -30,15 +30,16 @@ Dpi_Sync :: dpi_sync
 Log_Error :: log_error
 Log_Errorf :: log_errorf
 
-draw_rectangle :: draw_rect
-draw_line_segment :: draw_line
-draw_texture_region :: draw_texture
-draw_atlas :: draw_atlas_region
+Draw_rectangle :: draw_rect
+Draw_line_segment :: draw_line
+Draw_texture_region :: draw_texture
+Draw_atlas :: draw_atlas_region
 
 Begin_Artboard :: begin_artboard
 End_Artboard :: end_artboard
 Begin_Screen :: draw_push_screen
 End_Screen :: draw_pop_screen
+Render :: render
 
 Load_Texture :: assets_load_texture
 Get_Texture :: assets_get_texture

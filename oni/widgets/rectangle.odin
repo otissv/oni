@@ -90,8 +90,8 @@ Rectangle :: proc(props: Rectangle_Props) {
 	layout_id := oni.ui_id(layout_label)
 
 	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus := cfg.auto_focus.mode == .Value && cfg.auto_focus.value &&
-	     oni.w_ctx.auto_focused_id != key
+	should_auto_focus :=
+		cfg.auto_focus.mode == .Value && cfg.auto_focus.value && oni.w_ctx.auto_focused_id != key
 
 	if should_auto_focus {
 		oni.w_ctx.focused_id = key
@@ -105,11 +105,10 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 	event := rect_refresh_merged(props, &state)
 	config := state.config
+	child := props.child
 
 	if oni.ui_pass() == .Layout {
-		oni.being_children(layout_id, config)
-		if props.child != nil do props.child(state)
-		oni.end_children()
+		oni.Children(child, layout_id, config, state)
 		return
 	}
 
@@ -280,11 +279,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		radius = resolved_radius
 	}
 
-	oni.draw_rectangle(rect, background, radius, border, border_color)
+	oni.Draw_rectangle(rect, background, radius, border, border_color)
 
-	oni.being_children(layout_id, config)
-	if props.child != nil {
-		props.child(state)
-	}
-	oni.end_children()
+	oni.Children(child, layout_id, config, state)
 }

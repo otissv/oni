@@ -199,8 +199,9 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 		},
 	})
 }
+
 @(private)
-app_ui :: proc() {
+view :: proc() {
 	oni.Begin_Artboard()
 	Rectangle()
 	oni.End_Artboard()
@@ -213,11 +214,5 @@ app_ui :: proc() {
 }
 
 app_draw :: proc() {
-	w.BeginFrame()
-
-	app_ui()
-	w.EndLayoutPass()
-
-	app_ui()
-	w.EndFrame()
+	oni.Render(view)
 }
