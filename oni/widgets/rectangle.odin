@@ -12,19 +12,19 @@ Rectangle_Event :: oni.Widget_Event(Rectangle_State)
 Rectangle_Props :: struct {
 	config:            Rectangle_Config,
 	child:             proc(state: Rectangle_State),
-	on_focus:          proc(event: Rectangle_Event),
-	on_blur:           proc(event: Rectangle_Event),
-	on_mouse_enter:    proc(event: Rectangle_Event),
-	on_mouse_leave:    proc(event: Rectangle_Event),
-	on_mouse_pressed:  proc(event: Rectangle_Event),
-	on_mouse_down:     proc(event: Rectangle_Event),
-	on_mouse_released: proc(event: Rectangle_Event),
-	on_mouse_move:     proc(event: Rectangle_Event),
-	on_click:          proc(event: Rectangle_Event),
-	on_contextmenu:    proc(event: Rectangle_Event),
-	on_key_pressed:    proc(event: Rectangle_Event),
-	on_key_down:       proc(event: Rectangle_Event),
-	on_key_released:   proc(event: Rectangle_Event),
+	on_focus:          proc(state: Rectangle_State, event: Rectangle_Event),
+	on_blur:           proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_enter:    proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_leave:    proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_pressed:  proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_down:     proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_released: proc(state: Rectangle_State, event: Rectangle_Event),
+	on_mouse_move:     proc(state: Rectangle_State, event: Rectangle_Event),
+	on_click:          proc(state: Rectangle_State, event: Rectangle_Event),
+	on_contextmenu:    proc(state: Rectangle_State, event: Rectangle_Event),
+	on_key_pressed:    proc(state: Rectangle_State, event: Rectangle_Event),
+	on_key_down:       proc(state: Rectangle_State, event: Rectangle_Event),
+	on_key_released:   proc(state: Rectangle_State, event: Rectangle_Event),
 }
 
 
@@ -150,61 +150,61 @@ Rectangle :: proc(props: Rectangle_Props) {
 		entered, left := oni.consume_hover_transition(key, state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
-			props.on_mouse_enter(event)
+			props.on_mouse_enter(state, event)
 		}
 		if left && props.on_mouse_leave != nil {
-			props.on_mouse_leave(event)
+			props.on_mouse_leave(state, event)
 		}
 
 		if state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
-			props.on_mouse_move(event)
+			props.on_mouse_move(state, event)
 		}
 
 		if state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
-			props.on_contextmenu(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+			props.on_contextmenu(state, rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
 		}
 
 		if got_focus && props.on_focus != nil {
-			props.on_focus(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+			props.on_focus(state, rect_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
 
 		if lost_focus && props.on_blur != nil {
-			props.on_blur(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+			props.on_blur(state, rect_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
 
 		if state.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
-				props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_pressed(state, rect_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.pressed {
-				props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_pressed(state, rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.pressed {
-				props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_pressed(state, rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if state.is_hovered && props.on_mouse_down != nil {
 			if oni.w_ctx.left_mouse.down {
-				props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_down(state, rect_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.down {
-				props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_down(state, rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.down {
-				props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_down(state, rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if state.is_hovered && props.on_mouse_released != nil {
 			if oni.w_ctx.left_mouse.released {
-				props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_released(state, rect_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.released {
-				props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_released(state, rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.released {
-				props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_released(state, rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
@@ -230,7 +230,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		}
 
 		if clicked && props.on_click != nil {
-			props.on_click(click_event)
+			props.on_click(state, click_event)
 		}
 
 		if state.is_focused {
@@ -239,20 +239,20 @@ Rectangle :: proc(props: Rectangle_Props) {
 				key_event := rect_event(state, key = oni.Scancode(scancode))
 
 				if props.on_key_pressed != nil && key_state.pressed {
-					props.on_key_pressed(key_event)
+					props.on_key_pressed(state, key_event)
 				}
 				if props.on_key_down != nil && key_state.down {
-					props.on_key_down(key_event)
+					props.on_key_down(state, key_event)
 				}
 				if props.on_key_released != nil && key_state.released {
-					props.on_key_released(key_event)
+					props.on_key_released(state, key_event)
 				}
 			}
 		}
 	}
 
 	if should_auto_focus && !was_focused && props.on_focus != nil {
-		props.on_focus(event)
+		props.on_focus(state, event)
 	}
 
 	background: oni.RGBA

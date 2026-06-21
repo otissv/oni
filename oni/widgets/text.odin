@@ -44,28 +44,28 @@ Text_Event :: oni.Widget_Event(Text_Merged_State)
 
 Text_Props :: struct {
 	using _:           Text_Config,
-	on_focus:          proc(event: Text_Event),
-	on_blur:           proc(event: Text_Event),
-	on_mouse_enter:    proc(event: Text_Event),
-	on_mouse_leave:    proc(event: Text_Event),
-	on_mouse_pressed:  proc(event: Text_Event),
-	on_mouse_down:     proc(event: Text_Event),
-	on_mouse_released: proc(event: Text_Event),
-	on_mouse_move:     proc(event: Text_Event),
-	on_click:          proc(event: Text_Event),
-	on_contextmenu:    proc(event: Text_Event),
-	on_key_pressed:    proc(event: Text_Event),
-	on_key_down:       proc(event: Text_Event),
-	on_key_released:   proc(event: Text_Event),
+	on_focus:          proc(state: Text_State, event: Text_Event),
+	on_blur:           proc(state: Text_State, event: Text_Event),
+	on_mouse_enter:    proc(state: Text_State, event: Text_Event),
+	on_mouse_leave:    proc(state: Text_State, event: Text_Event),
+	on_mouse_pressed:  proc(state: Text_State, event: Text_Event),
+	on_mouse_down:     proc(state: Text_State, event: Text_Event),
+	on_mouse_released: proc(state: Text_State, event: Text_Event),
+	on_mouse_move:     proc(state: Text_State, event: Text_Event),
+	on_click:          proc(state: Text_State, event: Text_Event),
+	on_contextmenu:    proc(state: Text_State, event: Text_Event),
+	on_key_pressed:    proc(state: Text_State, event: Text_Event),
+	on_key_down:       proc(state: Text_State, event: Text_Event),
+	on_key_released:   proc(state: Text_State, event: Text_Event),
 }
 
 @(private)
 text_event :: proc(
-	merged: Text_Merged_State,
+	state: Text_Merged_State,
 	mouse_button: u8 = 0,
 	key: oni.Scancode = oni.Scancode(0),
 ) -> Text_Event {
-	return {state = merged, mouse_button = mouse_button, key = key}
+	return {state = state, mouse_button = mouse_button, key = key}
 }
 
 @(private)
@@ -158,10 +158,10 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 }
 
 @(private)
-text_widget_decl :: proc(merged: ^Text_Merged_State) -> Text_Config {
+text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
 	color := oni.Color.Text
 
-	if merged.is_disabled {
+	if state.is_disabled {
 		color = oni.Color.Text_muted
 	}
 
@@ -179,18 +179,18 @@ text_widget_decl :: proc(merged: ^Text_Merged_State) -> Text_Config {
 }
 
 @(private)
-text_refresh_merged :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Text_Event {
-	event := text_event(merged^)
+text_refresh_merged :: proc(props: Text_Props, state: ^Text_Merged_State) -> Text_Event {
+	event := text_event(state^)
 
-	base := text_widget_decl(merged)
+	base := text_widget_decl(state)
 	override := text_props_override(props)
 	text_apply_variant(&override)
 	text_apply_size(&override)
 
-	merged.style = oni.resolve_widget_config(base, override, merged, event)
-	merged.flags = override.flags
-	merged.text = override.text
-	return text_event(merged^)
+	state.style = oni.resolve_widget_config(base, override, state, event)
+	state.flags = override.flags
+	state.text = override.text
+	return text_event(state^)
 }
 
 Text :: proc(props: Text_Props) -> oni.Vec2 {
@@ -209,121 +209,122 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		oni.w_ctx.auto_focused_id = key
 	}
 
-	merged := Text_Merged_State {
+
+	state := Text_Merged_State {
 		is_disabled = props.disabled.mode == .Value && props.disabled.value,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
-	event := text_refresh_merged(props, &merged)
-	style := merged.style
+	event := text_refresh_merged(props, &state)
+	style := state.style
 
 	if oni.ui_pass() == .Layout {
 		node := oni.layout_push_node(layout_id, style)
 		max_w: f32
 		if props.max_w.mode == .Value do max_w = props.max_w.value
 		if max_w <= 0 && style.width.kind == .Fixed do max_w = style.width.value
-		oni.layout_set_measure_text(node, merged.text, max_w)
+		oni.layout_set_measure_text(node, state.text, max_w)
 		oni.layout_pop_node()
 		return {}
 	}
 
 	rect := oni.widget_hit_rect(layout_id, style)
 
-	merged.is_hovered = oni.pointer_over(rect, style.space)
-	merged.is_left_clicked = merged.is_hovered && oni.w_ctx.left_mouse.pressed
-	merged.is_right_clicked = merged.is_hovered && oni.w_ctx.right_mouse.pressed
-	merged.is_middle_clicked = merged.is_hovered && oni.w_ctx.middle_mouse.pressed
-	merged.is_left_released = merged.is_hovered && oni.w_ctx.left_mouse.released
-	merged.is_right_released = merged.is_hovered && oni.w_ctx.right_mouse.released
-	merged.is_Pressed = merged.is_hovered && oni.w_ctx.left_mouse.down
+	state.is_hovered = oni.pointer_over(rect, style.space)
+	state.is_left_clicked = state.is_hovered && oni.w_ctx.left_mouse.pressed
+	state.is_right_clicked = state.is_hovered && oni.w_ctx.right_mouse.pressed
+	state.is_middle_clicked = state.is_hovered && oni.w_ctx.middle_mouse.pressed
+	state.is_left_released = state.is_hovered && oni.w_ctx.left_mouse.released
+	state.is_right_released = state.is_hovered && oni.w_ctx.right_mouse.released
+	state.is_Pressed = state.is_hovered && oni.w_ctx.left_mouse.down
 
-	if !merged.is_disabled {
-		entered, left := oni.consume_hover_transition(key, merged.is_hovered)
+	if !state.is_disabled {
+		entered, left := oni.consume_hover_transition(key, state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
-			props.on_mouse_enter(event)
+			props.on_mouse_enter(state, event)
 		}
 		if left && props.on_mouse_leave != nil {
-			props.on_mouse_leave(event)
+			props.on_mouse_leave(state, event)
 		}
 
-		if merged.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
-			props.on_mouse_move(event)
+		if state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
+			props.on_mouse_move(state, event)
 		}
 
-		if merged.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
-			props.on_contextmenu(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
+		if state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+			props.on_contextmenu(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 		}
 
-		if merged.is_hovered && oni.w_ctx.left_mouse.pressed && !merged.is_focused {
+		if state.is_hovered && oni.w_ctx.left_mouse.pressed && !state.is_focused {
 			oni.w_ctx.focused_id = key
-			merged.is_focused = true
-			event = text_refresh_merged(props, &merged)
+			state.is_focused = true
+			event = text_refresh_merged(props, &state)
 
 			if props.on_focus != nil {
-				props.on_focus(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
+				props.on_focus(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 		}
 
-		if was_focused && !merged.is_hovered && oni.w_ctx.left_mouse.pressed {
+		if was_focused && !state.is_hovered && oni.w_ctx.left_mouse.pressed {
 			oni.w_ctx.focused_id = {}
-			merged.is_focused = false
-			event = text_refresh_merged(props, &merged)
+			state.is_focused = false
+			event = text_refresh_merged(props, &state)
 
 			if props.on_blur != nil {
-				props.on_blur(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
+				props.on_blur(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 		}
 
-		merged.is_focused = oni.w_ctx.focused_id == key
-		event = text_refresh_merged(props, &merged)
-		style = merged.style
+		state.is_focused = oni.w_ctx.focused_id == key
+		event = text_refresh_merged(props, &state)
+		style = state.style
 
-		if merged.is_hovered && props.on_mouse_pressed != nil {
+		if state.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
-				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.pressed {
-				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.pressed {
-				props.on_mouse_pressed(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
-		if merged.is_hovered && props.on_mouse_down != nil {
+		if state.is_hovered && props.on_mouse_down != nil {
 			if oni.w_ctx.left_mouse.down {
-				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.down {
-				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.down {
-				props.on_mouse_down(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
-		if merged.is_hovered && props.on_mouse_released != nil {
+		if state.is_hovered && props.on_mouse_released != nil {
 			if oni.w_ctx.left_mouse.released {
-				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.released {
-				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.released {
-				props.on_mouse_released(text_event(merged, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		clicked := oni.consume_pointer_click(
 			key,
-			merged.is_hovered,
+			state.is_hovered,
 			oni.w_ctx.left_mouse.pressed,
 			oni.w_ctx.left_mouse.released,
 		)
-		click_event := text_event(merged, mouse_button = sdl.BUTTON_LEFT)
+		click_event := text_event(state, mouse_button = sdl.BUTTON_LEFT)
 
-		if merged.is_focused && props.on_click != nil {
+		if state.is_focused && props.on_click != nil {
 			enter_key := oni.w_ctx.keys[int(sdl.Scancode.RETURN)]
 			space_key := oni.w_ctx.keys[int(sdl.Scancode.SPACE)]
 
@@ -337,49 +338,49 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		}
 
 		if clicked && props.on_click != nil {
-			props.on_click(click_event)
+			props.on_click(state, click_event)
 		}
 
-		if merged.is_focused {
+		if state.is_focused {
 			for scancode in 0 ..< oni.KEY_COUNT {
 				key_state := oni.w_ctx.keys[scancode]
-				key_event := text_event(merged, key = oni.Scancode(scancode))
+				key_event := text_event(state, key = oni.Scancode(scancode))
 
 				if props.on_key_pressed != nil && key_state.pressed {
-					props.on_key_pressed(key_event)
+					props.on_key_pressed(state, key_event)
 				}
 				if props.on_key_down != nil && key_state.down {
-					props.on_key_down(key_event)
+					props.on_key_down(state, key_event)
 				}
 				if props.on_key_released != nil && key_state.released {
-					props.on_key_released(key_event)
+					props.on_key_released(state, key_event)
 				}
 			}
 		}
 	}
 
-	event = text_refresh_merged(props, &merged)
-	style = merged.style
+	event = text_refresh_merged(props, &state)
+	style = state.style
 
 	if should_auto_focus && !was_focused && props.on_focus != nil {
-		props.on_focus(event)
+		props.on_focus(state, event)
 	}
 
-	rgbaColor, color_ok := oni.to_rgba(style.color, &merged, event)
+	rgbaColor, color_ok := oni.to_rgba(style.color, &state, event)
 	if !color_ok do return {}
 
 	resolved_font, layout_scale, ok := oni.font_resolve(style.font, style.font_size, style.space)
 	if !ok do return {}
 
 	face := oni.font_face_from_handle(resolved_font)
-	if face == nil || len(merged.text) == 0 do return {}
+	if face == nil || len(state.text) == 0 do return {}
 
 	pos := oni.Vec2{rect.x, rect.y}
 	max_w := style.max_w != 0 ? style.max_w : rect.w
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
-	if .Uncached in merged.flags {
-		lines := oni.font_shape_line_build(face, merged.text, shape_max_w, style.text_direction)
+	if .Uncached in state.flags {
+		lines := oni.font_shape_line_build(face, state.text, shape_max_w, style.text_direction)
 		if len(lines) == 0 do return {}
 		defer oni.font_destroy_shaped_lines(lines)
 		return oni.font_draw_shaped_lines(
@@ -400,7 +401,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		cache,
 		resolved_font.id,
 		face,
-		merged.text,
+		state.text,
 		shape_max_w,
 		style.text_direction,
 	)

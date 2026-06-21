@@ -4,6 +4,7 @@ import oni "../oni"
 import set "../oni/set"
 import w "../oni/widgets"
 import "core:fmt"
+import "core:log"
 
 
 Heading :: proc() {
@@ -210,8 +211,8 @@ view :: proc() {
 	oni.Begin_Screen()
 	Hud()
 
-	Layout_Horizontal("layout-demo-1", x = 16, y = 520)
-	Layout_Vertical("layout-demo-2", x = 16, y = 750)
+	// Layout_Horizontal("layout-demo-1", x = 16, y = 520)
+	// Layout_Vertical("layout-demo-2", x = 16, y = 750)
 
 	w.Button({
 		config = {
@@ -225,6 +226,12 @@ view :: proc() {
 			border_color = set.Colors(oni.Color.Yellow_500),
 			justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
 			padding = set.Padding(oni.Pd_pos{x = 8, y = 6}),
+		},
+		on_click = proc(state: w.Button_State, event: w.Button_Event) {
+			log.debug("clicked")
+		},
+		on_contextmenu = proc(state: w.Button_State, event: w.Button_Event) {
+			log.debug("context menu")
 		},
 		child = proc(_: w.Button_State) {
 			w.Text(
