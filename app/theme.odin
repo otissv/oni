@@ -21,7 +21,7 @@ build_theme :: proc() -> oni.Theme {
 		font_body = body,
 		font_heading = heading,
 		gap = 20,
-		justify = oni.Justify_Pos{x = .Left, y = .Top},
+		justify = oni.Justify_Pos{x = .Start, y = .Start},
 		direction = .Horizontal,
 		border_color = .Black,
 		background = .Transparent,

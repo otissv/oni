@@ -196,8 +196,10 @@ batch_push_vertex :: proc(
 	pos: Vec2,
 	uv: Vec2,
 	color: [4]f32,
+	border_color: [4]f32,
 	rect_size: Vec2,
-	radius: f32,
+	radii: [4]f32,
+	border: Bd,
 	mode: Draw_Mode,
 ) {
 	append(
@@ -206,8 +208,11 @@ batch_push_vertex :: proc(
 			pos = pos,
 			uv = uv,
 			color = color,
+			border_color = border_color,
 			rect_size = rect_size,
-			params = {radius, draw_mode_f32(mode)},
+			radii = radii,
+			params = {0, draw_mode_f32(mode)},
+			border = {border.t, border.b, border.l, border.r},
 		},
 	)
 }
@@ -216,17 +221,20 @@ batch_push_quad :: proc(
 	corners: [4]Vec2,
 	uvs: [4]Vec2,
 	color: RGBA,
+	border_color: RGBA,
 	rect_size: Vec2,
-	radius: f32,
+	radii: [4]f32,
+	border: Bd,
 	mode: Draw_Mode,
 ) {
 	if !batch_ensure_capacity(4) do return
 
 	tint := rgba_to_f32(color)
+	border_tint := rgba_to_f32(border_color)
 	base := u16(len(state.gpu_state.batch.vertices))
 
 	for i in 0 ..< 4 {
-		batch_push_vertex(corners[i], uvs[i], tint, rect_size, radius, mode)
+		batch_push_vertex(corners[i], uvs[i], tint, border_tint, rect_size, radii, border, mode)
 	}
 	batch_push_indices(base)
 }
@@ -235,8 +243,10 @@ batch_push_axis_quad :: proc(
 	r: Rect,
 	uv_rect: Rect,
 	color: RGBA,
+	border_color: RGBA,
 	rect_size: Vec2,
-	radius: f32,
+	radii: [4]f32,
+	border: Bd,
 	mode: Draw_Mode,
 ) {
 	screen := view_transform_rect(r)
@@ -255,7 +265,7 @@ batch_push_axis_quad :: proc(
 		uvs = [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 	}
 
-	batch_push_quad(corners, uvs, color, screen_size, radius, mode)
+	batch_push_quad(corners, uvs, color, border_color, screen_size, radii, border, mode)
 }
 
 batch_finalize_segments :: proc() {

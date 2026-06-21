@@ -74,7 +74,7 @@ beginMouseFrame :: proc() {
 
 pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	mouse := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
-	if space == .Artboard {
+	if draw_resolve_space(space) == .Artboard {
 		mouse = View_Screen_To_World(mouse)
 	}
 	return(
@@ -105,6 +105,11 @@ consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered,
 	return
 }
 
+resolve_padding_xy :: proc(x, y: f32) -> Pd {
+	if y == 0 do return {t = x, b = x, l = x, r = x}
+	return {t = y, b = y, l = x, r = x}
+}
+
 resolve_padding_struct :: proc(s: Pd_struct) -> (padding: Pd, ok: bool) {
 	switch {
 	case s.sm:
@@ -122,12 +127,32 @@ resolve_padding_struct :: proc(s: Pd_struct) -> (padding: Pd, ok: bool) {
 	}
 
 	if s.l != 0 || s.r != 0 || s.t != 0 || s.b != 0 {
-		return {s.l, s.r, s.t, s.b}, true
+		return Pd{t = s.t, b = s.b, l = s.l, r = s.r}, true
 	}
 	if s.x != 0 || s.y != 0 {
-		return {s.x, s.x, s.y, s.y}, true
+		return resolve_padding_xy(s.x, s.y), true
 	}
 
+	return {}, false
+}
+
+resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
+	switch v in p {
+	case struct{}:
+		return {}, false
+	case f32:
+		if v == 0 do return {}, false
+		return {v, v, v, v}, true
+	case Pd_pos:
+		if v.x == 0 && v.y == 0 do return {}, false
+		return resolve_padding_xy(v.x, v.y), true
+	case Pd_struct:
+		return resolve_padding_struct(v)
+	case Pd:
+		return v, true
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding:
+		return {}, false
+	}
 	return {}, false
 }
 
@@ -139,25 +164,13 @@ resolve_padding :: proc(
 	padding: Pd,
 	ok: bool,
 ) {
-	ui_state := to_ui_state(state)
-	ui_event := to_ui_event(state)
-	switch v in p {
-	case struct{}:
-		return {}, false
-	case f32:
-		if v == 0 do return {}, false
-		return {v, v, v, v}, true
-	case Pd_pos:
-		if v.x == 0 && v.y == 0 do return {}, false
-		return {v.x, v.x, v.y, v.y}, true
-	case Pd_struct:
-		return resolve_padding_struct(v)
-	case Pd:
-		return v, true
+	#partial switch v in p {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
 		return resolve_padding(v(ui_state, ui_event), state, event)
 	}
-	return {}, false
+	return resolve_padding_value(p)
 }
 
 resolve_radius_struct :: proc(s: Radius_struct) -> (radius: Radius_corners, ok: bool) {
@@ -256,9 +269,7 @@ resolve_border_struct :: proc(s: Bd_struct) -> (width: Bd, ok: bool) {
 	return {}, false
 }
 
-resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border: Bd, ok: bool) {
-	ui_state := to_ui_state(state)
-	ui_event := to_ui_event(state)
+resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
 	switch v in b {
 	case struct{}:
 		return {}, false
@@ -270,51 +281,77 @@ resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border
 	case Bd:
 		return v, true
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border:
-		return resolve_border(v(ui_state, ui_event), state, event)
+		return {}, false
 	}
 	return {}, false
 }
 
-resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
-	ui_state := to_ui_state(state)
-	ui_event := to_ui_event(state)
+resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border: Bd, ok: bool) {
+	#partial switch v in b {
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_border(v(ui_state, ui_event), state, event)
+	}
+	return resolve_border_value(b)
+}
+
+resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
 	switch v in g {
 	case struct{}:
 		return 0, false
 	case u16:
 		return v, true
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap:
-		return resolve_child_gap(v(ui_state, ui_event), state, event)
+		return 0, false
 	}
 	return 0, false
 }
 
+resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
+	#partial switch v in g {
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_child_gap(v(ui_state, ui_event), state, event)
+	}
+	return resolve_gap_value(g)
+}
+
 resolve_align_pos :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok: bool) {
-	x: Justify_X
-	switch pos.x {
-	case .Start:
-		x = .Start
-	case .Center:
-		x = .Center
-	case .End:
-		x = .End
-	case .Stretch:
-		x = .Stretch
-	}
-
-	y: Justify_Y
-	switch pos.y {
-	case .Start:
-		y = .Start
-	case .Center:
-		y = .Center
-	case .End:
-		y = .End
-	case .Stretch:
-		y = .Stretch
-	}
-
+	x, x_ok := resolve_justify_x(pos.x)
+	if !x_ok do return {}, false
+	y, y_ok := resolve_justify_y(pos.y)
+	if !y_ok do return {}, false
 	return {x = x, y = y}, true
+}
+
+resolve_justify_x :: proc(x: Justify_X) -> (Justify_X, bool) {
+	#partial switch v in x {
+	case Justify_Align:
+		return v, true
+	}
+	return Justify_Align.Start, false
+}
+
+resolve_justify_y :: proc(y: Justify_Y) -> (Justify_Y, bool) {
+	#partial switch v in y {
+	case Justify_Align:
+		return v, true
+	}
+	return Justify_Align.Start, false
+}
+
+resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
+	switch v in a {
+	case struct{}:
+		return {}, false
+	case Justify_Pos:
+		return resolve_align_pos(v)
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify:
+		return {}, false
+	}
+	return {}, false
 }
 
 resolve_align :: proc(
@@ -325,17 +362,25 @@ resolve_align :: proc(
 	align: Justify_Pos,
 	ok: bool,
 ) {
-	ui_state := to_ui_state(state)
-	ui_event := to_ui_event(state)
-	switch v in a {
-	case struct{}:
-		return {}, false
-	case Justify_Pos:
-		return resolve_align_pos(v)
+	#partial switch v in a {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
 		return resolve_align(v(ui_state, ui_event), state, event)
 	}
-	return {}, false
+	return resolve_justify_value(a)
+}
+
+resolve_direction_value :: proc(d: Direction) -> (direction: Direction_Layout, ok: bool) {
+	switch v in d {
+	case struct{}:
+		return .Horizontal, false
+	case Direction_Layout:
+		return v, true
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction:
+		return .Horizontal, false
+	}
+	return .Horizontal, false
 }
 
 resolve_direction :: proc(
@@ -346,16 +391,46 @@ resolve_direction :: proc(
 	direction: Direction,
 	ok: bool,
 ) {
-	ui_state := to_ui_state(state)
-	ui_event := to_ui_event(state)
-	switch v in d {
-
-	case Direction_Layout:
-		return v, true
+	#partial switch v in d {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
 		return resolve_direction(v(ui_state, ui_event), state, event)
 	}
+	if layout, layout_ok := resolve_direction_value(d); layout_ok do return layout, true
 	return .Horizontal, false
+}
+
+justify_axis_align_from_x :: proc(x: Justify_X) -> i32 {
+	#partial switch v in x {
+	case Justify_Align:
+		return i32(v)
+	}
+	return 0
+}
+
+justify_axis_align_from_y :: proc(y: Justify_Y) -> i32 {
+	#partial switch v in y {
+	case Justify_Align:
+		return i32(v)
+	}
+	return 0
+}
+
+justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
+	#partial switch v in x {
+	case Justify_Align:
+		return v == .Stretch
+	}
+	return false
+}
+
+justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
+	#partial switch v in y {
+	case Justify_Align:
+		return v == .Stretch
+	}
+	return false
 }
 
 element_config_to_declaration :: proc(
@@ -421,8 +496,9 @@ merge_element_declaration :: proc(
 	}
 
 
-	if override.justify != nil {
-		result.justify = override.justify
+	#partial switch justify in override.justify {
+	case Justify_Pos:
+		result.justify = justify
 	}
 	if override.aspect_ratio != nil {
 		result.aspect_ratio = override.aspect_ratio
@@ -436,17 +512,25 @@ merge_element_declaration :: proc(
 	if override.border_color != nil {
 		result.border_color = override.border_color
 	}
-	if override.background != nil {
-		result.background = override.background
+	#partial switch background in override.background {
+	case Color, RGBA, Hex, HSLA, HWBA, LCHA, OKLCHA:
+		result.background = background
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+		result.background = background
 	}
-	if override.gap != nil {
-		result.gap = override.gap
+	#partial switch gap in override.gap {
+	case u16:
+		result.gap = gap
 	}
-	if override.color != nil {
-		result.color = override.color
+	#partial switch color in override.color {
+	case Color, RGBA, Hex, HSLA, HWBA, LCHA, OKLCHA:
+		result.color = color
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+		result.color = color
 	}
-	if override.direction != nil {
-		result.direction = override.direction
+	#partial switch direction in override.direction {
+	case Direction_Layout:
+		result.direction = direction
 	}
 	if override.disabled {
 		result.disabled = override.disabled
@@ -484,7 +568,26 @@ merge_element_declaration :: proc(
 	if override.height != {} {
 		result.height = override.height
 	}
-	result.space = override.space
+	if override.flex > 0 {
+		result.flex = override.flex
+	}
+	if override.min_w != 0 {
+		result.min_w = override.min_w
+	}
+	if override.max_w != 0 {
+		result.max_w = override.max_w
+	}
+	if override.min_h != 0 {
+		result.min_h = override.min_h
+	}
+	if override.max_h != 0 {
+		result.max_h = override.max_h
+	}
+	if override.space == .Inherit {
+		result.space = widget_current_inherit_space()
+	} else {
+		result.space = override.space
+	}
 	if override.wrap != nil {
 		result.wrap = override.wrap
 	}

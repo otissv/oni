@@ -8,9 +8,12 @@ UI_Widget_Entry :: struct {
 }
 
 UI_State :: struct {
-	frame:       u64,
-	scope_stack: [dynamic]UI_Id,
-	widgets:     map[UI_Id]UI_Widget_Entry,
+	frame:               u64,
+	pass:                UI_Pass,
+	scope_stack:         [dynamic]UI_Id,
+	inherit_space_stack: [dynamic]Draw_Space,
+	widgets:             map[UI_Id]UI_Widget_Entry,
+	layout:              Layout_State,
 }
 
 State :: struct {

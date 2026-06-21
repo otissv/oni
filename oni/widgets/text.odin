@@ -29,9 +29,8 @@ Text_Size :: enum {
 
 
 Text_Config :: struct {
-	using config: oni.Widget_config,
+	using _:      oni.Widget_config,
 	flags:        Widget_Text_Flags,
-	max_w:        f32,
 	size:         Text_Size,
 	text:         string,
 	variant:      Text_Variant,
@@ -159,7 +158,7 @@ text_theme_base :: proc(merged: ^Text_Merged_State) -> Text_Config {
 		color = color,
 		line_height = 1,
 		text_direction = .LTR,
-		space = .Screen,
+		space = .Inherit,
 		justify = oni.theme.justify,
 		gap = oni.theme.gap,
 	}
@@ -200,6 +199,8 @@ text_refresh_merged :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Te
 
 Text :: proc(props: Text_Props) -> oni.Vec2 {
 	key := element_key(props.id)
+	layout_label := props.id != "" ? props.id : key
+	layout_id := oni.ui_id(layout_label)
 
 	was_focused := oni.w_ctx.focused_id == key
 	should_auto_focus := props.auto_focus && oni.w_ctx.auto_focused_id != key
@@ -214,22 +215,29 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
-	rect := oni.Rect {
-		x = props.x,
-		y = props.y,
-		w = props.width,
-		h = props.height,
+	event := text_refresh_merged(props, &merged)
+	config := merged.config
+
+	if oni.ui_pass() == .Layout {
+		node := oni.layout_push_node(layout_id, config)
+		max_w := props.max_w != 0 ? props.max_w : config.width
+		oni.layout_set_measure_text(node, config.text, max_w)
+		oni.layout_pop_node()
+		return {}
 	}
 
-	merged.is_hovered = pointer_over(rect, props.space)
+	layout_rect := oni.ui_layout_rect(layout_id)
+	rect := layout_rect
+	if rect.w == 0 && props.width != 0 do rect.w = props.width
+	if rect.h == 0 && props.height != 0 do rect.h = props.height
+
+	merged.is_hovered = pointer_over(rect, config.space)
 	merged.is_left_clicked = merged.is_hovered && oni.w_ctx.left_mouse.pressed
 	merged.is_right_clicked = merged.is_hovered && oni.w_ctx.right_mouse.pressed
 	merged.is_middle_clicked = merged.is_hovered && oni.w_ctx.middle_mouse.pressed
 	merged.is_left_released = merged.is_hovered && oni.w_ctx.left_mouse.released
 	merged.is_right_released = merged.is_hovered && oni.w_ctx.right_mouse.released
 	merged.is_Pressed = merged.is_hovered && oni.w_ctx.left_mouse.down
-
-	event := text_refresh_merged(props, &merged)
 
 	if !merged.is_disabled {
 		entered, left := consume_hover_transition(key, merged.is_hovered)
@@ -357,23 +365,21 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		props.on_focus(event)
 	}
 
-	config := merged.config
-
 	rgbaColor, color_ok := oni.to_rgba(config.color, &merged, event)
 	if !color_ok do return {}
 
 	resolved_font, layout_scale, ok := oni.font_resolve(
 		config.font,
 		config.font_size,
-		config.space,
+		oni.draw_resolve_space(config.space),
 	)
 	if !ok do return {}
 
 	face := oni.font_face_from_handle(resolved_font)
 	if face == nil || len(config.text) == 0 do return {}
 
-	pos := oni.Vec2{config.x, config.y}
-	max_w := config.max_w != 0 ? config.max_w : config.width
+	pos := oni.Vec2{rect.x, rect.y}
+	max_w := config.max_w != 0 ? config.max_w : rect.w
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
 	if .Uncached in config.flags {

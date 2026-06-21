@@ -74,26 +74,71 @@ draw_pop_space :: proc() {
 	}
 }
 
-begin_artboard :: proc() {draw_push_space(.Artboard)}
-end_artboard :: proc() {draw_pop_space()}
-draw_push_screen :: proc() {draw_push_space(.Screen)}
-draw_pop_screen :: proc() {draw_pop_space()}
+begin_artboard :: proc() {
+	draw_push_space(.Artboard)
+	widget_push_inherit_space(.Artboard)
+	if ui_pass() == .Layout do layout_begin_space(.Artboard)
+}
 
-draw_rect :: proc(r: Rect, color: RGBA, radius: f32 = 0) {
+end_artboard :: proc() {
+	if ui_pass() == .Layout do layout_end_space()
+	widget_pop_inherit_space()
+	draw_pop_space()
+}
+
+draw_push_screen :: proc() {
+	draw_push_space(.Screen)
+	widget_push_inherit_space(.Screen)
+	if ui_pass() == .Layout do layout_begin_space(.Screen)
+}
+
+draw_pop_screen :: proc() {
+	if ui_pass() == .Layout do layout_end_space()
+	widget_pop_inherit_space()
+	draw_pop_space()
+}
+
+draw_rect :: proc(
+	r: Rect,
+	color: RGBA,
+	radius: Radius_corners = {},
+	border: Bd = {},
+	border_color: RGBA = {},
+) {
+	has_fill := color.a > 0
+	has_border :=
+		border_color.a > 0 &&
+		(border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0)
+	if !has_fill && !has_border do return
+
+	scale := view_artboard_zoom()
+	screen_radii := [4]f32 {
+		radius.tl * scale,
+		radius.tr * scale,
+		radius.br * scale,
+		radius.bl * scale,
+	}
+	screen_border := Bd {
+		t = border.t * scale,
+		b = border.b * scale,
+		l = border.l * scale,
+		r = border.r * scale,
+	}
+
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(TEXTURE_WHITE_ID)
-	batch_push_axis_quad(r, {}, color, {r.w, r.h}, radius * view_artboard_zoom(), .Solid)
+	batch_push_axis_quad(
+		r,
+		{},
+		color,
+		border_color,
+		{r.w, r.h},
+		screen_radii,
+		screen_border,
+		.Solid,
+	)
 }
 
-draw_rect_outline :: proc(r: Rect, color: RGBA, thickness: f32) {
-	t := thickness
-	if t <= 0 do return
-
-	draw_rect({r.x, r.y, r.w, t}, color)
-	draw_rect({r.x, r.y + r.h - t, r.w, t}, color)
-	draw_rect({r.x, r.y, t, r.h}, color)
-	draw_rect({r.x + r.w - t, r.y, t, r.h}, color)
-}
 
 draw_line :: proc(a, b: Vec2, color: RGBA, thickness: f32) {
 	a_screen := view_transform_point(a)
@@ -115,7 +160,7 @@ draw_line :: proc(a, b: Vec2, color: RGBA, thickness: f32) {
 
 	corners := [4]Vec2{a_screen + perp, b_screen + perp, b_screen - perp, a_screen - perp}
 	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	batch_push_quad(corners, uvs, color, {length, line_thickness}, 0, .Line)
+	batch_push_quad(corners, uvs, color, {}, {length, line_thickness}, {}, {}, .Line)
 }
 
 draw_texture :: proc(tex: Texture_Handle, src, dst: Rect, tint: RGBA = {255, 255, 255, 255}) {
@@ -125,7 +170,7 @@ draw_texture :: proc(tex: Texture_Handle, src, dst: Rect, tint: RGBA = {255, 255
 
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(tex.id)
-	batch_push_axis_quad(dst, uv, tint, {dst.w, dst.h}, 0, .Textured)
+	batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured)
 }
 
 draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 255, 255, 255}) {

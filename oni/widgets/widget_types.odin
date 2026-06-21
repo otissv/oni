@@ -113,6 +113,8 @@ Shutdown :: proc() {
 }
 
 BeginFrame :: proc() {
+	oni.ui_begin_frame()
+
 	oni.w_ctx.auto_element_index = 0
 
 	if oni.w_ctx.static_ids != nil {
@@ -130,6 +132,14 @@ BeginFrame :: proc() {
 	}
 
 	sync_mouse_state()
+}
+
+EndLayoutPass :: proc() {
+	oni.ui_end_layout_pass()
+}
+
+EndFrame :: proc() {
+	oni.ui_end_frame()
 }
 
 ProcessEvent :: proc(event: ^sdl.Event) {
@@ -195,7 +205,7 @@ SyncPointer :: proc() {
 
 pointer_over :: proc(rect: oni.Rect, space: oni.Draw_Space) -> bool {
 	mouse := oni.Vec2{oni.w_ctx.mouse_x, oni.w_ctx.mouse_y}
-	if space == .Artboard {
+	if oni.draw_resolve_space(space) == .Artboard {
 		mouse = oni.View_Screen_To_World(mouse)
 	}
 	return(
@@ -243,7 +253,7 @@ resolve_padding_struct :: proc(s: oni.Pd_struct) -> (padding: oni.Pd, ok: bool) 
 	}
 
 	if s.l != 0 || s.r != 0 || s.t != 0 || s.b != 0 {
-		return {s.l, s.r, s.t, s.b}, true
+		return oni.Pd{t = s.t, b = s.b, l = s.l, r = s.r}, true
 	}
 	if s.x != 0 || s.y != 0 {
 		return {s.x, s.x, s.y, s.y}, true
@@ -523,33 +533,27 @@ resolve_child_gap :: proc(
 }
 
 resolve_align_pos :: proc(pos: oni.Justify_Pos) -> (align: oni.Justify_Pos, ok: bool) {
-	if pos.x == .Unset || pos.y == .Unset do return {}, false
-
-	x: oni.Justify_X
-	switch pos.x {
-	case .Unset:
-		return {}, false
-	case .Left:
-		x = .Left
-	case .Right:
-		x = .Right
-	case .Center:
-		x = .Center
-	}
-
-	y: oni.Justify_Y
-	switch pos.y {
-	case .Unset:
-		return {}, false
-	case .Top:
-		y = .Top
-	case .Bottom:
-		y = .Bottom
-	case .Center:
-		y = .Center
-	}
-
+	x, x_ok := resolve_justify_x(pos.x)
+	if !x_ok do return {}, false
+	y, y_ok := resolve_justify_y(pos.y)
+	if !y_ok do return {}, false
 	return {x = x, y = y}, true
+}
+
+resolve_justify_x :: proc(x: oni.Justify_X) -> (oni.Justify_X, bool) {
+	#partial switch v in x {
+	case oni.Justify_Align:
+		return v, true
+	}
+	return oni.Justify_Align.Start, false
+}
+
+resolve_justify_y :: proc(y: oni.Justify_Y) -> (oni.Justify_Y, bool) {
+	#partial switch v in y {
+	case oni.Justify_Align:
+		return v, true
+	}
+	return oni.Justify_Align.Start, false
 }
 
 resolve_align :: proc(
@@ -584,6 +588,8 @@ resolve_direction :: proc(
 	ui_state := to_ui_state(state)
 	ui_event := to_ui_event(state)
 	switch v in d {
+	case struct{}:
+		return oni.Direction_Layout.Horizontal, false
 	case oni.Direction_Layout:
 		return v, true
 	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Direction:
@@ -700,8 +706,9 @@ merge_element_declaration :: proc(
 	}
 
 
-	if override.justify != nil {
-		result.justify = override.justify
+	#partial switch justify in override.justify {
+	case oni.Justify_Pos:
+		result.justify = justify
 	}
 	if override.aspect_ratio != nil {
 		result.aspect_ratio = override.aspect_ratio
@@ -715,17 +722,25 @@ merge_element_declaration :: proc(
 	if override.border_color != nil {
 		result.border_color = override.border_color
 	}
-	if override.background != nil {
-		result.background = override.background
+	#partial switch background in override.background {
+	case oni.Color, oni.RGBA, oni.Hex, oni.HSLA, oni.HWBA, oni.LCHA, oni.OKLCHA:
+		result.background = background
+	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Colors:
+		result.background = background
 	}
-	if override.gap != nil {
-		result.gap = override.gap
+	#partial switch gap in override.gap {
+	case u16:
+		result.gap = gap
 	}
-	if override.color != nil {
-		result.color = override.color
+	#partial switch color in override.color {
+	case oni.Color, oni.RGBA, oni.Hex, oni.HSLA, oni.HWBA, oni.LCHA, oni.OKLCHA:
+		result.color = color
+	case proc(state: oni.Widget_State, event: oni.Widget_Event(oni.Widget_State)) -> oni.Colors:
+		result.color = color
 	}
-	if override.direction != nil {
-		result.direction = override.direction
+	#partial switch direction in override.direction {
+	case oni.Direction_Layout:
+		result.direction = direction
 	}
 	if override.disabled {
 		result.disabled = override.disabled
@@ -742,8 +757,9 @@ merge_element_declaration :: proc(
 	if override.line_height != 0 {
 		result.line_height = override.line_height
 	}
-	if override.padding != nil {
-		result.padding = override.padding
+	#partial switch padding in override.padding {
+	case oni.Pd, f32:
+		result.padding = padding
 	}
 	if override.radius != nil {
 		result.radius = override.radius
@@ -763,7 +779,26 @@ merge_element_declaration :: proc(
 	if override.height != {} {
 		result.height = override.height
 	}
-	result.space = override.space
+	if override.flex > 0 {
+		result.flex = override.flex
+	}
+	if override.min_w != 0 {
+		result.min_w = override.min_w
+	}
+	if override.max_w != 0 {
+		result.max_w = override.max_w
+	}
+	if override.min_h != 0 {
+		result.min_h = override.min_h
+	}
+	if override.max_h != 0 {
+		result.max_h = override.max_h
+	}
+	if override.space == .Inherit {
+		result.space = oni.widget_current_inherit_space()
+	} else {
+		result.space = override.space
+	}
 	if override.wrap != nil {
 		result.wrap = override.wrap
 	}

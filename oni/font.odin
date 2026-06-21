@@ -22,12 +22,13 @@ font_resolve :: proc(
 	layout_scale: f32,
 	ok: bool,
 ) {
+	draw_space := draw_resolve_space(space)
 	base := font_face_from_handle(font)
 	if base == nil do return {}, 1, false
 
 	size := logical_size > 0 ? logical_size : font.size_px
 	zoom: f32 = 1
-	if space == .Artboard {
+	if draw_space == .Artboard {
 		zoom = view_effective_zoom()
 	}
 
@@ -36,7 +37,7 @@ font_resolve :: proc(
 	if !ok do return {}, 1, false
 
 	layout_scale = 1
-	if space == .Artboard && zoom > 0 {
+	if draw_space == .Artboard && zoom > 0 {
 		layout_scale = 1 / zoom
 	}
 	return resolved, layout_scale, true

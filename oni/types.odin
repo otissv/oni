@@ -299,25 +299,22 @@ Text_Align :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align,
 }
 
+Justify_Align :: enum {
+	Start,
+	Center,
+	End,
+	Stretch,
+}
+
 Justify_X :: union {
 	struct{},
-	enum {
-		Start,
-		Center,
-		End,
-		Stretch,
-	},
+	Justify_Align,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_X,
 }
 
 Justify_Y :: union {
 	struct{},
-	enum {
-		Start,
-		Center,
-		End,
-		Stretch,
-	},
+	Justify_Align,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_Y,
 }
 
@@ -420,6 +417,7 @@ RGBA :: struct {
 
 
 Draw_Space :: enum {
+	Inherit,
 	Artboard,
 	Screen,
 }

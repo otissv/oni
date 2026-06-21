@@ -31,8 +31,6 @@ Log_Error :: log_error
 Log_Errorf :: log_errorf
 
 draw_rectangle :: draw_rect
-Draw_Rectangle :: draw_rect
-draw_rectangle_outline :: draw_rect_outline
 draw_line_segment :: draw_line
 draw_texture_region :: draw_texture
 draw_atlas :: draw_atlas_region

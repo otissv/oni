@@ -5,16 +5,14 @@ import oni ".."
 import sdl "vendor:sdl3"
 
 
-Rectangle_Config :: struct {
-	using _: oni.Widget_config,
-}
+Rectangle_Config :: oni.Widget_config
 
 Rectangle_State :: oni.Widget_Merged_State(oni.Widget_State, Rectangle_Config)
 
 Rectangle_Event :: oni.Widget_Event(Rectangle_State)
 
 Rectangle_Props :: struct {
-	using config:      Rectangle_Config,
+	config:            Rectangle_Config,
 	child:             proc(state: Rectangle_State),
 	on_focus:          proc(event: Rectangle_Event),
 	on_blur:           proc(event: Rectangle_Event),
@@ -61,7 +59,7 @@ rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
 		color = color,
 		line_height = 1,
 		text_direction = .LTR,
-		space = .Screen,
+		space = .Inherit,
 		justify = oni.theme.justify,
 		gap = oni.theme.gap,
 	}
@@ -73,23 +71,9 @@ rect_config :: proc(props: Rectangle_Props, state: ^Rectangle_State) -> Rectangl
 
 	base := rect_theme_base(state)
 	override := rect_props_override(props)
-
 	resolved := oni.merge_element_declaration(base, override, state, event)
 
-	override.color = resolved.color
-	override.background = resolved.background
-	override.border_color = resolved.border_color
-	override.padding = resolved.padding
-	override.radius = resolved.radius
-	override.border = resolved.border
-	override.gap = resolved.gap
-	override.justify = resolved.justify
-	override.direction = resolved.direction
-	override.font = resolved.font
-	override.font_size = resolved.font_size
-	override.space = resolved.space
-	override.line_height = resolved.line_height
-	return override
+	return resolved
 }
 
 @(private)
@@ -99,10 +83,13 @@ rect_refresh_merged :: proc(props: Rectangle_Props, state: ^Rectangle_State) -> 
 }
 
 Rectangle :: proc(props: Rectangle_Props) {
-	key := oni.element_key(props.id)
+	cfg := props.config
+	key := oni.element_key(cfg.id)
+	layout_label := cfg.id != "" ? cfg.id : key
+	layout_id := oni.ui_id(layout_label)
 
 	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus := props.auto_focus && oni.w_ctx.auto_focused_id != key
+	should_auto_focus := cfg.auto_focus && oni.w_ctx.auto_focused_id != key
 
 	if should_auto_focus {
 		oni.w_ctx.focused_id = key
@@ -110,14 +97,30 @@ Rectangle :: proc(props: Rectangle_Props) {
 	}
 
 	state := Rectangle_State {
-		is_disabled = props.disabled,
+		is_disabled = cfg.disabled,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
-	state.is_hovered = oni.pointer_over(
-		{x = props.x, y = props.y, w = props.width, h = props.height},
-		props.space,
-	)
+	event := rect_refresh_merged(props, &state)
+	config := state.config
+
+	if oni.ui_pass() == .Layout {
+		oni.ui_push_scope(layout_id)
+		oni.layout_push_node(layout_id, config)
+		oni.widget_push_inherit_space(config.space)
+		if props.child != nil do props.child(state)
+		oni.widget_pop_inherit_space()
+		oni.layout_pop_node()
+		oni.ui_pop_scope()
+		return
+	}
+
+	layout_rect := oni.ui_layout_rect(layout_id)
+	rect := layout_rect
+	if rect.w == 0 && cfg.width != 0 do rect.w = cfg.width
+	if rect.h == 0 && cfg.height != 0 do rect.h = cfg.height
+
+	state.is_hovered = oni.pointer_over(rect, config.space)
 	state.is_left_clicked = state.is_hovered && oni.w_ctx.left_mouse.pressed
 	state.is_right_clicked = state.is_hovered && oni.w_ctx.right_mouse.pressed
 	state.is_middle_clicked = state.is_hovered && oni.w_ctx.middle_mouse.pressed
@@ -142,7 +145,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		}
 	}
 
-	event := rect_refresh_merged(props, &state)
+	event = rect_refresh_merged(props, &state)
 
 	if !state.is_disabled {
 		entered, left := oni.consume_hover_transition(key, state.is_hovered)
@@ -253,8 +256,6 @@ Rectangle :: proc(props: Rectangle_Props) {
 		props.on_focus(event)
 	}
 
-	config := state.config
-
 	background: oni.RGBA
 	if resolved_background, background_ok := oni.to_rgba(config.background, &state, event);
 	   background_ok {
@@ -277,16 +278,14 @@ Rectangle :: proc(props: Rectangle_Props) {
 		radius = resolved_radius
 	}
 
-	rect := oni.Rect {
-		x = config.x,
-		y = config.y,
-		w = config.width,
-		h = config.height,
-	}
 
-	oni.Draw_Rectangle(rect, background, background, radius, border, border_color)
+	oni.draw_rectangle(rect, background, radius, border, border_color)
 
+	oni.ui_push_scope(layout_id)
+	oni.widget_push_inherit_space(config.space)
 	if props.child != nil {
 		props.child(state)
 	}
+	oni.widget_pop_inherit_space()
+	oni.ui_pop_scope()
 }

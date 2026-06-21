@@ -8,11 +8,14 @@ vert_shader_code := #load("shaders/ui.spv.vert")
 frag_shader_code := #load("shaders/ui.spv.frag")
 
 UI_Vertex :: struct {
-	pos:       [2]f32,
-	uv:        [2]f32,
-	color:     [4]f32,
-	rect_size: [2]f32,
-	params:    [2]f32,
+	pos:          [2]f32,
+	uv:           [2]f32,
+	color:        [4]f32,
+	border_color: [4]f32,
+	rect_size:    [2]f32,
+	radii:        [4]f32,
+	params:       [2]f32,
+	border:       [4]f32,
 }
 
 GPU_Proj_UBO :: struct {
@@ -82,7 +85,7 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 		{slot = 0, pitch = u32(size_of(UI_Vertex))},
 	}
 
-	vertex_attributes := [5]sdl.GPUVertexAttribute {
+	vertex_attributes := [8]sdl.GPUVertexAttribute {
 		{location = 0, buffer_slot = 0, format = .FLOAT2, offset = 0},
 		{location = 1, buffer_slot = 0, format = .FLOAT2, offset = u32(offset_of(UI_Vertex, uv))},
 		{
@@ -94,14 +97,32 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 		{
 			location = 3,
 			buffer_slot = 0,
-			format = .FLOAT2,
-			offset = u32(offset_of(UI_Vertex, rect_size)),
+			format = .FLOAT4,
+			offset = u32(offset_of(UI_Vertex, border_color)),
 		},
 		{
 			location = 4,
 			buffer_slot = 0,
 			format = .FLOAT2,
+			offset = u32(offset_of(UI_Vertex, rect_size)),
+		},
+		{
+			location = 5,
+			buffer_slot = 0,
+			format = .FLOAT4,
+			offset = u32(offset_of(UI_Vertex, radii)),
+		},
+		{
+			location = 6,
+			buffer_slot = 0,
+			format = .FLOAT2,
 			offset = u32(offset_of(UI_Vertex, params)),
+		},
+		{
+			location = 7,
+			buffer_slot = 0,
+			format = .FLOAT4,
+			offset = u32(offset_of(UI_Vertex, border)),
 		},
 	}
 
@@ -109,7 +130,7 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 		vertex_buffer_descriptions = raw_data(vertex_buffer_descs[:]),
 		num_vertex_buffers         = 1,
 		vertex_attributes          = raw_data(vertex_attributes[:]),
-		num_vertex_attributes      = 5,
+		num_vertex_attributes      = 8,
 	}
 
 	color_target_desc := sdl.GPUColorTargetDescription {

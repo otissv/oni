@@ -7,14 +7,10 @@ import "core:fmt"
 
 Heading :: proc() {
 	theme := &persistent.app.theme
-	x: f32 = 100
-	y: f32 = 100
 
 	w.Text(
 		{
 			id = "heading",
-			x = x,
-			y = y,
 			width = 480,
 			height = 28,
 			text = "Artboard text — zoomable",
@@ -22,15 +18,12 @@ Heading :: proc() {
 			color = oni.theme.palette[.Accent],
 			font_size = 20,
 			line_height = 0,
-			space = .Artboard,
 		},
 	)
 }
 
 Paragraph :: proc() {
 	theme := &persistent.app.theme
-	text_rect := oni.Rect{}
-
 
 	paragraph_color :: proc(
 		state: oni.Widget_State,
@@ -41,22 +34,41 @@ Paragraph :: proc() {
 		return oni.theme.palette[.Text]
 	}
 
-	paragraph := w.Text_Props {
-		id          = "paragraph",
-		x           = 100,
-		y           = 132,
-		width       = 480,
-		height      = 200,
-		text        = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
-		font        = theme.font_body,
-		font_size   = 20,
-		line_height = 1.5,
-		space       = .Artboard,
-		flags       = {},
-		max_w       = text_rect.w,
-	}
-	paragraph.color = paragraph_color
-	w.Text(paragraph)
+	w.Text(
+		{
+			id = "paragraph",
+			width = 480,
+			height = 200,
+			text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
+			font = theme.font_body,
+			font_size = 20,
+			line_height = 1.5,
+			color = paragraph_color,
+		},
+	)
+}
+
+Rectangle :: proc() {
+	w.Rectangle({
+		config = {
+			id = "artboard-panel",
+			x = 80,
+			y = 80,
+			width = 520,
+			height = 340,
+			background = oni.theme.palette[.Surface],
+			radius = 10,
+			space = .Artboard,
+			direction = .Vertical,
+			padding = oni.PADDING_MD,
+			gap = 12,
+			justify = oni.Justify_Pos{x = .Stretch, y = .Start},
+		},
+		child = proc(state: w.Rectangle_State) {
+			Heading()
+			Paragraph()
+		},
+	})
 }
 
 Hud :: proc() {
@@ -85,20 +97,96 @@ Hud :: proc() {
 	)
 }
 
+Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
+	w.Rectangle({
+		config = {
+			id = id,
+			x = x,
+			y = y,
+			width = 500,
+			height = 200,
+			space = .Screen,
+			direction = .Horizontal,
+			gap = 8,
+			padding = 20,
+			justify = oni.Justify_Pos{x = .Start, y = .Stretch},
+			background = oni.theme.palette[.Surface],
+			radius = oni.Radius_corners{tl = 10, tr = 10},
+			border = 10,
+			border_color = .Yellow_500,
+		},
+		child = proc(state: w.Rectangle_State) {
+			w.Rectangle(
+				{config = {id = "left", width = 100, background = oni.theme.palette[.Danger]}},
+			)
+			w.Rectangle(
+				{config = {id = "center", flex = 1, background = oni.theme.palette[.Accent]}},
+			)
+			w.Rectangle(
+				{config = {id = "right", width = 100, background = oni.theme.palette[.Success]}},
+			)
 
-app_draw :: proc() {
-	w.BeginFrame()
+		},
+	})
+}
 
+Layout_Vertical :: proc(id: string, x: f32, y: f32) {
+	w.Rectangle({
+		config = {
+			id = id,
+			x = x,
+			y = y,
+			width = 500,
+			height = 500,
+			space = .Screen,
+			direction = .Vertical,
+			gap = 8,
+			padding = oni.Padding{t = 10, b = 10},
+			justify = oni.Justify_Pos{x = .Stretch, y = .Start},
+			background = oni.theme.palette[.Surface],
+			radius = 10,
+			border = 10,
+			border_color = .Yellow_500,
+		},
+		child = proc(state: w.Rectangle_State) {
+			w.Rectangle(
+				{
+					config = {
+						id = "top",
+						width = 100,
+						height = 60,
+						background = oni.theme.palette[.Danger],
+					},
+				},
+			)
+			w.Rectangle(
+				{config = {id = "center", flex = 1, background = oni.theme.palette[.Accent]}},
+			)
+			w.Rectangle(
+				{config = {id = "bottom", height = 60, background = oni.theme.palette[.Success]}},
+			)
+		},
+	})
+}
+@(private)
+app_ui :: proc() {
 	oni.Begin_Artboard()
-
-	panel := oni.Rect{80, 80, 520, 340}
-	oni.Draw_Rectangle(panel, oni.theme.palette[.Surface], 10)
-
-	Heading()
-	Paragraph()
+	Rectangle()
 	oni.End_Artboard()
 
 	oni.Begin_Screen()
 	Hud()
+	Layout_Horizontal("layout-demo-1", x = 16, y = 520)
+	Layout_Vertical("layout-demo-2", x = 16, y = 750)
 	oni.End_Screen()
+}
+
+app_draw :: proc() {
+	w.BeginFrame()
+
+	app_ui()
+	w.EndLayoutPass()
+
+	app_ui()
+	w.EndFrame()
 }

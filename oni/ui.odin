@@ -2,9 +2,18 @@ package oni
 
 import "core:hash"
 
+
+UI_Pass :: enum {
+	Layout,
+	Draw,
+}
+
 ui_init :: proc() {
 	if state.ui.widgets == nil {
 		state.ui.widgets = make(map[UI_Id]UI_Widget_Entry)
+	}
+	if state.ui.layout.id_to_node == nil {
+		state.ui.layout.id_to_node = make(map[UI_Id]int)
 	}
 }
 
@@ -20,11 +29,27 @@ ui_shutdown :: proc() {
 
 	delete(state.ui.scope_stack)
 	state.ui.scope_stack = nil
+
+	delete(state.ui.inherit_space_stack)
+	state.ui.inherit_space_stack = nil
+
+	layout_reset()
+	delete(state.ui.layout.id_to_node)
+	state.ui.layout.id_to_node = nil
+
 	state.ui.frame = 0
+	state.ui.pass = .Layout
 }
 
 ui_begin_frame :: proc() {
+	ui_init()
 	state.ui.frame += 1
+	state.ui.pass = .Layout
+	layout_reset()
+}
+
+ui_end_layout_pass :: proc() {
+	state.ui.pass = .Draw
 }
 
 ui_end_frame :: proc() {
@@ -43,6 +68,17 @@ ui_end_frame :: proc() {
 			delete_key(&state.ui.widgets, id)
 		}
 	}
+}
+
+ui_pass :: proc() -> UI_Pass {
+	return state.ui.pass
+}
+
+ui_layout_rect :: proc(id: UI_Id) -> Rect {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		return state.ui.layout.nodes[node_index].rect
+	}
+	return {}
 }
 
 ui_push_scope :: proc(id: UI_Id) {
@@ -68,4 +104,26 @@ ui_id :: proc(label: string) -> UI_Id {
 	label_hash := u64(hash.crc32(transmute([]u8)label))
 	parent := ui_parent_hash()
 	return UI_Id(label_hash ~ parent)
+}
+
+widget_push_inherit_space :: proc(space: Draw_Space) {
+	append(&state.ui.inherit_space_stack, space)
+}
+
+widget_pop_inherit_space :: proc() {
+	if len(state.ui.inherit_space_stack) > 0 {
+		ordered_remove(&state.ui.inherit_space_stack, len(state.ui.inherit_space_stack) - 1)
+	}
+}
+
+widget_current_inherit_space :: proc() -> Draw_Space {
+	if len(state.ui.inherit_space_stack) > 0 {
+		return state.ui.inherit_space_stack[len(state.ui.inherit_space_stack) - 1]
+	}
+	return draw_current_space()
+}
+
+draw_resolve_space :: proc(space: Draw_Space) -> Draw_Space {
+	if space != .Inherit do return space
+	return widget_current_inherit_space()
 }
