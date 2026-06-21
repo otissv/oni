@@ -834,10 +834,21 @@ to_rgba_color :: proc {
 	oklcha_to_rgba,
 }
 
-to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
+	to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
 	#partial switch v in c {
 	case Color:
 		if v == .Invalid do return {}, false
+		if v == .Inherit {
+			parent := ui_style_current()
+			#partial switch c in parent.color {
+			case RGBA:
+				return c, true
+			case Color:
+				if c == .Invalid do return {}, false
+				return css_color_to_rgba(c), true
+			}
+			return {}, false
+		}
 		return to_rgba_color(v), true
 	case RGBA:
 		return to_rgba_color(v), true

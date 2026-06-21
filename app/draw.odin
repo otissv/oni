@@ -14,10 +14,10 @@ Heading :: proc() {
 			width = 480,
 			height = 28,
 			text = "Artboard text — zoomable",
-			font = theme.font_heading,
-			color = oni.theme.palette[.Accent],
-			font_size = 20,
-			line_height = 0,
+			font = oni.cfg_font_explicit(theme.font_heading),
+			color = oni.cfg_colors_explicit(oni.theme.palette[.Accent]),
+			font_size = oni.cfg_f32_explicit(20),
+			line_height = oni.cfg_f32_explicit(0),
 		},
 	)
 }
@@ -40,10 +40,10 @@ Paragraph :: proc() {
 			width = 480,
 			height = 200,
 			text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
-			font = theme.font_body,
-			font_size = 20,
-			line_height = 1.5,
-			color = paragraph_color,
+			font = oni.cfg_font_explicit(theme.font_body),
+			font_size = oni.cfg_f32_explicit(20),
+			line_height = oni.cfg_f32_explicit(1.5),
+			color = oni.cfg_colors_explicit(paragraph_color),
 		},
 	)
 }
@@ -52,17 +52,17 @@ Rectangle :: proc() {
 	w.Rectangle({
 		config = {
 			id = "artboard-panel",
-			x = 80,
-			y = 80,
+			x = oni.cfg_f32_explicit(80),
+			y = oni.cfg_f32_explicit(80),
 			width = 520,
 			height = 340,
-			background = oni.theme.palette[.Surface],
-			radius = 10,
-			space = .Artboard,
-			direction = .Vertical,
-			padding = oni.PADDING_MD,
-			gap = 12,
-			justify = oni.Justify_Pos{x = .Stretch, y = .Start},
+			background = oni.cfg_colors_explicit(oni.theme.palette[.Surface]),
+			radius = oni.cfg_radius_explicit(f32(10)),
+			space = oni.cfg_space_explicit(.Artboard),
+			direction = oni.cfg_direction_explicit(.Vertical),
+			padding = oni.cfg_padding_explicit(oni.PADDING_MD),
+			gap = oni.cfg_gap_explicit(u16(12)),
+			justify = oni.cfg_justify_explicit(oni.Justify_Pos{x = .Stretch, y = .Start}),
 		},
 		child = proc(state: w.Rectangle_State) {
 			Heading()
@@ -82,17 +82,17 @@ Hud :: proc() {
 	w.Text(
 		{
 			id = "hud-zoom",
-			x = 16,
-			y = 6,
+			x = oni.cfg_f32_explicit(16),
+			y = oni.cfg_f32_explicit(6),
 			width = 600,
 			height = 24,
 			text = hud,
-			font = theme.font_body,
-			color = oni.theme.palette[.White],
-			text_direction = .LTR,
-			font_size = 16,
-			line_height = 1,
-			space = .Screen,
+			font = oni.cfg_font_explicit(theme.font_body),
+			color = oni.cfg_colors_explicit(oni.theme.palette[.White]),
+			text_direction = oni.cfg_text_direction_explicit(.LTR),
+			font_size = oni.cfg_f32_explicit(16),
+			line_height = oni.cfg_f32_explicit(1),
+			space = oni.cfg_space_explicit(.Screen),
 		},
 	)
 }
@@ -101,29 +101,47 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 	w.Rectangle({
 		config = {
 			id = id,
-			x = x,
-			y = y,
+			x = oni.cfg_f32_explicit(x),
+			y = oni.cfg_f32_explicit(y),
 			width = 500,
 			height = 200,
-			space = .Screen,
-			direction = .Horizontal,
-			gap = 8,
-			padding = 20,
-			justify = oni.Justify_Pos{x = .Start, y = .Stretch},
-			background = oni.theme.palette[.Surface],
-			radius = oni.Radius_corners{tl = 10, tr = 10},
-			border = 10,
-			border_color = .Yellow_500,
+			space = oni.cfg_space_explicit(.Screen),
+			direction = oni.cfg_direction_explicit(.Horizontal),
+			gap = oni.cfg_gap_explicit(u16(8)),
+			padding = oni.cfg_padding_explicit(f32(20)),
+			justify = oni.cfg_justify_explicit(oni.Justify_Pos{x = .Start, y = .Stretch}),
+			background = oni.cfg_colors_explicit(oni.theme.palette[.Surface]),
+			radius = oni.cfg_radius_explicit(oni.Radius_corners{tl = 10, tr = 10}),
+			border = oni.cfg_border_explicit(f32(10)),
+			border_color = oni.cfg_colors_explicit(oni.Color.Yellow_500),
 		},
 		child = proc(state: w.Rectangle_State) {
 			w.Rectangle(
-				{config = {id = "left", width = 100, background = oni.theme.palette[.Danger]}},
+				{
+					config = {
+						id = "left",
+						width = 100,
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Danger]),
+					},
+				},
 			)
 			w.Rectangle(
-				{config = {id = "center", flex = 1, background = oni.theme.palette[.Accent]}},
+				{
+					config = {
+						id = "center",
+						flex = oni.cfg_f32_explicit(1),
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Accent]),
+					},
+				},
 			)
 			w.Rectangle(
-				{config = {id = "right", width = 100, background = oni.theme.palette[.Success]}},
+				{
+					config = {
+						id = "right",
+						width = 100,
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Success]),
+					},
+				},
 			)
 
 		},
@@ -134,19 +152,19 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 	w.Rectangle({
 		config = {
 			id = id,
-			x = x,
-			y = y,
+			x = oni.cfg_f32_explicit(x),
+			y = oni.cfg_f32_explicit(y),
 			width = 500,
 			height = 500,
-			space = .Screen,
-			direction = .Vertical,
-			gap = 8,
-			padding = oni.Padding{t = 10, b = 10},
-			justify = oni.Justify_Pos{x = .Stretch, y = .Start},
-			background = oni.theme.palette[.Surface],
-			radius = 10,
-			border = 10,
-			border_color = .Yellow_500,
+			space = oni.cfg_space_explicit(.Screen),
+			direction = oni.cfg_direction_explicit(.Vertical),
+			gap = oni.cfg_gap_explicit(u16(8)),
+			padding = oni.cfg_padding_explicit(oni.Pd{t = 10, b = 10}),
+			justify = oni.cfg_justify_explicit(oni.Justify_Pos{x = .Stretch, y = .Start}),
+			background = oni.cfg_colors_explicit(oni.theme.palette[.Surface]),
+			radius = oni.cfg_radius_explicit(f32(10)),
+			border = oni.cfg_border_explicit(f32(10)),
+			border_color = oni.cfg_colors_explicit(oni.Color.Yellow_500),
 		},
 		child = proc(state: w.Rectangle_State) {
 			w.Rectangle(
@@ -155,15 +173,27 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						id = "top",
 						width = 100,
 						height = 60,
-						background = oni.theme.palette[.Danger],
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Danger]),
 					},
 				},
 			)
 			w.Rectangle(
-				{config = {id = "center", flex = 1, background = oni.theme.palette[.Accent]}},
+				{
+					config = {
+						id = "center",
+						flex = oni.cfg_f32_explicit(1),
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Accent]),
+					},
+				},
 			)
 			w.Rectangle(
-				{config = {id = "bottom", height = 60, background = oni.theme.palette[.Success]}},
+				{
+					config = {
+						id = "bottom",
+						height = 60,
+						background = oni.cfg_colors_explicit(oni.theme.palette[.Success]),
+					},
+				},
 			)
 		},
 	})

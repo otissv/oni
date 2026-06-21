@@ -98,9 +98,70 @@ Widget_Kind :: enum {
 	TEXT,
 }
 
+Cfg_Tri :: enum {
+	Unset,
+	Inherit,
+	Value,
+}
+
+Cfg :: struct($T: typeid) {
+	mode:  Cfg_Tri,
+	value: T,
+}
+
+Length_Kind :: enum {
+	Auto,
+	Fixed,
+	Percent,
+	Inherit,
+}
+
+Length :: struct {
+	kind:  Length_Kind,
+	value: f32,
+}
+
 Widget_config :: struct {
 	id:             string,
 	kind:           Widget_Kind,
+	align:          Cfg(Text_Align),
+	aspect_ratio:   Cfg(Aspect_Ratio),
+	auto_focus:     Cfg(bool),
+	background:     Cfg(Colors),
+	border:         Cfg(Border),
+	border_color:   Cfg(Colors),
+	color:          Cfg(Colors),
+	direction:      Cfg(Widget_Direction),
+	disabled:       Cfg(bool),
+	flex:           Cfg(f32),
+	font:           Cfg(Font_Handle),
+	font_size:      Cfg(f32),
+	gap:            Cfg(Gap),
+	height:         Height,
+	justify:        Cfg(Justify),
+	letter_spacing: Cfg(f32),
+	line_height:    Cfg(f32),
+	max_h:          Cfg(f32),
+	max_w:          Cfg(f32),
+	min_h:          Cfg(f32),
+	min_w:          Cfg(f32),
+	padding:        Cfg(Padding),
+	radius:         Cfg(Radius),
+	space:          Cfg(Draw_Space),
+	text_direction: Cfg(Text_Direction),
+	width:          Width,
+	wrap:           Cfg(Text_Warp),
+	x:              Cfg(f32),
+	y:              Cfg(f32),
+	overflow:       Cfg(Overflow),
+	overflow_y:     Cfg(Overflow),
+	overflow_x:     Cfg(Overflow),
+	visibility:     Cfg(Visibility),
+	z_index:        Cfg(f32),
+	position:       Cfg(Position),
+}
+
+Resolved_Widget_Style :: struct {
 	align:          Text_Align,
 	aspect_ratio:   Aspect_Ratio,
 	auto_focus:     bool,
@@ -108,14 +169,14 @@ Widget_config :: struct {
 	border:         Border,
 	border_color:   Colors,
 	color:          Colors,
-	direction:      Direction,
+	direction:      Direction_Layout,
 	disabled:       bool,
 	flex:           f32,
 	font:           Font_Handle,
 	font_size:      f32,
-	gap:            Gap,
-	height:         f32,
-	justify:        Justify,
+	gap:            u16,
+	height:         Length,
+	justify:        Justify_Pos,
 	letter_spacing: f32,
 	line_height:    f32,
 	max_h:          f32,
@@ -126,7 +187,7 @@ Widget_config :: struct {
 	radius:         Radius,
 	space:          Draw_Space,
 	text_direction: Text_Direction,
-	width:          f32,
+	width:          Length,
 	wrap:           Text_Warp,
 	x:              f32,
 	y:              f32,
@@ -136,6 +197,18 @@ Widget_config :: struct {
 	visibility:     Visibility,
 	z_index:        f32,
 	position:       Position,
+}
+
+Resolved_Widget_config :: struct {
+	id:   string,
+	kind: Widget_Kind,
+	using style: Resolved_Widget_Style,
+}
+
+Style_Context :: struct {
+	using style: Resolved_Widget_Style,
+	content_w: f32,
+	content_h: f32,
 }
 
 Whitespace :: union {
@@ -247,27 +320,33 @@ Dim_struct :: struct {
 	grow:           bool,
 }
 
+Width_Mode :: enum {
+	Inherit,
+	Auto,
+	Fit_Content,
+	Min_Content,
+	Max_Content,
+}
+
 Width :: union {
 	struct{},
-	enum {
-		Auto,
-		Fit_Content,
-		Min_Content,
-		Max_Content,
-	},
+	Width_Mode,
 	f32,
 	Dim_struct,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Width,
 }
 
+Height_Mode :: enum {
+	Inherit,
+	Auto,
+	Fit_Content,
+	Min_Content,
+	Max_Content,
+}
+
 Height :: union {
 	struct{},
-	enum {
-		Auto,
-		Fit_Content,
-		Min_Content,
-		Max_Content,
-	},
+	Height_Mode,
 	f32,
 	Dim_struct,
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height,
@@ -335,10 +414,10 @@ Direction_Layout :: enum {
 	Vertical,
 }
 
-Direction :: union {
+Widget_Direction :: union {
 	struct{},
 	Direction_Layout,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction,
 }
 
 
@@ -417,7 +496,6 @@ RGBA :: struct {
 
 
 Draw_Space :: enum {
-	Inherit,
 	Artboard,
 	Screen,
 }
@@ -455,7 +533,7 @@ Theme :: struct {
 	background:   Colors,
 	gap:          Gap,
 	color:        Colors,
-	direction:    Direction,
+	direction:    Widget_Direction,
 	font_body:    Font_Handle,
 	font_heading: Font_Handle,
 	height:       Height,

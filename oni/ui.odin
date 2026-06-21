@@ -30,8 +30,8 @@ ui_shutdown :: proc() {
 	delete(state.ui.scope_stack)
 	state.ui.scope_stack = nil
 
-	delete(state.ui.inherit_space_stack)
-	state.ui.inherit_space_stack = nil
+	delete(state.ui.style_stack)
+	state.ui.style_stack = nil
 
 	layout_reset()
 	delete(state.ui.layout.id_to_node)
@@ -45,6 +45,8 @@ ui_begin_frame :: proc() {
 	ui_init()
 	state.ui.frame += 1
 	state.ui.pass = .Layout
+	clear(&state.ui.scope_stack)
+	clear(&state.ui.style_stack)
 	layout_reset()
 }
 
@@ -104,26 +106,4 @@ ui_id :: proc(label: string) -> UI_Id {
 	label_hash := u64(hash.crc32(transmute([]u8)label))
 	parent := ui_parent_hash()
 	return UI_Id(label_hash ~ parent)
-}
-
-widget_push_inherit_space :: proc(space: Draw_Space) {
-	append(&state.ui.inherit_space_stack, space)
-}
-
-widget_pop_inherit_space :: proc() {
-	if len(state.ui.inherit_space_stack) > 0 {
-		ordered_remove(&state.ui.inherit_space_stack, len(state.ui.inherit_space_stack) - 1)
-	}
-}
-
-widget_current_inherit_space :: proc() -> Draw_Space {
-	if len(state.ui.inherit_space_stack) > 0 {
-		return state.ui.inherit_space_stack[len(state.ui.inherit_space_stack) - 1]
-	}
-	return draw_current_space()
-}
-
-draw_resolve_space :: proc(space: Draw_Space) -> Draw_Space {
-	if space != .Inherit do return space
-	return widget_current_inherit_space()
 }

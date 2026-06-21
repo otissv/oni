@@ -74,7 +74,7 @@ beginMouseFrame :: proc() {
 
 pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	mouse := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
-	if draw_resolve_space(space) == .Artboard {
+	if space == .Artboard {
 		mouse = View_Screen_To_World(mouse)
 	}
 	return(
@@ -371,28 +371,28 @@ resolve_align :: proc(
 	return resolve_justify_value(a)
 }
 
-resolve_direction_value :: proc(d: Direction) -> (direction: Direction_Layout, ok: bool) {
+resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_Layout, ok: bool) {
 	switch v in d {
 	case struct{}:
 		return .Horizontal, false
 	case Direction_Layout:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction:
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction:
 		return .Horizontal, false
 	}
 	return .Horizontal, false
 }
 
 resolve_direction :: proc(
-	d: Direction,
+	d: Widget_Direction,
 	state: ^$S,
 	event: Widget_Event(S),
 ) -> (
-	direction: Direction,
+	direction: Widget_Direction,
 	ok: bool,
 ) {
 	#partial switch v in d {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Direction:
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_direction(v(ui_state, ui_event), state, event)
@@ -431,171 +431,6 @@ justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
 		return v == .Stretch
 	}
 	return false
-}
-
-element_config_to_declaration :: proc(
-	config: Widget_config,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> Widget_config {
-	decl := config
-
-
-	if padding, padding_ok := resolve_padding(config.padding, state, event); padding_ok {
-		decl.padding = padding
-	}
-
-	if radius, radius_ok := resolve_radius(config.radius, state, event); radius_ok {
-		decl.radius = radius
-	}
-
-	border_width: Border
-	border_ok := false
-	if width, width_ok := resolve_border(config.border, state, event); width_ok {
-		border_width = width
-		border_ok = true
-	}
-
-	if border_ok {
-		decl.border = border_width
-	}
-	if color, color_ok := to_rgba(config.border_color, state, event); color_ok {
-		decl.border_color = color
-	}
-	if background, bg_ok := to_rgba(config.background, state, event); bg_ok {
-		decl.background = background
-	}
-	if color, color_ok := to_rgba(config.color, state, event); color_ok {
-		decl.color = color
-	}
-
-	if gap, gap_ok := resolve_child_gap(config.gap, state, event); gap_ok {
-		decl.gap = gap
-	}
-	if align, align_ok := resolve_align(config.justify, state, event); align_ok {
-		decl.justify = align
-	}
-	if direction, direction_ok := resolve_direction(config.direction, state, event); direction_ok {
-		decl.direction = direction
-	}
-
-	return decl
-}
-
-merge_element_declaration :: proc(
-	base: Widget_config,
-	override: Widget_config,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> Widget_config {
-	result := base
-
-
-	if override.align != nil {
-		result.align = override.align
-	}
-
-
-	#partial switch justify in override.justify {
-	case Justify_Pos:
-		result.justify = justify
-	}
-	if override.aspect_ratio != nil {
-		result.aspect_ratio = override.aspect_ratio
-	}
-	if override.auto_focus {
-		result.auto_focus = override.auto_focus
-	}
-	if override.border != nil {
-		result.border = override.border
-	}
-	if override.border_color != nil {
-		result.border_color = override.border_color
-	}
-	#partial switch background in override.background {
-	case Color, RGBA, Hex, HSLA, HWBA, LCHA, OKLCHA:
-		result.background = background
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
-		result.background = background
-	}
-	#partial switch gap in override.gap {
-	case u16:
-		result.gap = gap
-	}
-	#partial switch color in override.color {
-	case Color, RGBA, Hex, HSLA, HWBA, LCHA, OKLCHA:
-		result.color = color
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
-		result.color = color
-	}
-	#partial switch direction in override.direction {
-	case Direction_Layout:
-		result.direction = direction
-	}
-	if override.disabled {
-		result.disabled = override.disabled
-	}
-	if override.font != {} {
-		result.font = override.font
-	}
-	if override.font_size != 0 {
-		result.font_size = override.font_size
-	}
-	if override.letter_spacing != 0 {
-		result.letter_spacing = override.letter_spacing
-	}
-	if override.line_height != 0 {
-		result.line_height = override.line_height
-	}
-	if override.padding != nil {
-		result.padding = override.padding
-	}
-	if override.radius != nil {
-		result.radius = override.radius
-	}
-	if override.id != "" {
-		result.id = override.id
-	}
-	if override.x != {} {
-		result.x = override.x
-	}
-	if override.y != {} {
-		result.y = override.y
-	}
-	if override.width != {} {
-		result.width = override.width
-	}
-	if override.height != {} {
-		result.height = override.height
-	}
-	if override.flex > 0 {
-		result.flex = override.flex
-	}
-	if override.min_w != 0 {
-		result.min_w = override.min_w
-	}
-	if override.max_w != 0 {
-		result.max_w = override.max_w
-	}
-	if override.min_h != 0 {
-		result.min_h = override.min_h
-	}
-	if override.max_h != 0 {
-		result.max_h = override.max_h
-	}
-	if override.space == .Inherit {
-		result.space = widget_current_inherit_space()
-	} else {
-		result.space = override.space
-	}
-	if override.wrap != nil {
-		result.wrap = override.wrap
-	}
-	if override.text_direction != .LTR {
-		result.text_direction = override.text_direction
-	}
-
-	return element_config_to_declaration(result, state, event)
 }
 
 consume_pointer_click :: proc(

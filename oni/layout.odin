@@ -8,7 +8,7 @@ Layout_Measure :: struct {
 
 Layout_Node :: struct {
 	ui_id:         UI_Id,
-	config:        Widget_config,
+	config:        Resolved_Widget_config,
 	padding:       Pd,
 	border:        Bd,
 	desired:       Vec2,
@@ -34,19 +34,16 @@ layout_reset :: proc() {
 	clear(&state.ui.layout.id_to_node)
 }
 
-layout_config_direction :: proc(config: Widget_config) -> Direction_Layout {
-	if direction, ok := resolve_direction_value(config.direction); ok do return direction
-	return .Vertical
+layout_config_direction :: proc(config: Resolved_Widget_config) -> Direction_Layout {
+	return config.direction
 }
 
-layout_config_gap :: proc(config: Widget_config) -> f32 {
-	if gap, ok := resolve_gap_value(config.gap); ok do return f32(gap)
-	return 0
+layout_config_gap :: proc(config: Resolved_Widget_config) -> f32 {
+	return f32(config.gap)
 }
 
-layout_config_justify :: proc(config: Widget_config) -> Justify_Pos {
-	if justify, ok := resolve_justify_value(config.justify); ok do return justify
-	return {x = Justify_Align.Start, y = Justify_Align.Start}
+layout_config_justify :: proc(config: Resolved_Widget_config) -> Justify_Pos {
+	return config.justify
 }
 
 layout_clamp_axis :: proc(value, min_v, max_v: f32) -> f32 {
@@ -77,11 +74,10 @@ layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
 	)
 }
 
-layout_measure_text :: proc(config: Widget_config, text: string, max_w: f32) -> Vec2 {
+layout_measure_text :: proc(config: Resolved_Widget_config, text: string, max_w: f32) -> Vec2 {
 	if len(text) == 0 do return {}
 
-	draw_space := draw_resolve_space(config.space)
-	resolved_font, layout_scale, ok := font_resolve(config.font, config.font_size, draw_space)
+	resolved_font, layout_scale, ok := font_resolve(config.font, config.font_size, config.space)
 	if !ok do return {}
 
 	face := font_face_from_handle(resolved_font)
@@ -102,13 +98,15 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 
 	if len(node.measure.text) > 0 {
 		max_w := node.measure.max_w
-		if max_w <= 0 && config.width > 0 do max_w = config.width
-		if max_w <= 0 && config.max_w > 0 do max_w = config.max_w
+		if max_w <= 0 && node.config.width.kind == .Fixed do max_w = node.config.width.value
+		if max_w <= 0 && node.config.max_w > 0 do max_w = node.config.max_w
 		return layout_measure_text(config, node.measure.text, max_w)
 	}
 
-	width := config.width > 0 ? config.width : node.desired.x
-	height := config.height > 0 ? config.height : node.desired.y
+	width := length_resolve(node.config.width, 0)
+	height := length_resolve(node.config.height, 0)
+	if width <= 0 do width = node.desired.x
+	if height <= 0 do height = node.desired.y
 	if width <= 0 do width = config.min_w
 	if height <= 0 do height = config.min_h
 	return {layout_clamp_axis(width, config.min_w, config.max_w), layout_clamp_axis(height, config.min_h, config.max_h)}
@@ -127,9 +125,9 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 		for child_index in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
 			child_size := child.desired
-			main_fixed := direction == .Horizontal ? child.config.width : child.config.height
+			child_main := direction == .Horizontal ? child.config.width : child.config.height
 
-			if child.config.flex > 0 && main_fixed <= 0 do continue
+			if child.config.flex > 0 && !length_is_definite(child_main) do continue
 
 			switch direction {
 			case .Horizontal:
@@ -150,15 +148,19 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 
 		switch direction {
 		case .Horizontal:
-			width := node.config.width > 0 ? node.config.width : main_sum + inset_w
-			height := node.config.height > 0 ? node.config.height : cross_max + inset_h
+			width := length_resolve(node.config.width, 0)
+			height := length_resolve(node.config.height, 0)
+			if width <= 0 do width = main_sum + inset_w
+			if height <= 0 do height = cross_max + inset_h
 			return {
 				layout_clamp_axis(width, node.config.min_w, node.config.max_w),
 				layout_clamp_axis(height, node.config.min_h, node.config.max_h),
 			}
 		case .Vertical:
-			width := node.config.width > 0 ? node.config.width : cross_max + inset_w
-			height := node.config.height > 0 ? node.config.height : main_sum + inset_h
+			width := length_resolve(node.config.width, 0)
+			height := length_resolve(node.config.height, 0)
+			if width <= 0 do width = cross_max + inset_w
+			if height <= 0 do height = main_sum + inset_h
 			return {
 				layout_clamp_axis(width, node.config.min_w, node.config.max_w),
 				layout_clamp_axis(height, node.config.min_h, node.config.max_h),
@@ -169,7 +171,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	return layout_measure_leaf(node)
 }
 
-layout_push_node :: proc(ui_id: UI_Id, config: Widget_config) -> ^Layout_Node {
+layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_config) -> ^Layout_Node {
 	parent_index := -1
 	if len(state.ui.layout.node_stack) > 0 {
 		parent_index = state.ui.layout.node_stack[len(state.ui.layout.node_stack) - 1]
@@ -215,8 +217,10 @@ layout_pop_node :: proc() {
 layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 	desired := node.desired
 
-	width := node.config.width > 0 ? node.config.width : desired.x
-	height := node.config.height > 0 ? node.config.height : desired.y
+	width := length_resolve(node.config.width, bounds.w)
+	height := length_resolve(node.config.height, bounds.h)
+	if width <= 0 do width = desired.x
+	if height <= 0 do height = desired.y
 
 	if width <= 0 && bounds.w > 0 do width = bounds.w
 	if height <= 0 && bounds.h > 0 do height = bounds.h
@@ -227,8 +231,14 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 	}
 }
 
-layout_child_main_size :: proc(child: ^Layout_Node, is_horizontal: bool, flex_unit: f32) -> f32 {
-	main_fixed := is_horizontal ? child.config.width : child.config.height
+layout_child_main_size :: proc(
+	child: ^Layout_Node,
+	is_horizontal: bool,
+	flex_unit: f32,
+	parent_main: f32,
+) -> f32 {
+	main_len := is_horizontal ? child.config.width : child.config.height
+	main_fixed := length_resolve(main_len, parent_main)
 	if main_fixed > 0 do return main_fixed
 
 	if child.config.flex > 0 && flex_unit > 0 {
@@ -245,7 +255,8 @@ layout_child_cross_size :: proc(
 	cross_available: f32,
 	justify: Justify_Pos,
 ) -> f32 {
-	cross_fixed := is_horizontal ? child.config.height : child.config.width
+	cross_len := is_horizontal ? child.config.height : child.config.width
+	cross_fixed := length_resolve(cross_len, cross_available)
 	if cross_fixed > 0 do return cross_fixed
 
 	cross_stretch := child.config.flex > 0
@@ -302,12 +313,12 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
-		main_fixed := is_horizontal ? child.config.width : child.config.height
+		child_main := is_horizontal ? child.config.width : child.config.height
 
-		if child.config.flex > 0 && main_fixed <= 0 {
+		if child.config.flex > 0 && !length_is_definite(child_main) {
 			flex_total += child.config.flex
 		} else {
-			main := layout_child_main_size(child, is_horizontal, 0)
+			main := layout_child_main_size(child, is_horizontal, 0, main_available)
 			fixed_total += main
 		}
 	}
@@ -321,7 +332,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
-		main := layout_child_main_size(child, is_horizontal, flex_unit)
+		main := layout_child_main_size(child, is_horizontal, flex_unit, main_available)
 		cross := layout_child_cross_size(child, is_horizontal, cross_available, justify)
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 	}

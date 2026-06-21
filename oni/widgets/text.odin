@@ -8,7 +8,7 @@ Widget_Text_Flag :: enum {
 	Uncached,
 }
 
-Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
+Widget_Text_Flags :: bit_set[Widget_Text_Flag; i32]
 
 Text_Variant :: enum {
 	DEFAULT,
@@ -27,20 +27,24 @@ Text_Size :: enum {
 	Icon,
 }
 
-
 Text_Config :: struct {
-	using _:      oni.Widget_config,
-	flags:        Widget_Text_Flags,
-	size:         Text_Size,
-	text:         string,
-	variant:      Text_Variant,
+	using _: oni.Widget_config,
+	flags:   Widget_Text_Flags,
+	size:    Text_Size,
+	text:    string,
+	variant: Text_Variant,
 }
 
 Text_State :: struct {
 	using _: oni.Widget_State,
 }
 
-Text_Merged_State :: oni.Widget_Merged_State(Text_State, Text_Config)
+Text_Merged_State :: struct {
+	using state: Text_State,
+	style:       oni.Resolved_Widget_config,
+	flags:       Widget_Text_Flags,
+	text:        string,
+}
 
 Text_Event :: oni.Widget_Event(Text_Merged_State)
 
@@ -71,39 +75,55 @@ text_event :: proc(
 }
 
 @(private)
+text_decl_font_size :: proc(field: oni.Cfg(f32)) -> f32 {
+	if field.mode == .Value do return field.value
+	return 0
+}
+
+@(private)
+text_set_font_size :: proc(field: ^oni.Cfg(f32), size: f32) {
+	field^ = oni.cfg_f32_explicit(size)
+}
+
+@(private)
 text_apply_variant :: proc(config: ^Text_Config) {
 	if config.variant == .DEFAULT do return
 
-	config.font = oni.theme.font_heading
+	config.font = oni.cfg_font_explicit(oni.theme.font_heading)
 	switch config.variant {
 	case .DEFAULT:
 	case .H1:
-		config.font_size = 32
+		text_set_font_size(&config.font_size, 32)
 	case .H2:
-		config.font_size = 28
+		text_set_font_size(&config.font_size, 28)
 	case .H3:
-		config.font_size = 24
+		text_set_font_size(&config.font_size, 24)
 	case .H4:
-		config.font_size = 20
+		text_set_font_size(&config.font_size, 20)
 	case .H5:
-		config.font_size = 18
+		text_set_font_size(&config.font_size, 18)
 	case .H6:
-		config.font_size = 16
+		text_set_font_size(&config.font_size, 16)
 	}
 }
 
 @(private)
 text_apply_size :: proc(config: ^Text_Config) {
+	current := text_decl_font_size(config.font_size)
 	switch config.size {
 	case .Default:
 	case .Small:
-		config.font_size =
-			config.font_size != 0 ? config.font_size * 0.875 : oni.theme.font_body.size_px * 0.875
+		text_set_font_size(
+			&config.font_size,
+			current > 0 ? current * 0.875 : oni.theme.font_body.size_px * 0.875,
+		)
 	case .Large:
-		config.font_size =
-			config.font_size != 0 ? config.font_size * 1.25 : oni.theme.font_body.size_px * 1.25
+		text_set_font_size(
+			&config.font_size,
+			current > 0 ? current * 1.25 : oni.theme.font_body.size_px * 1.25,
+		)
 	case .Icon:
-		config.font_size = 14
+		text_set_font_size(&config.font_size, 14)
 	}
 }
 
@@ -144,7 +164,7 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 }
 
 @(private)
-text_theme_base :: proc(merged: ^Text_Merged_State) -> Text_Config {
+text_widget_decl :: proc(merged: ^Text_Merged_State) -> Text_Config {
 	color := oni.Color.Text
 
 	if merged.is_disabled {
@@ -153,57 +173,40 @@ text_theme_base :: proc(merged: ^Text_Merged_State) -> Text_Config {
 
 	return Text_Config {
 		kind = .TEXT,
-		font = oni.theme.font_body,
-		font_size = oni.theme.font_body.size_px,
-		color = color,
-		line_height = 1,
-		text_direction = .LTR,
-		space = .Inherit,
-		justify = oni.theme.justify,
-		gap = oni.theme.gap,
+		font = oni.cfg_font_explicit(oni.theme.font_body),
+		font_size = oni.cfg_f32_explicit(oni.theme.font_body.size_px),
+		color = oni.cfg_colors_explicit(color),
+		line_height = oni.cfg_f32_explicit(1),
+		text_direction = oni.cfg_text_direction_explicit(.LTR),
+		space = oni.cfg_inherit_space(),
+		justify = oni.cfg_justify_explicit(oni.theme.justify),
+		gap = oni.cfg_gap_explicit(oni.theme.gap),
 	}
 }
 
 @(private)
-text_config :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Text_Config {
+text_refresh_merged :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Text_Event {
 	event := text_event(merged^)
 
-	base := text_theme_base(merged)
+	base := text_widget_decl(merged)
 	override := text_props_override(props)
 	text_apply_variant(&override)
 	text_apply_size(&override)
 
-	resolved := merge_element_declaration(base, override, merged, event)
-
-	override.color = resolved.color
-	override.background = resolved.background
-	override.border_color = resolved.border_color
-	override.padding = resolved.padding
-	override.radius = resolved.radius
-	override.border = resolved.border
-	override.gap = resolved.gap
-	override.justify = resolved.justify
-	override.direction = resolved.direction
-	override.font = resolved.font
-	override.font_size = resolved.font_size
-	override.space = resolved.space
-	override.line_height = resolved.line_height
-	return override
-}
-
-@(private)
-text_refresh_merged :: proc(props: Text_Props, merged: ^Text_Merged_State) -> Text_Event {
-	merged.config = text_config(props, merged)
+	merged.style = oni.resolve_widget_config(base, override, merged, event)
+	merged.flags = override.flags
+	merged.text = override.text
 	return text_event(merged^)
 }
 
 Text :: proc(props: Text_Props) -> oni.Vec2 {
-	key := element_key(props.id)
+	key := oni.element_key(props.id)
 	layout_label := props.id != "" ? props.id : key
 	layout_id := oni.ui_id(layout_label)
 
 	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus := props.auto_focus && oni.w_ctx.auto_focused_id != key
+	should_auto_focus := props.auto_focus.mode == .Value && props.auto_focus.value &&
+	     oni.w_ctx.auto_focused_id != key
 
 	if should_auto_focus {
 		oni.w_ctx.focused_id = key
@@ -211,27 +214,33 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	}
 
 	merged := Text_Merged_State {
-		is_disabled = props.disabled,
+		is_disabled = props.disabled.mode == .Value && props.disabled.value,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
 	event := text_refresh_merged(props, &merged)
-	config := merged.config
+	style := merged.style
 
 	if oni.ui_pass() == .Layout {
-		node := oni.layout_push_node(layout_id, config)
-		max_w := props.max_w != 0 ? props.max_w : config.width
-		oni.layout_set_measure_text(node, config.text, max_w)
+		node := oni.layout_push_node(layout_id, style)
+		max_w: f32
+		if props.max_w.mode == .Value do max_w = props.max_w.value
+		if max_w <= 0 && style.width.kind == .Fixed do max_w = style.width.value
+		oni.layout_set_measure_text(node, merged.text, max_w)
 		oni.layout_pop_node()
 		return {}
 	}
 
 	layout_rect := oni.ui_layout_rect(layout_id)
 	rect := layout_rect
-	if rect.w == 0 && props.width != 0 do rect.w = props.width
-	if rect.h == 0 && props.height != 0 do rect.h = props.height
+	if rect.w == 0 {
+		if w := oni.length_resolve(style.width, 0); w > 0 do rect.w = w
+	}
+	if rect.h == 0 {
+		if h := oni.length_resolve(style.height, 0); h > 0 do rect.h = h
+	}
 
-	merged.is_hovered = pointer_over(rect, config.space)
+	merged.is_hovered = oni.pointer_over(rect, style.space)
 	merged.is_left_clicked = merged.is_hovered && oni.w_ctx.left_mouse.pressed
 	merged.is_right_clicked = merged.is_hovered && oni.w_ctx.right_mouse.pressed
 	merged.is_middle_clicked = merged.is_hovered && oni.w_ctx.middle_mouse.pressed
@@ -240,7 +249,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	merged.is_Pressed = merged.is_hovered && oni.w_ctx.left_mouse.down
 
 	if !merged.is_disabled {
-		entered, left := consume_hover_transition(key, merged.is_hovered)
+		entered, left := oni.consume_hover_transition(key, merged.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
 			props.on_mouse_enter(event)
@@ -279,6 +288,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 		merged.is_focused = oni.w_ctx.focused_id == key
 		event = text_refresh_merged(props, &merged)
+		style = merged.style
 
 		if merged.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
@@ -316,7 +326,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			}
 		}
 
-		clicked := consume_pointer_click(
+		clicked := oni.consume_pointer_click(
 			key,
 			merged.is_hovered,
 			oni.w_ctx.left_mouse.pressed,
@@ -360,30 +370,31 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	}
 
 	event = text_refresh_merged(props, &merged)
+	style = merged.style
 
 	if should_auto_focus && !was_focused && props.on_focus != nil {
 		props.on_focus(event)
 	}
 
-	rgbaColor, color_ok := oni.to_rgba(config.color, &merged, event)
+	rgbaColor, color_ok := oni.to_rgba(style.color, &merged, event)
 	if !color_ok do return {}
 
 	resolved_font, layout_scale, ok := oni.font_resolve(
-		config.font,
-		config.font_size,
-		oni.draw_resolve_space(config.space),
+		style.font,
+		style.font_size,
+		style.space,
 	)
 	if !ok do return {}
 
 	face := oni.font_face_from_handle(resolved_font)
-	if face == nil || len(config.text) == 0 do return {}
+	if face == nil || len(merged.text) == 0 do return {}
 
 	pos := oni.Vec2{rect.x, rect.y}
-	max_w := config.max_w != 0 ? config.max_w : rect.w
+	max_w := style.max_w != 0 ? style.max_w : rect.w
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
-	if .Uncached in config.flags {
-		lines := oni.font_shape_line_build(face, config.text, shape_max_w, config.text_direction)
+	if .Uncached in merged.flags {
+		lines := oni.font_shape_line_build(face, merged.text, shape_max_w, style.text_direction)
 		if len(lines) == 0 do return {}
 		defer oni.font_destroy_shaped_lines(lines)
 		return oni.font_draw_shaped_lines(
@@ -393,20 +404,20 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			pos,
 			rgbaColor,
 			max_w,
-			config.font_size * config.line_height,
+			style.font_size * style.line_height,
 			layout_scale,
 		)
 	}
 
 	cache_id := props.id != "" ? props.id : key
-	cache := widget_shaped(cache_id)
+	cache := oni.widget_shaped(cache_id)
 	lines := oni.shaped_text_ensure(
 		cache,
 		resolved_font.id,
 		face,
-		config.text,
+		merged.text,
 		shape_max_w,
-		config.text_direction,
+		style.text_direction,
 	)
 	if len(lines) == 0 do return {}
 	return oni.font_draw_shaped_lines(
@@ -416,7 +427,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		pos,
 		rgbaColor,
 		max_w,
-		config.font_size * config.line_height,
+		style.font_size * style.line_height,
 		layout_scale,
 	)
 }

@@ -10,8 +10,8 @@ UI_Widget_Entry :: struct {
 UI_State :: struct {
 	frame:               u64,
 	pass:                UI_Pass,
-	scope_stack:         [dynamic]UI_Id,
-	inherit_space_stack: [dynamic]Draw_Space,
+	scope_stack: [dynamic]UI_Id,
+	style_stack: [dynamic]Style_Context,
 	widgets:             map[UI_Id]UI_Widget_Entry,
 	layout:              Layout_State,
 }

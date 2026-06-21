@@ -22,7 +22,7 @@ font_resolve :: proc(
 	layout_scale: f32,
 	ok: bool,
 ) {
-	draw_space := draw_resolve_space(space)
+	draw_space := space
 	base := font_face_from_handle(font)
 	if base == nil do return {}, 1, false
 

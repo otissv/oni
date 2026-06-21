@@ -76,25 +76,27 @@ draw_pop_space :: proc() {
 
 begin_artboard :: proc() {
 	draw_push_space(.Artboard)
-	widget_push_inherit_space(.Artboard)
+	bounds := layout_space_bounds(.Artboard)
+	ui_push_style(style_root(.Artboard, bounds))
 	if ui_pass() == .Layout do layout_begin_space(.Artboard)
 }
 
 end_artboard :: proc() {
 	if ui_pass() == .Layout do layout_end_space()
-	widget_pop_inherit_space()
+	ui_pop_style()
 	draw_pop_space()
 }
 
 draw_push_screen :: proc() {
 	draw_push_space(.Screen)
-	widget_push_inherit_space(.Screen)
+	bounds := layout_space_bounds(.Screen)
+	ui_push_style(style_root(.Screen, bounds))
 	if ui_pass() == .Layout do layout_begin_space(.Screen)
 }
 
 draw_pop_screen :: proc() {
 	if ui_pass() == .Layout do layout_end_space()
-	widget_pop_inherit_space()
+	ui_pop_style()
 	draw_pop_space()
 }
 
