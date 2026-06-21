@@ -109,8 +109,7 @@ draw_rect :: proc(
 ) {
 	has_fill := color.a > 0
 	has_border :=
-		border_color.a > 0 &&
-		(border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0)
+		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0)
 	if !has_fill && !has_border do return
 
 	scale := view_artboard_zoom()

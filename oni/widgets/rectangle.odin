@@ -1,6 +1,7 @@
 package widgets
 
 import oni ".."
+import set "../set"
 import sdl "vendor:sdl3"
 
 
@@ -53,14 +54,14 @@ rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
 
 	return Rectangle_Config {
 		kind = .RECT,
-		font = oni.cfg_font_explicit(oni.theme.font_body),
-		font_size = oni.cfg_f32_explicit(oni.theme.font_body.size_px),
-		color = oni.cfg_colors_explicit(color),
-		line_height = oni.cfg_f32_explicit(1),
-		text_direction = oni.cfg_text_direction_explicit(.LTR),
-		space = oni.cfg_inherit_space(),
-		justify = oni.cfg_justify_explicit(oni.theme.justify),
-		gap = oni.cfg_gap_explicit(oni.theme.gap),
+		font = set.Font(oni.theme.font_body),
+		font_size = set.F32(oni.theme.font_body.size_px),
+		color = set.Colors(color),
+		line_height = set.F32(1),
+		text_direction = set.Text_Direction(.LTR),
+		space = set.Inherit_Space(),
+		justify = set.Justify(oni.theme.justify),
+		gap = set.Gap(oni.theme.gap),
 	}
 }
 

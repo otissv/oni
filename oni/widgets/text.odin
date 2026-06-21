@@ -1,6 +1,7 @@
 package widgets
 
 import oni ".."
+import set "../set"
 import sdl "vendor:sdl3"
 
 
@@ -82,14 +83,14 @@ text_decl_font_size :: proc(field: oni.Cfg(f32)) -> f32 {
 
 @(private)
 text_set_font_size :: proc(field: ^oni.Cfg(f32), size: f32) {
-	field^ = oni.cfg_f32_explicit(size)
+	field^ = set.F32(size)
 }
 
 @(private)
 text_apply_variant :: proc(config: ^Text_Config) {
 	if config.variant == .DEFAULT do return
 
-	config.font = oni.cfg_font_explicit(oni.theme.font_heading)
+	config.font = set.Font(oni.theme.font_heading)
 	switch config.variant {
 	case .DEFAULT:
 	case .H1:
@@ -173,14 +174,14 @@ text_widget_decl :: proc(merged: ^Text_Merged_State) -> Text_Config {
 
 	return Text_Config {
 		kind = .TEXT,
-		font = oni.cfg_font_explicit(oni.theme.font_body),
-		font_size = oni.cfg_f32_explicit(oni.theme.font_body.size_px),
-		color = oni.cfg_colors_explicit(color),
-		line_height = oni.cfg_f32_explicit(1),
-		text_direction = oni.cfg_text_direction_explicit(.LTR),
-		space = oni.cfg_inherit_space(),
-		justify = oni.cfg_justify_explicit(oni.theme.justify),
-		gap = oni.cfg_gap_explicit(oni.theme.gap),
+		font = set.Font(oni.theme.font_body),
+		font_size = set.F32(oni.theme.font_body.size_px),
+		color = set.Colors(color),
+		line_height = set.F32(1),
+		text_direction = set.Text_Direction(.LTR),
+		space = set.Inherit_Space(),
+		justify = set.Justify(oni.theme.justify),
+		gap = set.Gap(oni.theme.gap),
 	}
 }
 

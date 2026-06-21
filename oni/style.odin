@@ -1,65 +1,5 @@
 package oni
 
-cfg_explicit :: proc(value: $T) -> Cfg(T) {
-	return Cfg(T){mode = .Value, value = value}
-}
-
-cfg_inherit :: proc($T: typeid) -> Cfg(T) {
-	return Cfg(T){mode = .Inherit}
-}
-
-cfg_space_explicit :: proc(space: Draw_Space) -> Cfg(Draw_Space) {
-	return cfg_explicit(space)
-}
-
-cfg_direction_explicit :: proc(direction: Direction_Layout) -> Cfg(Widget_Direction) {
-	return cfg_explicit(Widget_Direction(direction))
-}
-
-cfg_f32_explicit :: proc(value: f32) -> Cfg(f32) {
-	return cfg_explicit(value)
-}
-
-cfg_font_explicit :: proc(font: Font_Handle) -> Cfg(Font_Handle) {
-	return cfg_explicit(font)
-}
-
-cfg_inherit_space :: proc() -> Cfg(Draw_Space) {
-	return cfg_inherit(Draw_Space)
-}
-
-cfg_colors_explicit :: proc(value: Colors) -> Cfg(Colors) {
-	return Cfg(Colors){mode = .Value, value = value}
-}
-
-cfg_padding_explicit :: proc(value: Padding) -> Cfg(Padding) {
-	return Cfg(Padding){mode = .Value, value = value}
-}
-
-cfg_radius_explicit :: proc(value: Radius) -> Cfg(Radius) {
-	return Cfg(Radius){mode = .Value, value = value}
-}
-
-cfg_border_explicit :: proc(value: Border) -> Cfg(Border) {
-	return Cfg(Border){mode = .Value, value = value}
-}
-
-cfg_gap_explicit :: proc(value: Gap) -> Cfg(Gap) {
-	return Cfg(Gap){mode = .Value, value = value}
-}
-
-cfg_justify_explicit :: proc(value: Justify) -> Cfg(Justify) {
-	return Cfg(Justify){mode = .Value, value = value}
-}
-
-cfg_text_direction_explicit :: proc(value: Text_Direction) -> Cfg(Text_Direction) {
-	return Cfg(Text_Direction){mode = .Value, value = value}
-}
-
-cfg_bool_explicit :: proc(value: bool) -> Cfg(bool) {
-	return Cfg(bool){mode = .Value, value = value}
-}
-
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	switch length.kind {
 	case .Auto:
@@ -181,12 +121,7 @@ resolve_length_from_height :: proc(
 }
 
 @(private)
-resolve_cfg_gap :: proc(
-	gap: Cfg(Gap),
-	parent: u16,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> u16 {
+resolve_cfg_gap :: proc(gap: Cfg(Gap), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
 	switch gap.mode {
 	case .Unset:
 		if resolved, ok := resolve_gap_value(theme.gap); ok do return resolved
@@ -272,7 +207,10 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		gap = resolved_gap
 	}
 
-	justify := Justify_Pos{x = .Start, y = .Start}
+	justify := Justify_Pos {
+		x = .Start,
+		y = .Start,
+	}
 	if resolved_justify, ok := resolve_justify_value(theme.justify); ok {
 		justify = resolved_justify
 	}
@@ -401,7 +339,10 @@ resolve_text_align :: proc(
 	align: Text_Align,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Text_Align, bool) {
+) -> (
+	Text_Align,
+	bool,
+) {
 	#partial switch v in align {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align:
 		ui_state := to_ui_state(state)
@@ -420,7 +361,10 @@ resolve_aspect_ratio :: proc(
 	aspect_ratio: Aspect_Ratio,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Aspect_Ratio, bool) {
+) -> (
+	Aspect_Ratio,
+	bool,
+) {
 	#partial switch v in aspect_ratio {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Aspect_Ratio:
 		ui_state := to_ui_state(state)
@@ -439,7 +383,10 @@ resolve_text_warp :: proc(
 	wrap: Text_Warp,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Text_Warp, bool) {
+) -> (
+	Text_Warp,
+	bool,
+) {
 	#partial switch v in wrap {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Warp:
 		ui_state := to_ui_state(state)
@@ -458,7 +405,10 @@ resolve_overflow :: proc(
 	overflow: Overflow,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Overflow, bool) {
+) -> (
+	Overflow,
+	bool,
+) {
 	#partial switch v in overflow {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow:
 		ui_state := to_ui_state(state)
@@ -473,7 +423,10 @@ resolve_visibility :: proc(
 	visibility: Visibility,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Visibility, bool) {
+) -> (
+	Visibility,
+	bool,
+) {
 	#partial switch v in visibility {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Visibility:
 		ui_state := to_ui_state(state)
@@ -488,7 +441,10 @@ resolve_position :: proc(
 	position: Position,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> (Position, bool) {
+) -> (
+	Position,
+	bool,
+) {
 	#partial switch v in position {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Position:
 		ui_state := to_ui_state(state)
@@ -510,61 +466,81 @@ resolve_widget_config :: proc(
 	decl := merge_widget_decl(base, override)
 
 	style := Resolved_Widget_Style {
-		align = resolve_cfg(Text_Align, decl.align, parent.align, theme.align),
-		aspect_ratio = resolve_cfg(
+		align          = resolve_cfg(Text_Align, decl.align, parent.align, theme.align),
+		aspect_ratio   = resolve_cfg(
 			Aspect_Ratio,
 			decl.aspect_ratio,
 			parent.aspect_ratio,
 			theme.aspect_ratio,
 		),
-		auto_focus = resolve_cfg(bool, decl.auto_focus, parent.auto_focus, theme.auto_focus),
-		background = resolve_cfg_colors(decl.background, parent.background, state, event),
-		border = resolve_cfg(Border, decl.border, parent.border, theme.border),
-		border_color = resolve_cfg_colors(decl.border_color, parent.border_color, state, event),
-		color = resolve_cfg_colors(decl.color, parent.color, state, event),
-		direction = resolve_cfg_direction(decl.direction, parent.direction, state, event),
-		disabled = resolve_cfg(bool, decl.disabled, parent.disabled, theme.disabled),
-		flex = resolve_cfg(f32, decl.flex, parent.flex, theme.flex),
-		font = resolve_cfg(Font_Handle, decl.font, parent.font, theme.font),
-		font_size = resolve_cfg(f32, decl.font_size, parent.font_size, theme.font_size),
-		gap = resolve_cfg_gap(decl.gap, parent.gap, state, event),
-		height = resolve_length_from_height(decl.height, parent_ctx.content_h, state, event),
-		justify = resolve_cfg_justify(decl.justify, parent.justify, state, event),
+		auto_focus     = resolve_cfg(bool, decl.auto_focus, parent.auto_focus, theme.auto_focus),
+		background     = resolve_cfg_colors(decl.background, parent.background, state, event),
+		border         = resolve_cfg(Border, decl.border, parent.border, theme.border),
+		border_color   = resolve_cfg_colors(decl.border_color, parent.border_color, state, event),
+		color          = resolve_cfg_colors(decl.color, parent.color, state, event),
+		direction      = resolve_cfg_direction(decl.direction, parent.direction, state, event),
+		disabled       = resolve_cfg(bool, decl.disabled, parent.disabled, theme.disabled),
+		flex           = resolve_cfg(f32, decl.flex, parent.flex, theme.flex),
+		font           = resolve_cfg(Font_Handle, decl.font, parent.font, theme.font),
+		font_size      = resolve_cfg(f32, decl.font_size, parent.font_size, theme.font_size),
+		gap            = resolve_cfg_gap(decl.gap, parent.gap, state, event),
+		height         = resolve_length_from_height(
+			decl.height,
+			parent_ctx.content_h,
+			state,
+			event,
+		),
+		justify        = resolve_cfg_justify(decl.justify, parent.justify, state, event),
 		letter_spacing = resolve_cfg(
 			f32,
 			decl.letter_spacing,
 			parent.letter_spacing,
 			theme.letter_spacing,
 		),
-		line_height = resolve_cfg(f32, decl.line_height, parent.line_height, theme.line_height),
-		max_h = resolve_cfg(f32, decl.max_h, parent.max_h, theme.max_h),
-		max_w = resolve_cfg(f32, decl.max_w, parent.max_w, theme.max_w),
-		min_h = resolve_cfg(f32, decl.min_h, parent.min_h, theme.min_h),
-		min_w = resolve_cfg(f32, decl.min_w, parent.min_w, theme.min_w),
-		padding = resolve_cfg(Padding, decl.padding, parent.padding, theme.padding),
-		radius = resolve_cfg(Radius, decl.radius, parent.radius, theme.radius),
-		space = resolve_cfg(Draw_Space, decl.space, parent.space, theme.space),
+		line_height    = resolve_cfg(f32, decl.line_height, parent.line_height, theme.line_height),
+		max_h          = resolve_cfg(f32, decl.max_h, parent.max_h, theme.max_h),
+		max_w          = resolve_cfg(f32, decl.max_w, parent.max_w, theme.max_w),
+		min_h          = resolve_cfg(f32, decl.min_h, parent.min_h, theme.min_h),
+		min_w          = resolve_cfg(f32, decl.min_w, parent.min_w, theme.min_w),
+		padding        = resolve_cfg(Padding, decl.padding, parent.padding, theme.padding),
+		radius         = resolve_cfg(Radius, decl.radius, parent.radius, theme.radius),
+		space          = resolve_cfg(Draw_Space, decl.space, parent.space, theme.space),
 		text_direction = resolve_cfg(
 			Text_Direction,
 			decl.text_direction,
 			parent.text_direction,
 			theme.text_direction,
 		),
-		width = resolve_length_from_width(decl.width, parent_ctx.content_w, state, event),
-		wrap = resolve_cfg(Text_Warp, decl.wrap, parent.wrap, theme.wrap),
-		x = resolve_cfg(f32, decl.x, parent.x, theme.x),
-		y = resolve_cfg(f32, decl.y, parent.y, theme.y),
-		overflow = resolve_cfg(Overflow, decl.overflow, parent.overflow, theme.overflow),
-		overflow_x = resolve_cfg(Overflow, decl.overflow_x, parent.overflow_x, theme.overflow_x),
-		overflow_y = resolve_cfg(Overflow, decl.overflow_y, parent.overflow_y, theme.overflow_y),
-		visibility = resolve_cfg(Visibility, decl.visibility, parent.visibility, theme.visibility),
-		z_index = resolve_cfg(f32, decl.z_index, parent.z_index, theme.z_index),
-		position = resolve_cfg(Position, decl.position, parent.position, theme.position),
+		width          = resolve_length_from_width(decl.width, parent_ctx.content_w, state, event),
+		wrap           = resolve_cfg(Text_Warp, decl.wrap, parent.wrap, theme.wrap),
+		x              = resolve_cfg(f32, decl.x, parent.x, theme.x),
+		y              = resolve_cfg(f32, decl.y, parent.y, theme.y),
+		overflow       = resolve_cfg(Overflow, decl.overflow, parent.overflow, theme.overflow),
+		overflow_x     = resolve_cfg(
+			Overflow,
+			decl.overflow_x,
+			parent.overflow_x,
+			theme.overflow_x,
+		),
+		overflow_y     = resolve_cfg(
+			Overflow,
+			decl.overflow_y,
+			parent.overflow_y,
+			theme.overflow_y,
+		),
+		visibility     = resolve_cfg(
+			Visibility,
+			decl.visibility,
+			parent.visibility,
+			theme.visibility,
+		),
+		z_index        = resolve_cfg(f32, decl.z_index, parent.z_index, theme.z_index),
+		position       = resolve_cfg(Position, decl.position, parent.position, theme.position),
 	}
 
 	resolved := Resolved_Widget_config {
-		id   = decl.id,
-		kind = decl.kind,
+		id    = decl.id,
+		kind  = decl.kind,
 		style = style,
 	}
 	finalize_resolved_procs(&resolved, state, event)
@@ -574,11 +550,7 @@ resolve_widget_config :: proc(
 style_root :: proc(space: Draw_Space, bounds: Rect) -> Style_Context {
 	style := theme_widget_style()
 	style.space = space
-	return Style_Context {
-		style = style,
-		content_w = bounds.w,
-		content_h = bounds.h,
-	}
+	return Style_Context{style = style, content_w = bounds.w, content_h = bounds.h}
 }
 
 style_child_context :: proc(config: Resolved_Widget_config) -> Style_Context {
