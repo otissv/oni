@@ -178,6 +178,26 @@ resolve_cfg_justify :: proc(
 }
 
 @(private)
+resolve_cfg_self :: proc(
+	self: Cfg(Justify),
+	state: ^$S,
+	event: Widget_Event(S),
+) -> Justify_Pos {
+	switch self.mode {
+	case .Unset, .Inherit:
+		return {}
+	case .Value:
+		#partial switch v in self.value {
+		case Justify_Pos:
+			if resolved, ok := resolve_justify_pos_partial(v); ok do return resolved
+		}
+		if resolved, ok := resolve_align(self.value, state, event); ok do return resolved
+		if resolved, ok := resolve_justify_value(self.value); ok do return resolved
+	}
+	return {}
+}
+
+@(private)
 resolve_cfg_colors :: proc(
 	field: Cfg(Colors),
 	parent: Colors,
@@ -280,6 +300,7 @@ merge_widget_decl :: proc(base, override: Widget_config) -> Widget_config {
 	merge_cfg(Visibility, &result.visibility, override.visibility)
 	merge_cfg(f32, &result.z_index, override.z_index)
 	merge_cfg(Position, &result.position, override.position)
+	merge_cfg(Justify, &result.self, override.self)
 
 	return result
 }
@@ -544,6 +565,7 @@ resolve_widget_config :: proc(
 		),
 		z_index        = resolve_cfg(f32, decl.z_index, parent.z_index, theme.z_index),
 		position       = resolve_cfg(Position, decl.position, parent.position, theme.position),
+		self           = resolve_cfg_self(decl.self, state, event),
 	}
 
 	resolved := Resolved_Widget_config {
@@ -610,7 +632,12 @@ end_children :: proc() {
 	ui_pop_scope()
 }
 
-Children :: proc(child: proc(state: $S), layout_id: UI_Id, config: Resolved_Widget_config, state: S) {
+Children :: proc(
+	child: proc(state: $S),
+	layout_id: UI_Id,
+	config: Resolved_Widget_config,
+	state: S,
+) {
 	being_children(layout_id, config)
 	if child != nil do child(state)
 

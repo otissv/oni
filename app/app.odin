@@ -175,6 +175,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						width = 100,
 						height = 60,
 						background = set.Colors(oni.theme.palette[.Danger]),
+						self = set.Self(oni.Justify_Pos{x = .End}),
 					},
 				},
 			)

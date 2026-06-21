@@ -46,6 +46,12 @@ layout_config_justify :: proc(config: Resolved_Widget_config) -> Justify_Pos {
 	return config.justify
 }
 
+layout_merge_justify :: proc(parent, self: Justify_Pos) -> Justify_Pos {
+	result := parent
+	if _, x_ok := resolve_justify_x(self.x); x_ok do result.x = self.x
+	if _, y_ok := resolve_justify_y(self.y); y_ok do result.y = self.y
+	return result
+}
 layout_clamp_axis :: proc(value, min_v, max_v: f32) -> f32 {
 	result := value
 	if min_v > 0 do result = max(result, min_v)
@@ -355,8 +361,9 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		child_justify := layout_merge_justify(justify, child.config.self)
 		main := layout_child_main_size(child, is_horizontal, flex_unit, main_available)
-		cross := layout_child_cross_size(child, is_horizontal, cross_available, justify)
+		cross := layout_child_cross_size(child, is_horizontal, cross_available, child_justify)
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
@@ -388,6 +395,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	main_cursor := main_start
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		child_justify := layout_merge_justify(justify, child.config.self)
 		size := child_sizes[i]
 
 		main := is_horizontal ? size.x : size.y
@@ -401,7 +409,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 				layout_axis_cross_offset(
 					cross_available,
 					cross,
-					justify_axis_align_from_y(justify.y),
+					justify_axis_align_from_y(child_justify.y),
 				)
 		} else {
 			x =
@@ -409,7 +417,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 				layout_axis_cross_offset(
 					cross_available,
 					cross,
-					justify_axis_align_from_x(justify.x),
+					justify_axis_align_from_x(child_justify.x),
 				)
 			y = content.y + main_cursor
 		}

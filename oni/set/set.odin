@@ -18,6 +18,7 @@ Radius :: proc(value: oni.Radius) -> oni.Cfg(oni.Radius) {return cfg_value(value
 Border :: proc(value: oni.Border) -> oni.Cfg(oni.Border) {return cfg_value(value)}
 Gap :: proc(value: oni.Gap) -> oni.Cfg(oni.Gap) {return cfg_value(value)}
 Justify :: proc(value: oni.Justify) -> oni.Cfg(oni.Justify) {return cfg_value(value)}
+Self :: proc(value: oni.Justify) -> oni.Cfg(oni.Justify) {return cfg_value(value)}
 Direction :: proc(direction: oni.Direction_Layout) -> oni.Cfg(oni.Widget_Direction) {
 	return cfg_value(oni.Widget_Direction(direction))
 }

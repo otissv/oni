@@ -159,6 +159,7 @@ Widget_config :: struct {
 	visibility:     Cfg(Visibility),
 	z_index:        Cfg(f32),
 	position:       Cfg(Position),
+	self:           Cfg(Justify),
 }
 
 Resolved_Widget_Style :: struct {
@@ -197,18 +198,19 @@ Resolved_Widget_Style :: struct {
 	visibility:     Visibility,
 	z_index:        f32,
 	position:       Position,
+	self:           Justify_Pos,
 }
 
 Resolved_Widget_config :: struct {
-	id:   string,
-	kind: Widget_Kind,
+	id:          string,
+	kind:        Widget_Kind,
 	using style: Resolved_Widget_Style,
 }
 
 Style_Context :: struct {
 	using style: Resolved_Widget_Style,
-	content_w: f32,
-	content_h: f32,
+	content_w:   f32,
+	content_h:   f32,
 }
 
 Whitespace :: union {

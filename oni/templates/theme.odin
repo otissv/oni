@@ -2,7 +2,6 @@ package app
 
 import oni "../oni"
 
-
 ZOOM_WHEEL_STEP :: oni.VIEW_ZOOM_STEP
 WINDOW_WIDTH :: 1280
 WINDOW_HEIGHT :: 720

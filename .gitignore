@@ -1,3 +1,4 @@
 build/
 game_hot_reload
 .vscode/
+sdl3
