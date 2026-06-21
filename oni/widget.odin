@@ -118,7 +118,7 @@ pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	)
 }
 
-widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_config) -> Rect {
+widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect {
 	rect := ui_layout_rect(layout_id)
 
 	if style.width.kind == .Fixed {

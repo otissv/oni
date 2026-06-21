@@ -2,3 +2,7 @@ build/
 game_hot_reload
 .vscode/
 sdl3
+app.so
+app.dll
+app.dylib
+app.exe

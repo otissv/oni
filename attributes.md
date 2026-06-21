@@ -1,8 +1,8 @@
 # CSS attributes
 
-Reference for mapping CSS to `Widget_config` (`oni/types.odin`).
+Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 
-## In `Widget_config`
+## In `Widget_Style`
 
 | CSS property | Field | Notes |
 |---|---|---|
@@ -36,13 +36,13 @@ Reference for mapping CSS to `Widget_config` (`oni/types.odin`).
 | `width` | `width` | `f32` px; `Width` union exists but not on struct |
 | `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Balance` — not full `white-space` |
 
-Non-CSS fields on `Widget_config`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard vs screen).
+Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard vs screen).
 
 ---
 
-## Not in `Widget_config`
+## Not in `Widget_Style`
 
-All CSS properties below have no corresponding field on `Widget_config`.
+All CSS properties below have no corresponding field on `Widget_Style`.
 
 ### Layout — display & flow
 

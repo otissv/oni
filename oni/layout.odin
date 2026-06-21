@@ -8,7 +8,7 @@ Layout_Measure :: struct {
 
 Layout_Node :: struct {
 	ui_id:         UI_Id,
-	config:        Resolved_Widget_config,
+	config:        Resolved_Widget_Style,
 	padding:       Pd,
 	border:        Bd,
 	desired:       Vec2,
@@ -34,15 +34,15 @@ layout_reset :: proc() {
 	clear(&state.ui.layout.id_to_node)
 }
 
-layout_config_direction :: proc(config: Resolved_Widget_config) -> Direction_Layout {
+layout_config_direction :: proc(config: Resolved_Widget_Style) -> Direction_Layout {
 	return config.direction
 }
 
-layout_config_gap :: proc(config: Resolved_Widget_config) -> f32 {
+layout_config_gap :: proc(config: Resolved_Widget_Style) -> f32 {
 	return f32(config.gap)
 }
 
-layout_config_justify :: proc(config: Resolved_Widget_config) -> Justify_Pos {
+layout_config_justify :: proc(config: Resolved_Widget_Style) -> Justify_Pos {
 	return config.justify
 }
 
@@ -80,7 +80,7 @@ layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
 	)
 }
 
-layout_measure_text :: proc(config: Resolved_Widget_config, text: string, max_w: f32) -> Vec2 {
+layout_measure_text :: proc(config: Resolved_Widget_Style, text: string, max_w: f32) -> Vec2 {
 	if len(text) == 0 do return {}
 
 	resolved_font, layout_scale, ok := font_resolve(config.font, config.font_size, config.space)
@@ -194,7 +194,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	return layout_measure_leaf(node)
 }
 
-layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_config) -> ^Layout_Node {
+layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Style) -> ^Layout_Node {
 	parent_index := -1
 	if len(state.ui.layout.node_stack) > 0 {
 		parent_index = state.ui.layout.node_stack[len(state.ui.layout.node_stack) - 1]

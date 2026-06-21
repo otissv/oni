@@ -4,13 +4,6 @@ import oni ".."
 import set "../set"
 import sdl "vendor:sdl3"
 
-
-Widget_Text_Flag :: enum {
-	Uncached,
-}
-
-Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
-
 Text_Variant :: enum {
 	DEFAULT,
 	H1,
@@ -29,8 +22,8 @@ Text_Size :: enum {
 }
 
 Text_Config :: struct {
-	using _: oni.Widget_config,
-	flags:   Widget_Text_Flags,
+	using _: oni.Widget_Config,
+	flags:   oni.Widget_Text_Flags,
 	size:    Text_Size,
 	text:    string,
 	variant: Text_Variant,
@@ -42,8 +35,8 @@ Text_State :: struct {
 
 Text_Merged_State :: struct {
 	using state: Text_State,
-	style:       oni.Resolved_Widget_config,
-	flags:       Widget_Text_Flags,
+	style:       oni.Resolved_Widget_Config,
+	flags:       oni.Widget_Text_Flags,
 	text:        string,
 }
 

@@ -209,8 +209,38 @@ view :: proc() {
 
 	oni.Begin_Screen()
 	Hud()
+
 	Layout_Horizontal("layout-demo-1", x = 16, y = 520)
 	Layout_Vertical("layout-demo-2", x = 16, y = 750)
+
+	w.Button({
+		config = {
+			id = "button",
+			x = set.F32(16),
+			y = set.F32(750),
+			width = set.Width(.Auto),
+			background = set.Colors(oni.theme.palette[.Surface]),
+			radius = set.Radius(10),
+			border = set.Border(f32(2)),
+			border_color = set.Colors(oni.Color.Yellow_500),
+			justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
+			padding = set.Padding(oni.Pd_pos{x = 8, y = 6}),
+		},
+		child = proc(_: w.Button_State) {
+			w.Text(
+				{
+					id = "button",
+					width = .Auto,
+					height = set.Height(28),
+					text = "Button",
+					font = set.Font(oni.theme.font_heading),
+					color = set.Colors(oni.theme.palette[.Text]),
+					font_size = set.F32(20),
+					line_height = set.F32(0),
+				},
+			)
+		},
+	})
 	oni.End_Screen()
 }
 

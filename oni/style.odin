@@ -178,11 +178,7 @@ resolve_cfg_justify :: proc(
 }
 
 @(private)
-resolve_cfg_self :: proc(
-	self: Cfg(Justify),
-	state: ^$S,
-	event: Widget_Event(S),
-) -> Justify_Pos {
+resolve_cfg_self :: proc(self: Cfg(Justify), state: ^$S, event: Widget_Event(S)) -> Justify_Pos {
 	switch self.mode {
 	case .Unset, .Inherit:
 		return {}
@@ -261,7 +257,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 }
 
 @(private)
-merge_widget_decl :: proc(base, override: Widget_config) -> Widget_config {
+merge_widget_decl :: proc(base, override: Widget_Config) -> Widget_Config {
 	result := base
 
 	if override.id != "" do result.id = override.id
@@ -307,7 +303,7 @@ merge_widget_decl :: proc(base, override: Widget_config) -> Widget_config {
 
 @(private)
 finalize_resolved_procs :: proc(
-	config: ^Resolved_Widget_config,
+	config: ^Resolved_Widget_Config,
 	state: ^$S,
 	event: Widget_Event(S),
 ) {
@@ -484,11 +480,11 @@ resolve_position :: proc(
 }
 
 resolve_widget_config :: proc(
-	base: Widget_config,
-	override: Widget_config,
+	base: Widget_Config,
+	override: Widget_Config,
 	state: ^$S,
 	event: Widget_Event(S),
-) -> Resolved_Widget_config {
+) -> Resolved_Widget_Config {
 	parent_ctx := ui_style_current()
 	parent := parent_ctx.style
 	theme := theme_widget_style()
@@ -568,7 +564,7 @@ resolve_widget_config :: proc(
 		self           = resolve_cfg_self(decl.self, state, event),
 	}
 
-	resolved := Resolved_Widget_config {
+	resolved := Resolved_Widget_Config {
 		id    = decl.id,
 		kind  = decl.kind,
 		style = style,
@@ -583,7 +579,7 @@ style_root :: proc(space: Draw_Space, bounds: Rect) -> Style_Context {
 	return Style_Context{style = style, content_w = bounds.w, content_h = bounds.h}
 }
 
-style_child_context :: proc(config: Resolved_Widget_config) -> Style_Context {
+style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	parent := ui_style_current()
 
 	padding, _ := resolve_padding_value(config.padding)
@@ -616,7 +612,7 @@ ui_pop_style :: proc() {
 	ordered_remove(&state.ui.style_stack, len(state.ui.style_stack) - 1)
 }
 
-being_children :: proc(layout_id: UI_Id, config: Resolved_Widget_config) {
+being_children :: proc(layout_id: UI_Id, config: Resolved_Widget_Config) {
 	ui_push_scope(layout_id)
 	if ui_pass() == .Layout {
 		layout_push_node(layout_id, config)
@@ -635,7 +631,7 @@ end_children :: proc() {
 Children :: proc(
 	child: proc(state: $S),
 	layout_id: UI_Id,
-	config: Resolved_Widget_config,
+	config: Resolved_Widget_Config,
 	state: S,
 ) {
 	being_children(layout_id, config)

@@ -96,6 +96,7 @@ Widget_State :: struct {
 Widget_Kind :: enum {
 	RECT,
 	TEXT,
+	BUTTON,
 }
 
 Cfg_Tri :: enum {
@@ -121,7 +122,7 @@ Length :: struct {
 	value: f32,
 }
 
-Widget_config :: struct {
+Widget_Config :: struct {
 	id:             string,
 	kind:           Widget_Kind,
 	align:          Cfg(Text_Align),
@@ -162,6 +163,12 @@ Widget_config :: struct {
 	self:           Cfg(Justify),
 }
 
+Widget_Text_Flag :: enum {
+	Uncached,
+}
+
+Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
+
 Resolved_Widget_Style :: struct {
 	align:          Text_Align,
 	aspect_ratio:   Aspect_Ratio,
@@ -201,7 +208,7 @@ Resolved_Widget_Style :: struct {
 	self:           Justify_Pos,
 }
 
-Resolved_Widget_config :: struct {
+Resolved_Widget_Config :: struct {
 	id:          string,
 	kind:        Widget_Kind,
 	using style: Resolved_Widget_Style,

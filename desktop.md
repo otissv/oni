@@ -332,7 +332,7 @@ theme_color   :: proc(t: ^Theme, role: Theme_Color_Role) -> Color
 There is no `ui_layout()` container and no separate “layout-only” widget type. **Every widget** — panel, label, button, text field — carries the same layout fields on its declaration:
 
 ```odin
-Widget_config :: struct {
+Widget_Style :: struct {
     // sizing (participates in parent flex like any HTML element)
     width, height:  Width,   // fixed px, %, grow, hug
     min_w, max_w, min_h, max_h: f32,
@@ -360,13 +360,13 @@ Build a transient tree each frame (temp allocator). Each widget call pushes a no
 
 ```odin
 Layout_Node :: struct {
-    config:   Widget_config,  // resolved declaration for this instance
+    config:   Widget_Style,  // resolved declaration for this instance
     desired:  Vec2,           // intrinsic size from widget measure
     rect:     Rect,           // written by solver
     children: []Layout_Node,
 }
 
-layout_push_node :: proc(config: Widget_config) -> ^Layout_Node
+layout_push_node :: proc(config: Widget_Style) -> ^Layout_Node
 layout_pop_node  :: proc()
 layout_measure   :: proc(node: ^Layout_Node) -> Vec2  // bottom-up intrinsic size
 layout_solve     :: proc(root: ^Layout_Node, bounds: Rect)
@@ -402,7 +402,7 @@ ui_layout_rect :: proc(id: UI_Id) -> Rect  // rect from pass-1 node for this id
 All widgets share the same layout/draw split. Container-style (panel) and composite-style (text field with adornments) use the same pattern:
 
 ```odin
-ui_widget :: proc(config: Widget_config, body: proc() = nil) {
+ui_widget :: proc(config: Widget_Style, body: proc() = nil) {
     id := ui_id(config.id)
     if ui_pass() == .Layout {
         layout_push_node(resolve_config(config))
@@ -507,7 +507,7 @@ ui_want_capture_keyboard :: proc() -> bool
 | `ui_scroll_view` | Clip + content offset + wheel scroll + optional scrollbar |
 | `ui_list_row` | Selectable row for lists / asset browser |
 
-Every widget accepts the same `Widget_config` layout fields (`flex`, `padding`, `direction`, …). Composite widgets without a `body` draw their default content (e.g. plain label string); with a `body`, children are laid out via the shared flex solver from Section 6.
+Every widget accepts the same `Widget_Style` layout fields (`flex`, `padding`, `direction`, …). Composite widgets without a `body` draw their default content (e.g. plain label string); with a `body`, children are laid out via the shared flex solver from Section 6.
 
 ### States
 
