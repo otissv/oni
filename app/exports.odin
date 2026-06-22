@@ -169,3 +169,31 @@ app_force_restart :: proc() -> bool {
 	bind()
 	return oni.Take_Force_Restart()
 }
+
+@(export)
+app_peek_force_reload :: proc() -> bool {
+	if persistent == nil do return false
+	bind()
+	return oni.Peek_Force_Reload()
+}
+
+@(export)
+app_peek_force_restart :: proc() -> bool {
+	if persistent == nil do return false
+	bind()
+	return oni.Peek_Force_Restart()
+}
+
+@(export)
+app_consume_force_reload :: proc() {
+	if persistent == nil do return
+	bind()
+	oni.Consume_Force_Reload()
+}
+
+@(export)
+app_consume_force_restart :: proc() {
+	if persistent == nil do return
+	bind()
+	oni.Consume_Force_Restart()
+}

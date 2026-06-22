@@ -44,19 +44,19 @@ Text_Event :: oni.Widget_Event(Text_Merged_State)
 
 Text_Props :: struct {
 	using _:           Text_Config,
-	on_focus:          proc(state: Text_State, event: Text_Event),
-	on_blur:           proc(state: Text_State, event: Text_Event),
-	on_mouse_enter:    proc(state: Text_State, event: Text_Event),
-	on_mouse_leave:    proc(state: Text_State, event: Text_Event),
-	on_mouse_pressed:  proc(state: Text_State, event: Text_Event),
-	on_mouse_down:     proc(state: Text_State, event: Text_Event),
-	on_mouse_released: proc(state: Text_State, event: Text_Event),
-	on_mouse_move:     proc(state: Text_State, event: Text_Event),
-	on_click:          proc(state: Text_State, event: Text_Event),
-	on_contextmenu:    proc(state: Text_State, event: Text_Event),
-	on_key_pressed:    proc(state: Text_State, event: Text_Event),
-	on_key_down:       proc(state: Text_State, event: Text_Event),
-	on_key_released:   proc(state: Text_State, event: Text_Event),
+	on_focus:          proc(event: Text_Event),
+	on_blur:           proc(event: Text_Event),
+	on_mouse_enter:    proc(event: Text_Event),
+	on_mouse_leave:    proc(event: Text_Event),
+	on_mouse_pressed:  proc(event: Text_Event),
+	on_mouse_down:     proc(event: Text_Event),
+	on_mouse_released: proc(event: Text_Event),
+	on_mouse_move:     proc(event: Text_Event),
+	on_click:          proc(event: Text_Event),
+	on_contextmenu:    proc(event: Text_Event),
+	on_key_pressed:    proc(event: Text_Event),
+	on_key_down:       proc(event: Text_Event),
+	on_key_released:   proc(event: Text_Event),
 }
 
 @(private)
@@ -242,18 +242,18 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		entered, left := oni.consume_hover_transition(key, state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
-			props.on_mouse_enter(state, event)
+			props.on_mouse_enter(event)
 		}
 		if left && props.on_mouse_leave != nil {
-			props.on_mouse_leave(state, event)
+			props.on_mouse_leave(event)
 		}
 
 		if state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
-			props.on_mouse_move(state, event)
+			props.on_mouse_move(event)
 		}
 
 		if state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
-			props.on_contextmenu(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
+			props.on_contextmenu(text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 		}
 
 		if state.is_hovered && oni.w_ctx.left_mouse.pressed && !state.is_focused {
@@ -262,7 +262,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			event = text_refresh_merged(props, &state)
 
 			if props.on_focus != nil {
-				props.on_focus(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_focus(text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 		}
 
@@ -272,7 +272,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 			event = text_refresh_merged(props, &state)
 
 			if props.on_blur != nil {
-				props.on_blur(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_blur(text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 		}
 
@@ -282,37 +282,37 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 		if state.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
-				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_pressed(text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.pressed {
-				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_pressed(text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.pressed {
-				props.on_mouse_pressed(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_pressed(text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if state.is_hovered && props.on_mouse_down != nil {
 			if oni.w_ctx.left_mouse.down {
-				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_down(text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.down {
-				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_down(text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.down {
-				props.on_mouse_down(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_down(text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
 		if state.is_hovered && props.on_mouse_released != nil {
 			if oni.w_ctx.left_mouse.released {
-				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_released(text_event(state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.released {
-				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_released(text_event(state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.released {
-				props.on_mouse_released(state, text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_released(text_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
@@ -338,7 +338,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		}
 
 		if clicked && props.on_click != nil {
-			props.on_click(state, click_event)
+			props.on_click(click_event)
 		}
 
 		if state.is_focused {
@@ -347,13 +347,13 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 				key_event := text_event(state, key = oni.Scancode(scancode))
 
 				if props.on_key_pressed != nil && key_state.pressed {
-					props.on_key_pressed(state, key_event)
+					props.on_key_pressed(key_event)
 				}
 				if props.on_key_down != nil && key_state.down {
-					props.on_key_down(state, key_event)
+					props.on_key_down(key_event)
 				}
 				if props.on_key_released != nil && key_state.released {
-					props.on_key_released(state, key_event)
+					props.on_key_released(key_event)
 				}
 			}
 		}
@@ -363,7 +363,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	style = state.style
 
 	if should_auto_focus && !was_focused && props.on_focus != nil {
-		props.on_focus(state, event)
+		props.on_focus(event)
 	}
 
 	rgbaColor, color_ok := oni.to_rgba(style.color, &state, event)

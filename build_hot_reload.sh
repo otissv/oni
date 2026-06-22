@@ -96,11 +96,11 @@ build_app() {
 		flock -x -w 120 9 || {
 			echo "Timed out waiting for build lock (${BUILD_LOCK_FILE})."
 			echo "Another build may be stuck. Try: pkill -f 'build_hot_reload.sh' && rm -f '${BUILD_LOCK_FILE}'"
-			exit 1
+			return 1
 		}
 		build_app_locked
 	) 9>"$BUILD_LOCK_FILE"; then
-		exit 1
+		return 1
 	fi
 }
 
@@ -168,9 +168,12 @@ start_watch() {
 			-r "${ONI_DIR}" app \
 			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
 			--format '%w%f' > /dev/null; do
-			build_app
-			if is_app_running; then
-				echo "Hot reloading..."
+			if build_app; then
+				if is_app_running; then
+					echo "Hot reloading..."
+				fi
+			else
+				echo "Build failed — app.so unchanged. Fix compile errors and save again, or press F5 in the app window to reload."
 			fi
 		done
 	) &
@@ -209,7 +212,9 @@ restart)
 	;;
 
 build)
-	build_app
+	if ! build_app; then
+		exit 1
+	fi
 	if is_app_running; then
 		echo "Hot reloading..."
 	fi

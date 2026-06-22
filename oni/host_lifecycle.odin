@@ -52,9 +52,13 @@ App_API :: struct {
 	hot_reloaded:    proc(mem: rawptr),
 	reset:           proc(),
 	realloc:         proc(new_size: int),
-	force_reload:    proc() -> bool,
-	force_restart:   proc() -> bool,
-	loaded_mod_nsec: i64,
+	force_reload:       proc() -> bool,
+	force_restart:      proc() -> bool,
+	peek_force_reload:  proc() -> bool,
+	peek_force_restart: proc() -> bool,
+	consume_force_reload: proc(),
+	consume_force_restart: proc(),
+	loaded_mod_nsec:    i64,
 	api_version:     int,
 }
 
@@ -71,8 +75,8 @@ reloader :: proc(
 		reload_cooldown^ -= 1
 	}
 
-	want_reload := app_api.force_reload()
-	want_restart := app_api.force_restart()
+	want_reload := app_api.peek_force_reload()
+	want_restart := app_api.peek_force_restart()
 	reload := want_reload || want_restart
 	reason := "manual"
 
@@ -93,6 +97,8 @@ reloader :: proc(
 	if reload {
 		new_api, new_loaded := load_app_api(api_version^)
 		if new_loaded {
+			app_api.consume_force_reload()
+			app_api.consume_force_restart()
 			perform_reload(app_api, new_api, want_restart, reason, old_apis)
 			api_version^ += 1
 			reload_cooldown^ = 2

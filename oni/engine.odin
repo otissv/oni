@@ -149,6 +149,12 @@ poll_events :: proc() {
 				}
 			}
 
+			if event.key.key == sdl.K_F5 {
+				state.force_reload = true
+			} else if event.key.key == sdl.K_F6 {
+				state.force_restart = true
+			}
+
 		case .KEY_UP:
 			input_update_modifiers(event.key.mod)
 
@@ -245,6 +251,26 @@ poll_events :: proc() {
 			input_clear_keyboard_mouse()
 		}
 	}
+
+	poll_reload_keys()
+}
+
+poll_reload_keys :: proc() {
+	kb := sdl.GetKeyboardState(nil)
+	if kb == nil do return
+
+	f5_down := kb[int(sdl.Scancode.F5)]
+	f6_down := kb[int(sdl.Scancode.F6)]
+
+	if f5_down && !state.reload_keys_prev.f5 {
+		state.force_reload = true
+	}
+	if f6_down && !state.reload_keys_prev.f6 {
+		state.force_restart = true
+	}
+
+	state.reload_keys_prev.f5 = f5_down
+	state.reload_keys_prev.f6 = f6_down
 }
 
 reset_input_state :: proc() {
@@ -254,6 +280,7 @@ reset_input_state :: proc() {
 	state.input = {}
 	state.force_reload = false
 	state.force_restart = false
+	state.reload_keys_prev = {}
 	state.running = true
 
 	state.gamepad = gamepad
@@ -389,6 +416,24 @@ end_frame :: proc() {
 on_hot_reload :: proc() {
 	gpu_reload()
 	dpi_sync()
+}
+
+peek_force_reload :: proc() -> bool {
+	if state == nil do return false
+	return state.force_reload
+}
+
+peek_force_restart :: proc() -> bool {
+	if state == nil do return false
+	return state.force_restart
+}
+
+consume_force_reload :: proc() {
+	if state != nil do state.force_reload = false
+}
+
+consume_force_restart :: proc() {
+	if state != nil do state.force_restart = false
 }
 
 take_force_reload :: proc() -> bool {

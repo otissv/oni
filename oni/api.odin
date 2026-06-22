@@ -25,6 +25,10 @@ On_Hot_Reload :: on_hot_reload
 Reset_Input_State :: reset_input_state
 Take_Force_Reload :: take_force_reload
 Take_Force_Restart :: take_force_restart
+Peek_Force_Reload :: peek_force_reload
+Peek_Force_Restart :: peek_force_restart
+Consume_Force_Reload :: consume_force_reload
+Consume_Force_Restart :: consume_force_restart
 Dpi_Sync :: dpi_sync
 
 Log_Error :: log_error

@@ -36,6 +36,9 @@ State :: struct {
 	gamepad_instance_id: sdl.JoystickID,
 	force_reload:        bool,
 	force_restart:       bool,
+	reload_keys_prev:    struct {
+		f5, f6: bool,
+	},
 }
 
 state: ^State

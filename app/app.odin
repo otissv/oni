@@ -7,6 +7,29 @@ import "core:fmt"
 import "core:log"
 
 
+PANEL_STATE_INITIALIZED: bool
+
+@(private)
+panel_state: Panel_State
+Panel_State :: struct {
+	background: oni.Cfg(oni.Colors),
+	x:          oni.Cfg(f32),
+}
+
+
+@(private)
+use_state :: proc() {
+	if PANEL_STATE_INITIALIZED do return
+	PANEL_STATE_INITIALIZED = true
+
+	panel := Panel_State {
+		background = set.Colors(oni.theme.palette[.Surface]),
+		x          = set.F32(80),
+	}
+	panel_state = panel
+}
+
+
 Heading :: proc() {
 	theme := &persistent.app.theme
 
@@ -29,7 +52,7 @@ Paragraph :: proc() {
 
 	paragraph_color :: proc(
 		state: oni.Widget_State,
-		widget_event: oni.Widget_Event(oni.Widget_State),
+		_: oni.Widget_Event(oni.Widget_State),
 	) -> oni.Colors {
 		if state.is_Pressed do return oni.RGBA{0, 0, 0, 255}
 		if state.is_hovered do return oni.RGBA{210, 60, 60, 255}
@@ -50,27 +73,71 @@ Paragraph :: proc() {
 	)
 }
 
-Rectangle :: proc() {
-	w.Rectangle({
-		config = {
-			id = "artboard-panel",
-			x = set.F32(80),
-			y = set.F32(80),
-			width = 520,
-			height = 340,
-			background = set.Colors(oni.theme.palette[.Surface]),
-			radius = set.Radius(f32(10)),
-			space = set.Space(.Artboard),
-			direction = set.Direction(.Vertical),
-			padding = set.Padding(oni.PADDING_MD),
-			gap = set.Gap(u16(12)),
-			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
+
+Panel :: proc() {
+
+	w.Rectangle(
+		{
+			config = {
+				id = "artboard-panel",
+				x = panel_state.x,
+				y = set.F32(80),
+				width = 520,
+				height = 340,
+				background = panel_state.background,
+				radius = set.Radius(f32(10)),
+				space = set.Space(.Artboard),
+				direction = set.Direction(.Vertical),
+				padding = set.Padding(oni.PADDING_MD),
+				gap = set.Gap(u16(12)),
+				justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
+			},
+			on_mouse_enter = proc(_: w.Rectangle_Event) {
+				panel_state.background = set.Colors(oni.theme.palette[.Orange_500])
+			},
+			// on_mouse_leave = proc(_: w.Rectangle_State, _: w.Rectangle_Event) {
+			// 	panel_state.background = set.Colors(oni.theme.palette[.Surface])
+			// },
+			child = proc(state: w.Rectangle_State) {
+				Heading()
+
+				Paragraph()
+
+				w.Button({
+					config = {
+						id = "button",
+						width = set.Width(.Auto),
+						background = set.Colors(oni.theme.palette[.Surface]),
+						radius = set.Radius(10),
+						border = set.Border(f32(2)),
+						border_color = set.Colors(oni.Color.Yellow_500),
+						justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
+						padding = set.Padding(oni.Pd_pos{x = 8, y = 6}),
+					},
+					on_click = proc(state: w.Button_State, event: w.Button_Event) {
+						log.debug("clicked")
+					},
+					on_contextmenu = proc(state: w.Button_State, event: w.Button_Event) {
+						log.debug("context menu")
+					},
+					child = proc(_: w.Button_State) {
+						w.Text(
+							{
+								id = "button",
+								width = .Auto,
+								height = set.Height(28),
+								text = "Button",
+								font = set.Font(oni.theme.font_heading),
+								color = set.Colors(oni.theme.palette[.Text]),
+								font_size = set.F32(20),
+								line_height = set.F32(0),
+							},
+						)
+					},
+				})
+			},
 		},
-		child = proc(state: w.Rectangle_State) {
-			Heading()
-			Paragraph()
-		},
-	})
+	)
 }
 
 Hud :: proc() {
@@ -202,52 +269,23 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 	})
 }
 
+
 @(private)
 view :: proc() {
+	use_state()
+
+
 	oni.Begin_Artboard()
-	Rectangle()
+	Panel()
 	oni.End_Artboard()
 
 	oni.Begin_Screen()
 	Hud()
 
-	// Layout_Horizontal("layout-demo-1", x = 16, y = 520)
-	// Layout_Vertical("layout-demo-2", x = 16, y = 750)
+	Layout_Horizontal("layout-demo-1", x = 16, y = 520)
+	Layout_Vertical("layout-demo-2", x = 16, y = 750)
 
-	w.Button({
-		config = {
-			id = "button",
-			x = set.F32(16),
-			y = set.F32(750),
-			width = set.Width(.Auto),
-			background = set.Colors(oni.theme.palette[.Surface]),
-			radius = set.Radius(10),
-			border = set.Border(f32(2)),
-			border_color = set.Colors(oni.Color.Yellow_500),
-			justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
-			padding = set.Padding(oni.Pd_pos{x = 8, y = 6}),
-		},
-		on_click = proc(state: w.Button_State, event: w.Button_Event) {
-			log.debug("clicked")
-		},
-		on_contextmenu = proc(state: w.Button_State, event: w.Button_Event) {
-			log.debug("context menu")
-		},
-		child = proc(_: w.Button_State) {
-			w.Text(
-				{
-					id = "button",
-					width = .Auto,
-					height = set.Height(28),
-					text = "Button",
-					font = set.Font(oni.theme.font_heading),
-					color = set.Colors(oni.theme.palette[.Text]),
-					font_size = set.F32(20),
-					line_height = set.F32(0),
-				},
-			)
-		},
-	})
+
 	oni.End_Screen()
 }
 
