@@ -2,9 +2,9 @@ package app
 
 import oni "../oni"
 import set "../oni/set"
-import w "../oni/widgets"
+import wg "../oni/widgets"
+import ui "./ui"
 import "core:fmt"
-import "core:log"
 
 
 PANEL_STATE_INITIALIZED: bool
@@ -23,121 +23,61 @@ use_state :: proc() {
 	PANEL_STATE_INITIALIZED = true
 
 	panel := Panel_State {
-		background = set.Colors(oni.theme.palette[.Surface]),
+		background = set.Colors(oni.theme.palette[.Background]),
 		x          = set.F32(80),
 	}
 	panel_state = panel
 }
 
 
-Heading :: proc() {
-	theme := &persistent.app.theme
-
-	w.Text(
-		{
-			id = "heading",
-			width = set.Width(480),
-			height = set.Height(28),
-			text = "Artboard text — zoomable",
-			font = set.Font(theme.font_heading),
-			color = set.Colors(oni.theme.palette[.Accent]),
-			font_size = set.F32(20),
-			line_height = set.F32(0),
-		},
-	)
-}
-
-Paragraph :: proc() {
-	theme := &persistent.app.theme
-
-	paragraph_color :: proc(
-		state: oni.Widget_State,
-		_: oni.Widget_Event(oni.Widget_State),
-	) -> oni.Colors {
-		if state.is_Pressed do return oni.RGBA{0, 0, 0, 255}
-		if state.is_hovered do return oni.RGBA{210, 60, 60, 255}
-		return oni.theme.palette[.Text]
-	}
-
-	w.Text(
-		{
-			id = "paragraph",
-			width = set.Width(480),
-			height = set.Height(200),
-			text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
-			font = set.Font(theme.font_body),
-			font_size = set.F32(20),
-			line_height = set.F32(1.5),
-			color = set.Colors(paragraph_color),
-		},
-	)
-}
-
-
 Panel :: proc() {
 
-	w.Rectangle(
-		{
-			config = {
-				id = "artboard-panel",
-				x = panel_state.x,
-				y = set.F32(80),
-				width = 520,
-				height = 340,
-				background = panel_state.background,
-				radius = set.Radius(f32(10)),
-				space = set.Space(.Artboard),
-				direction = set.Direction(.Vertical),
-				padding = set.Padding(oni.PADDING_MD),
-				gap = set.Gap(u16(12)),
-				justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
-			},
-			on_mouse_enter = proc(_: w.Rectangle_Event) {
-				panel_state.background = set.Colors(oni.theme.palette[.Orange_500])
-			},
-			// on_mouse_leave = proc(_: w.Rectangle_State, _: w.Rectangle_Event) {
-			// 	panel_state.background = set.Colors(oni.theme.palette[.Surface])
-			// },
-			child = proc(state: w.Rectangle_State) {
-				Heading()
-
-				Paragraph()
-
-				w.Button({
-					config = {
-						id = "button",
-						width = set.Width(.Auto),
-						background = set.Colors(oni.theme.palette[.Surface]),
-						radius = set.Radius(10),
-						border = set.Border(f32(2)),
-						border_color = set.Colors(oni.Color.Yellow_500),
-						justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
-						padding = set.Padding(oni.Pd_pos{x = 8, y = 6}),
-					},
-					on_click = proc(state: w.Button_State, event: w.Button_Event) {
-						log.debug("clicked")
-					},
-					on_contextmenu = proc(state: w.Button_State, event: w.Button_Event) {
-						log.debug("context menu")
-					},
-					child = proc(_: w.Button_State) {
-						w.Text(
-							{
-								id = "button",
-								width = .Auto,
-								height = set.Height(28),
-								text = "Button",
-								font = set.Font(oni.theme.font_heading),
-								color = set.Colors(oni.theme.palette[.Text]),
-								font_size = set.F32(20),
-								line_height = set.F32(0),
-							},
-						)
-					},
-				})
-			},
+	wg.Rectangle({
+		config = {
+			id = "artboard-panel",
+			x = panel_state.x,
+			y = set.F32(80),
+			width = 520,
+			height = 340,
+			background = panel_state.background,
+			radius = set.Radius(f32(10)),
+			space = set.Space(.Artboard),
+			direction = set.Direction(.Vertical),
+			padding = set.Padding(oni.PADDING_MD),
+			gap = set.Gap(u16(12)),
+			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
 		},
-	)
+		child = proc(state: wg.Rectangle_State) {
+			ui.Heading({id = "heading", text = "Artboard heading", theme = &persistent.app.theme})
+
+			ui.Paragraph(
+				{
+					id = "paragraph",
+					text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
+					theme = &persistent.app.theme,
+				},
+			)
+
+			ui.Button({
+				id = "button",
+				radius = set.Radius(20),
+				child = proc(_: ui.Button_state) {
+					wg.Text(
+						{
+							id = "button",
+							width = .Auto,
+							height = set.Height(28),
+							text = "Click me",
+							font = set.Font(oni.theme.font_heading),
+							color = set.Colors(oni.theme.palette[.Foreground]),
+							font_size = set.F32(20),
+							line_height = set.F32(0),
+						},
+					)
+				},
+			})
+		},
+	})
 }
 
 Hud :: proc() {
@@ -148,7 +88,7 @@ Hud :: proc() {
 		"Screen HUD  zoom: %.1fx  (scroll / Ctrl+=/- zoom, Ctrl+0 reset, Alt+LMB pan)",
 		zoom,
 	)
-	w.Text(
+	wg.Text(
 		{
 			id = "hud-zoom",
 			x = set.F32(16),
@@ -167,7 +107,7 @@ Hud :: proc() {
 }
 
 Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
-	w.Rectangle({
+	wg.Rectangle({
 		config = {
 			id = id,
 			x = set.F32(x),
@@ -179,31 +119,40 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(f32(20)),
 			justify = set.Justify(oni.Justify_Pos{x = .Start, y = .Stretch}),
-			background = set.Colors(oni.theme.palette[.Surface]),
+			background = set.Colors(oni.theme.palette[.Background]),
 			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
 			border = set.Border(f32(10)),
 			border_color = set.Colors(oni.Color.Yellow_500),
 		},
-		child = proc(state: w.Rectangle_State) {
-			w.Rectangle(
+		child = proc(state: wg.Rectangle_State) {
+			wg.Rectangle(
 				{
 					config = {
 						id = "left",
 						width = 100,
-						background = set.Colors(oni.theme.palette[.Danger]),
+						height = 30,
+						background = set.Colors(oni.theme.palette[.Destructive]),
 					},
 				},
 			)
-			w.Rectangle(
-				{
-					config = {
-						id = "center",
-						flex = set.F32(1),
-						background = set.Colors(oni.theme.palette[.Accent]),
-					},
+			wg.Rectangle({
+				config = {
+					id = "center",
+					width = 100,
+					background = set.Colors(oni.theme.palette[.Accent]),
 				},
-			)
-			w.Rectangle(
+				child = proc(state: wg.Rectangle_State) {
+					ui.Label(
+						{
+							id = "label",
+							theme = &persistent.app.theme,
+							text = "label",
+							size = .Large,
+						},
+					)
+				},
+			})
+			wg.Rectangle(
 				{
 					config = {
 						id = "right",
@@ -218,7 +167,7 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 }
 
 Layout_Vertical :: proc(id: string, x: f32, y: f32) {
-	w.Rectangle({
+	wg.Rectangle({
 		config = {
 			id = id,
 			x = set.F32(x),
@@ -230,33 +179,32 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(oni.Pd{t = 10, b = 10}),
 			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
-			background = set.Colors(oni.theme.palette[.Surface]),
+			background = set.Colors(oni.theme.palette[.Background]),
 			radius = set.Radius(f32(10)),
 			border = set.Border(f32(10)),
 			border_color = set.Colors(oni.Color.Yellow_500),
 		},
-		child = proc(state: w.Rectangle_State) {
-			w.Rectangle(
+		child = proc(state: wg.Rectangle_State) {
+			wg.Rectangle(
 				{
 					config = {
-						id = "top",
+						id = "top-1",
 						width = 100,
 						height = 60,
-						background = set.Colors(oni.theme.palette[.Danger]),
-						self = set.Self(oni.Justify_Pos{x = .End}),
+						background = set.Colors(oni.theme.palette[.Destructive]),
 					},
 				},
 			)
-			w.Rectangle(
+			wg.Rectangle(
 				{
 					config = {
 						id = "center",
-						flex = set.F32(1),
+						width = 100,
 						background = set.Colors(oni.theme.palette[.Accent]),
 					},
 				},
 			)
-			w.Rectangle(
+			wg.Rectangle(
 				{
 					config = {
 						id = "bottom",
@@ -273,7 +221,6 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 @(private)
 view :: proc() {
 	use_state()
-
 
 	oni.Begin_Artboard()
 	Panel()

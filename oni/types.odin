@@ -392,6 +392,9 @@ Justify_Align :: enum {
 	Center,
 	End,
 	Stretch,
+	Space_between,
+	Space_around,
+	Space_evenly,
 }
 
 Justify_X :: union {

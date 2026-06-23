@@ -241,7 +241,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	return Resolved_Widget_Style {
 		font = theme.font_body,
 		font_size = theme.font_body.size_px,
-		color = theme.palette[.Text],
+		color = theme.palette[.Foreground],
 		background = theme.background,
 		border = theme.border,
 		border_color = theme.border_color,
@@ -256,8 +256,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	}
 }
 
-@(private)
-merge_widget_decl :: proc(base, override: Widget_Config) -> Widget_Config {
+merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	result := base
 
 	if override.id != "" do result.id = override.id
@@ -488,7 +487,7 @@ resolve_widget_config :: proc(
 	parent_ctx := ui_style_current()
 	parent := parent_ctx.style
 	theme := theme_widget_style()
-	decl := merge_widget_decl(base, override)
+	decl := merge_widget_config(base, override)
 
 	style := Resolved_Widget_Style {
 		align          = resolve_cfg(Text_Align, decl.align, parent.align, theme.align),

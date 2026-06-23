@@ -2,7 +2,7 @@
 
 Build a **production HUD/desktop UI** on the existing hot-reload stack (`host/main.odin` + `game/` DLL).Each section below is **complete when its checkpoint passes** — later sections only add features; they do not redesign earlier APIs.
 
-**Out of scope for this plan:** accessibility, packaging/installers.
+**Out of scope for this plan:** accessibility (phase 2), packaging/installers.
 
 **Reuse as-is:** `host/main.odin`, `build_hot_reload.sh`, hot-reload export procs, tracking allocator in the host, `WINDOW_HIGH_PIXEL_DENSITY`, performance counter timing.
 
@@ -742,14 +742,13 @@ Sections are sequential; do not skip. Each checkpoint gates the next.
 
 ---
 
-## What this plan deliberately excludes
+## What this plan deliberately excludes 
 
 | Topic | Reason |
 |-------|--------|
-| Accessibility | Out of scope per project request |
-| Packaging / installers / code signing | Out of scope per project request |
+| Accessibility | Phase 2 |
+| Packaging / installers / code signing | Phase 2 |
 | Game collision, camera, entities | Not desktop UI |
-| Dear ImGui / third-party GUI | Custom stack only |
 | SDL_ttf | Replaced by FreeType + HarfBuzz in Section 5 |
-| SVG / vector paths | Optional future module behind `draw_path`; not required for standard widgets |
-| Audio | Not required for desktop UI |
+| SVG / vector paths | Phase 2 future module behind `draw_path`  |
+| Audio | Phase 2 |

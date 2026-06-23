@@ -4,29 +4,10 @@ import oni ".."
 import set "../set"
 import sdl "vendor:sdl3"
 
-Button_Variant :: enum {
-	DEFAULT,
-	DESTRUCTIVE,
-	OUTLINE,
-	SECONDARY,
-	GHOST,
-	LINK,
-}
-
-Button_Size :: enum {
-	Default,
-	Small,
-	Large,
-	Icon,
-}
-
-
 Button_Config :: struct {
 	using _: oni.Widget_Config,
 	flags:   oni.Widget_Text_Flags,
-	size:    Button_Size,
 	text:    string,
-	variant: Button_Variant,
 }
 
 Button_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
@@ -66,81 +47,11 @@ button_props_override :: proc(props: Button_Props) -> Button_Config {
 }
 
 @(private)
-button_apply_variant :: proc(config: ^Button_Config, state: ^Button_State) {
-	if config.variant == .DEFAULT do return
-
-	config.font = set.Font(oni.theme.font_heading)
-	bg := oni.RGBA{0, 0, 0, 0}
-	border: oni.Border
-	border_color: oni.RGBA
-	text_padding: f32 = 12
-	radius: f32 = 8
-
-	#partial switch config.variant {
-	case .DEFAULT:
-		if state.is_Pressed do bg = {20, 20, 20, 255}
-		else if state.is_hovered do bg = {50, 50, 50, 255}
-		else do bg = {30, 30, 30, 255}
-
-	case .SECONDARY:
-		if state.is_Pressed do bg = {180, 180, 180, 255}
-		else if state.is_hovered do bg = {210, 210, 210, 255}
-		else do bg = {235, 235, 235, 255}
-
-	case .OUTLINE:
-		border = 1
-		border_color = oni.RGBA{80, 80, 80, 255}
-
-		if state.is_Pressed do bg = {210, 210, 210, 255}
-		else if state.is_hovered do bg = {245, 245, 245, 255}
-		else do bg = {0, 0, 0, 0}
-
-	case .GHOST:
-		if state.is_Pressed do bg = {210, 210, 210, 255}
-		else if state.is_hovered do bg = {235, 235, 235, 255}
-		else do bg = {0, 0, 0, 0}
-
-	case .DESTRUCTIVE:
-		if state.is_Pressed do bg = {120, 0, 0, 255}
-		else if state.is_hovered do bg = {180, 20, 20, 255}
-		else do bg = {230, 40, 40, 255}
-
-	case .LINK:
-		radius = {}
-		text_padding = 4
-		if state.is_Pressed do bg = {235, 235, 235, 255}
-		else if state.is_hovered do bg = {245, 245, 245, 255}
-		else do bg = {0, 0, 0, 0}
-	}
-}
-
-@(private)
-button_apply_size :: proc(config: ^Button_Config) {
-	current := text_decl_font_size(config.font_size)
-	switch config.size {
-	case .Default:
-	case .Small:
-		text_set_font_size(
-			&config.font_size,
-			current > 0 ? current * 0.875 : oni.theme.font_body.size_px * 0.875,
-		)
-	case .Large:
-		text_set_font_size(
-			&config.font_size,
-			current > 0 ? current * 1.25 : oni.theme.font_body.size_px * 1.25,
-		)
-	case .Icon:
-		text_set_font_size(&config.font_size, 14)
-	}
-}
-
-
-@(private)
 button_theme_base :: proc(state: ^Button_State) -> Button_Config {
-	color := oni.Color.Text
+	color := oni.Color.Foreground
 
 	if state.is_disabled {
-		color = oni.Color.Text_muted
+		color = oni.Color.Muted
 	}
 
 	return Button_Config {
@@ -159,11 +70,8 @@ button_theme_base :: proc(state: ^Button_State) -> Button_Config {
 @(private)
 button_config :: proc(props: Button_Props, state: ^Button_State) -> oni.Resolved_Widget_Config {
 	event := button_event(state^)
-
 	base := button_theme_base(state)
 	override := button_props_override(props)
-	button_apply_variant(&override, state)
-	button_apply_size(&override)
 
 	return oni.resolve_widget_config(base, override, state, event)
 }
@@ -238,6 +146,7 @@ Button :: proc(props: Button_Props) {
 	}
 
 	event = button_refresh_merged(props, &state)
+	config = state.config
 
 	if !state.is_disabled {
 		entered, left := oni.consume_hover_transition(key, state.is_hovered)

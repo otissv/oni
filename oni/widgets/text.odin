@@ -4,29 +4,11 @@ import oni ".."
 import set "../set"
 import sdl "vendor:sdl3"
 
-Text_Variant :: enum {
-	DEFAULT,
-	H1,
-	H2,
-	H3,
-	H4,
-	H5,
-	H6,
-}
-
-Text_Size :: enum {
-	Default,
-	Small,
-	Large,
-	Icon,
-}
 
 Text_Config :: struct {
 	using _: oni.Widget_Config,
 	flags:   oni.Widget_Text_Flags,
-	size:    Text_Size,
 	text:    string,
-	variant: Text_Variant,
 }
 
 Text_State :: struct {
@@ -79,47 +61,6 @@ text_set_font_size :: proc(field: ^oni.Cfg(f32), size: f32) {
 	field^ = set.F32(size)
 }
 
-@(private)
-text_apply_variant :: proc(config: ^Text_Config) {
-	if config.variant == .DEFAULT do return
-
-	config.font = set.Font(oni.theme.font_heading)
-	switch config.variant {
-	case .DEFAULT:
-	case .H1:
-		text_set_font_size(&config.font_size, 32)
-	case .H2:
-		text_set_font_size(&config.font_size, 28)
-	case .H3:
-		text_set_font_size(&config.font_size, 24)
-	case .H4:
-		text_set_font_size(&config.font_size, 20)
-	case .H5:
-		text_set_font_size(&config.font_size, 18)
-	case .H6:
-		text_set_font_size(&config.font_size, 16)
-	}
-}
-
-@(private)
-text_apply_size :: proc(config: ^Text_Config) {
-	current := text_decl_font_size(config.font_size)
-	switch config.size {
-	case .Default:
-	case .Small:
-		text_set_font_size(
-			&config.font_size,
-			current > 0 ? current * 0.875 : oni.theme.font_body.size_px * 0.875,
-		)
-	case .Large:
-		text_set_font_size(
-			&config.font_size,
-			current > 0 ? current * 1.25 : oni.theme.font_body.size_px * 1.25,
-		)
-	case .Icon:
-		text_set_font_size(&config.font_size, 14)
-	}
-}
 
 @(private)
 text_props_override :: proc(props: Text_Props) -> Text_Config {
@@ -132,8 +73,6 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 		text = props.text,
 		flags = props.flags,
 		max_w = props.max_w,
-		size = props.size,
-		variant = props.variant,
 		align = props.align,
 		justify = props.justify,
 		aspect_ratio = props.aspect_ratio,
@@ -159,10 +98,10 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 
 @(private)
 text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
-	color := oni.Color.Text
+	color := oni.Color.Foreground
 
 	if state.is_disabled {
-		color = oni.Color.Text_muted
+		color = oni.Color.Muted
 	}
 
 	return Text_Config {
@@ -181,15 +120,12 @@ text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
 @(private)
 text_refresh_merged :: proc(props: Text_Props, state: ^Text_Merged_State) -> Text_Event {
 	event := text_event(state^)
-
 	base := text_widget_decl(state)
 	override := text_props_override(props)
-	text_apply_variant(&override)
-	text_apply_size(&override)
-
 	state.style = oni.resolve_widget_config(base, override, state, event)
 	state.flags = override.flags
 	state.text = override.text
+
 	return text_event(state^)
 }
 

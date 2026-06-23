@@ -278,6 +278,16 @@ layout_child_main_size :: proc(
 	return is_horizontal ? child.desired.x : child.desired.y
 }
 
+layout_child_in_main_flow :: proc(child: ^Layout_Node, is_horizontal: bool) -> bool {
+	self := child.config.self
+	if is_horizontal {
+		_, ok := resolve_justify_x(self.x)
+		return !ok
+	}
+	_, ok := resolve_justify_y(self.y)
+	return !ok
+}
+
 layout_child_cross_size :: proc(
 	child: ^Layout_Node,
 	is_horizontal: bool,
@@ -288,11 +298,20 @@ layout_child_cross_size :: proc(
 	cross_fixed := length_resolve(cross_len, cross_available)
 	if cross_fixed > 0 do return cross_fixed
 
+	self := child.config.self
 	cross_stretch := child.config.flex > 0
 	if is_horizontal {
-		cross_stretch ||= justify_axis_is_stretch_y(justify.y)
+		if _, y_ok := resolve_justify_y(self.y); y_ok {
+			cross_stretch ||= justify_axis_is_stretch_y(self.y)
+		} else {
+			cross_stretch ||= justify_axis_is_stretch_y(justify.y)
+		}
 	} else {
-		cross_stretch ||= justify_axis_is_stretch_x(justify.x)
+		if _, x_ok := resolve_justify_x(self.x); x_ok {
+			cross_stretch ||= justify_axis_is_stretch_x(self.x)
+		} else {
+			cross_stretch ||= justify_axis_is_stretch_x(justify.x)
+		}
 	}
 
 	if cross_stretch && cross_available > 0 {
@@ -369,11 +388,17 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	}
 
 	total_main: f32
-	for size in child_sizes {
+	flow_count: int
+	for child_index, i in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_child_in_main_flow(child, is_horizontal) do continue
+
+		flow_count += 1
+		size := child_sizes[i]
 		total_main += is_horizontal ? size.x : size.y
 	}
-	if len(node.child_indices) > 1 {
-		total_main += gap * f32(len(node.child_indices) - 1)
+	if flow_count > 1 {
+		total_main += gap * f32(flow_count - 1)
 	}
 
 	main_free := max(0, main_available - total_main)
@@ -399,26 +424,49 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		size := child_sizes[i]
 
 		main := is_horizontal ? size.x : size.y
-		cross := is_horizontal ? size.y : size.x
 
 		x, y: f32
-		if is_horizontal {
-			x = content.x + main_cursor
-			y =
-				content.y +
+		self := child.config.self
+		_, self_x_ok := resolve_justify_x(self.x)
+		_, self_y_ok := resolve_justify_y(self.y)
+
+		if self_x_ok {
+			x =
+				content.x +
 				layout_axis_cross_offset(
-					cross_available,
-					cross,
-					justify_axis_align_from_y(child_justify.y),
+					content.w,
+					size.x,
+					justify_axis_align_from_x(self.x),
 				)
+		} else if is_horizontal {
+			x = content.x + main_cursor
 		} else {
 			x =
 				content.x +
 				layout_axis_cross_offset(
-					cross_available,
-					cross,
+					content.w,
+					size.x,
 					justify_axis_align_from_x(child_justify.x),
 				)
+		}
+
+		if self_y_ok {
+			y =
+				content.y +
+				layout_axis_cross_offset(
+					content.h,
+					size.y,
+					justify_axis_align_from_y(self.y),
+				)
+		} else if is_horizontal {
+			y =
+				content.y +
+				layout_axis_cross_offset(
+					content.h,
+					size.y,
+					justify_axis_align_from_y(child_justify.y),
+				)
+		} else {
 			y = content.y + main_cursor
 		}
 
@@ -439,8 +487,18 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			)
 		}
 
-		main_cursor += main
-		if i + 1 < len(node.child_indices) do main_cursor += gap
+		if layout_child_in_main_flow(child, is_horizontal) {
+			main_cursor += main
+			next_in_flow := false
+			for j in i + 1 ..< len(node.child_indices) {
+				next_child := &state.ui.layout.nodes[node.child_indices[j]]
+				if layout_child_in_main_flow(next_child, is_horizontal) {
+					next_in_flow = true
+					break
+				}
+			}
+			if next_in_flow do main_cursor += gap
+		}
 	}
 }
 

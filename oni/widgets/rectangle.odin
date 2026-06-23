@@ -28,7 +28,6 @@ Rectangle_Props :: struct {
 }
 
 
-@(private)
 rect_event :: proc(
 	state: Rectangle_State,
 	mouse_button: u8 = 0,
@@ -37,17 +36,12 @@ rect_event :: proc(
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
-@(private)
-rect_props_override :: proc(props: Rectangle_Props) -> Rectangle_Config {
-	return props.config
-}
 
-@(private)
 rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
-	color := oni.Color.Text
+	color := oni.Color.Foreground
 
 	if state.is_disabled {
-		color = oni.Color.Text_muted
+		color = oni.Color.Muted
 	}
 
 	return Rectangle_Config {
@@ -63,7 +57,6 @@ rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
 	}
 }
 
-@(private)
 rect_config :: proc(
 	props: Rectangle_Props,
 	state: ^Rectangle_State,
@@ -71,7 +64,7 @@ rect_config :: proc(
 	event := rect_event(state^)
 
 	base := rect_theme_base(state)
-	override := rect_props_override(props)
+	override := props.config
 	return oni.resolve_widget_config(base, override, state, event)
 }
 
