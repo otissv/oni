@@ -154,7 +154,6 @@ Widget_Config :: struct {
 	wrap:           Cfg(Text_Warp),
 	x:              Cfg(f32),
 	y:              Cfg(f32),
-	overflow:       Cfg(Overflow),
 	overflow_y:     Cfg(Overflow),
 	overflow_x:     Cfg(Overflow),
 	visibility:     Cfg(Visibility),
@@ -332,9 +331,6 @@ Dim_struct :: struct {
 Width_Mode :: enum {
 	Inherit,
 	Auto,
-	Fit_Content,
-	Min_Content,
-	Max_Content,
 }
 
 Width :: union {
@@ -348,9 +344,6 @@ Width :: union {
 Height_Mode :: enum {
 	Inherit,
 	Auto,
-	Fit_Content,
-	Min_Content,
-	Max_Content,
 }
 
 Height :: union {
@@ -426,6 +419,10 @@ Direction_Layout :: enum {
 	Vertical,
 	Horizontal_Wrap,
 	Vertical_Wrap,
+	Horizontal_Reverse,
+	Vertical_Reverse,
+	Horizontal_Wrap_Reverse,
+	Vertical_Wrap_Reverse,
 }
 
 Widget_Direction :: union {

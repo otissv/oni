@@ -2,14 +2,14 @@ package oni
 
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	switch length.kind {
-	case .Auto:
-		return 0
 	case .Fixed:
 		return length.value
 	case .Percent:
 		return parent * length.value * 0.01
 	case .Inherit:
 		return parent
+	case .Auto:
+		return 0
 	}
 	return 0
 }
@@ -71,7 +71,7 @@ resolve_length_from_width :: proc(
 		switch v {
 		case .Inherit:
 			return {kind = .Inherit}
-		case .Auto, .Fit_Content, .Min_Content, .Max_Content:
+		case .Auto:
 			return {kind = .Auto}
 		}
 	case f32:
@@ -104,7 +104,7 @@ resolve_length_from_height :: proc(
 		switch v {
 		case .Inherit:
 			return {kind = .Inherit}
-		case .Auto, .Fit_Content, .Min_Content, .Max_Content:
+		case .Auto:
 			return {kind = .Auto}
 		}
 	case f32:
@@ -289,7 +289,6 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Text_Warp, &result.wrap, override.wrap)
 	merge_cfg(f32, &result.x, override.x)
 	merge_cfg(f32, &result.y, override.y)
-	merge_cfg(Overflow, &result.overflow, override.overflow)
 	merge_cfg(Overflow, &result.overflow_x, override.overflow_x)
 	merge_cfg(Overflow, &result.overflow_y, override.overflow_y)
 	merge_cfg(Visibility, &result.visibility, override.visibility)
@@ -539,7 +538,6 @@ resolve_widget_config :: proc(
 		wrap           = resolve_cfg(Text_Warp, decl.wrap, parent.wrap, theme.wrap),
 		x              = resolve_cfg(f32, decl.x, parent.x, theme.x),
 		y              = resolve_cfg(f32, decl.y, parent.y, theme.y),
-		overflow       = resolve_cfg(Overflow, decl.overflow, parent.overflow, theme.overflow),
 		overflow_x     = resolve_cfg(
 			Overflow,
 			decl.overflow_x,

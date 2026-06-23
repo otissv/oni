@@ -107,73 +107,73 @@ Hud :: proc() {
 }
 
 Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
-	wg.Rectangle({
-		config = {
-			id = id,
-			x = set.F32(x),
-			y = set.F32(y),
-			width = 400,
-			height = 300,
-			space = set.Space(.Screen),
-			direction = set.Direction(.Horizontal_Wrap),
-			gap = set.Gap(u16(8)),
-			padding = set.Padding(f32(20)),
-			justify = set.Justify(oni.Justify_Pos{x = .Space_around}),
-			background = set.Colors(oni.theme.palette[.Background]),
-			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
-			border = set.Border(f32(10)),
-			border_color = set.Colors(oni.Color.Yellow_500),
-		},
-		child = proc(state: wg.Rectangle_State) {
-			wg.Rectangle(
-				{
-					config = {
-						id = "left",
-						width = 100,
-						height = 30,
-						background = set.Colors(oni.theme.palette[.Destructive]),
-					},
-				},
-			)
-			wg.Rectangle({
-				config = {
-					id = "center",
-					background = set.Colors(oni.theme.palette[.Accent]),
-					height = 100,
-				},
-				child = proc(state: wg.Rectangle_State) {
-					ui.Label(
-						{
-							id = "label",
-							theme = &persistent.app.theme,
-							text = "label",
-							size = .Large,
+	wg.Rectangle(
+		{
+			config = {
+				id           = id,
+				x            = set.F32(x),
+				y            = set.F32(y),
+				space        = set.Space(.Screen),
+				direction    = set.Direction(.Horizontal),
+				gap          = set.Gap(u16(8)),
+				padding      = set.Padding(f32(20)),
+				justify      = set.Justify(oni.Justify_Pos{x = .Space_around}),
+				background   = set.Colors(oni.theme.palette[.Background]),
+				radius       = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
+				border       = set.Border(f32(10)),
+				border_color = set.Colors(oni.Color.Yellow_500),
+			},
+			child = proc(state: wg.Rectangle_State) {
+				wg.Rectangle(
+					{
+						config = {
+							id = "left",
+							width = 100,
+							height = 30,
+							background = set.Colors(oni.theme.palette[.Destructive]),
 						},
-					)
-				},
-			})
-			wg.Rectangle(
-				{
-					config = {
-						id = "right",
-						width = 100,
-						height = 100,
-						background = set.Colors(oni.theme.palette[.Success]),
 					},
-				},
-			)
-			wg.Rectangle(
-				{
+				)
+				wg.Rectangle({
 					config = {
-						id = "end",
-						width = 100,
+						id = "center",
+						background = set.Colors(oni.theme.palette[.Accent]),
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Info]),
 					},
-				},
-			)
+					child = proc(state: wg.Rectangle_State) {
+						ui.Label(
+							{
+								id = "label",
+								theme = &persistent.app.theme,
+								text = "label",
+								size = .Large,
+							},
+						)
+					},
+				})
+				wg.Rectangle(
+					{
+						config = {
+							id = "right",
+							width = 100,
+							height = 100,
+							background = set.Colors(oni.theme.palette[.Success]),
+						},
+					},
+				)
+				wg.Rectangle(
+					{
+						config = {
+							id = "end",
+							width = 100,
+							height = 100,
+							background = set.Colors(oni.theme.palette[.Info]),
+						},
+					},
+				)
+			},
 		},
-	})
+	)
 }
 
 Layout_Vertical :: proc(id: string, x: f32, y: f32) {

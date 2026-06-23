@@ -38,12 +38,50 @@ layout_config_direction :: proc(config: Resolved_Widget_Style) -> Direction_Layo
 	return config.direction
 }
 
+Layout_Direction_Info :: struct {
+	is_horizontal:    bool,
+	is_wrap:          bool,
+	is_main_reverse:  bool,
+	is_cross_reverse: bool,
+}
+
+layout_direction_info :: proc(direction: Direction_Layout) -> Layout_Direction_Info {
+	switch direction {
+	case .Horizontal:
+		return {is_horizontal = true}
+	case .Vertical:
+		return {}
+	case .Horizontal_Wrap:
+		return {is_horizontal = true, is_wrap = true}
+	case .Vertical_Wrap:
+		return {is_wrap = true}
+	case .Horizontal_Reverse:
+		return {is_horizontal = true, is_main_reverse = true}
+	case .Vertical_Reverse:
+		return {is_main_reverse = true}
+	case .Horizontal_Wrap_Reverse:
+		return {
+			is_horizontal = true,
+			is_wrap = true,
+			is_main_reverse = true,
+			is_cross_reverse = true,
+		}
+	case .Vertical_Wrap_Reverse:
+		return {is_wrap = true, is_main_reverse = true, is_cross_reverse = true}
+	}
+	unreachable()
+}
+
 layout_direction_is_horizontal :: proc(direction: Direction_Layout) -> bool {
-	return direction == .Horizontal || direction == .Horizontal_Wrap
+	return layout_direction_info(direction).is_horizontal
 }
 
 layout_direction_is_wrap :: proc(direction: Direction_Layout) -> bool {
-	return direction == .Horizontal_Wrap || direction == .Vertical_Wrap
+	return layout_direction_info(direction).is_wrap
+}
+
+layout_mirror_in_available :: proc(pos, size, available: f32) -> f32 {
+	return available - pos - size
 }
 
 Layout_Wrap_Line :: struct {
@@ -260,38 +298,36 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	if len(node.child_indices) > 0 {
 		main_sum: f32
 		cross_max: f32
+		info := layout_direction_info(direction)
 
 		for child_index in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
 			child_size := child.desired
-			is_horizontal := layout_direction_is_horizontal(direction)
-			child_main := is_horizontal ? child.config.width : child.config.height
+			child_main := info.is_horizontal ? child.config.width : child.config.height
 
 			if child.config.flex > 0 && !length_is_definite(child_main) do continue
 
-			switch direction {
-			case .Horizontal, .Horizontal_Wrap:
+			if info.is_horizontal {
 				main_sum += child_size.x
 				cross_max = max(cross_max, child_size.y)
-			case .Vertical, .Vertical_Wrap:
+			} else {
 				main_sum += child_size.y
 				cross_max = max(cross_max, child_size.x)
 			}
 		}
 
-		if len(node.child_indices) > 1 && !layout_direction_is_wrap(direction) {
+		if len(node.child_indices) > 1 && !info.is_wrap {
 			main_sum += gap * f32(len(node.child_indices) - 1)
 		}
 
 		inset_w := padding.l + padding.r + border.l + border.r
 		inset_h := padding.t + padding.b + border.t + border.b
 
-		if layout_direction_is_wrap(direction) {
-			return layout_wrap_measure(node, layout_direction_is_horizontal(direction), gap)
+		if info.is_wrap {
+			return layout_wrap_measure(node, info.is_horizontal, gap)
 		}
 
-		#partial switch direction {
-		case .Horizontal:
+		if info.is_horizontal {
 			width := length_resolve(node.config.width, 0)
 			height := length_resolve(node.config.height, 0)
 			if width <= 0 do width = main_sum + inset_w
@@ -300,7 +336,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 				layout_clamp_axis(width, node.config.min_w, node.config.max_w),
 				layout_clamp_axis(height, node.config.min_h, node.config.max_h),
 			}
-		case .Vertical:
+		} else {
 			width := length_resolve(node.config.width, 0)
 			height := length_resolve(node.config.height, 0)
 			if width <= 0 do width = cross_max + inset_w
@@ -442,14 +478,26 @@ layout_child_cross_size :: proc(
 	return is_horizontal ? child.desired.y : child.desired.x
 }
 
-layout_main_justify_align :: proc(justify: Justify_Pos, is_horizontal: bool) -> (Justify_Align, bool) {
+layout_main_justify_align :: proc(
+	justify: Justify_Pos,
+	is_horizontal: bool,
+) -> (
+	Justify_Align,
+	bool,
+) {
 	if is_horizontal {
 		return justify_align_from_x(justify.x)
 	}
 	return justify_align_from_y(justify.y)
 }
 
-layout_cross_justify_align :: proc(justify: Justify_Pos, is_horizontal: bool) -> (Justify_Align, bool) {
+layout_cross_justify_align :: proc(
+	justify: Justify_Pos,
+	is_horizontal: bool,
+) -> (
+	Justify_Align,
+	bool,
+) {
 	if is_horizontal {
 		return justify_align_from_y(justify.y)
 	}
@@ -561,19 +609,26 @@ layout_position_child_rect :: proc(
 	x += child.config.x
 	y += child.config.y
 
-	child.rect = {x = x, y = y, w = size.x, h = size.y}
+	child.rect = {
+		x = x,
+		y = y,
+		w = size.x,
+		h = size.y,
+	}
 
 	if len(child.child_indices) > 0 {
-		layout_position_children(
-			child,
-			layout_inner_rect(child.rect, child.border, child.padding),
-		)
+		layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
 	}
 }
 
-layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_horizontal: bool) {
+layout_position_children_wrap :: proc(
+	node: ^Layout_Node,
+	content: Rect,
+	info: Layout_Direction_Info,
+) {
 	gap := layout_config_gap(node.config)
 	justify := layout_config_justify(node.config)
+	is_horizontal := info.is_horizontal
 
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
@@ -627,7 +682,10 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_hori
 			cross := layout_child_cross_size(child, is_horizontal, 0, child_justify)
 			size := is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 			layout_apply_definite_size(child, content, &size)
-			line_cross_natural = max(line_cross_natural, layout_wrap_child_cross(size, is_horizontal))
+			line_cross_natural = max(
+				line_cross_natural,
+				layout_wrap_child_cross(size, is_horizontal),
+			)
 		}
 
 		for i in 0 ..< line.count {
@@ -642,8 +700,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_hori
 				line_cross_natural,
 				child_justify,
 			)
-			child_sizes[size_index] =
-				is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
+			child_sizes[size_index] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 			layout_apply_definite_size(child, content, &child_sizes[size_index])
 		}
 		line_cross_sizes[line_index] = line_cross_natural
@@ -684,10 +741,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_hori
 			main_sizes: [dynamic]f32
 			defer delete(main_sizes)
 			for idx in in_flow {
-				append(
-					&main_sizes,
-					layout_wrap_child_main(child_sizes[idx], is_horizontal),
-				)
+				append(&main_sizes, layout_wrap_child_main(child_sizes[idx], is_horizontal))
 			}
 			main_positions = layout_space_positions(
 				main_align,
@@ -729,8 +783,18 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_hori
 			} else if in_flow_child {
 				main_pos = main_cursor
 			}
+			if info.is_main_reverse && in_flow_child {
+				main_pos = layout_mirror_in_available(main_pos, main, line_main_available)
+			}
 
 			cross_pos := line_cross_cursor
+			if info.is_cross_reverse {
+				cross_pos = layout_mirror_in_available(
+					line_cross_cursor,
+					line_cross,
+					cross_available,
+				)
+			}
 			child_justify := layout_merge_justify(justify, child.config.self)
 			self := child.config.self
 			_, self_x_ok := resolve_justify_x(self.x)
@@ -746,11 +810,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect, is_hori
 					)
 				}
 			} else if in_flow_cross {
-				cross_pos += justify_align_position_offset_x(
-					line_cross,
-					size.x,
-					child_justify.x,
-				)
+				cross_pos += justify_align_position_offset_x(line_cross, size.x, child_justify.x)
 			}
 
 			layout_position_child_rect(
@@ -811,18 +871,15 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
 
 	direction := layout_config_direction(node.config)
-	if layout_direction_is_wrap(direction) {
-		layout_position_children_wrap(
-			node,
-			content,
-			layout_direction_is_horizontal(direction),
-		)
+	info := layout_direction_info(direction)
+	if info.is_wrap {
+		layout_position_children_wrap(node, content, info)
 		return
 	}
 
 	gap := layout_config_gap(node.config)
 	justify := layout_config_justify(node.config)
-	is_horizontal := layout_direction_is_horizontal(direction)
+	is_horizontal := info.is_horizontal
 
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
@@ -929,6 +986,16 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		main := is_horizontal ? size.x : size.y
 		in_flow_child := layout_child_in_main_flow(child, is_horizontal)
 
+		main_pos: f32
+		if in_flow_child && main_space {
+			main_pos = main_positions[flow_index]
+		} else if in_flow_child {
+			main_pos = main_cursor
+		}
+		if info.is_main_reverse && in_flow_child {
+			main_pos = layout_mirror_in_available(main_pos, main, main_available)
+		}
+
 		x, y: f32
 		self := child.config.self
 		_, self_x_ok := resolve_justify_x(self.x)
@@ -937,21 +1004,15 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		if self_x_ok {
 			x = content.x + justify_align_position_offset_x(content.w, size.x, self.x)
 		} else if is_horizontal {
-			if in_flow_child && main_space {
-				x = content.x + main_positions[flow_index]
-			} else if in_flow_child {
-				x = content.x + main_cursor
+			if in_flow_child {
+				x = content.x + main_pos
 			} else {
-				x =
-					content.x +
-					justify_align_position_offset_x(content.w, size.x, child_justify.x)
+				x = content.x + justify_align_position_offset_x(content.w, size.x, child_justify.x)
 			}
 		} else if cross_space && in_flow_child {
 			x = content.x + cross_positions[flow_index]
 		} else {
-			x =
-				content.x +
-				justify_align_position_offset_x(content.w, size.x, child_justify.x)
+			x = content.x + justify_align_position_offset_x(content.w, size.x, child_justify.x)
 		}
 
 		if self_y_ok {
@@ -960,18 +1021,12 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			if cross_space && in_flow_child {
 				y = content.y + cross_positions[flow_index]
 			} else {
-				y =
-					content.y +
-					justify_align_position_offset_y(content.h, size.y, child_justify.y)
+				y = content.y + justify_align_position_offset_y(content.h, size.y, child_justify.y)
 			}
-		} else if in_flow_child && main_space {
-			y = content.y + main_positions[flow_index]
 		} else if in_flow_child {
-			y = content.y + main_cursor
+			y = content.y + main_pos
 		} else {
-			y =
-				content.y +
-				justify_align_position_offset_y(content.h, size.y, child_justify.y)
+			y = content.y + justify_align_position_offset_y(content.h, size.y, child_justify.y)
 		}
 
 		x += child.config.x
@@ -1029,7 +1084,7 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 		if layout_direction_is_wrap(node.config.direction) {
 			layout_wrap_apply_auto_cross_size(
 				node,
-				layout_direction_is_horizontal(node.config.direction),
+				layout_direction_info(node.config.direction).is_horizontal,
 			)
 		}
 	}
