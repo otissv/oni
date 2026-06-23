@@ -424,6 +424,8 @@ Justify :: union {
 Direction_Layout :: enum {
 	Horizontal,
 	Vertical,
+	Horizontal_Wrap,
+	Vertical_Wrap,
 }
 
 Widget_Direction :: union {

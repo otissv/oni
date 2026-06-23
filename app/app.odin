@@ -112,13 +112,13 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 			id = id,
 			x = set.F32(x),
 			y = set.F32(y),
-			width = 500,
-			height = 200,
+			width = 400,
+			height = 300,
 			space = set.Space(.Screen),
-			direction = set.Direction(.Horizontal),
+			direction = set.Direction(.Horizontal_Wrap),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(f32(20)),
-			justify = set.Justify(oni.Justify_Pos{x = .Space_around, y = .Stretch}),
+			justify = set.Justify(oni.Justify_Pos{x = .Space_around}),
 			background = set.Colors(oni.theme.palette[.Background]),
 			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
 			border = set.Border(f32(10)),
@@ -139,7 +139,7 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 				config = {
 					id = "center",
 					background = set.Colors(oni.theme.palette[.Accent]),
-					flex = set.F32(1),
+					height = 100,
 				},
 				child = proc(state: wg.Rectangle_State) {
 					ui.Label(
@@ -157,11 +157,21 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 					config = {
 						id = "right",
 						width = 100,
+						height = 100,
 						background = set.Colors(oni.theme.palette[.Success]),
 					},
 				},
 			)
-
+			wg.Rectangle(
+				{
+					config = {
+						id = "end",
+						width = 100,
+						height = 100,
+						background = set.Colors(oni.theme.palette[.Info]),
+					},
+				},
+			)
 		},
 	})
 }
@@ -172,10 +182,10 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 			id = id,
 			x = set.F32(x),
 			y = set.F32(y),
-			width = 500,
-			height = 500,
+			width = 400,
+			height = 400,
 			space = set.Space(.Screen),
-			direction = set.Direction(.Vertical),
+			direction = set.Direction(.Vertical_Wrap),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(oni.Pd{t = 10, b = 10}),
 			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Space_between}),
@@ -190,7 +200,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 					config = {
 						id = "top-1",
 						width = 100,
-						height = 60,
+						height = 100,
 						background = set.Colors(oni.theme.palette[.Destructive]),
 					},
 				},
@@ -200,7 +210,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 					config = {
 						id = "center",
 						width = 100,
-						flex = set.F32(1),
+						height = 100,
 						background = set.Colors(oni.theme.palette[.Accent]),
 					},
 				},
@@ -209,8 +219,19 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 				{
 					config = {
 						id = "bottom",
-						height = 60,
+						width = 100,
+						height = 100,
 						background = set.Colors(oni.theme.palette[.Success]),
+					},
+				},
+			)
+			wg.Rectangle(
+				{
+					config = {
+						id = "bottom-1",
+						width = 100,
+						height = 100,
+						background = set.Colors(oni.theme.palette[.Info]),
 					},
 				},
 			)
@@ -230,8 +251,8 @@ view :: proc() {
 	oni.Begin_Screen()
 	Hud()
 
-	Layout_Horizontal("layout-demo-1", x = 16, y = 520)
-	Layout_Vertical("layout-demo-2", x = 16, y = 750)
+	Layout_Horizontal("layout-demo-1", x = 16, y = 480)
+	Layout_Vertical("layout-demo-2", x = 16, y = 850)
 
 
 	oni.End_Screen()

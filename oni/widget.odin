@@ -509,11 +509,7 @@ justify_align_from_y :: proc(y: Justify_Y) -> (Justify_Align, bool) {
 }
 
 justify_align_is_space :: proc(align: Justify_Align) -> bool {
-	return(
-		align == .Space_between ||
-		align == .Space_around ||
-		align == .Space_evenly \
-	)
+	return align == .Space_between || align == .Space_around || align == .Space_evenly
 }
 
 justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
