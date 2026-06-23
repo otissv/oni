@@ -490,26 +490,62 @@ resolve_direction :: proc(
 	return .Horizontal, false
 }
 
-justify_axis_align_from_x :: proc(x: Justify_X) -> i32 {
+justify_align_from_x :: proc(x: Justify_X) -> (Justify_Align, bool) {
 	#partial switch v in x {
 	case Justify_Align:
-		return i32(v)
+		return v, true
 	}
 
-	return 0
+	return .Start, false
 }
 
-justify_axis_align_from_y :: proc(y: Justify_Y) -> i32 {
+justify_align_from_y :: proc(y: Justify_Y) -> (Justify_Align, bool) {
 	#partial switch v in y {
 	case Justify_Align:
-		return i32(v)
+		return v, true
 	}
 
+	return .Start, false
+}
+
+justify_align_is_space :: proc(align: Justify_Align) -> bool {
+	return(
+		align == .Space_between ||
+		align == .Space_around ||
+		align == .Space_evenly \
+	)
+}
+
+justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
+	switch align {
+	case .Start, .Stretch:
+		return 0
+	case .Center:
+		return max(0, (free_space - size) * 0.5)
+	case .End:
+		return max(0, free_space - size)
+	case .Space_between, .Space_around, .Space_evenly:
+		return 0
+	}
 	return 0
 }
 
-justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
-	#partial switch v in x {
+justify_align_position_offset_x :: proc(free_space, size: f32, axis: Justify_X) -> f32 {
+	if align, ok := justify_align_from_x(axis); ok {
+		return justify_align_position_offset(free_space, size, align)
+	}
+	return 0
+}
+
+justify_align_position_offset_y :: proc(free_space, size: f32, axis: Justify_Y) -> f32 {
+	if align, ok := justify_align_from_y(axis); ok {
+		return justify_align_position_offset(free_space, size, align)
+	}
+	return 0
+}
+
+justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
+	#partial switch v in y {
 	case Justify_Align:
 		return v == .Stretch
 	}
@@ -517,8 +553,8 @@ justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
 	return false
 }
 
-justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
-	#partial switch v in y {
+justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
+	#partial switch v in x {
 	case Justify_Align:
 		return v == .Stretch
 	}

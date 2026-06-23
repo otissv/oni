@@ -118,7 +118,7 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 			direction = set.Direction(.Horizontal),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(f32(20)),
-			justify = set.Justify(oni.Justify_Pos{x = .Start, y = .Stretch}),
+			justify = set.Justify(oni.Justify_Pos{x = .Space_around, y = .Stretch}),
 			background = set.Colors(oni.theme.palette[.Background]),
 			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
 			border = set.Border(f32(10)),
@@ -138,8 +138,8 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 			wg.Rectangle({
 				config = {
 					id = "center",
-					width = 100,
 					background = set.Colors(oni.theme.palette[.Accent]),
+					flex = set.F32(1),
 				},
 				child = proc(state: wg.Rectangle_State) {
 					ui.Label(
@@ -178,7 +178,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 			direction = set.Direction(.Vertical),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(oni.Pd{t = 10, b = 10}),
-			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
+			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Space_between}),
 			background = set.Colors(oni.theme.palette[.Background]),
 			radius = set.Radius(f32(10)),
 			border = set.Border(f32(10)),
@@ -200,6 +200,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 					config = {
 						id = "center",
 						width = 100,
+						flex = set.F32(1),
 						background = set.Colors(oni.theme.palette[.Accent]),
 					},
 				},
