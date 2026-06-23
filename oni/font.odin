@@ -105,8 +105,7 @@ font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Ent
 		if surface == nil do return {}, false
 		defer sdl.DestroySurface(surface)
 
-		pixels := cast([^]u8)surface.pixels
-		pixels[3] = 0
+		sdl.WriteSurfacePixel(surface, 0, 0, 0, 0, 0, 0)
 
 		if !texture_atlas_upload(region, surface) do return {}, false
 		return Font_Glyph_Entry{region = region}, true
@@ -136,8 +135,6 @@ font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Ent
 }
 
 font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
-	dst := cast([^]u8)surface.pixels
-	dst_pitch := int(surface.pitch)
 	w := int(bitmap.width)
 	h := int(bitmap.rows)
 
@@ -148,11 +145,7 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 		for row in 0 ..< h {
 			for col in 0 ..< w {
 				alpha := src[row * src_pitch + col]
-				off := row * dst_pitch + col * 4
-				dst[off + 0] = 255
-				dst[off + 1] = 255
-				dst[off + 2] = 255
-				dst[off + 3] = alpha
+				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, alpha)
 			}
 		}
 	case FT_PIXEL_MODE_MONO:
@@ -163,11 +156,7 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 				byte := src[row * src_pitch + col / 8]
 				bit := (byte >> u8(7 - (col % 8))) & 1
 				alpha: u8 = bit != 0 ? 255 : 0
-				off := row * dst_pitch + col * 4
-				dst[off + 0] = 255
-				dst[off + 1] = 255
-				dst[off + 2] = 255
-				dst[off + 3] = alpha
+				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, alpha)
 			}
 		}
 	case FT_PIXEL_MODE_BGRA:
@@ -175,12 +164,16 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 		src_pitch := int(bitmap.pitch)
 		for row in 0 ..< h {
 			for col in 0 ..< w {
-				off := row * dst_pitch + col * 4
 				src_off := row * src_pitch + col * 4
-				dst[off + 0] = src[src_off + 2]
-				dst[off + 1] = src[src_off + 1]
-				dst[off + 2] = src[src_off + 0]
-				dst[off + 3] = src[src_off + 3]
+				sdl.WriteSurfacePixel(
+					surface,
+					c.int(col),
+					c.int(row),
+					src[src_off + 2],
+					src[src_off + 1],
+					src[src_off + 0],
+					src[src_off + 3],
+				)
 			}
 		}
 	case:

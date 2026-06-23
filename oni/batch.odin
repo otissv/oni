@@ -8,6 +8,7 @@ Draw_Mode :: enum {
 	Solid,
 	Textured,
 	Line,
+	Textured_Rounded,
 }
 
 draw_mode_f32 :: proc(mode: Draw_Mode) -> f32 {
@@ -195,6 +196,7 @@ batch_push_indices :: proc(base: u16) {
 batch_push_vertex :: proc(
 	pos: Vec2,
 	uv: Vec2,
+	local_uv: Vec2,
 	color: [4]f32,
 	border_color: [4]f32,
 	rect_size: Vec2,
@@ -207,6 +209,7 @@ batch_push_vertex :: proc(
 		UI_Vertex {
 			pos = pos,
 			uv = uv,
+			local_uv = local_uv,
 			color = color,
 			border_color = border_color,
 			rect_size = rect_size,
@@ -220,6 +223,7 @@ batch_push_vertex :: proc(
 batch_push_quad :: proc(
 	corners: [4]Vec2,
 	uvs: [4]Vec2,
+	local_uvs: [4]Vec2,
 	color: RGBA,
 	border_color: RGBA,
 	rect_size: Vec2,
@@ -234,7 +238,17 @@ batch_push_quad :: proc(
 	base := u16(len(state.gpu_state.batch.vertices))
 
 	for i in 0 ..< 4 {
-		batch_push_vertex(corners[i], uvs[i], tint, border_tint, rect_size, radii, border, mode)
+		batch_push_vertex(
+			corners[i],
+			uvs[i],
+			local_uvs[i],
+			tint,
+			border_tint,
+			rect_size,
+			radii,
+			border,
+			mode,
+		)
 	}
 	batch_push_indices(base)
 }
@@ -257,15 +271,17 @@ batch_push_axis_quad :: proc(
 	u1, v1 := uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h
 
 	corners := [4]Vec2{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+	rect_local := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
 	uvs: [4]Vec2
+	local_uvs := rect_local
 	switch mode {
 	case .Solid, .Line:
-		uvs = [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	case .Textured:
+		uvs = rect_local
+	case .Textured, .Textured_Rounded:
 		uvs = [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 	}
 
-	batch_push_quad(corners, uvs, color, border_color, screen_size, radii, border, mode)
+	batch_push_quad(corners, uvs, local_uvs, color, border_color, screen_size, radii, border, mode)
 }
 
 batch_finalize_segments :: proc() {

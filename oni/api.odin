@@ -36,7 +36,7 @@ Log_Errorf :: log_errorf
 
 Draw_rectangle :: draw_rect
 Draw_line_segment :: draw_line
-Draw_texture_region :: draw_texture
+Draw_texture :: draw_texture
 Draw_atlas :: draw_atlas_region
 
 Begin_Artboard :: begin_artboard
@@ -64,6 +64,3 @@ View_Screen_To_World :: view_screen_to_world
 View_World_To_Screen :: view_world_to_screen
 Input_Mouse_Screen :: input_mouse_screen
 Input_Mouse_World :: input_mouse_world
-
-// Color_Role :: Theme_Color_Role
-// Theme_Get_Color :: theme_color

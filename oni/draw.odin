@@ -141,7 +141,6 @@ draw_rect :: proc(
 	)
 }
 
-
 draw_line :: proc(a, b: Vec2, color: RGBA, thickness: f32) {
 	a_screen := view_transform_point(a)
 	b_screen := view_transform_point(b)
@@ -162,21 +161,62 @@ draw_line :: proc(a, b: Vec2, color: RGBA, thickness: f32) {
 
 	corners := [4]Vec2{a_screen + perp, b_screen + perp, b_screen - perp, a_screen - perp}
 	uvs := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
-	batch_push_quad(corners, uvs, color, {}, {length, line_thickness}, {}, {}, .Line)
+	batch_push_quad(corners, uvs, uvs, color, {}, {length, line_thickness}, {}, {}, .Line)
 }
 
-draw_texture :: proc(tex: Texture_Handle, src, dst: Rect, tint: RGBA = {255, 255, 255, 255}) {
-	if tex.w <= 0 || tex.h <= 0 do return
+draw_texture :: proc(
+	texture: Texture_Handle,
+	src, dst: Rect,
+	tint: RGBA = {255, 255, 255, 255},
+	background: RGBA = {},
+	radius: Radius_corners = {},
+	border: Bd = {},
+	border_color: RGBA = {},
+) {
+	has_texture := texture.w > 0 && texture.h > 0
+	has_radius := radius.tl > 0 || radius.tr > 0 || radius.br > 0 || radius.bl > 0
+	has_border :=
+		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0)
 
-	uv := Rect{src.x / tex.w, src.y / tex.h, src.w / tex.w, src.h / tex.h}
+	if !has_texture {
+		draw_rect(dst, background, radius, border, border_color)
+		return
+	}
+
+	scale := view_artboard_zoom()
+	screen_radii := [4]f32 {
+		radius.tl * scale,
+		radius.tr * scale,
+		radius.br * scale,
+		radius.bl * scale,
+	}
+	screen_border := Bd {
+		t = border.t * scale,
+		b = border.b * scale,
+		l = border.l * scale,
+		r = border.r * scale,
+	}
+
+	uv := Rect{src.x / texture.w, src.y / texture.h, src.w / texture.w, src.h / texture.h}
 
 	state.gpu_state.batch.dpi = state.dpi
-	batch_check_key(tex.id)
-	batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured)
+	batch_check_key(texture.id)
+	mode: Draw_Mode = .Textured
+	if has_radius || has_border do mode = .Textured_Rounded
+	batch_push_axis_quad(
+		dst,
+		uv,
+		tint,
+		border_color,
+		{dst.w, dst.h},
+		screen_radii,
+		screen_border,
+		mode,
+	)
 }
 
 draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 255, 255, 255}) {
-	tex := atlas_region_handle(region)
+	texture := atlas_region_handle(region)
 	src := Rect{region.x, region.y, region.w, region.h}
-	draw_texture(tex, src, dst, tint)
+	draw_texture(texture, src, dst, tint, {})
 }

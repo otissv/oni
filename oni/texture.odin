@@ -123,6 +123,23 @@ texture_register_surface :: proc(
 	return id, handle, true
 }
 
+// SDL RGBA8888 stores 32-bit pixels as A,B,G,R in memory on little-endian hosts.
+// Vulkan R8G8B8A8_UNORM expects R,G,B,A byte order.
+@(private)
+surface_row_to_gpu_rgba :: proc(dst, src: []u8, pixels: int) {
+	when ODIN_ENDIAN == .Little {
+		for i in 0 ..< pixels {
+			off := i * 4
+			dst[off + 0] = src[off + 3]
+			dst[off + 1] = src[off + 2]
+			dst[off + 2] = src[off + 1]
+			dst[off + 3] = src[off + 0]
+		}
+	} else {
+		copy(dst[:pixels * 4], src[:pixels * 4])
+	}
+}
+
 texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 	if state.gpu == nil || entry.surface == nil do return false
 
@@ -204,10 +221,9 @@ texture_upload_surface :: proc(
 
 	for row in 0 ..< copy_h {
 		row_u := u32(row)
-		copy(
-			dst[row_u * row_bytes:(row_u + 1) * row_bytes],
-			src[row_u * src_pitch:row_u * src_pitch + copy_row_bytes],
-		)
+		dst_row := dst[row_u * row_bytes:]
+		src_row := src[row_u * src_pitch:]
+		surface_row_to_gpu_rgba(dst_row[:copy_row_bytes], src_row[:copy_row_bytes], int(copy_w))
 	}
 	sdl.UnmapGPUTransferBuffer(gpu, transfer)
 

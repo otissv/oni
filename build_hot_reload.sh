@@ -35,6 +35,48 @@ esac
 ODIN_FLAGS=(-vet -strict-style -debug)
 FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
 
+has_sdl3_image() {
+	for lib in /usr/lib/libSDL3_image.so /usr/local/lib/libSDL3_image.so; do
+		if [[ -e "$lib" ]]; then
+			return 0
+		fi
+	done
+
+	local libs
+	libs="$(ldconfig -p 2>/dev/null || true)"
+	[[ "$libs" == *libSDL3_image* ]]
+}
+
+check_build_deps() {
+	local missing=()
+
+	if ! command -v glslc > /dev/null 2>&1; then
+		missing+=("glslc (Vulkan SDK / shaderc package)")
+	fi
+
+	if ! has_sdl3_image; then
+		case "$OS" in
+		darwin)
+			missing+=("SDL3_image (e.g. brew install sdl3_image)")
+			;;
+		linux)
+			missing+=("sdl3_image (sudo pacman -S sdl3_image)")
+			;;
+		windows)
+			missing+=("SDL3_image.dll on PATH")
+			;;
+		esac
+	fi
+
+	if ((${#missing[@]} > 0)); then
+		echo "Missing build dependencies:"
+		for dep in "${missing[@]}"; do
+			echo "  - ${dep}"
+		done
+		return 1
+	fi
+}
+
 is_app_running() {
 	local pid
 	pid="$(pgrep -x "$HOST_EXE" 2>/dev/null | head -1)"
@@ -73,6 +115,7 @@ build_shaders() {
 build_app_locked() {
 	mkdir -p "$OUT_DIR"
 
+	check_build_deps || return 1
 	build_shaders
 	echo "Compiling app${LIB_EXT}"
 
@@ -105,6 +148,7 @@ build_app() {
 }
 
 build_host() {
+	check_build_deps || return 1
 	echo "Building ${HOST_EXE}"
 	odin build . "${ODIN_FLAGS[@]}" -out:"${HOST_EXE}"
 }
