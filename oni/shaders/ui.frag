@@ -73,8 +73,18 @@ void main() {
     float mode = v_params.y;
 
     if (mode >= 2.5) {
+        vec2 local_px = v_local_uv * v_rect_size;
+        if (v_params.x > 0.5) {
+            float min_x = v_border.z;
+            float min_y = v_border.x;
+            float max_x = v_rect_size.x - v_border.w;
+            float max_y = v_rect_size.y - v_border.y;
+            if (local_px.x < min_x || local_px.y < min_y || local_px.x > max_x || local_px.y > max_y) {
+                discard;
+            }
+        }
         vec4 tex_color = texture(tex, v_uv) * tint;
-        out_color = rounded_shape(tex_color, v_local_uv, v_rect_size, v_radii, v_border);
+        out_color = rounded_shape(tex_color, v_local_uv, v_rect_size, v_radii, vec4(0.0));
         return;
     }
 

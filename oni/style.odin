@@ -253,6 +253,8 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		line_height = 1,
 		text_direction = .LTR,
 		space = .Screen,
+		texture_fit = .FILL,
+		texture_pos = {},
 	}
 }
 
@@ -261,7 +263,6 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 
 	if override.id != "" do result.id = override.id
 	merge_cfg(Text_Align, &result.align, override.align)
-	merge_cfg(Aspect_Ratio, &result.aspect_ratio, override.aspect_ratio)
 	merge_cfg(bool, &result.auto_focus, override.auto_focus)
 	merge_cfg(Colors, &result.background, override.background)
 	merge_cfg(Border, &result.border, override.border)
@@ -295,6 +296,8 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(f32, &result.z_index, override.z_index)
 	merge_cfg(Position, &result.position, override.position)
 	merge_cfg(Justify, &result.self, override.self)
+	merge_cfg(Style_Texture_Fit, &result.texture_fit, override.texture_fit)
+	merge_cfg(Style_Texture_Pos, &result.texture_pos, override.texture_pos)
 
 	return result
 }
@@ -332,15 +335,8 @@ finalize_resolved_procs :: proc(
 	if align, align_ok := resolve_text_align(config.align, state, event); align_ok {
 		config.align = align
 	}
-	if aspect_ratio, aspect_ok := resolve_aspect_ratio(config.aspect_ratio, state, event);
-	   aspect_ok {
-		config.aspect_ratio = aspect_ratio
-	}
 	if wrap, wrap_ok := resolve_text_warp(config.wrap, state, event); wrap_ok {
 		config.wrap = wrap
-	}
-	if overflow, overflow_ok := resolve_overflow(config.overflow, state, event); overflow_ok {
-		config.overflow = overflow
 	}
 	if overflow, overflow_ok := resolve_overflow(config.overflow_x, state, event); overflow_ok {
 		config.overflow_x = overflow
@@ -354,6 +350,12 @@ finalize_resolved_procs :: proc(
 	}
 	if position, position_ok := resolve_position(config.position, state, event); position_ok {
 		config.position = position
+	}
+	if fit, fit_ok := resolve_texture_fit(config.texture_fit, state, event); fit_ok {
+		config.texture_fit = fit
+	}
+	if pos, pos_ok := resolve_texture_pos(config.texture_pos, state, event); pos_ok {
+		config.texture_pos = pos
 	}
 }
 
@@ -379,27 +381,6 @@ resolve_text_align :: proc(
 	return align, true
 }
 
-@(private)
-resolve_aspect_ratio :: proc(
-	aspect_ratio: Aspect_Ratio,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> (
-	Aspect_Ratio,
-	bool,
-) {
-	#partial switch v in aspect_ratio {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Aspect_Ratio:
-		ui_state := to_ui_state(state)
-		ui_event := to_ui_event(state)
-		return resolve_aspect_ratio(v(ui_state, ui_event), state, event)
-	}
-	#partial switch _ in aspect_ratio {
-	case struct{}:
-		return {}, false
-	}
-	return aspect_ratio, true
-}
 
 @(private)
 resolve_text_warp :: proc(
@@ -490,12 +471,6 @@ resolve_widget_config :: proc(
 
 	style := Resolved_Widget_Style {
 		align          = resolve_cfg(Text_Align, decl.align, parent.align, theme.align),
-		aspect_ratio   = resolve_cfg(
-			Aspect_Ratio,
-			decl.aspect_ratio,
-			parent.aspect_ratio,
-			theme.aspect_ratio,
-		),
 		auto_focus     = resolve_cfg(bool, decl.auto_focus, parent.auto_focus, theme.auto_focus),
 		background     = resolve_cfg_colors(decl.background, parent.background, state, event),
 		border         = resolve_cfg(Border, decl.border, parent.border, theme.border),
@@ -559,6 +534,18 @@ resolve_widget_config :: proc(
 		z_index        = resolve_cfg(f32, decl.z_index, parent.z_index, theme.z_index),
 		position       = resolve_cfg(Position, decl.position, parent.position, theme.position),
 		self           = resolve_cfg_self(decl.self, state, event),
+		texture_fit    = resolve_cfg(
+			Style_Texture_Fit,
+			decl.texture_fit,
+			parent.texture_fit,
+			theme.texture_fit,
+		),
+		texture_pos    = resolve_cfg(
+			Style_Texture_Pos,
+			decl.texture_pos,
+			parent.texture_pos,
+			theme.texture_pos,
+		),
 	}
 
 	resolved := Resolved_Widget_Config {

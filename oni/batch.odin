@@ -1,6 +1,7 @@
 package oni
 
 import "core:fmt"
+import "core:math"
 import "core:mem"
 import sdl "vendor:sdl3"
 
@@ -151,7 +152,14 @@ batch_current_clip :: proc() -> Rect {
 	} else {
 		clip = state.gpu_state.batch.clip_stack[len(state.gpu_state.batch.clip_stack) - 1]
 	}
-	return view_transform_rect(clip)
+	clip = view_transform_rect(clip)
+	viewport := Rect {
+		0,
+		0,
+		f32(state.gpu_state.batch.dpi.logical_w),
+		f32(state.gpu_state.batch.dpi.logical_h),
+	}
+	return rect_intersect(clip, viewport)
 }
 
 batch_check_key :: proc(texture_id: Asset_Id) {
@@ -203,7 +211,10 @@ batch_push_vertex :: proc(
 	radii: [4]f32,
 	border: Bd,
 	mode: Draw_Mode,
+	tex_clip: bool = false,
 ) {
+	tex_clip_flag: f32 = 0
+	if tex_clip do tex_clip_flag = 1
 	append(
 		&state.gpu_state.batch.vertices,
 		UI_Vertex {
@@ -214,7 +225,7 @@ batch_push_vertex :: proc(
 			border_color = border_color,
 			rect_size = rect_size,
 			radii = radii,
-			params = {0, draw_mode_f32(mode)},
+			params = {tex_clip_flag, draw_mode_f32(mode)},
 			border = {border.t, border.b, border.l, border.r},
 		},
 	)
@@ -230,6 +241,7 @@ batch_push_quad :: proc(
 	radii: [4]f32,
 	border: Bd,
 	mode: Draw_Mode,
+	tex_clip: bool = false,
 ) {
 	if !batch_ensure_capacity(4) do return
 
@@ -248,6 +260,7 @@ batch_push_quad :: proc(
 			radii,
 			border,
 			mode,
+			tex_clip,
 		)
 	}
 	batch_push_indices(base)
@@ -264,11 +277,31 @@ batch_push_axis_quad :: proc(
 	mode: Draw_Mode,
 ) {
 	screen := view_transform_rect(r)
+	u0, v0 := uv_rect.x, uv_rect.y
+	u1, v1 := uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h
+
+	#partial switch mode {
+	case .Textured, .Textured_Rounded:
+		clip := batch_current_clip()
+		visible := rect_intersect(screen, clip)
+		if visible.w <= 0 || visible.h <= 0 do return
+
+		if screen.w > 0 && screen.h > 0 {
+			fx0 := (visible.x - screen.x) / screen.w
+			fy0 := (visible.y - screen.y) / screen.h
+			fx1 := fx0 + visible.w / screen.w
+			fy1 := fy0 + visible.h / screen.h
+			u0 = uv_rect.x + uv_rect.w * fx0
+			v0 = uv_rect.y + uv_rect.h * fy0
+			u1 = uv_rect.x + uv_rect.w * fx1
+			v1 = uv_rect.y + uv_rect.h * fy1
+		}
+		screen = visible
+	}
+
 	x0, y0 := screen.x, screen.y
 	x1, y1 := screen.x + screen.w, screen.y + screen.h
 	screen_size := Vec2{screen.w, screen.h}
-	u0, v0 := uv_rect.x, uv_rect.y
-	u1, v1 := uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h
 
 	corners := [4]Vec2{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
 	rect_local := [4]Vec2{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
@@ -338,16 +371,22 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 }
 
 clip_to_scissor :: proc(clip: Rect, dpi: Dpi_Info) -> sdl.Rect {
+	if clip.w <= 0 || clip.h <= 0 do return {0, 0, 0, 0}
+
 	scale := dpi.scale
 	if scale <= 0 do scale = 1
 
-	x := max(i32(clip.x * scale), 0)
-	y := max(i32(clip.y * scale), 0)
-	w := max(i32(clip.w * scale), 0)
-	h := max(i32(clip.h * scale), 0)
+	x := i32(math.floor(clip.x * scale + 0.5))
+	y := i32(math.floor(clip.y * scale + 0.5))
+	w := i32(math.floor(clip.w * scale + 0.5))
+	h := i32(math.floor(clip.h * scale + 0.5))
+
+	if w <= 0 || h <= 0 do return {0, 0, 0, 0}
 
 	max_w := dpi.drawable_w - x
 	max_h := dpi.drawable_h - y
+	if max_w < 0 do max_w = 0
+	if max_h < 0 do max_h = 0
 	if w > max_w do w = max_w
 	if h > max_h do h = max_h
 

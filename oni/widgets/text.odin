@@ -75,7 +75,6 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 		max_w = props.max_w,
 		align = props.align,
 		justify = props.justify,
-		aspect_ratio = props.aspect_ratio,
 		auto_focus = props.auto_focus,
 		border = props.border,
 		border_color = props.border_color,

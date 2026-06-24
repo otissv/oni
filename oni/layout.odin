@@ -384,6 +384,10 @@ layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.max_w = max_w
 }
 
+layout_set_measure_size :: proc(node: ^Layout_Node, size: Vec2) {
+	node.desired = size
+}
+
 layout_pop_node :: proc() {
 	if len(state.ui.layout.node_stack) == 0 do return
 

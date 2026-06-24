@@ -19,6 +19,15 @@ rect_contains :: proc(r: Rect, p: Vec2) -> bool {
 	return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
 }
 
+rect_intersect :: proc(a, b: Rect) -> Rect {
+	x0 := max(a.x, b.x)
+	y0 := max(a.y, b.y)
+	x1 := min(a.x + a.w, b.x + b.w)
+	y1 := min(a.y + a.h, b.y + b.h)
+	if x1 <= x0 || y1 <= y0 do return {}
+	return {x0, y0, x1 - x0, y1 - y0}
+}
+
 draw_record_begin :: proc(dpi: Dpi_Info) {
 	state.gpu_state.batch.dpi = dpi
 }
@@ -219,4 +228,84 @@ draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 25
 	texture := atlas_region_handle(region)
 	src := Rect{region.x, region.y, region.w, region.h}
 	draw_texture(texture, src, dst, tint, {})
+}
+
+@(private)
+texture_content_uv :: proc(px, py: f32, image_dst, src: Rect, tex_w, tex_h: f32) -> Vec2 {
+	if image_dst.w <= 0 || image_dst.h <= 0 || tex_w <= 0 || tex_h <= 0 do return {0, 0}
+	return {
+		(src.x + (px - image_dst.x) / image_dst.w * src.w) / tex_w,
+		(src.y + (py - image_dst.y) / image_dst.h * src.h) / tex_h,
+	}
+}
+
+@(private)
+texture_image_insets :: proc(content, image_dst: Rect) -> Bd {
+	return {
+		t = image_dst.y - content.y,
+		b = (content.y + content.h) - (image_dst.y + image_dst.h),
+		l = image_dst.x - content.x,
+		r = (content.x + content.w) - (image_dst.x + image_dst.w),
+	}
+}
+
+draw_texture_fitted :: proc(
+	texture: Texture_Handle,
+	src, content, image_dst: Rect,
+	tint: RGBA,
+	radius: Radius_corners,
+) {
+	if texture.w <= 0 || texture.h <= 0 do return
+	if content.w <= 0 || content.h <= 0 do return
+
+	scale := view_artboard_zoom()
+	screen_radii := [4]f32 {
+		radius.tl * scale,
+		radius.tr * scale,
+		radius.br * scale,
+		radius.bl * scale,
+	}
+
+	tw, th := texture.w, texture.h
+	screen := view_transform_rect(content)
+	clip := batch_current_clip()
+	visible := rect_intersect(screen, clip)
+	if visible.w <= 0 || visible.h <= 0 do return
+
+	x0, y0 := visible.x, visible.y
+	x1, y1 := visible.x + visible.w, visible.y + visible.h
+	corners_screen := [4]Vec2{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+
+	uvs: [4]Vec2
+	local_uvs: [4]Vec2
+	for i in 0 ..< 4 {
+		logical := draw_space_to_logical(corners_screen[i])
+		uvs[i] = texture_content_uv(logical.x, logical.y, image_dst, src, tw, th)
+		local_uvs[i] = {
+			(logical.x - content.x) / content.w,
+			(logical.y - content.y) / content.h,
+		}
+	}
+
+	insets := texture_image_insets(content, image_dst)
+	use_image_clip :=
+		insets.t > 0.001 ||
+		insets.b > 0.001 ||
+		insets.l > 0.001 ||
+		insets.r > 0.001
+
+	state.gpu_state.batch.dpi = state.dpi
+	batch_check_key(texture.id)
+	batch_push_quad(
+		corners_screen,
+		uvs,
+		local_uvs,
+		tint,
+		{},
+		{screen.w, screen.h},
+		screen_radii,
+		insets,
+		.Textured_Rounded,
+		use_image_clip,
+	)
 }

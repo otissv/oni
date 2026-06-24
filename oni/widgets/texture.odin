@@ -5,48 +5,51 @@ import set "../set"
 import sdl "vendor:sdl3"
 
 
-Image_Config :: oni.Widget_Config
-Image_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
-Image_Event :: oni.Widget_Event(Image_State)
+Texture_Config :: oni.Widget_Config
+Texture_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
+Texture_Event :: oni.Widget_Event(Texture_State)
 
-Image_Props :: struct {
-	config:            Image_Config,
+Texture_Props :: struct {
+	config:            Texture_Config,
 	texture:           oni.Texture_Handle,
 	src, dst:          oni.Rect,
 	tint:              oni.Colors,
-	child:             proc(state: Image_State),
-	on_focus:          proc(event: Image_Event),
-	on_blur:           proc(event: Image_Event),
-	on_mouse_enter:    proc(event: Image_Event),
-	on_mouse_leave:    proc(event: Image_Event),
-	on_mouse_pressed:  proc(event: Image_Event),
-	on_mouse_down:     proc(event: Image_Event),
-	on_mouse_released: proc(event: Image_Event),
-	on_mouse_move:     proc(event: Image_Event),
-	on_click:          proc(event: Image_Event),
-	on_contextmenu:    proc(event: Image_Event),
-	on_key_pressed:    proc(event: Image_Event),
-	on_key_down:       proc(event: Image_Event),
-	on_key_released:   proc(event: Image_Event),
+	alt:               string,
+	texture_fit:       oni.Cfg(oni.Style_Texture_Fit),
+	texture_pos:       oni.Cfg(oni.Style_Texture_Pos),
+	child:             proc(state: Texture_State),
+	on_focus:          proc(event: Texture_Event),
+	on_blur:           proc(event: Texture_Event),
+	on_mouse_enter:    proc(event: Texture_Event),
+	on_mouse_leave:    proc(event: Texture_Event),
+	on_mouse_pressed:  proc(event: Texture_Event),
+	on_mouse_down:     proc(event: Texture_Event),
+	on_mouse_released: proc(event: Texture_Event),
+	on_mouse_move:     proc(event: Texture_Event),
+	on_click:          proc(event: Texture_Event),
+	on_contextmenu:    proc(event: Texture_Event),
+	on_key_pressed:    proc(event: Texture_Event),
+	on_key_down:       proc(event: Texture_Event),
+	on_key_released:   proc(event: Texture_Event),
 }
 
 
 image_event :: proc(
-	state: Image_State,
+	state: Texture_State,
 	mouse_button: u8 = 0,
 	key: oni.Scancode = oni.Scancode(0),
-) -> Image_Event {
+) -> Texture_Event {
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
-image_theme_base :: proc(state: ^Image_State) -> Image_Config {
+image_theme_base :: proc(state: ^Texture_State) -> Texture_Config {
 	color := oni.Color.Foreground
 
 	if state.is_disabled {
 		color = oni.Color.Muted
 	}
 
-	return Image_Config {
+	return Texture_Config {
 		kind = .RECT,
 		font = set.Font(oni.theme.font_body),
 		font_size = set.F32(oni.theme.font_body.size_px),
@@ -59,21 +62,74 @@ image_theme_base :: proc(state: ^Image_State) -> Image_Config {
 	}
 }
 
-image_config :: proc(props: Image_Props, state: ^Image_State) -> oni.Resolved_Widget_Config {
+image_config :: proc(props: Texture_Props, state: ^Texture_State) -> oni.Resolved_Widget_Config {
 	event := image_event(state^)
 
 	base := image_theme_base(state)
 	override := props.config
+	if props.texture_fit.mode != .Unset do override.texture_fit = props.texture_fit
+	if props.texture_pos.mode != .Unset do override.texture_pos = props.texture_pos
 	return oni.resolve_widget_config(base, override, state, event)
 }
 
 @(private)
-image_refresh_merged :: proc(props: Image_Props, state: ^Image_State) -> Image_Event {
+image_refresh_merged :: proc(props: Texture_Props, state: ^Texture_State) -> Texture_Event {
 	state.config = image_config(props, state)
 	return image_event(state^)
 }
 
-Image :: proc(props: Image_Props) {
+@(private)
+texture_src_size :: proc(props: Texture_Props) -> (w, h: f32) {
+	src := props.src
+	if src.w > 0 || src.h > 0 {
+		return src.w, src.h
+	}
+	if props.texture.w > 0 && props.texture.h > 0 {
+		return props.texture.w, props.texture.h
+	}
+	return 0, 0
+}
+
+@(private)
+texture_measure_size :: proc(
+	props: Texture_Props,
+	config: oni.Resolved_Widget_Config,
+	state: ^Texture_State,
+	event: Texture_Event,
+) -> oni.Vec2 {
+	src_w, src_h := texture_src_size(props)
+	if src_w <= 0 || src_h <= 0 do return {}
+
+	width_auto := !oni.length_is_definite(config.width)
+	height_auto := !oni.length_is_definite(config.height)
+	if !width_auto && !height_auto do return {}
+
+	fit := oni.Texture_Fit.FILL
+	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, state, event); fit_ok {
+		fit = resolved_fit
+	}
+
+	needs_intrinsic := false
+	switch fit {
+	case .NONE, .SCALE_DOWN:
+		needs_intrinsic = true
+	case .FILL, .CONTAIN, .COVER:
+		needs_intrinsic = width_auto || height_auto
+	}
+	if !needs_intrinsic do return {}
+
+	padding, _ := oni.resolve_padding_value(config.padding)
+	border, _ := oni.resolve_border_value(config.border)
+	inset_w := padding.l + padding.r + border.l + border.r
+	inset_h := padding.t + padding.b + border.t + border.b
+
+	measure: oni.Vec2
+	if width_auto do measure.x = src_w + inset_w
+	if height_auto do measure.y = src_h + inset_h
+	return measure
+}
+
+Texture :: proc(props: Texture_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)
 	layout_label := cfg.id != "" ? cfg.id : key
@@ -88,7 +144,7 @@ Image :: proc(props: Image_Props) {
 		oni.w_ctx.auto_focused_id = key
 	}
 
-	state := Image_State {
+	state := Texture_State {
 		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
@@ -98,7 +154,17 @@ Image :: proc(props: Image_Props) {
 	child := props.child
 
 	if oni.ui_pass() == .Layout {
-		oni.Children(child, layout_id, config, state)
+		oni.ui_push_scope(layout_id)
+		node := oni.layout_push_node(layout_id, config)
+		if measure := texture_measure_size(props, config, &state, event);
+		   measure.x > 0 || measure.y > 0 {
+			oni.layout_set_measure_size(node, measure)
+		}
+		oni.ui_push_style(oni.style_child_context(config))
+		if child != nil do child(state)
+		oni.ui_pop_style()
+		oni.layout_pop_node()
+		oni.ui_pop_scope()
 		return
 	}
 
@@ -260,6 +326,12 @@ Image :: proc(props: Image_Props) {
 		border = resolved_border
 	}
 
+	padding: oni.Pd
+	if resolved_padding, padding_ok := oni.resolve_padding(config.padding, &state, event);
+	   padding_ok {
+		padding = resolved_padding
+	}
+
 	border_color: oni.RGBA
 	if resolved_border_color, border_color_ok := oni.to_rgba(config.border_color, &state, event);
 	   border_color_ok {
@@ -272,16 +344,55 @@ Image :: proc(props: Image_Props) {
 	}
 
 	src := props.src
-	if src.w == 0 && src.h == 0 && props.texture.w > 0 && props.texture.h > 0 {
-		src = {0, 0, props.texture.w, props.texture.h}
+	if src.w == 0 && src.h == 0 {
+		src_w, src_h := texture_src_size(props)
+		if src_w > 0 && src_h > 0 {
+			src = {0, 0, src_w, src_h}
+		}
 	}
+
+	content := oni.layout_inner_rect(rect, border, padding)
+	container := content
+	if props.dst.w > 0 || props.dst.h > 0 {
+		container = props.dst
+		if container.w == 0 do container.w = content.w
+		if container.h == 0 do container.h = content.h
+		if container.x == 0 && container.y == 0 {
+			container.x = content.x
+			container.y = content.y
+		}
+	}
+
+	fit := oni.Texture_Fit.FILL
+	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, &state, event); fit_ok {
+		fit = resolved_fit
+	}
+
+	pos := oni.Resolved_Texture_Pos{0.5, 0.5, 0, 0}
+	if resolved_pos, pos_ok := oni.resolve_texture_pos(config.texture_pos, &state, event); pos_ok {
+		pos = resolved_pos
+	}
+
+	dst := container
+	src, dst = oni.texture_fit_rects(src, container, fit, pos)
 
 	tint := oni.RGBA{255, 255, 255, 255}
 	if resolved_tint, tint_ok := oni.to_rgba(props.tint, &state, event); tint_ok {
 		tint = resolved_tint
 	}
 
-	oni.Draw_texture(props.texture, src, rect, tint, background, radius, border, border_color)
+	has_chrome :=
+		background.a > 0 ||
+		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0) ||
+		radius.tl > 0 ||
+		radius.tr > 0 ||
+		radius.bl > 0 ||
+		radius.br > 0
+
+	if has_chrome {
+		oni.Draw_Rectangle(rect, background, radius, border, border_color)
+	}
+	oni.draw_texture_fitted(props.texture, src, content, dst, tint, radius)
 
 	oni.Children(child, layout_id, config, state)
 }

@@ -279,7 +279,7 @@ Button :: proc(props: Button_Props) {
 		radius = resolved_radius
 	}
 
-	oni.Draw_rectangle(rect, background, radius, border, border_color)
+	oni.Draw_Rectangle(rect, background, radius, border, border_color)
 
 	oni.Children(child, layout_id, config, state)
 }

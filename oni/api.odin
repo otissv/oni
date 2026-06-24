@@ -34,10 +34,11 @@ Dpi_Sync :: dpi_sync
 Log_Error :: log_error
 Log_Errorf :: log_errorf
 
-Draw_rectangle :: draw_rect
-Draw_line_segment :: draw_line
-Draw_texture :: draw_texture
-Draw_atlas :: draw_atlas_region
+Draw_Rectangle :: draw_rect
+Draw_Line :: draw_line
+Draw_Texture :: draw_texture
+Draw_Texture_Fitted :: draw_texture_fitted
+Draw_Atlas :: draw_atlas_region
 
 Begin_Artboard :: begin_artboard
 End_Artboard :: end_artboard

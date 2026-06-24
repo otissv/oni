@@ -597,3 +597,153 @@ widget_shaped :: proc(id: Widget_ID) -> ^Shaped_Text {
 
 	return &entry.shaped
 }
+
+@(private)
+texture_pos_normalize :: proc(v: f32) -> f32 {
+	if v > 1 do return v * 0.01
+	return v
+}
+
+resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Texture_Pos, ok: bool) {
+	switch v in p {
+	case struct{}:
+		return {0.5, 0.5, 0, 0}, true
+	case Texture_Pos:
+		pos = {0.5, 0.5, 0, 0}
+		if v.l > 0 && v.r == 0 {
+			pos.x = 0
+			pos.offset_x = v.l
+		} else if v.r > 0 && v.l == 0 {
+			pos.x = 1
+			pos.offset_x = -v.r
+		}
+		if v.t > 0 && v.b == 0 {
+			pos.y = 0
+			pos.offset_y = v.t
+		} else if v.b > 0 && v.t == 0 {
+			pos.y = 1
+			pos.offset_y = -v.b
+		}
+		return pos, true
+	case Texture_Pos_X_Y:
+		return {texture_pos_normalize(v.x), texture_pos_normalize(v.y), 0, 0}, true
+	case Resolved_Texture_Pos:
+		return v, true
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Pos:
+		return {}, false
+	}
+
+	return {}, false
+}
+
+resolve_texture_pos :: proc(
+	p: Style_Texture_Pos,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	pos: Resolved_Texture_Pos,
+	ok: bool,
+) {
+	#partial switch v in p {
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Pos:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_texture_pos_value(Style_Texture_Pos(v(ui_state, ui_event)))
+	}
+
+	return resolve_texture_pos_value(p)
+}
+
+resolve_texture_fit_value :: proc(f: Style_Texture_Fit) -> (fit: Texture_Fit, ok: bool) {
+	switch v in f {
+	case struct{}:
+		return {}, false
+	case Texture_Fit:
+		return v, true
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Fit:
+		return {}, false
+	}
+
+	return {}, false
+}
+
+resolve_texture_fit :: proc(
+	f: Style_Texture_Fit,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	fit: Texture_Fit,
+	ok: bool,
+) {
+	#partial switch v in f {
+	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Fit:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_texture_fit_value(Style_Texture_Fit(v(ui_state, ui_event)))
+	}
+
+	return resolve_texture_fit_value(f)
+}
+
+texture_fit_rects :: proc(
+	src, container: Rect,
+	fit: Texture_Fit,
+	pos: Resolved_Texture_Pos,
+) -> (
+	out_src: Rect,
+	out_dst: Rect,
+) {
+	out_src = src
+	out_dst = container
+
+	iw := src.w
+	ih := src.h
+	cw := container.w
+	ch := container.h
+	if iw <= 0 || ih <= 0 || cw <= 0 || ch <= 0 do return
+
+	px := pos.x
+	py := pos.y
+	ox_off := pos.offset_x
+	oy_off := pos.offset_y
+
+	switch fit {
+	case .FILL:
+		return
+	case .CONTAIN:
+		scale := min(cw / iw, ch / ih)
+		dw := iw * scale
+		dh := ih * scale
+		ox := (cw - dw) * px + ox_off
+		oy := (ch - dh) * py + oy_off
+		out_dst = Rect{container.x + ox, container.y + oy, dw, dh}
+	case .COVER:
+		scale := max(cw / iw, ch / ih)
+		sw := cw / scale
+		sh := ch / scale
+		excess_w := iw - sw
+		excess_h := ih - sh
+		sx := src.x + excess_w * px - ox_off / scale
+		sy := src.y + excess_h * py - oy_off / scale
+		out_src = Rect{sx, sy, sw, sh}
+	case .NONE:
+		ox := (cw - iw) * px + ox_off
+		oy := (ch - ih) * py + oy_off
+		out_dst = Rect{container.x + ox, container.y + oy, iw, ih}
+	case .SCALE_DOWN:
+		if iw <= cw && ih <= ch {
+			ox := (cw - iw) * px + ox_off
+			oy := (ch - ih) * py + oy_off
+			out_dst = Rect{container.x + ox, container.y + oy, iw, ih}
+		} else {
+			scale := min(cw / iw, ch / ih)
+			dw := iw * scale
+			dh := ih * scale
+			ox := (cw - dw) * px + ox_off
+			oy := (ch - dh) * py + oy_off
+			out_dst = Rect{container.x + ox, container.y + oy, dw, dh}
+		}
+	}
+
+	return
+}

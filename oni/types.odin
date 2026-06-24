@@ -125,8 +125,8 @@ Length :: struct {
 Widget_Config :: struct {
 	id:             string,
 	kind:           Widget_Kind,
+	title:          string,
 	align:          Cfg(Text_Align),
-	aspect_ratio:   Cfg(Aspect_Ratio),
 	auto_focus:     Cfg(bool),
 	background:     Cfg(Colors),
 	border:         Cfg(Border),
@@ -160,6 +160,8 @@ Widget_Config :: struct {
 	z_index:        Cfg(f32),
 	position:       Cfg(Position),
 	self:           Cfg(Justify),
+	texture_fit:    Cfg(Style_Texture_Fit),
+	texture_pos:    Cfg(Style_Texture_Pos),
 }
 
 Widget_Text_Flag :: enum {
@@ -170,7 +172,6 @@ Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
 
 Resolved_Widget_Style :: struct {
 	align:          Text_Align,
-	aspect_ratio:   Aspect_Ratio,
 	auto_focus:     bool,
 	background:     Colors,
 	border:         Border,
@@ -205,6 +206,8 @@ Resolved_Widget_Style :: struct {
 	z_index:        f32,
 	position:       Position,
 	self:           Justify_Pos,
+	texture_fit:    Style_Texture_Fit,
+	texture_pos:    Style_Texture_Pos,
 }
 
 Resolved_Widget_Config :: struct {
@@ -431,33 +434,41 @@ Widget_Direction :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction,
 }
 
-
-Aspect_Ratio :: union {
-	struct{},
-	enum {
-		Auto,
-		None,
-	},
-	f32,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Aspect_Ratio,
+Texture_Fit :: enum {
+	FILL,
+	CONTAIN,
+	COVER,
+	SCALE_DOWN,
+	NONE,
 }
 
-Image :: union {
+Style_Texture_Fit :: union {
 	struct{},
-	rawptr,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image,
+	Texture_Fit,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Fit,
 }
 
+Texture_Pos :: struct {
+	t, b, l, r: f32,
+}
 
-// Clip :: union {
-// 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Clip,
-// }
+// percentage 0-1
+Texture_Pos_X_Y :: struct {
+	x, y: f32,
+}
 
-// Transition :: union {
-// 	struct{},
-// 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Transition,
-// }
+Resolved_Texture_Pos :: struct {
+	x, y:               f32,
+	offset_x, offset_y: f32,
+}
 
+Style_Texture_Pos :: union {
+	struct{},
+	Texture_Pos,
+	Texture_Pos_X_Y,
+	Resolved_Texture_Pos,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Pos,
+}
 
 SizingType :: enum {
 	Fit,

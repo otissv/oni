@@ -114,3 +114,8 @@ view_artboard_zoom :: proc() -> f32 {
 	}
 	return 1
 }
+
+draw_space_to_logical :: proc(p: Vec2) -> Vec2 {
+	if draw_current_space() != .Artboard do return p
+	return view_screen_to_world(p)
+}

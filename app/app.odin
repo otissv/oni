@@ -253,7 +253,7 @@ view :: proc() {
 	Panel()
 
 
-	wg.Image(
+	wg.Texture(
 		{
 			texture = image_texture,
 			config = {
@@ -261,12 +261,13 @@ view :: proc() {
 				x            = set.F32(16),
 				y            = set.F32(480),
 				width        = 464,
-				// aspect_ratio
-				height       = 580,
+				height       = 464,
 				background   = set.Colors(oni.theme.palette[.Info]),
 				radius       = set.Radius(10),
 				border       = set.Border(10),
 				border_color = set.Colors(oni.Color.Yellow_500),
+				texture_fit  = set.Texture_Fit(.FILL),
+				texture_pos  = set.Texture_Pos({x = 50, y = 50}), // center
 			},
 		},
 	)
