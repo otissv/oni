@@ -187,8 +187,8 @@ Widget_Config :: struct {
 	z_index:        Cfg(f32),
 	position:       Cfg(Position),
 	self:           Cfg(Justify),
-	texture_fit:    Cfg(Style_Texture_Fit),
-	texture_pos:    Cfg(Style_Texture_Pos),
+	texture_fit:    Cfg(Style_Image_Fit),
+	texture_pos:    Cfg(Style_Image_Pos),
 }
 
 Widget_Text_Flag :: enum {
@@ -236,8 +236,8 @@ Resolved_Widget_Style :: struct {
 	z_index:        f32,
 	position:       Position,
 	self:           Justify_Pos,
-	texture_fit:    Style_Texture_Fit,
-	texture_pos:    Style_Texture_Pos,
+	texture_fit:    Style_Image_Fit,
+	texture_pos:    Style_Image_Pos,
 }
 
 /*
@@ -493,7 +493,7 @@ Widget_Direction :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction,
 }
 
-Texture_Fit :: enum {
+Image_Fit :: enum {
 	FILL,
 	CONTAIN,
 	COVER,
@@ -501,40 +501,40 @@ Texture_Fit :: enum {
 	NONE,
 }
 
-Style_Texture_Fit :: union {
+Style_Image_Fit :: union {
 	struct{},
-	Texture_Fit,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Fit,
+	Image_Fit,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Fit,
 }
 
 /*
-Texture inset positioning using top/bottom/left/right offsets.
+Image inset positioning using top/bottom/left/right offsets.
 */
-Texture_Pos :: struct {
+Image_Pos :: struct {
 	t, b, l, r: f32,
 }
 
 /*
-Texture anchor position as normalized x/y percentages in 0-1.
+Image anchor position as normalized x/y percentages in 0-1.
 */
-Texture_Pos_X_Y :: struct {
+Image_Pos_X_Y :: struct {
 	x, y: f32,
 }
 
 /*
 Fully resolved texture position with anchor and pixel offsets.
 */
-Resolved_Texture_Pos :: struct {
+Resolved_Image_Pos :: struct {
 	x, y:               f32,
 	offset_x, offset_y: f32,
 }
 
-Style_Texture_Pos :: union {
+Style_Image_Pos :: union {
 	struct{},
-	Texture_Pos,
-	Texture_Pos_X_Y,
-	Resolved_Texture_Pos,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Pos,
+	Image_Pos,
+	Image_Pos_X_Y,
+	Resolved_Image_Pos,
+	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Pos,
 }
 
 SizingType :: enum {

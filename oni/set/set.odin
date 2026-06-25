@@ -114,20 +114,20 @@ Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 /*
 Sets a texture-fit style config field to an explicit value.
 */
-Texture_Fit :: proc(value: oni.Texture_Fit) -> oni.Cfg(oni.Style_Texture_Fit) {
-	return cfg_value(oni.Style_Texture_Fit(value))
+Image_Fit :: proc(value: oni.Image_Fit) -> oni.Cfg(oni.Style_Image_Fit) {
+	return cfg_value(oni.Style_Image_Fit(value))
 }
 
 /*
 Sets a texture position config field from x/y anchor values.
 */
-Texture_Pos :: proc(value: oni.Texture_Pos_X_Y) -> oni.Cfg(oni.Style_Texture_Pos) {
-	return cfg_value(oni.Style_Texture_Pos(value))
+Image_Pos :: proc(value: oni.Image_Pos_X_Y) -> oni.Cfg(oni.Style_Image_Pos) {
+	return cfg_value(oni.Style_Image_Pos(value))
 }
 
 /*
 Sets a texture position config field from edge-based anchor values.
 */
-Texture_Pos_Edges :: proc(value: oni.Texture_Pos) -> oni.Cfg(oni.Style_Texture_Pos) {
-	return cfg_value(oni.Style_Texture_Pos(value))
+Image_Pos_Edges :: proc(value: oni.Image_Pos) -> oni.Cfg(oni.Style_Image_Pos) {
+	return cfg_value(oni.Style_Image_Pos(value))
 }

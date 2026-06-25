@@ -5,59 +5,59 @@ import set "../set"
 import sdl "vendor:sdl3"
 
 
-Texture_Config :: oni.Widget_Config
-Texture_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
-Texture_Event :: oni.Widget_Event(Texture_State)
+Image_Config :: oni.Widget_Config
+Image_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
+Image_Event :: oni.Widget_Event(Image_State)
 
 /*
-Texture widget props: source rect, tint, fit/pos overrides, and event handlers.
+Image widget props: source rect, tint, fit/pos overrides, and event handlers.
 */
-Texture_Props :: struct {
-	config:            Texture_Config,
+Image_Props :: struct {
+	config:            Image_Config,
 	texture:           oni.Texture_Handle,
 	src, dst:          oni.Rect,
 	tint:              oni.Colors,
 	alt:               string,
-	texture_fit:       oni.Cfg(oni.Style_Texture_Fit),
-	texture_pos:       oni.Cfg(oni.Style_Texture_Pos),
-	child:             proc(state: Texture_State),
-	on_focus:          proc(event: Texture_Event),
-	on_blur:           proc(event: Texture_Event),
-	on_mouse_enter:    proc(event: Texture_Event),
-	on_mouse_leave:    proc(event: Texture_Event),
-	on_mouse_pressed:  proc(event: Texture_Event),
-	on_mouse_down:     proc(event: Texture_Event),
-	on_mouse_released: proc(event: Texture_Event),
-	on_mouse_move:     proc(event: Texture_Event),
-	on_click:          proc(event: Texture_Event),
-	on_contextmenu:    proc(event: Texture_Event),
-	on_key_pressed:    proc(event: Texture_Event),
-	on_key_down:       proc(event: Texture_Event),
-	on_key_released:   proc(event: Texture_Event),
+	texture_fit:       oni.Cfg(oni.Style_Image_Fit),
+	texture_pos:       oni.Cfg(oni.Style_Image_Pos),
+	child:             proc(state: Image_State),
+	on_focus:          proc(event: Image_Event),
+	on_blur:           proc(event: Image_Event),
+	on_mouse_enter:    proc(event: Image_Event),
+	on_mouse_leave:    proc(event: Image_Event),
+	on_mouse_pressed:  proc(event: Image_Event),
+	on_mouse_down:     proc(event: Image_Event),
+	on_mouse_released: proc(event: Image_Event),
+	on_mouse_move:     proc(event: Image_Event),
+	on_click:          proc(event: Image_Event),
+	on_contextmenu:    proc(event: Image_Event),
+	on_key_pressed:    proc(event: Image_Event),
+	on_key_down:       proc(event: Image_Event),
+	on_key_released:   proc(event: Image_Event),
 }
 
 /*
 Builds a texture event carrying the current state and optional input metadata.
 */
 image_event :: proc(
-	state: Texture_State,
+	state: Image_State,
 	mouse_button: u8 = 0,
 	key: oni.Scancode = oni.Scancode(0),
-) -> Texture_Event {
+) -> Image_Event {
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
 /*
 Returns the default texture widget theme config, muted when the widget is disabled.
 */
-image_theme_base :: proc(state: ^Texture_State) -> Texture_Config {
+image_theme_base :: proc(state: ^Image_State) -> Image_Config {
 	color := oni.Color.Foreground
 
 	if state.is_disabled {
 		color = oni.Color.Muted
 	}
 
-	return Texture_Config {
+	return Image_Config {
 		kind = .RECT,
 		font = set.Font(oni.theme.font_body),
 		font_size = set.F32(oni.theme.font_body.size_px),
@@ -75,7 +75,7 @@ Merges theme defaults, prop overrides, and live state into a resolved config.
 
 Applies explicit texture_fit and texture_pos props when they are set.
 */
-image_config :: proc(props: Texture_Props, state: ^Texture_State) -> oni.Resolved_Widget_Config {
+image_config :: proc(props: Image_Props, state: ^Image_State) -> oni.Resolved_Widget_Config {
 	event := image_event(state^)
 
 	base := image_theme_base(state)
@@ -89,7 +89,7 @@ image_config :: proc(props: Texture_Props, state: ^Texture_State) -> oni.Resolve
 Refreshes merged config on state and returns a fresh texture event snapshot.
 */
 @(private)
-image_refresh_merged :: proc(props: Texture_Props, state: ^Texture_State) -> Texture_Event {
+image_refresh_merged :: proc(props: Image_Props, state: ^Image_State) -> Image_Event {
 	state.config = image_config(props, state)
 	return image_event(state^)
 }
@@ -98,7 +98,7 @@ image_refresh_merged :: proc(props: Texture_Props, state: ^Texture_State) -> Tex
 Resolves the intrinsic source size from props.src or the loaded texture handle.
 */
 @(private)
-texture_src_size :: proc(props: Texture_Props) -> (w, h: f32) {
+texture_src_size :: proc(props: Image_Props) -> (w, h: f32) {
 	src := props.src
 	if src.w > 0 || src.h > 0 {
 		return src.w, src.h
@@ -116,10 +116,10 @@ Accounts for fit mode, padding, and border when width or height is indefinite.
 */
 @(private)
 texture_measure_size :: proc(
-	props: Texture_Props,
+	props: Image_Props,
 	config: oni.Resolved_Widget_Config,
-	state: ^Texture_State,
-	event: Texture_Event,
+	state: ^Image_State,
+	event: Image_Event,
 ) -> oni.Vec2 {
 	src_w, src_h := texture_src_size(props)
 	if src_w <= 0 || src_h <= 0 do return {}
@@ -128,7 +128,7 @@ texture_measure_size :: proc(
 	height_auto := !oni.length_is_definite(config.height)
 	if !width_auto && !height_auto do return {}
 
-	fit := oni.Texture_Fit.FILL
+	fit := oni.Image_Fit.FILL
 	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, state, event); fit_ok {
 		fit = resolved_fit
 	}
@@ -158,7 +158,7 @@ Renders a fitted texture inside styled chrome with full pointer interaction.
 
 Runs layout on the layout pass and draws background, border, and image on draw.
 */
-Texture :: proc(props: Texture_Props) {
+Image :: proc(props: Image_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)
 	layout_label := cfg.id != "" ? cfg.id : key
@@ -173,7 +173,7 @@ Texture :: proc(props: Texture_Props) {
 		oni.w_ctx.auto_focused_id = key
 	}
 
-	state := Texture_State {
+	state := Image_State {
 		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
@@ -392,12 +392,12 @@ Texture :: proc(props: Texture_Props) {
 		}
 	}
 
-	fit := oni.Texture_Fit.FILL
+	fit := oni.Image_Fit.FILL
 	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, &state, event); fit_ok {
 		fit = resolved_fit
 	}
 
-	pos := oni.Resolved_Texture_Pos{0.5, 0.5, 0, 0}
+	pos := oni.Resolved_Image_Pos{0.5, 0.5, 0, 0}
 	if resolved_pos, pos_ok := oni.resolve_texture_pos(config.texture_pos, &state, event); pos_ok {
 		pos = resolved_pos
 	}

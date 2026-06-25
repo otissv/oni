@@ -345,8 +345,8 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(f32, &result.z_index, override.z_index)
 	merge_cfg(Position, &result.position, override.position)
 	merge_cfg(Justify, &result.self, override.self)
-	merge_cfg(Style_Texture_Fit, &result.texture_fit, override.texture_fit)
-	merge_cfg(Style_Texture_Pos, &result.texture_pos, override.texture_pos)
+	merge_cfg(Style_Image_Fit, &result.texture_fit, override.texture_fit)
+	merge_cfg(Style_Image_Pos, &result.texture_pos, override.texture_pos)
 
 	return result
 }
@@ -609,13 +609,13 @@ resolve_widget_config :: proc(
 		position       = resolve_cfg(Position, decl.position, parent.position, theme.position),
 		self           = resolve_cfg_self(decl.self, state, event),
 		texture_fit    = resolve_cfg(
-			Style_Texture_Fit,
+			Style_Image_Fit,
 			decl.texture_fit,
 			parent.texture_fit,
 			theme.texture_fit,
 		),
 		texture_pos    = resolve_cfg(
-			Style_Texture_Pos,
+			Style_Image_Pos,
 			decl.texture_pos,
 			parent.texture_pos,
 			theme.texture_pos,

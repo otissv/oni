@@ -253,7 +253,7 @@ view :: proc() {
 	Panel()
 
 
-	wg.Texture(
+	wg.Image(
 		{
 			texture = image_texture,
 			config = {
@@ -266,8 +266,8 @@ view :: proc() {
 				radius       = set.Radius(10),
 				border       = set.Border(10),
 				border_color = set.Colors(oni.Color.Yellow_500),
-				texture_fit  = set.Texture_Fit(.NONE),
-				texture_pos  = set.Texture_Pos({x = 50, y = 50}), // center
+				texture_fit  = set.Image_Fit(.NONE),
+				texture_pos  = set.Image_Pos({x = 50, y = 50}), // center
 			},
 		},
 	)
