@@ -4,10 +4,18 @@ import oni "../oni"
 import "core:fmt"
 import "core:mem"
 
+/*
+App-local state kept alongside the oni engine in persistent memory.
+*/
 App_State :: struct {
 	theme: oni.Theme,
 }
 
+/*
+Root heap allocation shared between the host and hot-reloaded app library.
+
+Holds engine state and app state; layout size is exported for reload detection.
+*/
 Persistent :: struct {
 	engine: oni.State,
 	app:    App_State,
@@ -15,10 +23,21 @@ Persistent :: struct {
 
 persistent: ^Persistent
 
+/*
+Re-binds oni engine and theme globals to the current persistent state.
+
+Call after any operation that may change the persistent pointer, such as
+allocation, hot reload, or realloc.
+*/
 bind :: proc() {
 	oni.Bind(&persistent.engine, &persistent.app.theme)
 }
 
+/*
+Allocates persistent state on first use and binds oni globals.
+
+Safe to call from any exported entry point before touching engine state.
+*/
 ensure_persistent :: proc() {
 	if persistent == nil {
 		persistent = new(Persistent)
@@ -26,6 +45,11 @@ ensure_persistent :: proc() {
 	bind()
 }
 
+/*
+Per-frame app update passed to oni.Run_Frame.
+
+Handles mouse-wheel zoom around the cursor in screen space.
+*/
 app_tick :: proc(dt: f32) {
 	_ = dt
 
@@ -39,6 +63,9 @@ app_tick :: proc(dt: f32) {
 	oni.View_Zoom_By_Screen(mouse, factor)
 }
 
+/*
+Returns the initial SDL window configuration for this app.
+*/
 window_config :: proc() -> oni.Window_Config {
 	return {
 		title = WINDOW_TITLE,
@@ -49,11 +76,21 @@ window_config :: proc() -> oni.Window_Config {
 	}
 }
 
+/*
+Clears app-local state and rebuilds the default theme.
+
+Engine state is preserved; used after realloc failure and full restarts.
+*/
 reset_app_state :: proc() {
 	persistent.app = {}
 	persistent.app.theme = build_theme()
 }
 
+/*
+Creates the SDL window without initializing the GPU runtime.
+
+Exported hot-reload entry point called once by the host before app_init.
+*/
 @(export)
 app_init_window :: proc() {
 	ensure_persistent()
@@ -64,6 +101,11 @@ app_init_window :: proc() {
 	persistent.engine.running = true
 }
 
+/*
+Initializes the GPU runtime and app theme after the window exists.
+
+Exported hot-reload entry point. Sets running to false if init fails.
+*/
 @(export)
 app_init :: proc() {
 	ensure_persistent()
@@ -80,6 +122,11 @@ app_init :: proc() {
 	}
 }
 
+/*
+Runs one frame: input, tick, draw, and present.
+
+Exported hot-reload entry point called each loop iteration by the host.
+*/
 @(export)
 app_update :: proc() {
 	if persistent == nil do return
@@ -87,6 +134,11 @@ app_update :: proc() {
 	oni.Run_Frame(app_tick, app_draw)
 }
 
+/*
+Reports whether the main loop should continue.
+
+Exported hot-reload entry point. Returns false after a failed init or quit.
+*/
 @(export)
 app_should_run :: proc() -> bool {
 	if persistent == nil do return false
@@ -94,6 +146,11 @@ app_should_run :: proc() -> bool {
 	return oni.Should_Run()
 }
 
+/*
+Tears down the GPU runtime and frees persistent state.
+
+Exported hot-reload entry point called when the host exits.
+*/
 @(export)
 app_shutdown :: proc() {
 	if persistent == nil do return
@@ -103,19 +160,41 @@ app_shutdown :: proc() {
 	persistent = nil
 }
 
+/*
+Window teardown hook for the hot-reload API.
+
+The host owns the window across reloads; this export is intentionally empty.
+*/
 @(export)
 app_shutdown_window :: proc() {}
 
+/*
+Returns the heap pointer to persistent state for hot reload.
+
+Exported hot-reload entry point. The host passes this to app_hot_reloaded
+after swapping the shared library.
+*/
 @(export)
 app_memory :: proc() -> rawptr {
 	return persistent
 }
 
+/*
+Returns the size of Persistent for layout-change detection.
+
+Exported hot-reload entry point. A size mismatch triggers realloc on reload.
+*/
 @(export)
 app_memory_size :: proc() -> int {
 	return size_of(Persistent)
 }
 
+/*
+Restores persistent state after the host reloads the app library.
+
+Exported hot-reload entry point. Receives the pointer from app_memory and
+notifies oni so engine resources survive the DLL swap.
+*/
 @(export)
 app_hot_reloaded :: proc(mem: rawptr) {
 	persistent = cast(^Persistent)mem
@@ -123,6 +202,12 @@ app_hot_reloaded :: proc(mem: rawptr) {
 	oni.On_Reload()
 }
 
+/*
+Resets app state while keeping the window and GPU runtime alive.
+
+Exported hot-reload entry point used for full restarts (F6) when memory
+layout is unchanged.
+*/
 @(export)
 app_reset :: proc() {
 	if persistent == nil do return
@@ -131,6 +216,12 @@ app_reset :: proc() {
 	reset_app_state()
 }
 
+/*
+Reallocates persistent state when the struct layout changes.
+
+Exported hot-reload entry point. Migrates engine state into the new block,
+frees the old allocation, and rebuilds app-local state.
+*/
 @(export)
 app_realloc :: proc(new_size: int) {
 	if persistent == nil do return
@@ -156,6 +247,12 @@ app_realloc :: proc(new_size: int) {
 	reset_app_state()
 }
 
+/*
+Reads and clears the force-reload flag (F5).
+
+Exported hot-reload entry point. Prefer peek/consume when the host
+coordinates reload timing.
+*/
 @(export)
 app_force_reload :: proc() -> bool {
 	if persistent == nil do return false
@@ -163,6 +260,12 @@ app_force_reload :: proc() -> bool {
 	return oni.Take_Force_Reload()
 }
 
+/*
+Reads and clears the force-restart flag (F6).
+
+Exported hot-reload entry point. Prefer peek/consume when the host
+coordinates reload timing.
+*/
 @(export)
 app_force_restart :: proc() -> bool {
 	if persistent == nil do return false
@@ -170,6 +273,11 @@ app_force_restart :: proc() -> bool {
 	return oni.Take_Force_Restart()
 }
 
+/*
+Returns whether a hot reload was requested without clearing the flag.
+
+Exported hot-reload entry point used by the host reloader each frame.
+*/
 @(export)
 app_peek_force_reload :: proc() -> bool {
 	if persistent == nil do return false
@@ -177,6 +285,11 @@ app_peek_force_reload :: proc() -> bool {
 	return oni.Peek_Force_Reload()
 }
 
+/*
+Returns whether a full restart was requested without clearing the flag.
+
+Exported hot-reload entry point used by the host reloader each frame.
+*/
 @(export)
 app_peek_force_restart :: proc() -> bool {
 	if persistent == nil do return false
@@ -184,6 +297,11 @@ app_peek_force_restart :: proc() -> bool {
 	return oni.Peek_Force_Restart()
 }
 
+/*
+Clears the force-reload flag after a successful library swap.
+
+Exported hot-reload entry point called by the host reloader.
+*/
 @(export)
 app_consume_force_reload :: proc() {
 	if persistent == nil do return
@@ -191,6 +309,11 @@ app_consume_force_reload :: proc() {
 	oni.Consume_Force_Reload()
 }
 
+/*
+Clears the force-restart flag after a successful library swap.
+
+Exported hot-reload entry point called by the host reloader.
+*/
 @(export)
 app_consume_force_restart :: proc() {
 	if persistent == nil do return
