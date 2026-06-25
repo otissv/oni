@@ -51,10 +51,10 @@ image_event :: proc(
 Returns the default texture widget theme config, muted when the widget is disabled.
 */
 image_theme_base :: proc(state: ^Image_State) -> Image_Config {
-	color := oni.Color.Foreground
+	color := oni.Color.FOREGROUND
 
 	if state.is_disabled {
-		color = oni.Color.Muted
+		color = oni.Color.MUTED
 	}
 
 	return Image_Config {
@@ -80,8 +80,8 @@ image_config :: proc(props: Image_Props, state: ^Image_State) -> oni.Resolved_Wi
 
 	base := image_theme_base(state)
 	override := props.config
-	if props.texture_fit.mode != .Unset do override.texture_fit = props.texture_fit
-	if props.texture_pos.mode != .Unset do override.texture_pos = props.texture_pos
+	if props.texture_fit.mode != .UNSET do override.texture_fit = props.texture_fit
+	if props.texture_pos.mode != .UNSET do override.texture_pos = props.texture_pos
 	return oni.resolve_widget_config(base, override, state, event)
 }
 

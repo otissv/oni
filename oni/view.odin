@@ -142,7 +142,7 @@ Transforms a rect from artboard space to screen space when drawing on the artboa
 Returns the rect unchanged for screen-space drawing.
 */
 view_transform_rect :: proc(r: Rect) -> Rect {
-	if draw_current_space() != .Artboard do return r
+	if draw_current_space() != .ARTBOARD do return r
 	z := view_effective_zoom()
 	if state == nil do return r
 	return {
@@ -159,7 +159,7 @@ Transforms a point from artboard space to screen space when drawing on the artbo
 Returns the point unchanged for screen-space drawing.
 */
 view_transform_point :: proc(p: Vec2) -> Vec2 {
-	if draw_current_space() != .Artboard do return p
+	if draw_current_space() != .ARTBOARD do return p
 	return view_world_to_screen(p)
 }
 
@@ -167,7 +167,7 @@ view_transform_point :: proc(p: Vec2) -> Vec2 {
 Returns the effective artboard zoom when drawing in artboard space, else 1.
 */
 view_artboard_zoom :: proc() -> f32 {
-	if draw_current_space() == .Artboard {
+	if draw_current_space() == .ARTBOARD {
 		return view_effective_zoom()
 	}
 	return 1
@@ -179,6 +179,6 @@ Converts a point from screen to logical artboard coordinates when in artboard sp
 Returns the point unchanged for screen-space drawing.
 */
 draw_space_to_logical :: proc(p: Vec2) -> Vec2 {
-	if draw_current_space() != .Artboard do return p
+	if draw_current_space() != .ARTBOARD do return p
 	return view_screen_to_world(p)
 }

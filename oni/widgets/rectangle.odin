@@ -55,10 +55,10 @@ rect_event :: proc(
 Returns the default rectangle theme config, muted when the widget is disabled.
 */
 rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
-	color := oni.Color.Foreground
+	color := oni.Color.FOREGROUND
 
 	if state.is_disabled {
-		color = oni.Color.Muted
+		color = oni.Color.MUTED
 	}
 
 	return Rectangle_Config {

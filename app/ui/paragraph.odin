@@ -19,7 +19,7 @@ Paragraph :: proc(props: Paragraph_Props) {
 	) -> oni.Colors {
 		if state.is_Pressed do return oni.RGBA{0, 0, 0, 255}
 		if state.is_hovered do return oni.RGBA{210, 60, 60, 255}
-		return oni.theme.palette[.Foreground]
+		return oni.theme.palette[.FOREGROUND]
 	}
 
 	wg.Text(

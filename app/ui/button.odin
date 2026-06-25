@@ -54,9 +54,9 @@ button_background :: proc(
 ) -> oni.Colors {
 	switch button_active_variant {
 	case .DEFAULT:
-		if state.is_Pressed do return oni.Color.Primary_Pressed
-		if state.is_hovered do return oni.Color.Primary_Hover
-		return oni.Color.Primary
+		if state.is_Pressed do return oni.Color.PRIMARY_PRESSED
+		if state.is_hovered do return oni.Color.PRIMARY_HOVER
+		return oni.Color.PRIMARY
 
 	case .SECONDARY:
 		if state.is_Pressed do return oni.RGBA{180, 180, 180, 255}
@@ -83,7 +83,7 @@ button_background :: proc(
 		if state.is_hovered do return oni.RGBA{245, 245, 245, 255}
 		return oni.RGBA{0, 0, 0, 0}
 	}
-	return oni.Color.Primary
+	return oni.Color.PRIMARY
 }
 
 @(private)
@@ -152,8 +152,8 @@ Button :: proc(props: Button_props) {
 	defer button_active_variant = prev_variant
 
 	base := wg.Rectangle_Config {
-		width   = set.Width(.Auto),
-		justify = set.Justify(oni.Justify_Pos{x = .Center, y = .Center}),
+		width   = set.Width(.AUTO),
+		justify = set.Justify(oni.Justify_Pos{x = .CENTER, y = .CENTER}),
 	}
 
 	button_apply_variant(&base, props.variant)

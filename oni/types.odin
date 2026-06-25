@@ -118,7 +118,7 @@ Widget_Kind :: enum {
 }
 
 Cfg_Tri :: enum {
-	Unset,
+	UNSET,
 	Inherit,
 	Value,
 }
@@ -132,10 +132,10 @@ Cfg :: struct($T: typeid) {
 }
 
 Length_Kind :: enum {
-	Auto,
-	Fixed,
-	Percent,
-	Inherit,
+	AUTO,
+	FIXED,
+	PERCENT,
+	INHERIT,
 }
 
 /*
@@ -192,7 +192,7 @@ Widget_Config :: struct {
 }
 
 Widget_Text_Flag :: enum {
-	Uncached,
+	UNCACHED,
 }
 
 Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
@@ -260,34 +260,34 @@ Style_Context :: struct {
 
 Whitespace :: union {
 	enum {
-		Auto,
-		Wrap,
+		AUTO,
+		WRAP,
 	},
 }
 
 Position :: union {
 	enum {
-		Relative,
-		Absolute,
-		Fixed,
-		Sticky,
+		RELATIVE,
+		ABSOLUTE,
+		FIXED,
+		STICKY,
 	},
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Position,
 }
 
 Visibility :: union {
 	enum {
-		Visible,
-		Hidden,
+		VISIBLE,
+		HIDDEN,
 	},
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Visibility,
 }
 
 Overflow :: union {
 	enum {
-		Auto,
-		Scroll,
-		Hidden,
+		AUTO,
+		SCROLL,
+		HIDDEN,
 	},
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow,
 }
@@ -388,8 +388,8 @@ Dim_struct :: struct {
 }
 
 Width_Mode :: enum {
-	Inherit,
-	Auto,
+	INHERIT,
+	AUTO,
 }
 
 Width :: union {
@@ -401,8 +401,8 @@ Width :: union {
 }
 
 Height_Mode :: enum {
-	Inherit,
-	Auto,
+	INHERIT,
+	AUTO,
 }
 
 Height :: union {
@@ -422,9 +422,9 @@ Gap :: union {
 Text_Warp :: union {
 	struct{},
 	enum {
-		None,
-		Newlines,
-		Balance,
+		NONE,
+		NEWLINES,
+		BALANCE,
 	},
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Warp,
 }
@@ -432,21 +432,21 @@ Text_Warp :: union {
 Text_Align :: union {
 	struct{},
 	enum {
-		Left,
-		Center,
-		Right,
+		LEFT,
+		CENTER,
+		RIGHT,
 	},
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align,
 }
 
 Justify_Align :: enum {
-	Start,
-	Center,
-	End,
-	Stretch,
-	Space_between,
-	Space_around,
-	Space_evenly,
+	START,
+	CENTER,
+	END,
+	STRETCH,
+	SPACE_BETWEEN,
+	SPACE_AROUND,
+	SPACE_EVENLY,
 }
 
 Justify_X :: union {
@@ -477,14 +477,14 @@ Justify :: union {
 
 
 Direction_Layout :: enum {
-	Horizontal,
-	Vertical,
-	Horizontal_Wrap,
-	Vertical_Wrap,
-	Horizontal_Reverse,
-	Vertical_Reverse,
-	Horizontal_Wrap_Reverse,
-	Vertical_Wrap_Reverse,
+	HORIZONTAL,
+	VERTICAL,
+	HORIZONTAL_WRAP,
+	VERTICAL_WRAP,
+	HORIZONTAL_REVERSE,
+	VERTICAL_REVERSE,
+	HORIZONTAL_WRAP_REVERSE,
+	VERTICAL_WRAP_REVERSE,
 }
 
 Widget_Direction :: union {
@@ -538,10 +538,10 @@ Style_Image_Pos :: union {
 }
 
 SizingType :: enum {
-	Fit,
-	Grow,
-	Percent,
-	Fixed,
+	FIT,
+	GROW,
+	PERCENT,
+	FIXED,
 }
 
 /*
@@ -572,28 +572,28 @@ SizingAxis :: struct {
 Builds a SizingAxis that sizes to content within optional min/max bounds.
 */
 SizingFit :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
-	return SizingAxis{type = SizingType.Fit, constraints = {sizeMinMax = sizeMinMax}}
+	return SizingAxis{type = SizingType.FIT, constraints = {sizeMinMax = sizeMinMax}}
 }
 
 /*
 Builds a SizingAxis that expands to fill available space with optional min/max.
 */
 SizingGrow :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
-	return SizingAxis{type = SizingType.Grow, constraints = {sizeMinMax = sizeMinMax}}
+	return SizingAxis{type = SizingType.GROW, constraints = {sizeMinMax = sizeMinMax}}
 }
 
 /*
 Builds a SizingAxis with an exact fixed pixel size.
 */
 SizingFixed :: proc(size: f32) -> SizingAxis {
-	return SizingAxis{type = SizingType.Fixed, constraints = {sizeMinMax = {size, size}}}
+	return SizingAxis{type = SizingType.FIXED, constraints = {sizeMinMax = {size, size}}}
 }
 
 /*
 Builds a SizingAxis sized as a fraction of the parent axis.
 */
 SizingPercent :: proc(sizePercent: f32) -> SizingAxis {
-	return SizingAxis{type = SizingType.Percent, constraints = {sizePercent = sizePercent}}
+	return SizingAxis{type = SizingType.PERCENT, constraints = {sizePercent = sizePercent}}
 }
 
 /*
@@ -612,8 +612,8 @@ RGBA :: struct {
 
 
 Draw_Space :: enum {
-	Artboard,
-	Screen,
+	ARTBOARD,
+	SCREEN,
 }
 
 /*

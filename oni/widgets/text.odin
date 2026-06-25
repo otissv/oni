@@ -127,10 +127,10 @@ Returns the default text widget theme config, muted when the widget is disabled.
 */
 @(private)
 text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
-	color := oni.Color.Foreground
+	color := oni.Color.FOREGROUND
 
 	if state.is_disabled {
-		color = oni.Color.Muted
+		color = oni.Color.MUTED
 	}
 
 	return Text_Config {
@@ -195,7 +195,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		node := oni.layout_push_node(layout_id, style)
 		max_w: f32
 		if props.max_w.mode == .Value do max_w = props.max_w.value
-		if max_w <= 0 && style.width.kind == .Fixed do max_w = style.width.value
+		if max_w <= 0 && style.width.kind == .FIXED do max_w = style.width.value
 		oni.layout_set_measure_text(node, state.text, max_w)
 		oni.layout_pop_node()
 		return {}
@@ -352,7 +352,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	max_w := style.max_w != 0 ? style.max_w : rect.w
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
-	if .Uncached in state.flags {
+	if .UNCACHED in state.flags {
 		lines := oni.font_shape_line_build(face, state.text, shape_max_w, style.text_direction)
 		if len(lines) == 0 do return {}
 		defer oni.font_destroy_shaped_lines(lines)

@@ -146,7 +146,7 @@ Converts screen coordinates to world space for artboard rects.
 pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	mouse := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
 
-	if space == .Artboard {
+	if space == .ARTBOARD {
 		mouse = View_Screen_To_World(mouse)
 	}
 
@@ -164,13 +164,13 @@ Returns the hit-test rect for a widget, honoring fixed width and height.
 widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect {
 	rect := ui_layout_rect(layout_id)
 
-	if style.width.kind == .Fixed {
+	if style.width.kind == .FIXED {
 		rect.w = style.width.value
 	} else if w := length_resolve(style.width, rect.w); w > 0 {
 		rect.w = w
 	}
 
-	if style.height.kind == .Fixed {
+	if style.height.kind == .FIXED {
 		rect.h = style.height.value
 	} else if h := length_resolve(style.height, rect.h); h > 0 {
 		rect.h = h
@@ -521,7 +521,7 @@ resolve_justify_x :: proc(x: Justify_X) -> (Justify_X, bool) {
 		return v, true
 	}
 
-	return Justify_Align.Start, false
+	return Justify_Align.START, false
 }
 
 /*
@@ -533,7 +533,7 @@ resolve_justify_y :: proc(y: Justify_Y) -> (Justify_Y, bool) {
 		return v, true
 	}
 
-	return Justify_Align.Start, false
+	return Justify_Align.START, false
 }
 
 /*
@@ -582,13 +582,13 @@ Resolves a static Widget_Direction union value to a layout direction.
 resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_Layout, ok: bool) {
 	switch v in d {
 	case struct{}:
-		return .Horizontal, false
+		return .HORIZONTAL, false
 	case Direction_Layout:
 		return v, true
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction:
-		return .Horizontal, false
+		return .HORIZONTAL, false
 	}
-	return .Horizontal, false
+	return .HORIZONTAL, false
 }
 
 /*
@@ -612,7 +612,7 @@ resolve_direction :: proc(
 
 	if layout, layout_ok := resolve_direction_value(d); layout_ok do return layout, true
 
-	return .Horizontal, false
+	return .HORIZONTAL, false
 }
 
 /*
@@ -624,7 +624,7 @@ justify_align_from_x :: proc(x: Justify_X) -> (Justify_Align, bool) {
 		return v, true
 	}
 
-	return .Start, false
+	return .START, false
 }
 
 /*
@@ -636,14 +636,14 @@ justify_align_from_y :: proc(y: Justify_Y) -> (Justify_Align, bool) {
 		return v, true
 	}
 
-	return .Start, false
+	return .START, false
 }
 
 /*
 Returns whether a justify align distributes free space between items.
 */
 justify_align_is_space :: proc(align: Justify_Align) -> bool {
-	return align == .Space_between || align == .Space_around || align == .Space_evenly
+	return align == .SPACE_BETWEEN || align == .SPACE_AROUND || align == .SPACE_EVENLY
 }
 
 /*
@@ -651,13 +651,13 @@ Computes the leading offset for an item given free space and a justify align.
 */
 justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
 	switch align {
-	case .Start, .Stretch:
+	case .START, .STRETCH:
 		return 0
-	case .Center:
+	case .CENTER:
 		return max(0, (free_space - size) * 0.5)
-	case .End:
+	case .END:
 		return max(0, free_space - size)
-	case .Space_between, .Space_around, .Space_evenly:
+	case .SPACE_BETWEEN, .SPACE_AROUND, .SPACE_EVENLY:
 		return 0
 	}
 	return 0
@@ -689,7 +689,7 @@ Returns whether a Justify_Y axis requests stretch along the cross axis.
 justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
 	#partial switch v in y {
 	case Justify_Align:
-		return v == .Stretch
+		return v == .STRETCH
 	}
 
 	return false
@@ -701,7 +701,7 @@ Returns whether a Justify_X axis requests stretch along the cross axis.
 justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
 	#partial switch v in x {
 	case Justify_Align:
-		return v == .Stretch
+		return v == .STRETCH
 	}
 
 	return false

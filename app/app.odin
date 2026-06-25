@@ -27,7 +27,7 @@ init_state :: proc() {
 	PANEL_STATE_INITIALIZED = true
 
 	panel := Panel_State {
-		background = set.Colors(oni.theme.palette[.Background]),
+		background = set.Colors(oni.theme.palette[.BACKGROUND]),
 		x          = set.F32(80),
 	}
 	panel_state = panel
@@ -48,11 +48,11 @@ Panel :: proc() {
 			height = 340,
 			background = panel_state.background,
 			radius = set.Radius(f32(10)),
-			space = set.Space(.Artboard),
-			direction = set.Direction(.Vertical),
+			space = set.Space(.ARTBOARD),
+			direction = set.Direction(.VERTICAL),
 			padding = set.Padding(oni.PADDING_MD),
 			gap = set.Gap(u16(12)),
-			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Start}),
+			justify = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .START}),
 		},
 		child = proc(state: wg.Rectangle_State) {
 			ui.Heading({id = "heading", text = "Artboard heading", theme = &persistent.app.theme})
@@ -72,11 +72,11 @@ Panel :: proc() {
 					wg.Text(
 						{
 							id = "button",
-							width = .Auto,
+							width = .AUTO,
 							height = set.Height(28),
 							text = "Click me",
 							font = set.Font(oni.theme.font_heading),
-							color = set.Colors(oni.theme.palette[.Foreground]),
+							color = set.Colors(oni.theme.palette[.FOREGROUND]),
 							font_size = set.F32(20),
 							line_height = set.F32(0),
 						},
@@ -104,11 +104,11 @@ Hud :: proc() {
 			height = set.Height(24),
 			text = hud,
 			font = set.Font(theme.font_body),
-			color = set.Colors(oni.theme.palette[.White]),
+			color = set.Colors(oni.theme.palette[.WHITE]),
 			text_direction = set.Text_Direction(.LTR),
 			font_size = set.F32(16),
 			line_height = set.F32(1),
-			space = set.Space(.Screen),
+			space = set.Space(.SCREEN),
 		},
 	)
 }
@@ -119,15 +119,15 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 			id = id,
 			x = set.F32(x),
 			y = set.F32(y),
-			space = set.Space(.Screen),
-			direction = set.Direction(.Horizontal),
+			space = set.Space(.SCREEN),
+			direction = set.Direction(.HORIZONTAL),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(f32(20)),
-			justify = set.Justify(oni.Justify_Pos{x = .Space_around}),
-			background = set.Colors(oni.theme.palette[.Background]),
+			justify = set.Justify(oni.Justify_Pos{x = .SPACE_AROUND}),
+			background = set.Colors(oni.theme.palette[.BACKGROUND]),
 			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
 			border = set.Border(f32(10)),
-			border_color = set.Colors(oni.Color.Yellow_500),
+			border_color = set.Colors(oni.Color.YELLOW_500),
 		},
 		child = proc(state: wg.Rectangle_State) {
 			wg.Rectangle(
@@ -136,14 +136,14 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 						id = "left",
 						width = 100,
 						height = 30,
-						background = set.Colors(oni.theme.palette[.Destructive]),
+						background = set.Colors(oni.theme.palette[.DESTRUCTIVE]),
 					},
 				},
 			)
 			wg.Rectangle({
 				config = {
 					id = "center",
-					background = set.Colors(oni.theme.palette[.Accent]),
+					background = set.Colors(oni.theme.palette[.ACCENT]),
 					height = 100,
 				},
 				child = proc(state: wg.Rectangle_State) {
@@ -163,7 +163,7 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 						id = "right",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Success]),
+						background = set.Colors(oni.theme.palette[.SUCCESS]),
 					},
 				},
 			)
@@ -173,7 +173,7 @@ Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
 						id = "end",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Info]),
+						background = set.Colors(oni.theme.palette[.INFO]),
 					},
 				},
 			)
@@ -189,15 +189,15 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 			y = set.F32(y),
 			width = 400,
 			height = 400,
-			space = set.Space(.Screen),
-			direction = set.Direction(.Vertical_Wrap),
+			space = set.Space(.SCREEN),
+			direction = set.Direction(.VERTICAL_WRAP),
 			gap = set.Gap(u16(8)),
 			padding = set.Padding(oni.Pd{t = 10, b = 10}),
-			justify = set.Justify(oni.Justify_Pos{x = .Stretch, y = .Space_between}),
-			background = set.Colors(oni.theme.palette[.Background]),
+			justify = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .SPACE_BETWEEN}),
+			background = set.Colors(oni.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
 			border = set.Border(10),
-			border_color = set.Colors(oni.Color.Yellow_500),
+			border_color = set.Colors(oni.Color.YELLOW_500),
 		},
 		child = proc(state: wg.Rectangle_State) {
 			wg.Rectangle(
@@ -206,7 +206,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						id = "top-1",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Destructive]),
+						background = set.Colors(oni.theme.palette[.DESTRUCTIVE]),
 					},
 				},
 			)
@@ -216,7 +216,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						id = "center",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Accent]),
+						background = set.Colors(oni.theme.palette[.ACCENT]),
 					},
 				},
 			)
@@ -226,7 +226,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						id = "bottom",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Success]),
+						background = set.Colors(oni.theme.palette[.SUCCESS]),
 					},
 				},
 			)
@@ -236,7 +236,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 						id = "bottom-1",
 						width = 100,
 						height = 100,
-						background = set.Colors(oni.theme.palette[.Info]),
+						background = set.Colors(oni.theme.palette[.INFO]),
 					},
 				},
 			)
@@ -262,10 +262,10 @@ view :: proc() {
 				y            = set.F32(480),
 				width        = 464,
 				height       = 464,
-				background   = set.Colors(oni.theme.palette[.Info]),
+				background   = set.Colors(oni.theme.palette[.INFO]),
 				radius       = set.Radius(10),
 				border       = set.Border(10),
-				border_color = set.Colors(oni.Color.Yellow_500),
+				border_color = set.Colors(oni.Color.YELLOW_500),
 				texture_fit  = set.Image_Fit(.NONE),
 				texture_pos  = set.Image_Pos({x = 50, y = 50}), // center
 			},

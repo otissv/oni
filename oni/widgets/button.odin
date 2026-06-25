@@ -66,10 +66,10 @@ Returns the default button theme config, muted when the widget is disabled.
 */
 @(private)
 button_theme_base :: proc(state: ^Button_State) -> Button_Config {
-	color := oni.Color.Foreground
+	color := oni.Color.FOREGROUND
 
 	if state.is_disabled {
-		color = oni.Color.Muted
+		color = oni.Color.MUTED
 	}
 
 	return Button_Config {

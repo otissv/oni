@@ -127,7 +127,7 @@ Returns the active draw coordinate space from the top of the space stack.
 Defaults to Screen when no space has been pushed.
 */
 draw_current_space :: proc() -> Draw_Space {
-	if state == nil || len(state.gpu_state.batch.space_stack) == 0 do return .Screen
+	if state == nil || len(state.gpu_state.batch.space_stack) == 0 do return .SCREEN
 	return state.gpu_state.batch.space_stack[len(state.gpu_state.batch.space_stack) - 1]
 }
 
@@ -160,10 +160,10 @@ Enters artboard draw space with matching layout and root UI style.
 During the layout pass, also begins a nested artboard layout region.
 */
 begin_artboard :: proc() {
-	draw_push_space(.Artboard)
-	bounds := layout_space_bounds(.Artboard)
-	ui_push_style(style_root(.Artboard, bounds))
-	if ui_pass() == .Layout do layout_begin_space(.Artboard)
+	draw_push_space(.ARTBOARD)
+	bounds := layout_space_bounds(.ARTBOARD)
+	ui_push_style(style_root(.ARTBOARD, bounds))
+	if ui_pass() == .Layout do layout_begin_space(.ARTBOARD)
 }
 
 
@@ -184,10 +184,10 @@ Enters screen draw space with matching layout and root UI style.
 During the layout pass, also begins a nested screen layout region.
 */
 draw_push_screen :: proc() {
-	draw_push_space(.Screen)
-	bounds := layout_space_bounds(.Screen)
-	ui_push_style(style_root(.Screen, bounds))
-	if ui_pass() == .Layout do layout_begin_space(.Screen)
+	draw_push_space(.SCREEN)
+	bounds := layout_space_bounds(.SCREEN)
+	ui_push_style(style_root(.SCREEN, bounds))
+	if ui_pass() == .Layout do layout_begin_space(.SCREEN)
 }
 
 /*
@@ -412,18 +412,11 @@ draw_texture_fitted :: proc(
 	for i in 0 ..< 4 {
 		logical := draw_space_to_logical(corners_screen[i])
 		uvs[i] = texture_content_uv(logical.x, logical.y, image_dst, src, tw, th)
-		local_uvs[i] = {
-			(logical.x - content.x) / content.w,
-			(logical.y - content.y) / content.h,
-		}
+		local_uvs[i] = {(logical.x - content.x) / content.w, (logical.y - content.y) / content.h}
 	}
 
 	insets := texture_image_insets(content, image_dst)
-	use_image_clip :=
-		insets.t > 0.001 ||
-		insets.b > 0.001 ||
-		insets.l > 0.001 ||
-		insets.r > 0.001
+	use_image_clip := insets.t > 0.001 || insets.b > 0.001 || insets.l > 0.001 || insets.r > 0.001
 
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(texture.id)

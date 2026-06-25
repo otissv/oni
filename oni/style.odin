@@ -7,13 +7,13 @@ Handles fixed, percent, inherit, and auto kinds.
 */
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	switch length.kind {
-	case .Fixed:
+	case .FIXED:
 		return length.value
-	case .Percent:
+	case .PERCENT:
 		return parent * length.value * 0.01
-	case .Inherit:
+	case .INHERIT:
 		return parent
-	case .Auto:
+	case .AUTO:
 		return 0
 	}
 	return 0
@@ -23,7 +23,7 @@ length_resolve :: proc(length: Length, parent: f32) -> f32 {
 Returns whether a length has a definite (non-auto) kind.
 */
 length_is_definite :: proc(length: Length) -> bool {
-	return length.kind != .Auto
+	return length.kind != .AUTO
 }
 
 /*
@@ -55,7 +55,7 @@ Copies a Cfg field from src to dst when src is not unset.
 */
 @(private)
 merge_cfg :: proc($T: typeid, dst: ^Cfg(T), src: Cfg(T)) {
-	if src.mode != .Unset do dst^ = src
+	if src.mode != .UNSET do dst^ = src
 }
 
 /*
@@ -64,7 +64,7 @@ Resolves a Cfg field using unset, inherit, or explicit value modes.
 @(private)
 resolve_cfg :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T {
 	switch field.mode {
-	case .Unset:
+	case .UNSET:
 		return theme_default
 	case .Inherit:
 		return parent
@@ -89,25 +89,25 @@ resolve_length_from_width :: proc(
 
 	switch v in w {
 	case struct{}:
-		return {kind = .Auto}
+		return {kind = .AUTO}
 	case Width_Mode:
 		switch v {
-		case .Inherit:
-			return {kind = .Inherit}
-		case .Auto:
-			return {kind = .Auto}
+		case .INHERIT:
+			return {kind = .INHERIT}
+		case .AUTO:
+			return {kind = .AUTO}
 		}
 	case f32:
-		return {kind = .Fixed, value = v}
+		return {kind = .FIXED, value = v}
 	case Dim_struct:
-		if v.percent > 0 do return {kind = .Percent, value = v.percent}
-		if v.min > 0 do return {kind = .Fixed, value = v.min}
-		if v.max > 0 do return {kind = .Fixed, value = v.max}
-		return {kind = .Auto}
+		if v.percent > 0 do return {kind = .PERCENT, value = v.percent}
+		if v.min > 0 do return {kind = .FIXED, value = v.min}
+		if v.max > 0 do return {kind = .FIXED, value = v.max}
+		return {kind = .AUTO}
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Width:
 		return resolve_length_from_width(v(ui_state, ui_event), parent_w, state, event)
 	}
-	return {kind = .Auto}
+	return {kind = .AUTO}
 }
 
 /*
@@ -125,25 +125,25 @@ resolve_length_from_height :: proc(
 
 	switch v in h {
 	case struct{}:
-		return {kind = .Auto}
+		return {kind = .AUTO}
 	case Height_Mode:
 		switch v {
-		case .Inherit:
-			return {kind = .Inherit}
-		case .Auto:
-			return {kind = .Auto}
+		case .INHERIT:
+			return {kind = .INHERIT}
+		case .AUTO:
+			return {kind = .AUTO}
 		}
 	case f32:
-		return {kind = .Fixed, value = v}
+		return {kind = .FIXED, value = v}
 	case Dim_struct:
-		if v.percent > 0 do return {kind = .Percent, value = v.percent}
-		if v.min > 0 do return {kind = .Fixed, value = v.min}
-		if v.max > 0 do return {kind = .Fixed, value = v.max}
-		return {kind = .Auto}
+		if v.percent > 0 do return {kind = .PERCENT, value = v.percent}
+		if v.min > 0 do return {kind = .FIXED, value = v.min}
+		if v.max > 0 do return {kind = .FIXED, value = v.max}
+		return {kind = .AUTO}
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height:
 		return resolve_length_from_height(v(ui_state, ui_event), parent_h, state, event)
 	}
-	return {kind = .Auto}
+	return {kind = .AUTO}
 }
 
 /*
@@ -152,7 +152,7 @@ Resolves a Cfg(Gap) field from theme, parent, or explicit value.
 @(private)
 resolve_cfg_gap :: proc(gap: Cfg(Gap), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
 	switch gap.mode {
-	case .Unset:
+	case .UNSET:
 		if resolved, ok := resolve_gap_value(theme.gap); ok do return resolved
 		return parent
 	case .Inherit:
@@ -175,7 +175,7 @@ resolve_cfg_direction :: proc(
 	event: Widget_Event(S),
 ) -> Direction_Layout {
 	switch direction.mode {
-	case .Unset:
+	case .UNSET:
 		if resolved, ok := resolve_direction_value(theme.direction); ok do return resolved
 		return parent
 	case .Inherit:
@@ -200,7 +200,7 @@ resolve_cfg_justify :: proc(
 	event: Widget_Event(S),
 ) -> Justify_Pos {
 	switch justify.mode {
-	case .Unset:
+	case .UNSET:
 		if resolved, ok := resolve_justify_value(theme.justify); ok do return resolved
 		return parent
 	case .Inherit:
@@ -218,7 +218,7 @@ Resolves a Cfg(Justify) self-alignment override on a child widget.
 @(private)
 resolve_cfg_self :: proc(self: Cfg(Justify), state: ^$S, event: Widget_Event(S)) -> Justify_Pos {
 	switch self.mode {
-	case .Unset, .Inherit:
+	case .UNSET, .Inherit:
 		return {}
 	case .Value:
 		#partial switch v in self.value {
@@ -242,14 +242,14 @@ resolve_cfg_colors :: proc(
 	event: Widget_Event(S),
 ) -> Colors {
 	switch field.mode {
-	case .Unset:
+	case .UNSET:
 		return parent
 	case .Inherit:
 		return parent
 	case .Value:
 		#partial switch v in field.value {
 		case Color:
-			if v == .Inherit do return parent
+			if v == .INHERIT do return parent
 		case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
 			return field.value
 		}
@@ -270,14 +270,14 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	}
 
 	justify := Justify_Pos {
-		x = .Start,
-		y = .Start,
+		x = .START,
+		y = .START,
 	}
 	if resolved_justify, ok := resolve_justify_value(theme.justify); ok {
 		justify = resolved_justify
 	}
 
-	direction := Direction_Layout.Horizontal
+	direction := Direction_Layout.HORIZONTAL
 	if resolved_direction, ok := resolve_direction_value(theme.direction); ok {
 		direction = resolved_direction
 	}
@@ -285,7 +285,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	return Resolved_Widget_Style {
 		font = theme.font_body,
 		font_size = theme.font_body.size_px,
-		color = theme.palette[.Foreground],
+		color = theme.palette[.FOREGROUND],
 		background = theme.background,
 		border = theme.border,
 		border_color = theme.border_color,
@@ -296,7 +296,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		justify = justify,
 		line_height = 1,
 		text_direction = .LTR,
-		space = .Screen,
+		space = .SCREEN,
 		texture_fit = .FILL,
 		texture_pos = {},
 	}

@@ -70,26 +70,26 @@ Derives axis, wrap, and reverse flags from a layout direction enum.
 */
 layout_direction_info :: proc(direction: Direction_Layout) -> Layout_Direction_Info {
 	switch direction {
-	case .Horizontal:
+	case .HORIZONTAL:
 		return {is_horizontal = true}
-	case .Vertical:
+	case .VERTICAL:
 		return {}
-	case .Horizontal_Wrap:
+	case .HORIZONTAL_WRAP:
 		return {is_horizontal = true, is_wrap = true}
-	case .Vertical_Wrap:
+	case .VERTICAL_WRAP:
 		return {is_wrap = true}
-	case .Horizontal_Reverse:
+	case .HORIZONTAL_REVERSE:
 		return {is_horizontal = true, is_main_reverse = true}
-	case .Vertical_Reverse:
+	case .VERTICAL_REVERSE:
 		return {is_main_reverse = true}
-	case .Horizontal_Wrap_Reverse:
+	case .HORIZONTAL_WRAP_REVERSE:
 		return {
 			is_horizontal = true,
 			is_wrap = true,
 			is_main_reverse = true,
 			is_cross_reverse = true,
 		}
-	case .Vertical_Wrap_Reverse:
+	case .VERTICAL_WRAP_REVERSE:
 		return {is_wrap = true, is_main_reverse = true, is_cross_reverse = true}
 	}
 	unreachable()
@@ -333,7 +333,7 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 
 	if len(node.measure.text) > 0 {
 		max_w := node.measure.max_w
-		if max_w <= 0 && node.config.width.kind == .Fixed do max_w = node.config.width.value
+		if max_w <= 0 && node.config.width.kind == .FIXED do max_w = node.config.width.value
 		if max_w <= 0 && node.config.max_w > 0 do max_w = node.config.max_w
 		size = layout_measure_text(config, node.measure.text, max_w)
 	} else {
@@ -625,11 +625,11 @@ layout_space_leading :: proc(align: Justify_Align, free: f32, count: int) -> f32
 	if count <= 0 do return 0
 
 	#partial switch align {
-	case .Space_between:
+	case .SPACE_BETWEEN:
 		return 0
-	case .Space_around:
+	case .SPACE_AROUND:
 		return free / (2 * f32(count))
-	case .Space_evenly:
+	case .SPACE_EVENLY:
 		return free / f32(count + 1)
 	}
 	return 0
@@ -642,11 +642,11 @@ layout_space_between_items :: proc(align: Justify_Align, free: f32, count: int) 
 	if count <= 1 do return 0
 
 	#partial switch align {
-	case .Space_between:
+	case .SPACE_BETWEEN:
 		return free / f32(count - 1)
-	case .Space_around:
+	case .SPACE_AROUND:
 		return free / f32(count)
-	case .Space_evenly:
+	case .SPACE_EVENLY:
 		return free / f32(count + 1)
 	}
 	return 0
@@ -1242,7 +1242,7 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 	logical_w := f32(state.dpi.logical_w)
 	logical_h := f32(state.dpi.logical_h)
 
-	if space == .Artboard {
+	if space == .ARTBOARD {
 		zoom := view_effective_zoom()
 		if zoom <= 0 do zoom = 1
 		return {0, 0, logical_w / zoom, logical_h / zoom}

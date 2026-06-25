@@ -38,7 +38,7 @@ font_resolve :: proc(
 
 	size := logical_size > 0 ? logical_size : font.size_px
 	zoom: f32 = 1
-	if draw_space == .Artboard {
+	if draw_space == .ARTBOARD {
 		zoom = view_effective_zoom()
 	}
 
@@ -47,7 +47,7 @@ font_resolve :: proc(
 	if !ok do return {}, 1, false
 
 	layout_scale = 1
-	if draw_space == .Artboard && zoom > 0 {
+	if draw_space == .ARTBOARD && zoom > 0 {
 		layout_scale = 1 / zoom
 	}
 	return resolved, layout_scale, true
