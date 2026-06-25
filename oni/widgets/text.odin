@@ -5,16 +5,25 @@ import set "../set"
 import sdl "vendor:sdl3"
 
 
+/*
+Text widget configuration extending Widget_Config with text and cache flags.
+*/
 Text_Config :: struct {
 	using _: oni.Widget_Config,
 	flags:   oni.Widget_Text_Flags,
 	text:    string,
 }
 
+/*
+Text widget per-frame interaction state for a text widget.
+*/
 Text_State :: struct {
 	using _: oni.Widget_State,
 }
 
+/*
+Text widget per-frame state merged with resolved style, flags, and display string.
+*/
 Text_Merged_State :: struct {
 	using state: Text_State,
 	style:       oni.Resolved_Widget_Config,
@@ -22,8 +31,14 @@ Text_Merged_State :: struct {
 	text:        string,
 }
 
+/*
+Text widget event snapshot with state and optional input metadata.
+*/
 Text_Event :: oni.Widget_Event(Text_Merged_State)
 
+/*
+Text widget props: config fields inlined plus input event handlers.
+*/
 Text_Props :: struct {
 	using _:           Text_Config,
 	on_focus:          proc(event: Text_Event),
@@ -41,6 +56,9 @@ Text_Props :: struct {
 	on_key_released:   proc(event: Text_Event),
 }
 
+/*
+Builds a text event carrying the current state and optional input metadata.
+*/
 @(private)
 text_event :: proc(
 	state: Text_Merged_State,
@@ -50,18 +68,27 @@ text_event :: proc(
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
+/*
+Reads an explicit font-size value from a config field, or zero if unset.
+*/
 @(private)
 text_decl_font_size :: proc(field: oni.Cfg(f32)) -> f32 {
 	if field.mode == .Value do return field.value
 	return 0
 }
 
+/*
+Writes an explicit font-size value into a config field.
+*/
 @(private)
 text_set_font_size :: proc(field: ^oni.Cfg(f32), size: f32) {
 	field^ = set.F32(size)
 }
 
 
+/*
+Extracts a Text_Config override from flattened text props for style resolution.
+*/
 @(private)
 text_props_override :: proc(props: Text_Props) -> Text_Config {
 	return Text_Config {
@@ -95,6 +122,9 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 	}
 }
 
+/*
+Returns the default text widget theme config, muted when the widget is disabled.
+*/
 @(private)
 text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
 	color := oni.Color.Foreground
@@ -116,6 +146,9 @@ text_widget_decl :: proc(state: ^Text_Merged_State) -> Text_Config {
 	}
 }
 
+/*
+Refreshes merged style, flags, and text on state and returns a fresh event snapshot.
+*/
 @(private)
 text_refresh_merged :: proc(props: Text_Props, state: ^Text_Merged_State) -> Text_Event {
 	event := text_event(state^)
@@ -128,6 +161,11 @@ text_refresh_merged :: proc(props: Text_Props, state: ^Text_Merged_State) -> Tex
 	return text_event(state^)
 }
 
+/*
+Renders shaped text with layout measurement and optional pointer interaction.
+
+Returns the drawn text size; uses a shaped-text cache unless Uncached is set.
+*/
 Text :: proc(props: Text_Props) -> oni.Vec2 {
 	key := oni.element_key(props.id)
 	layout_label := props.id != "" ? props.id : key

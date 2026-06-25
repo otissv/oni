@@ -6,12 +6,21 @@ import sdl "vendor:sdl3"
 
 MAX_FRAME_TIME :: 0.25
 
+/*
+Initial SDL window title, size, and minimum dimensions for app startup.
+*/
 Window_Config :: struct {
 	title:                 cstring,
 	width, height:         i32,
 	min_width, min_height: i32,
 }
 
+/*
+Refreshes logical and drawable window size, DPI scale, and can_render.
+
+Updates the GPU projection matrix; call after resize, display-scale change,
+or hot reload when the window handle is valid.
+*/
 dpi_sync :: proc() {
 	if state.window == nil do return
 
@@ -38,12 +47,22 @@ dpi_sync :: proc() {
 	gpu_update_projection(state.dpi)
 }
 
+/*
+Clears per-frame transient input before polling events.
+
+Resets mouse wheel deltas and the text-input buffer; call at frame start.
+*/
 input_begin_frame :: proc() {
 	state.input.mouse_wheel_x = 0
 	state.input.mouse_wheel_y = 0
 	clear(&state.input.text_input)
 }
 
+/*
+Updates modifier-key flags from an SDL keymod bitmask.
+
+Called from key down/up handlers so ctrl/shift/alt/super stay in sync.
+*/
 input_update_modifiers :: proc(mod: sdl.Keymod) {
 	state.input.modifiers = {
 		shift = (mod & sdl.KMOD_SHIFT) != {},
@@ -53,6 +72,11 @@ input_update_modifiers :: proc(mod: sdl.Keymod) {
 	}
 }
 
+/*
+Clears keyboard and mouse button state without touching wheel or gamepad.
+
+Used when the window loses focus so keys are not stuck down.
+*/
 input_clear_keyboard_mouse :: proc() {
 	state.input.keys_down = {}
 	state.input.mouse_left = false
@@ -62,21 +86,41 @@ input_clear_keyboard_mouse :: proc() {
 	clear(&state.input.text_input)
 }
 
+/*
+Stores mouse position in logical screen space from pixel coordinates.
+
+Converts through dpi_sync scale; used by SDL motion, button, and wheel events.
+*/
 input_set_mouse_position :: proc(px_x, px_y: f32) {
 	logical := screen_to_logical(px_x, px_y, state.dpi)
 	state.input.mouse_x = logical.x
 	state.input.mouse_y = logical.y
 }
 
+/*
+Returns the current mouse position in logical screen space.
+
+Safe when state is nil; returns zero in that case.
+*/
 input_mouse_screen :: proc() -> Vec2 {
 	if state == nil do return {}
 	return {state.input.mouse_x, state.input.mouse_y}
 }
 
+/*
+Returns the current mouse position in world/view coordinates.
+
+Applies the active view transform to the logical screen position.
+*/
 input_mouse_world :: proc() -> Vec2 {
 	return view_screen_to_world(input_mouse_screen())
 }
 
+/*
+Sets SDL window fullscreen mode and updates state.fullscreen.
+
+Returns false if the window is nil or SDL rejects the request.
+*/
 set_fullscreen :: proc(fullscreen: bool) -> bool {
 	if state.window == nil do return false
 
@@ -89,10 +133,20 @@ set_fullscreen :: proc(fullscreen: bool) -> bool {
 	return true
 }
 
+/*
+Toggles between windowed and fullscreen display.
+
+Delegates to set_fullscreen with the inverted current flag.
+*/
 toggle_fullscreen :: proc() {
 	set_fullscreen(!state.fullscreen)
 }
 
+/*
+Returns elapsed seconds since the previous call, capped at MAX_FRAME_TIME.
+
+Advances last_counter; call once per frame for stable dt.
+*/
 frame_time :: proc() -> f64 {
 	current_counter := sdl.GetPerformanceCounter()
 	elapsed := f64(current_counter - state.last_counter) / f64(state.perf_frequency)
@@ -105,6 +159,12 @@ frame_time :: proc() -> f64 {
 	return elapsed
 }
 
+/*
+Polls SDL events and updates input, view, gamepad, and running state.
+
+Handles quit, keyboard shortcuts (F5/F6 reload, F11 fullscreen, ctrl zoom),
+mouse pan/zoom, window resize, and gamepad connect/disconnect.
+*/
 poll_events :: proc() {
 	event: sdl.Event
 
@@ -255,6 +315,12 @@ poll_events :: proc() {
 	poll_reload_keys()
 }
 
+/*
+Edge-detects F5/F6 held on the keyboard for reload/restart flags.
+
+Catches keys missed by KEY_DOWN when focus or timing differs; updates
+reload_keys_prev for the next frame.
+*/
 poll_reload_keys :: proc() {
 	kb := sdl.GetKeyboardState(nil)
 	if kb == nil do return
@@ -273,6 +339,12 @@ poll_reload_keys :: proc() {
 	state.reload_keys_prev.f6 = f6_down
 }
 
+/*
+Clears input and hot-reload flags while preserving the open gamepad.
+
+Resets running to true; re-syncs gamepad state if a device is connected.
+Call after realloc, reset, or when app state is rebuilt.
+*/
 reset_input_state :: proc() {
 	gamepad := state.gamepad
 	gamepad_instance_id := state.gamepad_instance_id
@@ -291,6 +363,12 @@ reset_input_state :: proc() {
 	}
 }
 
+/*
+Initializes SDL, creates the window, GPU device, and default view.
+
+Claims the window for the GPU, sets swapchain and minimum size, and opens
+the first available gamepad. On failure, tears down partial resources.
+*/
 create_window :: proc(config: Window_Config) -> bool {
 	if !sdl.Init({.VIDEO, .GAMEPAD}) {
 		fmt.eprintln("SDL_Init failed:", sdl.GetError())
@@ -351,11 +429,22 @@ create_window :: proc(config: Window_Config) -> bool {
 	return true
 }
 
+/*
+Creates the SDL window if one does not already exist.
+
+Idempotent; returns true when state.window is already set.
+*/
 init_window :: proc(config: Window_Config) -> bool {
 	if state.window != nil do return true
 	return create_window(config)
 }
 
+/*
+Initializes GPU pipeline, fonts, UI, and input after the window exists.
+
+Resets view if invalid, then runs gpu_init, font_init, and ui_init. Returns
+false if font_init fails.
+*/
 init :: proc() -> bool {
 	if state == nil || state.window == nil do return false
 
@@ -374,6 +463,11 @@ init :: proc() -> bool {
 	return true
 }
 
+/*
+Tears down gamepad, UI, fonts, assets, GPU, window, and SDL.
+
+Frees input text buffer and nulls window/gpu handles; call on app exit.
+*/
 shutdown :: proc() {
 	if state == nil do return
 
@@ -397,45 +491,95 @@ shutdown :: proc() {
 	sdl.Quit()
 }
 
+/*
+Returns whether the main loop should continue.
+
+False when state is nil or running was cleared (quit, failed init, etc.).
+*/
 should_run :: proc() -> bool {
 	return state != nil && state.running
 }
 
+/*
+Returns whether the window has a non-zero drawable size and can present.
+
+False when state is nil or dpi_sync disabled rendering (e.g. minimized).
+*/
 can_render :: proc() -> bool {
 	return state != nil && state.can_render
 }
 
+/*
+Starts a UI frame by resetting layout and widget pass state.
+
+Thin wrapper around ui_begin_frame for apps that split tick and draw.
+*/
 begin_frame :: proc() {
 	ui_begin_frame()
 }
 
+/*
+Ends a UI frame after layout and widget recording.
+
+Thin wrapper around ui_end_frame; call before present_frame.
+*/
 end_frame :: proc() {
 	ui_end_frame()
 }
 
+/*
+Refreshes GPU resources after a hot library reload.
+
+Reloads shaders/pipeline and re-syncs DPI; SDL window and device persist.
+*/
 on_hot_reload :: proc() {
 	gpu_reload()
 	dpi_sync()
 }
 
+/*
+Returns whether F5 hot reload was requested without clearing the flag.
+
+For host reloaders that peek each frame and consume after a successful swap.
+*/
 peek_force_reload :: proc() -> bool {
 	if state == nil do return false
 	return state.force_reload
 }
 
+/*
+Returns whether F6 full restart was requested without clearing the flag.
+
+For host reloaders that peek each frame and consume after handling restart.
+*/
 peek_force_restart :: proc() -> bool {
 	if state == nil do return false
 	return state.force_restart
 }
 
+/*
+Clears the force-reload flag after the host completes a library swap.
+
+Does nothing when state is nil.
+*/
 consume_force_reload :: proc() {
 	if state != nil do state.force_reload = false
 }
 
+/*
+Clears the force-restart flag after the host handles a full restart.
+
+Does nothing when state is nil.
+*/
 consume_force_restart :: proc() {
 	if state != nil do state.force_restart = false
 }
 
+/*
+Returns and clears the force-reload flag in one call.
+
+Use from app_force_reload when the app owns reload timing.
+*/
 take_force_reload :: proc() -> bool {
 	if state == nil do return false
 	reload := state.force_reload
@@ -443,6 +587,11 @@ take_force_reload :: proc() -> bool {
 	return reload
 }
 
+/*
+Returns and clears the force-restart flag in one call.
+
+Use from app_force_restart when the app owns restart timing.
+*/
 take_force_restart :: proc() -> bool {
 	if state == nil do return false
 	restart := state.force_restart
@@ -450,6 +599,12 @@ take_force_restart :: proc() -> bool {
 	return restart
 }
 
+/*
+Copies live engine fields from src into dst for persistent-state migration.
+
+Transfers SDL/GPU handles, assets, view, UI, and gamepad; does not copy
+input heap data (see release_input_allocations).
+*/
 copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.window = src.window
 	dst.gpu = src.gpu
@@ -469,6 +624,11 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.gamepad_instance_id = src.gamepad_instance_id
 }
 
+/*
+Frees heap allocations owned by src input state before discarding old memory.
+
+Call on the source State during realloc after fields are copied to dst.
+*/
 release_input_allocations :: proc(s: ^State) {
 	delete(s.input.text_input)
 }

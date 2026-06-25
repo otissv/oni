@@ -7,22 +7,30 @@ Palette :: [Color]RGBA
 // Packed sRGB #RRGGBBAA (e.g. 0xFF0000FF = opaque red).
 Hex :: distinct u32
 
-// Hue 0-360°, saturation/lightness 0-1, alpha 0-1.
+/*
+Hue in degrees (0-360), saturation/lightness/alpha in 0-1.
+*/
 HSLA :: struct {
 	h, s, l, a: f32,
 }
 
-// Hue 0-360°, whiteness/blackness 0-1, alpha 0-1.
+/*
+Hue in degrees (0-360), whiteness/blackness/alpha in 0-1.
+*/
 HWBA :: struct {
 	h, w, b, a: f32,
 }
 
-// CIE LCH: lightness 0-100, chroma ≥ 0, hue 0-360°, alpha 0-1.
+/*
+CIE LCH color: lightness 0-100, chroma ≥ 0, hue 0-360°, alpha 0-1.
+*/
 LCHA :: struct {
 	l, c, h, a: f32,
 }
 
-// OK LCH: lightness 0-1, chroma ≥ 0, hue 0-360°, alpha 0-1.
+/*
+OK LCH color: lightness 0-1, chroma ≥ 0, hue 0-360°, alpha 0-1.
+*/
 OKLCHA :: struct {
 	l, c, h, a: f32,
 }
@@ -716,6 +724,9 @@ palette: Palette = {
 }
 
 
+/*
+Returns the sRGB RGBA value for a named palette Color enum member.
+*/
 css_color_to_rgba :: proc(c: Color) -> RGBA {
 	if c == .Invalid do return RGBA{}
 	return palette[c]
@@ -733,6 +744,9 @@ Colors :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors,
 }
 
+/*
+Returns true when a Colors union value is a dynamic callback proc.
+*/
 colors_is_proc :: proc(c: Colors) -> bool {
 	#partial switch _ in c {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
@@ -741,14 +755,23 @@ colors_is_proc :: proc(c: Colors) -> bool {
 	return false
 }
 
+/*
+Clamps a float to the 0-1 range for color channel math.
+*/
 color_clamp01 :: proc(v: f32) -> f32 {
 	return math.clamp(v, 0, 1)
 }
 
+/*
+Converts a 0-1 float to an 8-bit channel, clamped and rounded.
+*/
 color_u8_from01 :: proc(v: f32) -> u8 {
 	return u8(math.round(color_clamp01(v) * 255))
 }
 
+/*
+Converts a linear RGB component to sRGB using the standard gamma curve.
+*/
 color_linear_to_srgb :: proc(c: f32) -> f32 {
 	if c <= 0.0031308 {
 		return 12.92 * c
@@ -756,6 +779,9 @@ color_linear_to_srgb :: proc(c: f32) -> f32 {
 	return 1.055 * math.pow(c, 1.0 / 2.4) - 0.055
 }
 
+/*
+Maps a hue angle (0-360°) to a unit RGB triple for pure hue.
+*/
 color_hue_to_rgb :: proc(h: f32) -> [3]f32 {
 	hue := math.mod(h, 360)
 	if hue < 0 do hue += 360
@@ -778,6 +804,9 @@ color_hue_to_rgb :: proc(h: f32) -> [3]f32 {
 	}
 }
 
+/*
+Computes one HSL channel from p, q, and normalized hue offset t.
+*/
 color_hue_to_channel :: proc(p, q, t: f32) -> f32 {
 	channel_t := math.mod(t, 1)
 	if channel_t < 0 do channel_t += 1
@@ -787,6 +816,9 @@ color_hue_to_channel :: proc(p, q, t: f32) -> f32 {
 	return p
 }
 
+/*
+Converts HSLA (hue/saturation/lightness/alpha) to sRGB RGBA.
+*/
 hsla_to_rgba :: proc(c: HSLA) -> RGBA {
 	h := c.h
 	s := color_clamp01(c.s)
@@ -808,6 +840,9 @@ hsla_to_rgba :: proc(c: HSLA) -> RGBA {
 }
 
 
+/*
+Converts HWBA (hue/whiteness/blackness/alpha) to sRGB RGBA.
+*/
 hwba_to_rgba :: proc(c: HWBA) -> RGBA {
 	h := c.h
 	w := color_clamp01(c.w)
@@ -827,6 +862,9 @@ hwba_to_rgba :: proc(c: HWBA) -> RGBA {
 	return RGBA{r, g, bl, a}
 }
 
+/*
+Converts CIE LCH (L*a*b* polar) to sRGB RGBA.
+*/
 lcha_to_rgba :: proc(c: LCHA) -> RGBA {
 	l := math.clamp(c.l, 0, 100)
 	ch := math.max(c.c, 0)
@@ -841,6 +879,9 @@ lcha_to_rgba :: proc(c: LCHA) -> RGBA {
 	epsilon :: 0.008856
 	kappa :: 903.3
 
+	/*
+	Inverts the CIE Lab lightness function f for LCH-to-XYZ conversion.
+	*/
 	f_inv :: proc(t: f32) -> f32 {
 		if t > epsilon {
 			return t * t * t
@@ -864,6 +905,9 @@ lcha_to_rgba :: proc(c: LCHA) -> RGBA {
 	}
 }
 
+/*
+Converts OK LCH perceptual color to sRGB RGBA.
+*/
 oklcha_to_rgba :: proc(c: OKLCHA) -> RGBA {
 	l := color_clamp01(c.l)
 	ch := math.max(c.c, 0)
@@ -890,20 +934,32 @@ oklcha_to_rgba :: proc(c: OKLCHA) -> RGBA {
 		color_u8_from01(c.a),
 	}
 }
+/*
+Identity conversion; passes RGBA through unchanged.
+*/
 rgba_to_rgba :: proc(c: RGBA) -> RGBA {
 	return c
 }
 
+/*
+Unpacks a packed #RRGGBBAA Hex value into RGBA byte channels.
+*/
 hex_to_rgba :: proc(c: Hex) -> RGBA {
 	v := u32(c)
 	return RGBA{u8(v >> 24), u8(v >> 16), u8(v >> 8), u8(v)}
 }
 
 
+/*
+Alias that normalizes a palette Color through the RGBA identity path.
+*/
 css_color_to_rba :: proc(c: Color) -> RGBA {
 	return rgba_to_rgba(css_color_to_rgba(c))
 }
 
+/*
+Overloaded conversion dispatch from each Colors variant type to RGBA.
+*/
 to_rgba_color :: proc {
 	css_color_to_rba,
 	rgba_to_rgba,
@@ -914,6 +970,11 @@ to_rgba_color :: proc {
 	oklcha_to_rgba,
 }
 
+/*
+Resolves any Colors value (including callbacks) to RGBA using widget context.
+
+Handles .Inherit by walking the current style stack for a parent color.
+*/
 to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
 	#partial switch v in c {
 	case Color:
@@ -952,10 +1013,18 @@ to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, o
 	return {}, false
 }
 
+/*
+Converts RGBA 0-255 channels to normalized [4]f32 for GPU/shader use.
+*/
 rgba_to_f32 :: proc(c: RGBA) -> [4]f32 {
 	return {f32(c.r) / 255, f32(c.g) / 255, f32(c.b) / 255, f32(c.a) / 255}
 }
 
+/*
+Converts any static Colors variant to normalized [4]f32.
+
+Callback proc variants are not supported; returns zero for .Invalid.
+*/
 color_to_f32 :: proc(c: Colors) -> [4]f32 {
 	rgba: RGBA
 

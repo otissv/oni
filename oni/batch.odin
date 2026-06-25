@@ -12,23 +12,35 @@ Draw_Mode :: enum {
 	Textured_Rounded,
 }
 
+/*
+Returns the draw mode as an f32 for packing into vertex shader params.
+*/
 draw_mode_f32 :: proc(mode: Draw_Mode) -> f32 {
 	return f32(mode)
 }
 
 BATCH_INITIAL_VERT_CAPACITY :: 64 * 1024
 
+/*
+Identifies a draw batch by texture asset and active clip rectangle.
+*/
 Batch_Key :: struct {
 	texture_id: Asset_Id,
 	clip:       Rect,
 }
 
+/*
+Contiguous index range within the batch that shares one Batch_Key.
+*/
 Batch_Segment :: struct {
 	key:         Batch_Key,
 	first_index: u32,
 	index_count: u32,
 }
 
+/*
+CPU-side vertex/index buffers, clip/space stacks, and GPU upload state for a frame.
+*/
 Batch_State :: struct {
 	vertices:        [dynamic]UI_Vertex,
 	indices:         [dynamic]u16,
@@ -46,12 +58,22 @@ Batch_State :: struct {
 	dpi:             Dpi_Info,
 }
 
+/*
+Initializes batch CPU buffers and allocates initial GPU vertex/index buffers.
+
+Uses BATCH_INITIAL_VERT_CAPACITY as the starting vertex capacity.
+*/
 batch_init :: proc() {
 	state.gpu_state.batch.vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
 	state.gpu_state.batch.index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
 	batch_create_gpu_buffers()
 }
 
+/*
+Creates or recreates GPU vertex and index buffers at the current capacities.
+
+Releases existing buffers before allocation. Returns false on SDL failure.
+*/
 batch_create_gpu_buffers :: proc() -> bool {
 	if state.gpu == nil do return false
 
@@ -88,6 +110,11 @@ batch_create_gpu_buffers :: proc() -> bool {
 	return true
 }
 
+/*
+Releases batch GPU buffers and frees all CPU-side dynamic arrays.
+
+Safe to call when state is nil or the GPU device is already destroyed.
+*/
 batch_destroy :: proc() {
 	if state == nil do return
 
@@ -118,6 +145,11 @@ batch_destroy :: proc() {
 	state.gpu_state.batch.has_current_key = false
 }
 
+/*
+Clears recorded vertices, indices, segments, and stack state for a new frame.
+
+Does not release GPU buffers or change capacity.
+*/
 batch_reset :: proc() {
 	clear(&state.gpu_state.batch.vertices)
 	clear(&state.gpu_state.batch.indices)
@@ -127,6 +159,12 @@ batch_reset :: proc() {
 	state.gpu_state.batch.has_current_key = false
 }
 
+/*
+Ensures the batch can hold extra_verts additional vertices.
+
+Doubles GPU buffer capacity until sufficient, recreating buffers as needed.
+Returns false if buffer recreation fails.
+*/
 batch_ensure_capacity :: proc(extra_verts: int) -> bool {
 	needed := len(state.gpu_state.batch.vertices) + extra_verts
 	if u32(needed) <= state.gpu_state.batch.vertex_capacity do return true
@@ -140,6 +178,12 @@ batch_ensure_capacity :: proc(extra_verts: int) -> bool {
 	return batch_create_gpu_buffers()
 }
 
+/*
+Returns the effective clip rect in screen space for the current draw batch.
+
+Uses the top of the clip stack intersected with the logical viewport, or the
+full viewport when no clip has been pushed.
+*/
 batch_current_clip :: proc() -> Rect {
 	clip: Rect
 	if len(state.gpu_state.batch.clip_stack) == 0 {
@@ -162,6 +206,11 @@ batch_current_clip :: proc() -> Rect {
 	return rect_intersect(clip, viewport)
 }
 
+/*
+Starts a new batch segment when the texture or clip key changes.
+
+Finalizes the previous segment's index count before appending a new one.
+*/
 batch_check_key :: proc(texture_id: Asset_Id) {
 	clip := batch_current_clip()
 	key := Batch_Key {
@@ -189,6 +238,9 @@ batch_check_key :: proc(texture_id: Asset_Id) {
 	state.gpu_state.batch.has_current_key = true
 }
 
+/*
+Appends two triangles (six indices) for a quad starting at vertex base.
+*/
 batch_push_indices :: proc(base: u16) {
 	append(
 		&state.gpu_state.batch.indices,
@@ -201,6 +253,11 @@ batch_push_indices :: proc(base: u16) {
 	)
 }
 
+/*
+Appends one UI vertex with color, border, radii, and draw-mode params.
+
+Optionally sets the tex_clip flag for nine-slice-style image clipping.
+*/
 batch_push_vertex :: proc(
 	pos: Vec2,
 	uv: Vec2,
@@ -231,6 +288,11 @@ batch_push_vertex :: proc(
 	)
 }
 
+/*
+Records a four-corner quad with shared rect styling into the batch.
+
+Ensures vertex capacity, converts colors to f32, and emits triangle indices.
+*/
 batch_push_quad :: proc(
 	corners: [4]Vec2,
 	uvs: [4]Vec2,
@@ -266,6 +328,12 @@ batch_push_quad :: proc(
 	batch_push_indices(base)
 }
 
+/*
+Records an axis-aligned rectangle quad, optionally clipped for textured draws.
+
+For textured modes, intersects with the current clip and adjusts UVs to
+match the visible sub-rect before delegating to batch_push_quad.
+*/
 batch_push_axis_quad :: proc(
 	r: Rect,
 	uv_rect: Rect,
@@ -317,6 +385,11 @@ batch_push_axis_quad :: proc(
 	batch_push_quad(corners, uvs, local_uvs, color, border_color, screen_size, radii, border, mode)
 }
 
+/*
+Finalizes the index count of the last open batch segment.
+
+Call before upload or flush when recording is complete.
+*/
 batch_finalize_segments :: proc() {
 	if state.gpu_state.batch.has_current_key && len(state.gpu_state.batch.segments) > 0 {
 		seg := state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1]
@@ -325,6 +398,12 @@ batch_finalize_segments :: proc() {
 	}
 }
 
+/*
+Uploads recorded vertices and indices to GPU buffers via a transfer buffer.
+
+Finalizes segments first. Returns true when there is nothing to upload or
+the copy succeeds; false on buffer or SDL transfer failure.
+*/
 batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	if len(state.gpu_state.batch.vertices) == 0 || len(state.gpu_state.batch.indices) == 0 do return true
 	if state.gpu_state.batch.vertex_buffer == nil || state.gpu_state.batch.index_buffer == nil do return false
@@ -370,6 +449,12 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	return true
 }
 
+/*
+Converts a logical clip rect to SDL scissor coordinates in drawable pixels.
+
+Clamps width and height to the drawable surface and returns zero size when
+the clip is empty or fully off-screen.
+*/
 clip_to_scissor :: proc(clip: Rect, dpi: Dpi_Info) -> sdl.Rect {
 	if clip.w <= 0 || clip.h <= 0 do return {0, 0, 0, 0}
 
@@ -393,6 +478,12 @@ clip_to_scissor :: proc(clip: Rect, dpi: Dpi_Info) -> sdl.Rect {
 	return {x, y, w, h}
 }
 
+/*
+Issues indexed draw calls for each batch segment with bound texture and scissor.
+
+Binds the UI pipeline, projection UBO, vertex/index buffers, and draws each
+segment. Skips segments with zero indices or missing GPU textures.
+*/
 batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
 	if len(state.gpu_state.batch.segments) == 0 do return

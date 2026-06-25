@@ -8,6 +8,11 @@ UI_Pass :: enum {
 	Draw,
 }
 
+/*
+Allocates UI widget and layout maps on first use.
+
+Safe to call repeatedly; only creates storage when nil.
+*/
 ui_init :: proc() {
 	if state.ui.widgets == nil {
 		state.ui.widgets = make(map[UI_Id]UI_Widget_Entry)
@@ -17,6 +22,11 @@ ui_init :: proc() {
 	}
 }
 
+/*
+Tears down widget storage, scope/style stacks, and layout state.
+
+Releases shaped text for every cached widget entry.
+*/
 ui_shutdown :: proc() {
 	if state.ui.widgets != nil {
 		for _, &entry in state.ui.widgets {
@@ -41,6 +51,11 @@ ui_shutdown :: proc() {
 	state.ui.pass = .Layout
 }
 
+/*
+Starts a new UI frame and resets transient per-frame state.
+
+Clears scope/style stacks, layout tree, widget input, and auto ids.
+*/
 ui_begin_frame :: proc() {
 	ui_init()
 	state.ui.frame += 1
@@ -68,10 +83,18 @@ ui_begin_frame :: proc() {
 	sync_widget_input()
 }
 
+/*
+Switches the UI pass from layout to draw after measurement completes.
+*/
 ui_end_layout_pass :: proc() {
 	state.ui.pass = .Draw
 }
 
+/*
+Prunes widgets not touched this frame and frees their shaped text.
+
+Call once per frame after the draw pass finishes.
+*/
 ui_end_frame :: proc() {
 	if state.ui.widgets == nil do return
 
@@ -90,6 +113,11 @@ ui_end_frame :: proc() {
 	}
 }
 
+/*
+Runs each UI builder through layout and draw passes, then ends the frame.
+
+Each proc is invoked twice: once to measure, once to render.
+*/
 render :: proc(ui: ..proc()) {
 	for u in ui {
 		u()
@@ -100,10 +128,18 @@ render :: proc(ui: ..proc()) {
 	}
 }
 
+/*
+Returns whether the UI is in the layout or draw pass.
+*/
 ui_pass :: proc() -> UI_Pass {
 	return state.ui.pass
 }
 
+/*
+Returns the solved layout rectangle for a UI id.
+
+Returns an empty rect when the id has no layout node.
+*/
 ui_layout_rect :: proc(id: UI_Id) -> Rect {
 	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
 		return state.ui.layout.nodes[node_index].rect
@@ -111,16 +147,27 @@ ui_layout_rect :: proc(id: UI_Id) -> Rect {
 	return {}
 }
 
+/*
+Pushes an id onto the scope stack for hierarchical id generation.
+*/
 ui_push_scope :: proc(id: UI_Id) {
 	append(&state.ui.scope_stack, id)
 }
 
+/*
+Pops the most recent scope id from the stack.
+*/
 ui_pop_scope :: proc() {
 	if len(state.ui.scope_stack) > 0 {
 		ordered_remove(&state.ui.scope_stack, len(state.ui.scope_stack) - 1)
 	}
 }
 
+/*
+Hashes the current scope stack into a parent prefix for UI ids.
+
+Uses FNV-1a over each scope id in stack order.
+*/
 ui_parent_hash :: proc() -> u64 {
 	h: u64 = 14695981039346656037
 	for scope in state.ui.scope_stack {
@@ -130,6 +177,11 @@ ui_parent_hash :: proc() -> u64 {
 	return h
 }
 
+/*
+Derives a stable UI id from a label and the current parent scope.
+
+Combines a CRC32 of the label with the parent scope hash.
+*/
 ui_id :: proc(label: string) -> UI_Id {
 	label_hash := u64(hash.crc32(transmute([]u8)label))
 	parent := ui_parent_hash()

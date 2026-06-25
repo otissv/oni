@@ -39,12 +39,18 @@ KEY_COUNT :: 512
 
 Widget_ID :: string
 
+/*
+Per-frame edge-detected state for one mouse button in widget input handling.
+*/
 Widget_Mouse_Button_State :: struct {
 	down:     bool,
 	pressed:  bool,
 	released: bool,
 }
 
+/*
+Per-frame edge-detected state for one keyboard key in widget input handling.
+*/
 Widget_Mouse_Key_State :: struct {
 	down:     bool,
 	pressed:  bool,
@@ -52,6 +58,9 @@ Widget_Mouse_Key_State :: struct {
 }
 
 
+/*
+Global per-frame widget input context: focus, mouse, keys, and hover tracking.
+*/
 Widget_Context :: struct {
 	auto_focused_id:      Widget_ID,
 	focused_id:           Widget_ID,
@@ -68,6 +77,9 @@ Widget_Context :: struct {
 	element_pointer_down: map[string]bool,
 }
 
+/*
+Merges a widget-specific state struct with its resolved config type.
+*/
 Widget_Merged_State :: struct($S: typeid, $C: typeid) {
 	using state: S,
 	config:      C,
@@ -75,12 +87,18 @@ Widget_Merged_State :: struct($S: typeid, $C: typeid) {
 
 w_ctx: Widget_Context
 
+/*
+Snapshot of widget state plus optional input metadata for event callbacks.
+*/
 Widget_Event :: struct($S: typeid) {
 	state:        S,
 	mouse_button: u8,
 	key:          Scancode,
 }
 
+/*
+Per-frame interaction flags for a widget: hover, press, focus, and click edges.
+*/
 Widget_State :: struct {
 	is_hovered:        bool,
 	is_Pressed:        bool,
@@ -105,6 +123,9 @@ Cfg_Tri :: enum {
 	Value,
 }
 
+/*
+Tri-state config field: unset, inherit from parent, or explicit value.
+*/
 Cfg :: struct($T: typeid) {
 	mode:  Cfg_Tri,
 	value: T,
@@ -117,11 +138,17 @@ Length_Kind :: enum {
 	Inherit,
 }
 
+/*
+Resolved axis length as fixed pixels, percent of parent, inherit, or auto.
+*/
 Length :: struct {
 	kind:  Length_Kind,
 	value: f32,
 }
 
+/*
+Author-time widget style overrides using tri-state Cfg fields and dimension unions.
+*/
 Widget_Config :: struct {
 	id:             string,
 	kind:           Widget_Kind,
@@ -170,6 +197,9 @@ Widget_Text_Flag :: enum {
 
 Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
 
+/*
+Fully resolved widget style after merging theme, parent, and prop overrides.
+*/
 Resolved_Widget_Style :: struct {
 	align:          Text_Align,
 	auto_focus:     bool,
@@ -210,12 +240,18 @@ Resolved_Widget_Style :: struct {
 	texture_pos:    Style_Texture_Pos,
 }
 
+/*
+Resolved widget identity and style ready for layout and drawing.
+*/
 Resolved_Widget_Config :: struct {
 	id:          string,
 	kind:        Widget_Kind,
 	using style: Resolved_Widget_Style,
 }
 
+/*
+Style stack entry with resolved style and current content box dimensions.
+*/
 Style_Context :: struct {
 	using style: Resolved_Widget_Style,
 	content_w:   f32,
@@ -256,15 +292,23 @@ Overflow :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow,
 }
 
-// Padding
+/*
+Per-side padding values: top, bottom, left, and right.
+*/
 Pd :: struct {
 	t, b, l, r: f32,
 }
 
+/*
+Symmetric horizontal/vertical padding shorthand.
+*/
 Pd_pos :: struct {
 	x, y: f32,
 }
 
+/*
+Full padding specification with per-side, corner, axis, and preset flags.
+*/
 Pd_struct :: struct {
 	t, b, l, r:     f32,
 	tl, tr, bl, br: f32,
@@ -282,8 +326,9 @@ Padding :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding,
 }
 
-// Radius
-
+/*
+Per-corner border radius values.
+*/
 Radius_corners :: struct {
 	tl: f32,
 	tr: f32,
@@ -291,6 +336,9 @@ Radius_corners :: struct {
 	br: f32,
 }
 
+/*
+Full radius specification with corners, sides, axis, and preset flags.
+*/
 Radius_struct :: struct {
 	tl, tr, bl, br: f32,
 	t, b, l, r:     f32,
@@ -306,11 +354,16 @@ Radius :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Radius,
 }
 
+/*
+Per-side border width values: top, bottom, left, and right.
+*/
 Bd :: struct {
 	t, b, l, r: f32,
 }
 
-// Border
+/*
+Full border specification with per-side widths and preset flags.
+*/
 Bd_struct :: struct {
 	t, b, l, r:     f32,
 	sm, md, lg, xl: bool,
@@ -324,6 +377,9 @@ Border :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border,
 }
 
+/*
+Width/height dimension with min/max, percent, grow, and preset flags.
+*/
 Dim_struct :: struct {
 	min, max:       f32,
 	percent:        f32,
@@ -405,6 +461,9 @@ Justify_Y :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_Y,
 }
 
+/*
+Main- and cross-axis flex alignment as independent Justify_X/Y unions.
+*/
 Justify_Pos :: struct {
 	x: Justify_X,
 	y: Justify_Y,
@@ -448,15 +507,23 @@ Style_Texture_Fit :: union {
 	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Texture_Fit,
 }
 
+/*
+Texture inset positioning using top/bottom/left/right offsets.
+*/
 Texture_Pos :: struct {
 	t, b, l, r: f32,
 }
 
-// percentage 0-1
+/*
+Texture anchor position as normalized x/y percentages in 0-1.
+*/
 Texture_Pos_X_Y :: struct {
 	x, y: f32,
 }
 
+/*
+Fully resolved texture position with anchor and pixel offsets.
+*/
 Resolved_Texture_Pos :: struct {
 	x, y:               f32,
 	offset_x, offset_y: f32,
@@ -477,41 +544,68 @@ SizingType :: enum {
 	Fixed,
 }
 
+/*
+Optional min and max size bounds for a sizing axis.
+*/
 SizingConstraintsMinMax :: struct {
 	min: f32,
 	max: f32,
 }
 
+/*
+Sizing constraint payload: either min/max bounds or a parent percentage.
+*/
 SizingConstraints :: struct #raw_union {
 	sizeMinMax:  SizingConstraintsMinMax,
 	sizePercent: f32,
 }
 
+/*
+One axis sizing rule with type (fit, grow, percent, fixed) and constraints.
+*/
 SizingAxis :: struct {
 	constraints: SizingConstraints,
 	type:        SizingType,
 }
 
+/*
+Builds a SizingAxis that sizes to content within optional min/max bounds.
+*/
 SizingFit :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
 	return SizingAxis{type = SizingType.Fit, constraints = {sizeMinMax = sizeMinMax}}
 }
 
+/*
+Builds a SizingAxis that expands to fill available space with optional min/max.
+*/
 SizingGrow :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
 	return SizingAxis{type = SizingType.Grow, constraints = {sizeMinMax = sizeMinMax}}
 }
 
+/*
+Builds a SizingAxis with an exact fixed pixel size.
+*/
 SizingFixed :: proc(size: f32) -> SizingAxis {
 	return SizingAxis{type = SizingType.Fixed, constraints = {sizeMinMax = {size, size}}}
 }
 
+/*
+Builds a SizingAxis sized as a fraction of the parent axis.
+*/
 SizingPercent :: proc(sizePercent: f32) -> SizingAxis {
 	return SizingAxis{type = SizingType.Percent, constraints = {sizePercent = sizePercent}}
 }
 
+/*
+Axis-aligned rectangle in logical coordinates.
+*/
 Rect :: struct {
 	x, y, w, h: f32,
 }
 
+/*
+8-bit per-channel sRGB color with premultiplied-friendly alpha.
+*/
 RGBA :: struct {
 	r, g, b, a: u8,
 }
@@ -522,6 +616,9 @@ Draw_Space :: enum {
 	Screen,
 }
 
+/*
+Window DPI scale and logical vs drawable pixel dimensions.
+*/
 Dpi_Info :: struct {
 	scale:                  f32,
 	logical_w, logical_h:   i32,
@@ -532,21 +629,33 @@ Asset_Id :: distinct i32
 
 UI_Id :: distinct u64
 
+/*
+Reference to a loaded texture asset with pixel dimensions.
+*/
 Texture_Handle :: struct {
 	id:   Asset_Id,
 	w, h: f32,
 }
 
+/*
+Sub-rectangle within an atlas or standalone texture, in pixel coordinates.
+*/
 Atlas_Region :: struct {
 	texture_id: Asset_Id,
 	x, y, w, h: f32,
 }
 
+/*
+Reference to a loaded font face at a specific raster size in pixels.
+*/
 Font_Handle :: struct {
 	id:      Asset_Id,
 	size_px: f32,
 }
 
+/*
+Global theme defaults for palette, typography, spacing, and widget chrome.
+*/
 Theme :: struct {
 	palette:      Palette,
 	justify:      Justify,
@@ -564,10 +673,16 @@ Theme :: struct {
 	width:        Width,
 }
 
+/*
+Keyboard modifier key state: shift, ctrl, alt, and super.
+*/
 Input_Modifiers :: struct {
 	shift, ctrl, alt, super: bool,
 }
 
+/*
+Normalized gamepad axes, d-pad, triggers, and per-button down state.
+*/
 Gamepad_Input :: struct {
 	connected:     bool,
 	dpad_left:     bool,
@@ -583,6 +698,9 @@ Gamepad_Input :: struct {
 	buttons_down:  [GAMEPAD_BUTTON_COUNT]bool,
 }
 
+/*
+Per-frame input snapshot: mouse, keyboard, text input, modifiers, and gamepad.
+*/
 Input_State :: struct {
 	mouse_x, mouse_y:                      f32,
 	mouse_left, mouse_right, mouse_middle: bool,

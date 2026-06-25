@@ -4,16 +4,25 @@ import oni ".."
 import set "../set"
 import sdl "vendor:sdl3"
 
-Button_Config :: struct {
-	using _: oni.Widget_Config,
-	flags:   oni.Widget_Text_Flags,
-	text:    string,
-}
+/*
+Button widget configuration extending Widget_Config.
+*/
+Button_Config :: oni.Widget_Config
 
+/*
+Button widget per-frame state merged with its fully resolved style config.
+*/
 Button_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
+
+/*
+Button widget event snapshot with state and optional input metadata.
+*/
 Button_Event :: oni.Widget_Event(Button_State)
 
 
+/*
+Button widget props: config overrides, child callback, and input event handlers.
+*/
 Button_Props :: struct {
 	config:            Button_Config,
 	child:             proc(state: Button_State),
@@ -32,6 +41,9 @@ Button_Props :: struct {
 	on_key_released:   proc(event: Button_Event),
 }
 
+/*
+Builds a button event carrying the current state and optional input metadata.
+*/
 @(private)
 button_event :: proc(
 	state: Button_State,
@@ -41,11 +53,17 @@ button_event :: proc(
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
+/*
+Extracts the config override from button props for style resolution.
+*/
 @(private)
 button_props_override :: proc(props: Button_Props) -> Button_Config {
 	return props.config
 }
 
+/*
+Returns the default button theme config, muted when the widget is disabled.
+*/
 @(private)
 button_theme_base :: proc(state: ^Button_State) -> Button_Config {
 	color := oni.Color.Foreground
@@ -67,6 +85,9 @@ button_theme_base :: proc(state: ^Button_State) -> Button_Config {
 	}
 }
 
+/*
+Merges theme defaults, prop overrides, and live state into a resolved config.
+*/
 @(private)
 button_config :: proc(props: Button_Props, state: ^Button_State) -> oni.Resolved_Widget_Config {
 	event := button_event(state^)
@@ -76,12 +97,20 @@ button_config :: proc(props: Button_Props, state: ^Button_State) -> oni.Resolved
 	return oni.resolve_widget_config(base, override, state, event)
 }
 
+/*
+Refreshes merged config on state and returns a fresh button event snapshot.
+*/
 @(private)
 button_refresh_merged :: proc(props: Button_Props, state: ^Button_State) -> Button_Event {
 	state.config = button_config(props, state)
 	return button_event(state^)
 }
 
+/*
+Renders an interactive button with focus, pointer, and keyboard handling.
+
+Runs layout on the layout pass and draws chrome plus children on the draw pass.
+*/
 Button :: proc(props: Button_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)

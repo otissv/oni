@@ -22,7 +22,7 @@ image_texture: oni.Texture_Handle
 
 
 @(private)
-use_state :: proc() {
+init_state :: proc() {
 	if PANEL_STATE_INITIALIZED do return
 	PANEL_STATE_INITIALIZED = true
 
@@ -247,7 +247,7 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 
 @(private)
 view :: proc() {
-	use_state()
+	init_state()
 
 	oni.Begin_Artboard()
 	Panel()
@@ -266,7 +266,7 @@ view :: proc() {
 				radius       = set.Radius(10),
 				border       = set.Border(10),
 				border_color = set.Colors(oni.Color.Yellow_500),
-				texture_fit  = set.Texture_Fit(.FILL),
+				texture_fit  = set.Texture_Fit(.NONE),
 				texture_pos  = set.Texture_Pos({x = 50, y = 50}), // center
 			},
 		},

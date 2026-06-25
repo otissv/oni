@@ -6,6 +6,9 @@ import sdl "vendor:sdl3"
 ATLAS_DEFAULT_SIZE :: 2048
 ATLAS_PADDING :: 1
 
+/*
+Single registered texture: GPU handle, CPU surface, dimensions, and source path.
+*/
 Texture_Record :: struct {
 	gpu:     ^sdl.GPUTexture,
 	surface: ^sdl.Surface,
@@ -13,12 +16,18 @@ Texture_Record :: struct {
 	path:    string,
 }
 
+/*
+One horizontal shelf row in the shelf atlas packer with cursor position.
+*/
 Atlas_Shelf :: struct {
 	y:        i32,
 	height:   i32,
 	cursor_x: i32,
 }
 
+/*
+Shelf atlas backing texture and its row allocation bookkeeping.
+*/
 Atlas_State :: struct {
 	texture_id: Asset_Id,
 	width:      i32,
@@ -26,11 +35,19 @@ Atlas_State :: struct {
 	shelves:    [dynamic]Atlas_Shelf,
 }
 
+/*
+All texture records plus the shared glyph/image atlas state.
+*/
 Texture_State :: struct {
 	records: [dynamic]Texture_Record,
 	atlas:   Atlas_State,
 }
 
+/*
+Initializes texture state with a reserved slot-zero record and a cleared atlas.
+
+Safe to call multiple times; only allocates the records array on first use.
+*/
 texture_init :: proc() {
 	if len(state.textures.records) == 0 {
 		append(&state.textures.records, Texture_Record{})
@@ -40,6 +57,11 @@ texture_init :: proc() {
 	}
 }
 
+/*
+Releases all GPU textures, surfaces, and path strings owned by texture state.
+
+Also shuts down the atlas and clears the records array.
+*/
 texture_shutdown :: proc() {
 	texture_atlas_shutdown()
 
@@ -59,6 +81,11 @@ texture_shutdown :: proc() {
 	state.textures.records = nil
 }
 
+/*
+Releases GPU textures for all records while keeping CPU surfaces intact.
+
+Used before device teardown or hot reload so surfaces can be re-uploaded later.
+*/
 texture_release_gpu :: proc() {
 	if state.gpu == nil do return
 
@@ -70,6 +97,11 @@ texture_release_gpu :: proc() {
 	}
 }
 
+/*
+Re-uploads every record surface to the GPU and rebuilds the atlas texture.
+
+Call after the GPU device is recreated, such as during hot reload.
+*/
 texture_reload_gpu :: proc() {
 	if state.gpu == nil do return
 
@@ -84,6 +116,11 @@ texture_reload_gpu :: proc() {
 	}
 }
 
+/*
+Registers a loaded surface as a texture record and uploads it to the GPU.
+
+Returns the asset id, handle, and false if upload or registration fails.
+*/
 texture_register_surface :: proc(
 	surface: ^sdl.Surface,
 	path: string,
@@ -123,8 +160,12 @@ texture_register_surface :: proc(
 	return id, handle, true
 }
 
-// SDL RGBA8888 stores 32-bit pixels as A,B,G,R in memory on little-endian hosts.
-// Vulkan R8G8B8A8_UNORM expects R,G,B,A byte order.
+/*
+Swizzles one row of SDL RGBA8888 pixels into GPU R8G8B8A8 byte order.
+
+SDL stores 32-bit pixels as A,B,G,R in memory on little-endian hosts;
+Vulkan R8G8B8A8_UNORM expects R,G,B,A.
+*/
 @(private)
 surface_row_to_gpu_rgba :: proc(dst, src: []u8, pixels: int) {
 	when ODIN_ENDIAN == .Little {
@@ -140,6 +181,11 @@ surface_row_to_gpu_rgba :: proc(dst, src: []u8, pixels: int) {
 	}
 }
 
+/*
+Creates or replaces the GPU texture for a single texture record from its surface.
+
+Releases any existing GPU texture on the record before uploading.
+*/
 texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 	if state.gpu == nil || entry.surface == nil do return false
 
@@ -180,6 +226,11 @@ texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 	return true
 }
 
+/*
+Uploads a sub-rectangle of a surface into a GPU texture via a transfer buffer.
+
+Converts the source to RGBA8888, swizzles to GPU byte order, and submits a copy pass.
+*/
 texture_upload_surface :: proc(
 	gpu: ^sdl.GPUDevice,
 	texture: ^sdl.GPUTexture,
@@ -265,6 +316,11 @@ texture_upload_surface :: proc(
 	return true
 }
 
+/*
+Returns the GPU texture pointer for an asset id, or nil if invalid.
+
+The white texture id resolves to the engine's built-in 1x1 white texture.
+*/
 texture_get_gpu :: proc(id: Asset_Id) -> ^sdl.GPUTexture {
 	if id == TEXTURE_WHITE_ID {
 		return state.gpu_state.white_texture
@@ -275,6 +331,11 @@ texture_get_gpu :: proc(id: Asset_Id) -> ^sdl.GPUTexture {
 	return state.textures.records[index].gpu
 }
 
+/*
+Builds a Texture_Handle with pixel dimensions for a registered asset id.
+
+Returns an empty handle when the id is out of range.
+*/
 texture_handle :: proc(id: Asset_Id) -> Texture_Handle {
 	if id == TEXTURE_WHITE_ID {
 		return {id = TEXTURE_WHITE_ID, w = 1, h = 1}
@@ -286,14 +347,29 @@ texture_handle :: proc(id: Asset_Id) -> Texture_Handle {
 	return {id = id, w = f32(entry.w), h = f32(entry.h)}
 }
 
+/*
+Wraps a texture handle and source rect into an atlas region descriptor.
+
+The region references the parent texture id with sub-rectangle coordinates.
+*/
 atlas_region_from :: proc(tex: Texture_Handle, src: Rect) -> Atlas_Region {
 	return Atlas_Region{texture_id = tex.id, x = src.x, y = src.y, w = src.w, h = src.h}
 }
 
+/*
+Returns the parent Texture_Handle for an atlas sub-region.
+
+Delegates to texture_handle using the region's texture_id.
+*/
 atlas_region_handle :: proc(region: Atlas_Region) -> Texture_Handle {
 	return texture_handle(region.texture_id)
 }
 
+/*
+Creates the shelf atlas backing texture at the given size if not already initialized.
+
+Registers an empty RGBA surface as the atlas record and records shelf state.
+*/
 texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
 	if state.textures.atlas.texture_id != INVALID_ASSET_ID && state.textures.atlas.width > 0 do return true
 	if state.gpu == nil do return false
@@ -318,11 +394,21 @@ texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
 	return true
 }
 
+/*
+Frees atlas shelf bookkeeping and resets atlas state to empty.
+
+Does not destroy the underlying atlas texture record.
+*/
 texture_atlas_shutdown :: proc() {
 	delete(state.textures.atlas.shelves)
 	state.textures.atlas = {}
 }
 
+/*
+Re-uploads the atlas backing texture from its CPU surface after GPU reload.
+
+Logs an error if the atlas record or upload is unavailable.
+*/
 texture_atlas_rebuild_gpu :: proc() {
 	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
 
@@ -337,6 +423,11 @@ texture_atlas_rebuild_gpu :: proc() {
 	}
 }
 
+/*
+Allocates a padded w×h rectangle in the shelf atlas using first-fit placement.
+
+Opens a new shelf row when no existing shelf has room; returns false when full.
+*/
 texture_atlas_alloc :: proc(w, h: i32) -> (Atlas_Region, bool) {
 	if w <= 0 || h <= 0 do return {}, false
 	if !texture_atlas_init() do return {}, false
@@ -382,6 +473,11 @@ texture_atlas_alloc :: proc(w, h: i32) -> (Atlas_Region, bool) {
 		true
 }
 
+/*
+Uploads a surface into an allocated atlas region on both GPU and CPU backing.
+
+Also copies pixels into the atlas CPU surface so it can be rebuilt after reload.
+*/
 texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> bool {
 	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return false
 	if region.texture_id != state.textures.atlas.texture_id do return false
@@ -423,6 +519,11 @@ texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> boo
 	return true
 }
 
+/*
+Allocates atlas space for a surface and uploads it in one step.
+
+Rolls back the shelf allocation if the upload fails.
+*/
 texture_atlas_pack :: proc(surface: ^sdl.Surface) -> (Atlas_Region, bool) {
 	if surface == nil do return {}, false
 

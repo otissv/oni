@@ -9,6 +9,9 @@ Texture_Config :: oni.Widget_Config
 Texture_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
 Texture_Event :: oni.Widget_Event(Texture_State)
 
+/*
+Texture widget props: source rect, tint, fit/pos overrides, and event handlers.
+*/
 Texture_Props :: struct {
 	config:            Texture_Config,
 	texture:           oni.Texture_Handle,
@@ -33,7 +36,9 @@ Texture_Props :: struct {
 	on_key_released:   proc(event: Texture_Event),
 }
 
-
+/*
+Builds a texture event carrying the current state and optional input metadata.
+*/
 image_event :: proc(
 	state: Texture_State,
 	mouse_button: u8 = 0,
@@ -42,6 +47,9 @@ image_event :: proc(
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
+/*
+Returns the default texture widget theme config, muted when the widget is disabled.
+*/
 image_theme_base :: proc(state: ^Texture_State) -> Texture_Config {
 	color := oni.Color.Foreground
 
@@ -62,6 +70,11 @@ image_theme_base :: proc(state: ^Texture_State) -> Texture_Config {
 	}
 }
 
+/*
+Merges theme defaults, prop overrides, and live state into a resolved config.
+
+Applies explicit texture_fit and texture_pos props when they are set.
+*/
 image_config :: proc(props: Texture_Props, state: ^Texture_State) -> oni.Resolved_Widget_Config {
 	event := image_event(state^)
 
@@ -72,12 +85,18 @@ image_config :: proc(props: Texture_Props, state: ^Texture_State) -> oni.Resolve
 	return oni.resolve_widget_config(base, override, state, event)
 }
 
+/*
+Refreshes merged config on state and returns a fresh texture event snapshot.
+*/
 @(private)
 image_refresh_merged :: proc(props: Texture_Props, state: ^Texture_State) -> Texture_Event {
 	state.config = image_config(props, state)
 	return image_event(state^)
 }
 
+/*
+Resolves the intrinsic source size from props.src or the loaded texture handle.
+*/
 @(private)
 texture_src_size :: proc(props: Texture_Props) -> (w, h: f32) {
 	src := props.src
@@ -90,6 +109,11 @@ texture_src_size :: proc(props: Texture_Props) -> (w, h: f32) {
 	return 0, 0
 }
 
+/*
+Computes intrinsic layout size for auto-sized texture widgets.
+
+Accounts for fit mode, padding, and border when width or height is indefinite.
+*/
 @(private)
 texture_measure_size :: proc(
 	props: Texture_Props,
@@ -129,6 +153,11 @@ texture_measure_size :: proc(
 	return measure
 }
 
+/*
+Renders a fitted texture inside styled chrome with full pointer interaction.
+
+Runs layout on the layout pass and draws background, border, and image on draw.
+*/
 Texture :: proc(props: Texture_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)

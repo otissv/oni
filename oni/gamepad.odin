@@ -7,6 +7,9 @@ import sdl "vendor:sdl3"
 
 GAMEPAD_DEADZONE :: 0.15
 
+/*
+Maps an SDL gamepad button to a compact index, or rejects invalid buttons.
+*/
 gamepad_button_index :: proc(button: sdl.GamepadButton) -> (int, bool) {
 	if button == .INVALID do return 0, false
 	idx := int(button)
@@ -14,6 +17,9 @@ gamepad_button_index :: proc(button: sdl.GamepadButton) -> (int, bool) {
 	return idx, true
 }
 
+/*
+Applies the configured deadzone to a normalized stick axis value.
+*/
 gamepad_apply_deadzone :: proc(value: f32) -> f32 {
 	if math.abs(value) < GAMEPAD_DEADZONE do return 0
 	sign := value < 0 ? f32(-1) : f32(1)
@@ -21,10 +27,16 @@ gamepad_apply_deadzone :: proc(value: f32) -> f32 {
 	return sign * scaled
 }
 
+/*
+Resets all gamepad fields in engine input state to zero/disconnected.
+*/
 gamepad_clear_input :: proc() {
 	state.input.gamepad = {}
 }
 
+/*
+Polls the open SDL gamepad and refreshes input state from hardware.
+*/
 gamepad_sync_from_device :: proc() {
 	if state.gamepad == nil do return
 
@@ -45,6 +57,9 @@ gamepad_sync_from_device :: proc() {
 	}
 }
 
+/*
+Opens the first enumerated SDL gamepad if none is connected.
+*/
 gamepad_open_first_available :: proc() {
 	if state.gamepad != nil do return
 
@@ -56,6 +71,9 @@ gamepad_open_first_available :: proc() {
 	gamepad_open(ids[0])
 }
 
+/*
+Opens a gamepad by SDL instance id and syncs initial axis/button state.
+*/
 gamepad_open :: proc(instance_id: sdl.JoystickID) {
 	if state.gamepad != nil do return
 
@@ -70,6 +88,9 @@ gamepad_open :: proc(instance_id: sdl.JoystickID) {
 	gamepad_sync_from_device()
 }
 
+/*
+Closes the current gamepad, clears the SDL handle, and resets input.
+*/
 gamepad_close :: proc() {
 	if state.gamepad == nil do return
 
@@ -79,6 +100,9 @@ gamepad_close :: proc() {
 	gamepad_clear_input()
 }
 
+/*
+Normalizes and stores one SDL axis into engine gamepad input (sticks/triggers).
+*/
 gamepad_set_axis :: proc(axis: sdl.GamepadAxis, value: i16) {
 	normalized := gamepad_apply_deadzone(f32(value) / 32767.0)
 
@@ -98,6 +122,9 @@ gamepad_set_axis :: proc(axis: sdl.GamepadAxis, value: i16) {
 	}
 }
 
+/*
+Updates button-down array and mirrors D-pad booleans from SDL button state.
+*/
 gamepad_set_button :: proc(button: sdl.GamepadButton, down: bool) {
 	idx, ok := gamepad_button_index(button)
 	if ok {

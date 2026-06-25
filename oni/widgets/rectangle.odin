@@ -4,11 +4,24 @@ import oni ".."
 import set "../set"
 import sdl "vendor:sdl3"
 
-
+/*
+Rectangle widget configuration extending Widget_Config.
+*/
 Rectangle_Config :: oni.Widget_Config
+
+/*
+Rectangle widget per-frame interaction state merged with its fully resolved style config.
+*/
 Rectangle_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
+
+/*
+Rectangle widget event snapshot with state and optional input metadata.
+*/
 Rectangle_Event :: oni.Widget_Event(Rectangle_State)
 
+/*
+Rectangle widget props: config, child callback, and input event handlers.
+*/
 Rectangle_Props :: struct {
 	config:            Rectangle_Config,
 	child:             proc(state: Rectangle_State),
@@ -27,7 +40,9 @@ Rectangle_Props :: struct {
 	on_key_released:   proc(event: Rectangle_Event),
 }
 
-
+/*
+Builds a rectangle event carrying the current state and optional input metadata.
+*/
 rect_event :: proc(
 	state: Rectangle_State,
 	mouse_button: u8 = 0,
@@ -36,7 +51,9 @@ rect_event :: proc(
 	return {state = state, mouse_button = mouse_button, key = key}
 }
 
-
+/*
+Returns the default rectangle theme config, muted when the widget is disabled.
+*/
 rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
 	color := oni.Color.Foreground
 
@@ -57,6 +74,9 @@ rect_theme_base :: proc(state: ^Rectangle_State) -> Rectangle_Config {
 	}
 }
 
+/*
+Merges theme defaults, prop overrides, and live state into a resolved config.
+*/
 rect_config :: proc(
 	props: Rectangle_Props,
 	state: ^Rectangle_State,
@@ -68,12 +88,20 @@ rect_config :: proc(
 	return oni.resolve_widget_config(base, override, state, event)
 }
 
+/*
+Refreshes merged config on state and returns a fresh rectangle event snapshot.
+*/
 @(private)
 rect_refresh_merged :: proc(props: Rectangle_Props, state: ^Rectangle_State) -> Rectangle_Event {
 	state.config = rect_config(props, state)
 	return rect_event(state^)
 }
 
+/*
+Renders a styled rectangle container with full pointer and keyboard interaction.
+
+Runs layout on the layout pass and draws chrome plus children on the draw pass.
+*/
 Rectangle :: proc(props: Rectangle_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)

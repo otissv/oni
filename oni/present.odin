@@ -5,6 +5,12 @@ import sdl "vendor:sdl3"
 
 Draw_Proc :: proc()
 
+/*
+Acquires the swapchain, records draw commands, and submits the GPU frame.
+
+Call once per frame after tick and UI layout; no-ops when rendering is
+unavailable or the draw batch is empty.
+*/
 present_frame :: proc(draw: Draw_Proc) {
 	if !state.can_render || state.window == nil || state.gpu == nil do return
 	if state.gpu_state.pipeline == nil do return

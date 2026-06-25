@@ -4,6 +4,11 @@ import "core:c"
 import "core:math"
 import sdl "vendor:sdl3"
 
+/*
+Returns an existing face handle for path and size, or loads a new face.
+
+Scans loaded faces before calling font_load_face to avoid duplicate entries.
+*/
 font_find_or_load :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 	for &face, i in state.fonts.faces {
 		if face.size_px == size_px && face.path == path {
@@ -13,6 +18,11 @@ font_find_or_load :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 	return font_load_face(path, size_px)
 }
 
+/*
+Resolves a logical font size to a rasterized face for the current draw space.
+
+On artboard space, scales by view zoom and returns a layout_scale to map back.
+*/
 font_resolve :: proc(
 	font: Font_Handle,
 	logical_size: f32,
@@ -43,6 +53,11 @@ font_resolve :: proc(
 	return resolved, layout_scale, true
 }
 
+/*
+Clears the font atlas CPU surface and resets shelf allocation state.
+
+Used before reloading faces so glyph packing starts from a clean atlas.
+*/
 font_atlas_reset :: proc() {
 	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
 
@@ -61,6 +76,11 @@ font_atlas_reset :: proc() {
 	clear(&state.textures.atlas.shelves)
 }
 
+/*
+Rasterizes and caches any glyphs from shaped lines that are not yet in the atlas.
+
+Ensures the atlas is initialized before packing missing glyphs.
+*/
 font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
 	if !texture_atlas_init() do return false
@@ -80,6 +100,11 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 	return true
 }
 
+/*
+Rasterizes a single glyph via FreeType and packs it into the texture atlas.
+
+Allocates a 1×1 transparent region for zero-sized glyphs.
+*/
 font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Entry, bool) {
 	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), FT_LOAD_RENDER)) {
 		log_errorf("FT_Load_Glyph failed for glyph %d", glyph_id)
@@ -134,6 +159,11 @@ font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Ent
 		true
 }
 
+/*
+Copies a FreeType glyph bitmap into an RGBA SDL surface as white with alpha.
+
+Handles gray, mono, and BGRA pixel modes; logs a warning for unsupported modes.
+*/
 font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	w := int(bitmap.width)
 	h := int(bitmap.rows)
@@ -181,11 +211,21 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	}
 }
 
+/*
+Returns the effective line height for text layout, preferring an explicit override.
+
+Falls back to the face line height scaled by layout_scale when line_height is zero.
+*/
 font_text_line_height :: proc(face: ^Font_Face, line_height: f32, layout_scale: f32) -> f32 {
 	if line_height > 0 do return line_height
 	return face.line_height * layout_scale
 }
 
+/*
+Computes the bounding size of shaped lines using the widest line and line count.
+
+Applies layout_scale to line widths and uses font_text_line_height for height.
+*/
 font_measure_lines :: proc(
 	face: ^Font_Face,
 	lines: []Shaped_Line,
@@ -203,6 +243,11 @@ font_measure_lines :: proc(
 	return {width, f32(len(lines)) * lh}
 }
 
+/*
+Measures text using a persistent shaped-text cache.
+
+Rebuilds shaped lines only when the cache key or text content changes.
+*/
 font_measure_cached :: proc(
 	handle: Font_Handle,
 	cache: ^Shaped_Text,
@@ -218,6 +263,11 @@ font_measure_cached :: proc(
 	return font_measure_lines(face, lines)
 }
 
+/*
+Measures text by shaping lines on the fly without caching.
+
+The temporary shaped lines are destroyed before returning.
+*/
 font_measure_uncached :: proc(
 	handle: Font_Handle,
 	text: string,
@@ -233,10 +283,18 @@ font_measure_uncached :: proc(
 	return font_measure_lines(face, lines)
 }
 
+/*
+Snaps a logical coordinate to the nearest half-pixel for crisp glyph placement.
+*/
 snap_logical :: proc(v: f32) -> f32 {
 	return math.round(v * 2) / 2
 }
 
+/*
+Draws one shaped line of text by blitting cached atlas glyphs at the given position.
+
+Handles LTR and RTL pen advancement and applies layout_scale to metrics.
+*/
 font_draw_shaped_line :: proc(
 	face: ^Font_Face,
 	face_id: Asset_Id,
@@ -283,6 +341,11 @@ font_draw_shaped_line :: proc(
 	}
 }
 
+/*
+Draws multiple shaped lines and returns the total laid-out size.
+
+Right-aligns RTL lines within max_w and advances the cursor by line height.
+*/
 font_draw_shaped_lines :: proc(
 	handle: Font_Handle,
 	face: ^Font_Face,

@@ -1,11 +1,17 @@
 package oni
 
 
+/*
+Optional text and wrap width used to measure a layout node intrinsically.
+*/
 Layout_Measure :: struct {
 	text:  string,
 	max_w: f32,
 }
 
+/*
+One node in the flex layout tree with resolved style, geometry, and children.
+*/
 Layout_Node :: struct {
 	ui_id:         UI_Id,
 	config:        Resolved_Widget_Style,
@@ -18,6 +24,9 @@ Layout_Node :: struct {
 	measure:       Layout_Measure,
 }
 
+/*
+Per-frame flex layout tree, stacks, and UI_Id to node index map.
+*/
 Layout_State :: struct {
 	nodes:         [dynamic]Layout_Node,
 	node_stack:    [dynamic]int,
@@ -26,6 +35,11 @@ Layout_State :: struct {
 	id_to_node:    map[UI_Id]int,
 }
 
+/*
+Clears all layout nodes, stacks, and id-to-node mappings.
+
+Called at the start of each UI frame.
+*/
 layout_reset :: proc() {
 	clear(&state.ui.layout.nodes)
 	clear(&state.ui.layout.node_stack)
@@ -34,10 +48,16 @@ layout_reset :: proc() {
 	clear(&state.ui.layout.id_to_node)
 }
 
+/*
+Returns the flex direction from a resolved widget style.
+*/
 layout_config_direction :: proc(config: Resolved_Widget_Style) -> Direction_Layout {
 	return config.direction
 }
 
+/*
+Derived axis, wrap, and reverse flags for a Direction_Layout value.
+*/
 Layout_Direction_Info :: struct {
 	is_horizontal:    bool,
 	is_wrap:          bool,
@@ -45,6 +65,9 @@ Layout_Direction_Info :: struct {
 	is_cross_reverse: bool,
 }
 
+/*
+Derives axis, wrap, and reverse flags from a layout direction enum.
+*/
 layout_direction_info :: proc(direction: Direction_Layout) -> Layout_Direction_Info {
 	switch direction {
 	case .Horizontal:
@@ -72,18 +95,30 @@ layout_direction_info :: proc(direction: Direction_Layout) -> Layout_Direction_I
 	unreachable()
 }
 
+/*
+Returns whether a layout direction flows horizontally.
+*/
 layout_direction_is_horizontal :: proc(direction: Direction_Layout) -> bool {
 	return layout_direction_info(direction).is_horizontal
 }
 
+/*
+Returns whether a layout direction enables line wrapping.
+*/
 layout_direction_is_wrap :: proc(direction: Direction_Layout) -> bool {
 	return layout_direction_info(direction).is_wrap
 }
 
+/*
+Mirrors a position within available space for reverse flow axes.
+*/
 layout_mirror_in_available :: proc(pos, size, available: f32) -> f32 {
 	return available - pos - size
 }
 
+/*
+One wrapped line segment within a flex container during layout.
+*/
 Layout_Wrap_Line :: struct {
 	start:     int,
 	count:     int,
@@ -91,6 +126,9 @@ Layout_Wrap_Line :: struct {
 	cross_max: f32,
 }
 
+/*
+Computes the main-axis wrap limit from node config and insets.
+*/
 layout_wrap_main_limit_from_config :: proc(node: ^Layout_Node, is_horizontal: bool) -> f32 {
 	main_len := is_horizontal ? node.config.width : node.config.height
 	main_max := is_horizontal ? node.config.max_w : node.config.max_h
@@ -108,14 +146,23 @@ layout_wrap_main_limit_from_config :: proc(node: ^Layout_Node, is_horizontal: bo
 	return max(0, main - inset)
 }
 
+/*
+Returns a child's size along the main axis for wrap layout.
+*/
 layout_wrap_child_main :: proc(size: Vec2, is_horizontal: bool) -> f32 {
 	return is_horizontal ? size.x : size.y
 }
 
+/*
+Returns a child's size along the cross axis for wrap layout.
+*/
 layout_wrap_child_cross :: proc(size: Vec2, is_horizontal: bool) -> f32 {
 	return is_horizontal ? size.y : size.x
 }
 
+/*
+Groups children into wrap lines given a main-axis size limit.
+*/
 layout_wrap_build_lines :: proc(
 	sizes: []Vec2,
 	is_horizontal: bool,
@@ -150,6 +197,9 @@ layout_wrap_build_lines :: proc(
 	return lines
 }
 
+/*
+Measures a wrap container's natural size from child desired sizes.
+*/
 layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -> Vec2 {
 	sizes: [dynamic]Vec2
 	defer delete(sizes)
@@ -192,20 +242,32 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -
 	}
 }
 
+/*
+Returns the inter-child gap from a resolved widget style.
+*/
 layout_config_gap :: proc(config: Resolved_Widget_Style) -> f32 {
 	return f32(config.gap)
 }
 
+/*
+Returns the justify alignment from a resolved widget style.
+*/
 layout_config_justify :: proc(config: Resolved_Widget_Style) -> Justify_Pos {
 	return config.justify
 }
 
+/*
+Merges parent justify with child self-alignment overrides per axis.
+*/
 layout_merge_justify :: proc(parent, self: Justify_Pos) -> Justify_Pos {
 	result := parent
 	if _, x_ok := resolve_justify_x(self.x); x_ok do result.x = self.x
 	if _, y_ok := resolve_justify_y(self.y); y_ok do result.y = self.y
 	return result
 }
+/*
+Clamps a size to optional min and max constraints when they are positive.
+*/
 layout_clamp_axis :: proc(value, min_v, max_v: f32) -> f32 {
 	result := value
 	if min_v > 0 do result = max(result, min_v)
@@ -213,6 +275,9 @@ layout_clamp_axis :: proc(value, min_v, max_v: f32) -> f32 {
 	return result
 }
 
+/*
+Shrinks an outer rect inward by padding to the content box.
+*/
 layout_content_rect :: proc(outer: Rect, padding: Pd) -> Rect {
 	return {
 		x = outer.x + padding.l,
@@ -222,6 +287,9 @@ layout_content_rect :: proc(outer: Rect, padding: Pd) -> Rect {
 	}
 }
 
+/*
+Shrinks an outer rect inward by border and padding to the inner box.
+*/
 layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
 	return layout_content_rect(
 		outer,
@@ -234,6 +302,9 @@ layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
 	)
 }
 
+/*
+Measures shaped text size for a widget style and optional max width.
+*/
 layout_measure_text :: proc(config: Resolved_Widget_Style, text: string, max_w: f32) -> Vec2 {
 	if len(text) == 0 do return {}
 
@@ -253,6 +324,9 @@ layout_measure_text :: proc(config: Resolved_Widget_Style, text: string, max_w: 
 	return font_measure_lines(face, lines, line_height, layout_scale)
 }
 
+/*
+Measures a leaf node's size from text or explicit dimensions.
+*/
 layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	config := node.config
 	size: Vec2
@@ -289,6 +363,9 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	return size
 }
 
+/*
+Measures a node's desired size from children or leaf content.
+*/
 layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	padding := node.padding
 	border := node.border
@@ -351,6 +428,9 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	return layout_measure_leaf(node)
 }
 
+/*
+Creates a layout node, links it to the parent, and pushes it on the stack.
+*/
 layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Style) -> ^Layout_Node {
 	parent_index := -1
 	if len(state.ui.layout.node_stack) > 0 {
@@ -379,15 +459,24 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Style) -> ^Layout
 	return &state.ui.layout.nodes[node_index]
 }
 
+/*
+Attaches text and max-width hints for leaf text measurement.
+*/
 layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.text = text
 	node.measure.max_w = max_w
 }
 
+/*
+Sets an explicit desired size on a layout node.
+*/
 layout_set_measure_size :: proc(node: ^Layout_Node, size: Vec2) {
 	node.desired = size
 }
 
+/*
+Pops the current node from the stack and stores its measured size.
+*/
 layout_pop_node :: proc() {
 	if len(state.ui.layout.node_stack) == 0 do return
 
@@ -398,6 +487,9 @@ layout_pop_node :: proc() {
 	node.desired = layout_measure(node)
 }
 
+/*
+Resolves final width and height for a node within bounds.
+*/
 layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 	desired := node.desired
 
@@ -415,12 +507,18 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 	}
 }
 
+/*
+Overwrites size axes that have definite length constraints.
+*/
 layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2) {
 	resolved := layout_resolve_node_size(node, bounds)
 	if length_is_definite(node.config.width) do size.x = resolved.x
 	if length_is_definite(node.config.height) do size.y = resolved.y
 }
 
+/*
+Computes a child's main-axis size including flex distribution.
+*/
 layout_child_main_size :: proc(
 	child: ^Layout_Node,
 	is_horizontal: bool,
@@ -439,6 +537,9 @@ layout_child_main_size :: proc(
 	return is_horizontal ? child.desired.x : child.desired.y
 }
 
+/*
+Returns whether a child participates in main-axis flow layout.
+*/
 layout_child_in_main_flow :: proc(child: ^Layout_Node, is_horizontal: bool) -> bool {
 	self := child.config.self
 	if is_horizontal {
@@ -449,6 +550,9 @@ layout_child_in_main_flow :: proc(child: ^Layout_Node, is_horizontal: bool) -> b
 	return !ok
 }
 
+/*
+Computes a child's cross-axis size including stretch alignment.
+*/
 layout_child_cross_size :: proc(
 	child: ^Layout_Node,
 	is_horizontal: bool,
@@ -482,6 +586,9 @@ layout_child_cross_size :: proc(
 	return is_horizontal ? child.desired.y : child.desired.x
 }
 
+/*
+Extracts the main-axis justify align from a justify position.
+*/
 layout_main_justify_align :: proc(
 	justify: Justify_Pos,
 	is_horizontal: bool,
@@ -495,6 +602,9 @@ layout_main_justify_align :: proc(
 	return justify_align_from_y(justify.y)
 }
 
+/*
+Extracts the cross-axis justify align from a justify position.
+*/
 layout_cross_justify_align :: proc(
 	justify: Justify_Pos,
 	is_horizontal: bool,
@@ -508,6 +618,9 @@ layout_cross_justify_align :: proc(
 	return justify_align_from_x(justify.x)
 }
 
+/*
+Computes leading inset for space-distribution justify modes.
+*/
 layout_space_leading :: proc(align: Justify_Align, free: f32, count: int) -> f32 {
 	if count <= 0 do return 0
 
@@ -522,6 +635,9 @@ layout_space_leading :: proc(align: Justify_Align, free: f32, count: int) -> f32
 	return 0
 }
 
+/*
+Computes gap between items for space-distribution justify modes.
+*/
 layout_space_between_items :: proc(align: Justify_Align, free: f32, count: int) -> f32 {
 	if count <= 1 do return 0
 
@@ -536,6 +652,9 @@ layout_space_between_items :: proc(align: Justify_Align, free: f32, count: int) 
 	return 0
 }
 
+/*
+Computes main-axis positions for space-distribution alignment.
+*/
 layout_space_positions :: proc(
 	align: Justify_Align,
 	available: f32,
@@ -565,6 +684,9 @@ layout_space_positions :: proc(
 	return positions
 }
 
+/*
+Positions one child rect and recursively lays out its descendants.
+*/
 layout_position_child_rect :: proc(
 	child: ^Layout_Node,
 	content: Rect,
@@ -625,6 +747,9 @@ layout_position_child_rect :: proc(
 	}
 }
 
+/*
+Positions children in a wrap flex container.
+*/
 layout_position_children_wrap :: proc(
 	node: ^Layout_Node,
 	content: Rect,
@@ -848,6 +973,9 @@ layout_position_children_wrap :: proc(
 	}
 }
 
+/*
+Expands a wrap parent's cross size to fit wrapped children.
+*/
 layout_wrap_apply_auto_cross_size :: proc(node: ^Layout_Node, is_horizontal: bool) {
 	cross_len := is_horizontal ? node.config.height : node.config.width
 	if length_is_definite(cross_len) do return
@@ -871,6 +999,9 @@ layout_wrap_apply_auto_cross_size :: proc(node: ^Layout_Node, is_horizontal: boo
 	}
 }
 
+/*
+Positions children in a non-wrap flex container.
+*/
 layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
 
@@ -1068,6 +1199,9 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	}
 }
 
+/*
+Assigns a node's rect and recursively positions its children.
+*/
 layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 	size := layout_resolve_node_size(node, bounds)
 
@@ -1094,10 +1228,16 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 	}
 }
 
+/*
+Solves layout for a root node within the given bounds.
+*/
 layout_solve :: proc(root: ^Layout_Node, bounds: Rect) {
 	layout_solve_node(root, bounds)
 }
 
+/*
+Returns layout bounds for screen or artboard draw space.
+*/
 layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 	logical_w := f32(state.dpi.logical_w)
 	logical_h := f32(state.dpi.logical_h)
@@ -1111,11 +1251,17 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 	return {0, 0, logical_w, logical_h}
 }
 
+/*
+Pushes layout bounds and records the node index for a new space.
+*/
 layout_begin_space :: proc(space: Draw_Space) {
 	append(&state.ui.layout.bounds_stack, layout_space_bounds(space))
 	append(&state.ui.layout.space_markers, len(state.ui.layout.nodes))
 }
 
+/*
+Solves all root nodes created since the matching layout_begin_space.
+*/
 layout_end_space :: proc() {
 	if len(state.ui.layout.bounds_stack) == 0 do return
 

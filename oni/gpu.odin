@@ -7,6 +7,9 @@ import sdl "vendor:sdl3"
 vert_shader_code := #load("shaders/ui.spv.vert")
 frag_shader_code := #load("shaders/ui.spv.frag")
 
+/*
+Per-vertex data for the UI shader: position, UVs, colors, radii, and borders.
+*/
 UI_Vertex :: struct {
 	pos:          [2]f32,
 	uv:           [2]f32,
@@ -19,10 +22,16 @@ UI_Vertex :: struct {
 	border:       [4]f32,
 }
 
+/*
+Uniform buffer object carrying the orthographic projection matrix.
+*/
 GPU_Proj_UBO :: struct {
 	proj: matrix[4, 4]f32,
 }
 
+/*
+GPU rendering resources: pipeline, sampler, white texture, projection, and batch.
+*/
 GPU_State :: struct {
 	pipeline:      ^sdl.GPUGraphicsPipeline,
 	sampler:       ^sdl.GPUSampler,
@@ -31,6 +40,11 @@ GPU_State :: struct {
 	batch:         Batch_State,
 }
 
+/*
+Creates an SDL GPU shader from embedded SPIR-V bytecode.
+
+Wraps CreateGPUShader with the UI shader entrypoint and format settings.
+*/
 gpu_load_shader :: proc(
 	device: ^sdl.GPUDevice,
 	code: []u8,
@@ -52,6 +66,11 @@ gpu_load_shader :: proc(
 	)
 }
 
+/*
+Returns premultiplied-style alpha blending state for the UI color target.
+
+Uses standard src-alpha over dst-alpha compositing for UI transparency.
+*/
 gpu_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
 	return {
 		src_color_blendfactor = .SRC_ALPHA,
@@ -64,6 +83,12 @@ gpu_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
 	}
 }
 
+/*
+Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
+
+Loads embedded SPIR-V shaders, configures blend state for the swapchain
+format, and returns nil if shader compilation or pipeline creation fails.
+*/
 gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
 	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
 	frag := gpu_load_shader(gpu, frag_shader_code, .FRAGMENT, 0, 1)
@@ -158,6 +183,11 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 	)
 }
 
+/*
+Creates a linear, clamp-to-edge sampler for UI texture rendering.
+
+Used for both atlas textures and the 1x1 white fallback texture.
+*/
 gpu_create_sampler :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUSampler {
 	return sdl.CreateGPUSampler(
 		gpu,
@@ -172,6 +202,12 @@ gpu_create_sampler :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUSampler {
 	)
 }
 
+/*
+Uploads white pixel data to a 1x1 GPU texture via a one-shot command buffer.
+
+Acquires a command buffer, copies from the transfer buffer, and submits.
+Returns false on SDL acquisition, upload, or submit failure.
+*/
 gpu_upload_white_pixel :: proc(
 	texture: ^sdl.GPUTexture,
 	transfer: ^sdl.GPUTransferBuffer,
@@ -199,6 +235,12 @@ gpu_upload_white_pixel :: proc(
 	return true
 }
 
+/*
+Creates and uploads a 1x1 white RGBA texture for solid-color batch draws.
+
+Allocates GPU texture and transfer buffer, writes opaque white, and uploads.
+Returns nil and releases partial resources on any failure.
+*/
 gpu_create_white_texture :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUTexture {
 	texture := sdl.CreateGPUTexture(
 		gpu,
@@ -245,6 +287,12 @@ gpu_create_white_texture :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUTexture {
 	return texture
 }
 
+/*
+Rebuilds the orthographic projection matrix from logical viewport dimensions.
+
+Maps logical coordinates (0,0) top-left to (w,h) bottom-right for UI drawing.
+No-op when logical width or height is zero or negative.
+*/
 gpu_update_projection :: proc(dpi: Dpi_Info) {
 	w := f32(dpi.logical_w)
 	h := f32(dpi.logical_h)
@@ -253,6 +301,11 @@ gpu_update_projection :: proc(dpi: Dpi_Info) {
 	state.gpu_state.proj_mat = linalg.matrix_ortho3d_f32(0, w, h, 0, -1, 1)
 }
 
+/*
+Tears down batch state and releases pipeline, sampler, and white texture.
+
+Safe to call when state is nil or GPU resources were partially initialized.
+*/
 gpu_destroy :: proc() {
 	if state == nil do return
 
@@ -273,6 +326,12 @@ gpu_destroy :: proc() {
 	}
 }
 
+/*
+Initializes the full GPU rendering stack when device and window are ready.
+
+Creates pipeline, sampler, white texture, asset GPU resources, batch buffers,
+and projection matrix. No-op if already initialized or prerequisites missing.
+*/
 gpu_init :: proc() {
 	if state.gpu == nil || state.window == nil || state.gpu_state.pipeline != nil do return
 
@@ -301,6 +360,12 @@ gpu_init :: proc() {
 	gpu_update_projection(state.dpi)
 }
 
+/*
+Recreates GPU resources after hot reload or device state changes.
+
+Releases texture GPU handles, destroys and re-inits the GPU stack, then
+reloads textures and font GPU faces.
+*/
 gpu_reload :: proc() {
 	texture_release_gpu()
 	gpu_destroy()

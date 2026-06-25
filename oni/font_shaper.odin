@@ -10,6 +10,9 @@ Text_Direction :: enum {
 	RTL,
 }
 
+/*
+One glyph produced by text shaping with cluster and advance offsets.
+*/
 Shaped_Glyph :: struct {
 	glyph_id:             u32,
 	cluster:              u32,
@@ -17,12 +20,18 @@ Shaped_Glyph :: struct {
 	x_advance, y_advance: f32,
 }
 
+/*
+A single line of shaped glyphs with total width and text direction.
+*/
 Shaped_Line :: struct {
 	glyphs:    []Shaped_Glyph,
 	width:     f32,
 	direction: Text_Direction,
 }
 
+/*
+Loaded font face pairing FreeType and HarfBuzz handles with metrics.
+*/
 Font_Face :: struct {
 	ft_face:     FT_Face,
 	hb_font:     hb_font_t,
@@ -34,12 +43,18 @@ Font_Face :: struct {
 	line_height: f32,
 }
 
+/*
+Atlas placement and bearing for one cached glyph raster.
+*/
 Font_Glyph_Entry :: struct {
 	region:    Atlas_Region,
 	bearing_x: f32,
 	bearing_y: f32,
 }
 
+/*
+Font subsystem: FreeType library, loaded faces, glyph cache, and shape pool.
+*/
 Font_State :: struct {
 	library:     FT_Library,
 	faces:       [dynamic]Font_Face,
@@ -47,6 +62,9 @@ Font_State :: struct {
 	shape_pool:  Shaped_Text_Pool,
 }
 
+/*
+Cache key identifying a rasterized glyph by face and glyph id.
+*/
 Font_Glyph_Key :: struct {
 	face_id:  Asset_Id,
 	glyph_id: u32,
@@ -54,6 +72,9 @@ Font_Glyph_Key :: struct {
 
 TEXT_SHAPE_POOL_CAPACITY :: 256
 
+/*
+Cache key for shaped text: face, size, wrap width, direction, and text hash.
+*/
 Shaped_Text_Key :: struct {
 	face_id:    Asset_Id,
 	pixel_size: i32,
@@ -65,6 +86,9 @@ Shaped_Text_Key :: struct {
 
 INVALID_SHAPE_POOL_SLOT :: -1
 
+/*
+Cached shaped text lines with pool slot and LRU access timestamp.
+*/
 Shaped_Text :: struct {
 	key:         Shaped_Text_Key,
 	text:        string,
@@ -73,12 +97,20 @@ Shaped_Text :: struct {
 	last_access: u64,
 }
 
+/*
+Fixed-capacity LRU pool of shaped-text cache entries.
+*/
 Shaped_Text_Pool :: struct {
 	entries:    [TEXT_SHAPE_POOL_CAPACITY]^Shaped_Text,
 	count:      int,
 	access_seq: u64,
 }
 
+/*
+Initializes the FreeType library and glyph cache on first use.
+
+Returns false if FT_Init_FreeType fails.
+*/
 font_init :: proc() -> bool {
 	if state.fonts.library != nil do return true
 
@@ -94,6 +126,11 @@ font_init :: proc() -> bool {
 	return true
 }
 
+/*
+Builds a cache key from face, text, wrap width, and shaping direction.
+
+Hashes text content with CRC32 for fast invalidation checks.
+*/
 shaped_text_key_make :: proc(
 	face_id: Asset_Id,
 	face: ^Font_Face,
@@ -111,17 +148,30 @@ shaped_text_key_make :: proc(
 	}
 }
 
+/*
+Returns whether a cache entry still matches the given key and text content.
+
+Compares the full key struct and verifies the stored text string equals text.
+*/
 shaped_text_key_valid :: proc(cache: ^Shaped_Text, key: Shaped_Text_Key, text: string) -> bool {
 	if cache.key != key do return false
 	if len(cache.text) != len(text) do return false
 	return cache.text == text
 }
 
+/*
+Bumps the LRU access sequence for a pooled shaped-text entry.
+*/
 shaped_text_pool_touch :: proc(cache: ^Shaped_Text) {
 	state.fonts.shape_pool.access_seq += 1
 	cache.last_access = state.fonts.shape_pool.access_seq
 }
 
+/*
+Removes a cache entry from the shape pool using swap-remove bookkeeping.
+
+Clears the entry's pool_slot to INVALID_SHAPE_POOL_SLOT.
+*/
 shaped_text_pool_unregister :: proc(cache: ^Shaped_Text) {
 	if cache.pool_slot == INVALID_SHAPE_POOL_SLOT do return
 
@@ -136,6 +186,11 @@ shaped_text_pool_unregister :: proc(cache: ^Shaped_Text) {
 	cache.pool_slot = INVALID_SHAPE_POOL_SLOT
 }
 
+/*
+Evicts the least-recently-used shaped-text entry when the pool is full.
+
+Delegates to shaped_text_release on the oldest pooled cache.
+*/
 shaped_text_pool_evict_lru :: proc() {
 	if state.fonts.shape_pool.count <= 0 do return
 
@@ -152,6 +207,11 @@ shaped_text_pool_evict_lru :: proc() {
 	shaped_text_release(state.fonts.shape_pool.entries[oldest_slot])
 }
 
+/*
+Registers a cache entry in the shape pool, evicting LRU when at capacity.
+
+Re-touching an already-registered entry only updates its access time.
+*/
 shaped_text_pool_register :: proc(cache: ^Shaped_Text) {
 	if cache.pool_slot != INVALID_SHAPE_POOL_SLOT {
 		shaped_text_pool_touch(cache)
@@ -169,6 +229,11 @@ shaped_text_pool_register :: proc(cache: ^Shaped_Text) {
 	shaped_text_pool_touch(cache)
 }
 
+/*
+Frees shaped lines and text owned by a cache entry and unregisters it from the pool.
+
+Resets the cache key and access metadata to empty defaults.
+*/
 shaped_text_release :: proc(cache: ^Shaped_Text) {
 	if cache == nil do return
 
@@ -181,6 +246,11 @@ shaped_text_release :: proc(cache: ^Shaped_Text) {
 	cache.last_access = 0
 }
 
+/*
+Clears every entry in the shaped-text pool without freeing the pool array.
+
+Used during shutdown and face destruction to drop cached shaped text.
+*/
 shaped_text_pool_clear :: proc() {
 	for i in 0 ..< state.fonts.shape_pool.count {
 		cache := state.fonts.shape_pool.entries[i]
@@ -198,7 +268,11 @@ shaped_text_pool_clear :: proc() {
 	state.fonts.shape_pool.access_seq = 0
 }
 
-// Returns lines owned by cache. Do not free the result.
+/*
+Returns cached shaped lines, rebuilding when the key or text changes.
+
+Lines are owned by the cache; do not free the result.
+*/
 shaped_text_ensure :: proc(
 	cache: ^Shaped_Text,
 	face_id: Asset_Id,
@@ -231,6 +305,11 @@ shaped_text_ensure :: proc(
 	return cache.lines
 }
 
+/*
+Shuts down all font resources: faces, FreeType, glyph cache, and shape pool.
+
+Safe to call during engine teardown after drawing has stopped.
+*/
 font_shutdown :: proc() {
 	font_destroy_faces()
 
@@ -251,11 +330,19 @@ font_shutdown :: proc() {
 	state.fonts.faces = nil
 }
 
+/*
+Saved face path and size used to reload fonts after hot reload or DPI change.
+*/
 Font_Reload_Entry :: struct {
 	path:    string,
 	size_px: f32,
 }
 
+/*
+Saves loaded face paths and sizes, clears the atlas, and reloads every face.
+
+Used after hot reload or DPI changes that invalidate FreeType/HarfBuzz handles.
+*/
 font_reload_faces :: proc() {
 	saved := make([dynamic]Font_Reload_Entry)
 	defer {
@@ -279,6 +366,11 @@ font_reload_faces :: proc() {
 	}
 }
 
+/*
+Loads a font file at the given logical size and registers a new Font_Face.
+
+Creates linked FreeType and HarfBuzz objects and records font metrics.
+*/
 font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 	if !font_init() do return {}, false
 
@@ -322,6 +414,11 @@ font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
 	return Font_Handle{id = face_id, size_px = size_px}, true
 }
 
+/*
+Destroys all loaded faces and clears glyph and shape-pool caches.
+
+Does not shut down the FreeType library itself.
+*/
 font_destroy_faces :: proc() {
 	for &face in state.fonts.faces {
 		font_destroy_face(&face)
@@ -336,6 +433,9 @@ font_destroy_faces :: proc() {
 	clear(&state.fonts.glyph_cache)
 }
 
+/*
+Releases FreeType, HarfBuzz, and path resources for a single face.
+*/
 font_destroy_face :: proc(face: ^Font_Face) {
 	if face == nil do return
 
@@ -353,18 +453,31 @@ font_destroy_face :: proc(face: ^Font_Face) {
 	}
 }
 
+/*
+Returns the Font_Face pointer for a handle, or nil when out of range.
+*/
 font_face_from_handle :: proc(handle: Font_Handle) -> ^Font_Face {
 	index := int(handle.id)
 	if index < 0 || index >= len(state.fonts.faces) do return nil
 	return &state.fonts.faces[index]
 }
 
+/*
+Converts a logical pixel size to a DPI-scaled integer raster size.
+
+Clamps to at least one pixel.
+*/
 font_pixel_size :: proc(size_px: f32) -> i32 {
 	scale := state.dpi.scale
 	if scale <= 0 do scale = 1
 	return max(i32(math.round(size_px * scale)), 1)
 }
 
+/*
+Reads ascent, descent, and line height from a FreeType face in logical pixels.
+
+Falls back to reasonable defaults when size metrics are unavailable.
+*/
 font_metrics_from_face :: proc(ft_face: FT_Face) -> (ascent, descent, line_height: f32) {
 	if metrics := ft_face_size_metrics(ft_face); metrics != nil {
 		ascent = f32(metrics.ascender) / 64.0
@@ -379,6 +492,11 @@ font_metrics_from_face :: proc(ft_face: FT_Face) -> (ascent, descent, line_heigh
 	return 16, 4, 20
 }
 
+/*
+Shapes a UTF-8 string into positioned glyphs using HarfBuzz.
+
+Returns a newly allocated glyph slice, or nil on failure.
+*/
 font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) -> []Shaped_Glyph {
 	if face == nil || len(text) == 0 do return nil
 
@@ -426,6 +544,11 @@ font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) ->
 	return glyphs
 }
 
+/*
+Shapes text and splits it into wrapped lines at max_w, honoring newlines.
+
+Returns owned Shaped_Line slices; free with font_destroy_shaped_lines.
+*/
 font_shape_line_build :: proc(
 	face: ^Font_Face,
 	text: string,
@@ -526,6 +649,9 @@ font_shape_line_build :: proc(
 	return lines[:]
 }
 
+/*
+Frees glyph slices for each line and the lines slice itself.
+*/
 font_destroy_shaped_lines :: proc(lines: []Shaped_Line) {
 	for &line in lines {
 		delete(line.glyphs)
@@ -533,6 +659,9 @@ font_destroy_shaped_lines :: proc(lines: []Shaped_Line) {
 	delete(lines)
 }
 
+/*
+Sums x_advance across glyphs to compute the total width of a shaped line.
+*/
 shaped_line_width :: proc(glyphs: []Shaped_Glyph) -> f32 {
 	width: f32
 	for glyph in glyphs {
@@ -541,12 +670,18 @@ shaped_line_width :: proc(glyphs: []Shaped_Glyph) -> f32 {
 	return width
 }
 
+/*
+Returns whether the cluster index points to a word-break character (space or tab).
+*/
 font_is_break_cluster :: proc(text: string, cluster: u32) -> bool {
 	if int(cluster) >= len(text) do return false
 	b := text[cluster]
 	return b == ' ' || b == '\t'
 }
 
+/*
+Returns whether the cluster index points to a newline character.
+*/
 font_is_newline_cluster :: proc(text: string, cluster: u32) -> bool {
 	if int(cluster) >= len(text) do return false
 	return text[cluster] == '\n'

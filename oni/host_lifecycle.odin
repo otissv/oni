@@ -21,6 +21,9 @@ when ODIN_OS == .Windows {
 	APP_LIB_EXT :: ".so"
 }
 
+/*
+Host-side configuration for locating and naming the hot-reload app library.
+*/
 Host_Config :: struct {
 	lib_dir:  string,
 	lib_name: string,
@@ -35,10 +38,16 @@ DEFAULT_CONFIG :: Host_Config {
 
 config: Host_Config
 
+/*
+Returns the path to the hot-reload app shared library on this platform.
+*/
 app_lib_path :: proc() -> string {
 	return fmt.tprintf("{0}{1}{2}", config.lib_dir, config.lib_name, APP_LIB_EXT)
 }
 
+/*
+Function pointers loaded from the app shared library for the host lifecycle.
+*/
 App_API :: struct {
 	lib:             dynlib.Library,
 	init_window:     proc(),
@@ -62,6 +71,11 @@ App_API :: struct {
 	api_version:     int,
 }
 
+/*
+Per-frame hot reload driver: updates app, watches F5/F6 and .so mtime.
+
+Panics on tracking-allocator bad frees after shutting down loaded libraries.
+*/
 reloader :: proc(
 	app_api: ^App_API,
 	api_version: ^int,
@@ -127,6 +141,9 @@ reloader :: proc(
 	}
 }
 
+/*
+Copies the built app library to a versioned filename for dynlib loading.
+*/
 copy_app_lib :: proc(to: string) -> bool {
 	path := app_lib_path()
 	if err := os.copy_file(to, path); err != nil {
@@ -136,6 +153,9 @@ copy_app_lib :: proc(to: string) -> bool {
 	return true
 }
 
+/*
+Reads the app library file modification time in unix nanoseconds.
+*/
 load_app_lib_mtime :: proc() -> (nsec: i64, ok: bool) {
 	mod_time, err := os.last_write_time_by_name(app_lib_path())
 	if err != os.ERROR_NONE {
@@ -145,6 +165,9 @@ load_app_lib_mtime :: proc() -> (nsec: i64, ok: bool) {
 	return time.time_to_unix_nano(mod_time), true
 }
 
+/*
+Loads a versioned app .so/.dll/.dylib copy and binds exported App_API symbols.
+*/
 load_app_api :: proc(api_version: int) -> (api: App_API, ok: bool) {
 	mod_nsec, mod_ok := load_app_lib_mtime()
 	if !mod_ok {
@@ -176,6 +199,9 @@ load_app_api :: proc(api_version: int) -> (api: App_API, ok: bool) {
 	return
 }
 
+/*
+Unloads a loaded app library and deletes its versioned copy file.
+*/
 unload_app_api :: proc(api: ^App_API) {
 	if api.lib != nil {
 		if !dynlib.unload_library(api.lib) {
@@ -196,11 +222,19 @@ unload_app_api :: proc(api: ^App_API) {
 	}
 }
 
+/*
+Blocks until the user presses Enter on stdin.
+
+Used before panic when allocation tracking detects errors.
+*/
 wait_for_enter :: proc() {
 	buf: [1]u8
 	os.read(os.stdin, buf[:])
 }
 
+/*
+Logs leaks, clears tracking allocator state, and returns whether leaks were found.
+*/
 reset_tracking_allocator :: proc(tracking: ^mem.Tracking_Allocator) -> bool {
 	leaked := false
 
@@ -213,6 +247,9 @@ reset_tracking_allocator :: proc(tracking: ^mem.Tracking_Allocator) -> bool {
 	return leaked
 }
 
+/*
+Host bootstrap: sets cwd, logging, SDL log hook, loads app lib, runs init_window/init.
+*/
 init_app :: proc(
 	default_allocator: mem.Allocator,
 	host_config: Host_Config = DEFAULT_CONFIG,
@@ -269,6 +306,9 @@ init_app :: proc(
 	return
 }
 
+/*
+Host teardown: app shutdown, leak check, unload old libs, shutdown_window.
+*/
 shutdown_app :: proc(
 	app_api: ^App_API,
 	tracking: ^mem.Tracking_Allocator,
@@ -289,6 +329,11 @@ shutdown_app :: proc(
 	unload_app_api(app_api)
 }
 
+/*
+Swaps in a new App_API after hot reload; resets or reallocates state as needed.
+
+Full restart runs when F6 is pressed or persistent memory layout changes.
+*/
 perform_reload :: proc(
 	app_api: ^App_API,
 	new_api: App_API,

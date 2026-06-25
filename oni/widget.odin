@@ -4,6 +4,11 @@ import "core:fmt"
 import "core:hash"
 
 
+/*
+Returns the next auto-generated element id for this frame.
+
+Ids are unique within a frame and reset at ui_begin_frame.
+*/
 auto_element_id :: proc() -> Widget_ID {
 	idx := w_ctx.auto_element_index
 	w_ctx.auto_element_index += 1
@@ -14,6 +19,11 @@ auto_element_id :: proc() -> Widget_ID {
 }
 
 
+/*
+Maps a stable user id to the auto-generated key used this frame.
+
+Skipped when id is empty.
+*/
 register_static_id :: proc(id: string, static_id: string) {
 	if id == "" do return
 
@@ -24,6 +34,9 @@ register_static_id :: proc(id: string, static_id: string) {
 	w_ctx.static_ids[id] = static_id
 }
 
+/*
+Returns a frame-local key for an element and registers its static id mapping.
+*/
 element_key :: proc(id: string) -> string {
 	key := auto_element_id()
 	register_static_id(id, key)
@@ -31,16 +44,25 @@ element_key :: proc(id: string) -> string {
 	return key
 }
 
+/*
+Clears per-frame pressed and released flags on a mouse button state.
+*/
 clear_button_transients :: proc(button: ^Widget_Mouse_Button_State) {
 	button.pressed = false
 	button.released = false
 }
 
+/*
+Clears per-frame pressed and released flags on a keyboard key state.
+*/
 clear_key_transients :: proc(key: ^Widget_Mouse_Key_State) {
 	key.pressed = false
 	key.released = false
 }
 
+/*
+Updates mouse button down state and sets pressed/released edge flags.
+*/
 @(private)
 sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
 	if is_down {
@@ -52,6 +74,9 @@ sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
 	button.down = is_down
 }
 
+/*
+Updates keyboard key down state and sets pressed/released edge flags.
+*/
 @(private)
 sync_widget_key :: proc(key: ^Widget_Mouse_Key_State, is_down: bool) {
 	if is_down {
@@ -63,6 +88,11 @@ sync_widget_key :: proc(key: ^Widget_Mouse_Key_State, is_down: bool) {
 	key.down = is_down
 }
 
+/*
+Copies engine input into widget context and tracks mouse movement.
+
+Syncs mouse position and all button/key states for hit testing.
+*/
 sync_widget_input :: proc() {
 	if state == nil do return
 
@@ -83,6 +113,11 @@ sync_widget_input :: proc() {
 	}
 }
 
+/*
+Resets per-frame widget input state without advancing the UI frame counter.
+
+Mirrors the input-reset portion of ui_begin_frame for standalone use.
+*/
 beginMouseFrame :: proc() {
 	w_ctx.auto_element_index = 0
 
@@ -103,6 +138,11 @@ beginMouseFrame :: proc() {
 	sync_widget_input()
 }
 
+/*
+Returns whether the mouse pointer is inside a rect in the given draw space.
+
+Converts screen coordinates to world space for artboard rects.
+*/
 pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	mouse := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
 
@@ -118,6 +158,9 @@ pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 	)
 }
 
+/*
+Returns the hit-test rect for a widget, honoring fixed width and height.
+*/
 widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect {
 	rect := ui_layout_rect(layout_id)
 
@@ -136,16 +179,25 @@ widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect 
 	return rect
 }
 
+/*
+Casts a typed widget state pointer to the generic Widget_State view.
+*/
 to_ui_state :: proc(state: ^$S) -> Widget_State {
 
 	return (^Widget_State)(cast(rawptr)state)^
 }
 
+/*
+Wraps a typed widget state pointer in a generic Widget_Event.
+*/
 to_ui_event :: proc(state: ^$S) -> Widget_Event(Widget_State) {
 
 	return {state = to_ui_state(state)}
 }
 
+/*
+Detects hover enter/leave transitions and updates per-element hover memory.
+*/
 consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered, left: bool) {
 	if w_ctx.element_was_hovered == nil {
 		w_ctx.element_was_hovered = make(map[string]bool)
@@ -159,12 +211,22 @@ consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered,
 	return
 }
 
+/*
+Builds uniform or axis-pair padding from x and optional y values.
+
+When y is zero, all sides use x.
+*/
 resolve_padding_xy :: proc(x, y: f32) -> Pd {
 	if y == 0 do return {t = x, b = x, l = x, r = x}
 
 	return {t = y, b = y, l = x, r = x}
 }
 
+/*
+Resolves a padding struct into concrete side values.
+
+Handles preset sizes and explicit per-side or axis shorthand.
+*/
 resolve_padding_struct :: proc(s: Pd_struct) -> (padding: Pd, ok: bool) {
 	switch {
 	case s.sm:
@@ -191,6 +253,11 @@ resolve_padding_struct :: proc(s: Pd_struct) -> (padding: Pd, ok: bool) {
 	return {}, false
 }
 
+/*
+Resolves a static Padding union value into concrete side insets.
+
+Does not evaluate proc-valued padding; use resolve_padding for that.
+*/
 resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
 	switch v in p {
 	case struct{}:
@@ -212,6 +279,9 @@ resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
 	return {}, false
 }
 
+/*
+Resolves padding from a union value, evaluating proc callbacks when present.
+*/
 resolve_padding :: proc(
 	p: Padding,
 	state: ^$S,
@@ -230,6 +300,11 @@ resolve_padding :: proc(
 	return resolve_padding_value(p)
 }
 
+/*
+Resolves a radius struct into per-corner values.
+
+Handles presets, shorthand axes, and explicit corner overrides.
+*/
 resolve_radius_struct :: proc(s: Radius_struct) -> (radius: Radius_corners, ok: bool) {
 	switch {
 	case s.sm:
@@ -277,6 +352,9 @@ resolve_radius_struct :: proc(s: Radius_struct) -> (radius: Radius_corners, ok: 
 	return {}, false
 }
 
+/*
+Resolves border radius from a union value, evaluating proc callbacks when present.
+*/
 resolve_radius :: proc(
 	r: Radius,
 	state: ^$S,
@@ -304,6 +382,11 @@ resolve_radius :: proc(
 	return {}, false
 }
 
+/*
+Resolves a border struct into per-side widths.
+
+Handles preset sizes and explicit per-side values.
+*/
 resolve_border_struct :: proc(s: Bd_struct) -> (width: Bd, ok: bool) {
 	switch {
 	case s.sm:
@@ -327,6 +410,11 @@ resolve_border_struct :: proc(s: Bd_struct) -> (width: Bd, ok: bool) {
 	return {}, false
 }
 
+/*
+Resolves a static Border union value into per-side widths.
+
+Does not evaluate proc-valued borders; use resolve_border for that.
+*/
 resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
 	switch v in b {
 	case struct{}:
@@ -345,6 +433,9 @@ resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
 	return {}, false
 }
 
+/*
+Resolves border width from a union value, evaluating proc callbacks when present.
+*/
 resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border: Bd, ok: bool) {
 	#partial switch v in b {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border:
@@ -356,6 +447,11 @@ resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border
 	return resolve_border_value(b)
 }
 
+/*
+Resolves a static Gap union value to a pixel gap.
+
+Does not evaluate proc-valued gaps; use resolve_child_gap for that.
+*/
 resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
 	switch v in g {
 	case struct{}:
@@ -369,6 +465,9 @@ resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
 	return 0, false
 }
 
+/*
+Resolves child gap from a union value, evaluating proc callbacks when present.
+*/
 resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
 	#partial switch v in g {
 	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap:
@@ -380,6 +479,9 @@ resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u
 	return resolve_gap_value(g)
 }
 
+/*
+Resolves both axes of a justify position when both are explicit align values.
+*/
 resolve_align_pos :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok: bool) {
 	x, x_ok := resolve_justify_x(pos.x)
 	if !x_ok do return {}, false
@@ -390,6 +492,9 @@ resolve_align_pos :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok: bool) {
 	return {x = x, y = y}, true
 }
 
+/*
+Resolves whichever justify axes are set, leaving others at their defaults.
+*/
 resolve_justify_pos_partial :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok: bool) {
 	x := false
 	y := false
@@ -407,6 +512,9 @@ resolve_justify_pos_partial :: proc(pos: Justify_Pos) -> (align: Justify_Pos, ok
 	return align, x || y
 }
 
+/*
+Extracts a main-axis justify align from a Justify_X union when present.
+*/
 resolve_justify_x :: proc(x: Justify_X) -> (Justify_X, bool) {
 	#partial switch v in x {
 	case Justify_Align:
@@ -416,6 +524,9 @@ resolve_justify_x :: proc(x: Justify_X) -> (Justify_X, bool) {
 	return Justify_Align.Start, false
 }
 
+/*
+Extracts a cross-axis justify align from a Justify_Y union when present.
+*/
 resolve_justify_y :: proc(y: Justify_Y) -> (Justify_Y, bool) {
 	#partial switch v in y {
 	case Justify_Align:
@@ -425,6 +536,11 @@ resolve_justify_y :: proc(y: Justify_Y) -> (Justify_Y, bool) {
 	return Justify_Align.Start, false
 }
 
+/*
+Resolves a static Justify union value to a justify position.
+
+Does not evaluate proc-valued justify; use resolve_align for that.
+*/
 resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
 	switch v in a {
 	case struct{}:
@@ -438,6 +554,9 @@ resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
 	return {}, false
 }
 
+/*
+Resolves justify alignment from a union value, evaluating proc callbacks when present.
+*/
 resolve_align :: proc(
 	a: Justify,
 	state: ^$S,
@@ -457,6 +576,9 @@ resolve_align :: proc(
 	return resolve_justify_value(a)
 }
 
+/*
+Resolves a static Widget_Direction union value to a layout direction.
+*/
 resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_Layout, ok: bool) {
 	switch v in d {
 	case struct{}:
@@ -469,6 +591,9 @@ resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_La
 	return .Horizontal, false
 }
 
+/*
+Resolves layout direction from a union value, evaluating proc callbacks when present.
+*/
 resolve_direction :: proc(
 	d: Widget_Direction,
 	state: ^$S,
@@ -490,6 +615,9 @@ resolve_direction :: proc(
 	return .Horizontal, false
 }
 
+/*
+Extracts a Justify_Align from a Justify_X union when present.
+*/
 justify_align_from_x :: proc(x: Justify_X) -> (Justify_Align, bool) {
 	#partial switch v in x {
 	case Justify_Align:
@@ -499,6 +627,9 @@ justify_align_from_x :: proc(x: Justify_X) -> (Justify_Align, bool) {
 	return .Start, false
 }
 
+/*
+Extracts a Justify_Align from a Justify_Y union when present.
+*/
 justify_align_from_y :: proc(y: Justify_Y) -> (Justify_Align, bool) {
 	#partial switch v in y {
 	case Justify_Align:
@@ -508,10 +639,16 @@ justify_align_from_y :: proc(y: Justify_Y) -> (Justify_Align, bool) {
 	return .Start, false
 }
 
+/*
+Returns whether a justify align distributes free space between items.
+*/
 justify_align_is_space :: proc(align: Justify_Align) -> bool {
 	return align == .Space_between || align == .Space_around || align == .Space_evenly
 }
 
+/*
+Computes the leading offset for an item given free space and a justify align.
+*/
 justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
 	switch align {
 	case .Start, .Stretch:
@@ -526,6 +663,9 @@ justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Alig
 	return 0
 }
 
+/*
+Computes the main-axis position offset from a Justify_X axis value.
+*/
 justify_align_position_offset_x :: proc(free_space, size: f32, axis: Justify_X) -> f32 {
 	if align, ok := justify_align_from_x(axis); ok {
 		return justify_align_position_offset(free_space, size, align)
@@ -533,6 +673,9 @@ justify_align_position_offset_x :: proc(free_space, size: f32, axis: Justify_X) 
 	return 0
 }
 
+/*
+Computes the cross-axis position offset from a Justify_Y axis value.
+*/
 justify_align_position_offset_y :: proc(free_space, size: f32, axis: Justify_Y) -> f32 {
 	if align, ok := justify_align_from_y(axis); ok {
 		return justify_align_position_offset(free_space, size, align)
@@ -540,6 +683,9 @@ justify_align_position_offset_y :: proc(free_space, size: f32, axis: Justify_Y) 
 	return 0
 }
 
+/*
+Returns whether a Justify_Y axis requests stretch along the cross axis.
+*/
 justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
 	#partial switch v in y {
 	case Justify_Align:
@@ -549,6 +695,9 @@ justify_axis_is_stretch_y :: proc(y: Justify_Y) -> bool {
 	return false
 }
 
+/*
+Returns whether a Justify_X axis requests stretch along the cross axis.
+*/
 justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
 	#partial switch v in x {
 	case Justify_Align:
@@ -558,6 +707,11 @@ justify_axis_is_stretch_x :: proc(x: Justify_X) -> bool {
 	return false
 }
 
+/*
+Detects a click when the pointer was pressed and released while hovered.
+
+Tracks per-element pointer-down state across frames.
+*/
 consume_pointer_click :: proc(
 	element_id: string,
 	hovered, left_pressed, left_released: bool,
@@ -581,6 +735,11 @@ consume_pointer_click :: proc(
 }
 
 
+/*
+Returns persistent shaped text storage for a widget id, creating it if needed.
+
+Updates last_frame so the entry survives ui_end_frame pruning.
+*/
 widget_shaped :: proc(id: Widget_ID) -> ^Shaped_Text {
 	ui_init()
 
@@ -598,12 +757,20 @@ widget_shaped :: proc(id: Widget_ID) -> ^Shaped_Text {
 	return &entry.shaped
 }
 
+/*
+Converts texture position values above 1 from percent (0–100) to normalized 0–1.
+*/
 @(private)
 texture_pos_normalize :: proc(v: f32) -> f32 {
 	if v > 1 do return v * 0.01
 	return v
 }
 
+/*
+Resolves a static Style_Texture_Pos union to anchor and offset values.
+
+Does not evaluate proc-valued positions; use resolve_texture_pos for that.
+*/
 resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Texture_Pos, ok: bool) {
 	switch v in p {
 	case struct{}:
@@ -636,6 +803,9 @@ resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Textur
 	return {}, false
 }
 
+/*
+Resolves texture anchor position from a union value, evaluating proc callbacks when present.
+*/
 resolve_texture_pos :: proc(
 	p: Style_Texture_Pos,
 	state: ^$S,
@@ -654,6 +824,11 @@ resolve_texture_pos :: proc(
 	return resolve_texture_pos_value(p)
 }
 
+/*
+Resolves a static Style_Texture_Fit union to a texture fit mode.
+
+Does not evaluate proc-valued fit; use resolve_texture_fit for that.
+*/
 resolve_texture_fit_value :: proc(f: Style_Texture_Fit) -> (fit: Texture_Fit, ok: bool) {
 	switch v in f {
 	case struct{}:
@@ -667,6 +842,9 @@ resolve_texture_fit_value :: proc(f: Style_Texture_Fit) -> (fit: Texture_Fit, ok
 	return {}, false
 }
 
+/*
+Resolves texture fit mode from a union value, evaluating proc callbacks when present.
+*/
 resolve_texture_fit :: proc(
 	f: Style_Texture_Fit,
 	state: ^$S,
@@ -685,6 +863,11 @@ resolve_texture_fit :: proc(
 	return resolve_texture_fit_value(f)
 }
 
+/*
+Computes source and destination rects for a texture fit mode and anchor position.
+
+Handles fill, contain, cover, none, and scale-down fitting.
+*/
 texture_fit_rects :: proc(
 	src, container: Rect,
 	fit: Texture_Fit,

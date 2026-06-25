@@ -1,5 +1,10 @@
 package oni
 
+/*
+Resolves a Length value against a parent axis size.
+
+Handles fixed, percent, inherit, and auto kinds.
+*/
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	switch length.kind {
 	case .Fixed:
@@ -14,10 +19,16 @@ length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	return 0
 }
 
+/*
+Returns whether a length has a definite (non-auto) kind.
+*/
 length_is_definite :: proc(length: Length) -> bool {
 	return length.kind != .Auto
 }
 
+/*
+Returns whether a Width union carries an explicit value.
+*/
 @(private)
 cfg_width_is_set :: proc(w: Width) -> bool {
 	#partial switch _ in w {
@@ -27,6 +38,9 @@ cfg_width_is_set :: proc(w: Width) -> bool {
 	return true
 }
 
+/*
+Returns whether a Height union carries an explicit value.
+*/
 @(private)
 cfg_height_is_set :: proc(h: Height) -> bool {
 	#partial switch _ in h {
@@ -36,11 +50,17 @@ cfg_height_is_set :: proc(h: Height) -> bool {
 	return true
 }
 
+/*
+Copies a Cfg field from src to dst when src is not unset.
+*/
 @(private)
 merge_cfg :: proc($T: typeid, dst: ^Cfg(T), src: Cfg(T)) {
 	if src.mode != .Unset do dst^ = src
 }
 
+/*
+Resolves a Cfg field using unset, inherit, or explicit value modes.
+*/
 @(private)
 resolve_cfg :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T {
 	switch field.mode {
@@ -54,6 +74,9 @@ resolve_cfg :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T
 	return theme_default
 }
 
+/*
+Converts a Width union to a resolved Length, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_length_from_width :: proc(
 	w: Width,
@@ -87,6 +110,9 @@ resolve_length_from_width :: proc(
 	return {kind = .Auto}
 }
 
+/*
+Converts a Height union to a resolved Length, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_length_from_height :: proc(
 	h: Height,
@@ -120,6 +146,9 @@ resolve_length_from_height :: proc(
 	return {kind = .Auto}
 }
 
+/*
+Resolves a Cfg(Gap) field from theme, parent, or explicit value.
+*/
 @(private)
 resolve_cfg_gap :: proc(gap: Cfg(Gap), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
 	switch gap.mode {
@@ -135,6 +164,9 @@ resolve_cfg_gap :: proc(gap: Cfg(Gap), parent: u16, state: ^$S, event: Widget_Ev
 	return parent
 }
 
+/*
+Resolves a Cfg(Widget_Direction) field from theme, parent, or explicit value.
+*/
 @(private)
 resolve_cfg_direction :: proc(
 	direction: Cfg(Widget_Direction),
@@ -157,6 +189,9 @@ resolve_cfg_direction :: proc(
 	return parent
 }
 
+/*
+Resolves a Cfg(Justify) field from theme, parent, or explicit value.
+*/
 @(private)
 resolve_cfg_justify :: proc(
 	justify: Cfg(Justify),
@@ -177,6 +212,9 @@ resolve_cfg_justify :: proc(
 	return parent
 }
 
+/*
+Resolves a Cfg(Justify) self-alignment override on a child widget.
+*/
 @(private)
 resolve_cfg_self :: proc(self: Cfg(Justify), state: ^$S, event: Widget_Event(S)) -> Justify_Pos {
 	switch self.mode {
@@ -193,6 +231,9 @@ resolve_cfg_self :: proc(self: Cfg(Justify), state: ^$S, event: Widget_Event(S))
 	return {}
 }
 
+/*
+Resolves a Cfg(Colors) field, handling inherit and proc-valued colors.
+*/
 @(private)
 resolve_cfg_colors :: proc(
 	field: Cfg(Colors),
@@ -218,6 +259,9 @@ resolve_cfg_colors :: proc(
 	return parent
 }
 
+/*
+Builds default resolved widget style values from the active theme.
+*/
 @(private)
 theme_widget_style :: proc() -> Resolved_Widget_Style {
 	gap: u16
@@ -258,6 +302,11 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	}
 }
 
+/*
+Merges override widget config fields into a base config.
+
+Only non-unset Cfg fields and explicit width/height override the base.
+*/
 merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	result := base
 
@@ -302,6 +351,11 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	return result
 }
 
+/*
+Evaluates proc-valued style fields on a resolved config in place.
+
+Resolves padding, radius, border, colors, text, overflow, and texture fields.
+*/
 @(private)
 finalize_resolved_procs :: proc(
 	config: ^Resolved_Widget_Config,
@@ -359,6 +413,9 @@ finalize_resolved_procs :: proc(
 	}
 }
 
+/*
+Resolves text alignment, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_text_align :: proc(
 	align: Text_Align,
@@ -382,6 +439,9 @@ resolve_text_align :: proc(
 }
 
 
+/*
+Resolves text wrap mode, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_text_warp :: proc(
 	wrap: Text_Warp,
@@ -404,6 +464,9 @@ resolve_text_warp :: proc(
 	return wrap, true
 }
 
+/*
+Resolves overflow mode, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_overflow :: proc(
 	overflow: Overflow,
@@ -422,6 +485,9 @@ resolve_overflow :: proc(
 	return overflow, true
 }
 
+/*
+Resolves visibility mode, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_visibility :: proc(
 	visibility: Visibility,
@@ -440,6 +506,9 @@ resolve_visibility :: proc(
 	return visibility, true
 }
 
+/*
+Resolves CSS-like position mode, evaluating proc callbacks when present.
+*/
 @(private)
 resolve_position :: proc(
 	position: Position,
@@ -458,6 +527,11 @@ resolve_position :: proc(
 	return position, true
 }
 
+/*
+Merges base and override configs, then resolves style against parent and theme.
+
+Returns a fully resolved widget config ready for layout and draw.
+*/
 resolve_widget_config :: proc(
 	base: Widget_Config,
 	override: Widget_Config,
@@ -557,12 +631,18 @@ resolve_widget_config :: proc(
 	return resolved
 }
 
+/*
+Creates the root style context for a draw space and layout bounds.
+*/
 style_root :: proc(space: Draw_Space, bounds: Rect) -> Style_Context {
 	style := theme_widget_style()
 	style.space = space
 	return Style_Context{style = style, content_w = bounds.w, content_h = bounds.h}
 }
 
+/*
+Builds a child style context with content size reduced by padding and border.
+*/
 style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	parent := ui_style_current()
 
@@ -579,6 +659,11 @@ style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	}
 }
 
+/*
+Returns the current top-of-stack style context.
+
+Panics if the style stack is empty.
+*/
 ui_style_current :: proc() -> ^Style_Context {
 	assert(
 		len(state.ui.style_stack) > 0,
@@ -587,15 +672,28 @@ ui_style_current :: proc() -> ^Style_Context {
 	return &state.ui.style_stack[len(state.ui.style_stack) - 1]
 }
 
+/*
+Pushes a style context onto the style stack.
+*/
 ui_push_style :: proc(ctx: Style_Context) {
 	append(&state.ui.style_stack, ctx)
 }
 
+/*
+Pops the top style context from the stack.
+
+Panics on underflow.
+*/
 ui_pop_style :: proc() {
 	assert(len(state.ui.style_stack) > 0, "style stack underflow")
 	ordered_remove(&state.ui.style_stack, len(state.ui.style_stack) - 1)
 }
 
+/*
+Pushes scope, layout node, and child style when entering a container.
+
+Called at the start of a children block during layout and draw.
+*/
 being_children :: proc(layout_id: UI_Id, config: Resolved_Widget_Config) {
 	ui_push_scope(layout_id)
 	if ui_pass() == .Layout {
@@ -604,6 +702,9 @@ being_children :: proc(layout_id: UI_Id, config: Resolved_Widget_Config) {
 	ui_push_style(style_child_context(config))
 }
 
+/*
+Pops child style, finalizes layout node, and pops scope when leaving a container.
+*/
 end_children :: proc() {
 	ui_pop_style()
 	if ui_pass() == .Layout {
@@ -612,6 +713,9 @@ end_children :: proc() {
 	ui_pop_scope()
 }
 
+/*
+Runs a child builder inside a scoped layout node and style context.
+*/
 Children :: proc(
 	child: proc(state: $S),
 	layout_id: UI_Id,
