@@ -104,7 +104,7 @@ resolve_length_from_width :: proc(
 		if v.min > 0 do return {kind = .FIXED, value = v.min}
 		if v.max > 0 do return {kind = .FIXED, value = v.max}
 		return {kind = .AUTO}
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Width:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Width:
 		return resolve_length_from_width(v(ui_state, ui_event), parent_w, state, event)
 	}
 	return {kind = .AUTO}
@@ -140,7 +140,7 @@ resolve_length_from_height :: proc(
 		if v.min > 0 do return {kind = .FIXED, value = v.min}
 		if v.max > 0 do return {kind = .FIXED, value = v.max}
 		return {kind = .AUTO}
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Height:
 		return resolve_length_from_height(v(ui_state, ui_event), parent_h, state, event)
 	}
 	return {kind = .AUTO}
@@ -250,7 +250,10 @@ resolve_cfg_colors :: proc(
 		#partial switch v in field.value {
 		case Color:
 			if v == .INHERIT do return parent
-		case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+		case proc(
+			     frame_state: Widget_Frame_State,
+			     event: Widget_Event(Widget_Frame_State),
+		     ) -> Colors:
 			return field.value
 		}
 		if rgba, ok := to_rgba(field.value, state, event); ok do return rgba
@@ -426,7 +429,10 @@ resolve_text_align :: proc(
 	bool,
 ) {
 	#partial switch v in align {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Text_Align:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_text_align(v(ui_state, ui_event), state, event)
@@ -452,7 +458,10 @@ resolve_text_warp :: proc(
 	bool,
 ) {
 	#partial switch v in wrap {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Warp:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Text_Warp:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_text_warp(v(ui_state, ui_event), state, event)
@@ -477,7 +486,10 @@ resolve_overflow :: proc(
 	bool,
 ) {
 	#partial switch v in overflow {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Overflow:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_overflow(v(ui_state, ui_event), state, event)
@@ -498,7 +510,10 @@ resolve_visibility :: proc(
 	bool,
 ) {
 	#partial switch v in visibility {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Visibility:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Visibility:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_visibility(v(ui_state, ui_event), state, event)
@@ -519,7 +534,10 @@ resolve_position :: proc(
 	bool,
 ) {
 	#partial switch v in position {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Position:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Position:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_position(v(ui_state, ui_event), state, event)
@@ -717,7 +735,7 @@ end_children :: proc() {
 Runs a child builder inside a scoped layout node and style context.
 */
 Children :: proc(
-	child: proc(state: $S),
+	child: proc(frame_state: $S),
 	layout_id: UI_Id,
 	config: Resolved_Widget_Config,
 	state: S,

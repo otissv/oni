@@ -741,7 +741,7 @@ Colors :: union {
 	HWBA,
 	LCHA,
 	OKLCHA,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Colors,
 }
 
 /*
@@ -749,7 +749,7 @@ Returns true when a Colors union value is a dynamic callback proc.
 */
 colors_is_proc :: proc(c: Colors) -> bool {
 	#partial switch _ in c {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Colors:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Colors:
 		return true
 	}
 	return false
@@ -1003,10 +1003,13 @@ to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, o
 		return to_rgba_color(v), true
 	case OKLCHA:
 		return to_rgba_color(v), true
-	case proc(state: Widget_State, widget_event: Widget_Event(Widget_State)) -> Colors:
-		ui_state := (^Widget_State)(cast(rawptr)state)^
-		ui_event := Widget_Event(Widget_State) {
-			state = ui_state,
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     widget_event: Widget_Event(Widget_Frame_State),
+	     ) -> Colors:
+		ui_state := (^Widget_Frame_State)(cast(rawptr)state)^
+		ui_event := Widget_Event(Widget_Frame_State) {
+			frame_state = ui_state,
 		}
 		return to_rgba(v(ui_state, ui_event), state, event)
 	}

@@ -14,8 +14,8 @@ Paragraph_Props :: struct {
 Paragraph :: proc(props: Paragraph_Props) {
 
 	paragraph_color :: proc(
-		state: oni.Widget_State,
-		_: oni.Widget_Event(oni.Widget_State),
+		state: oni.Widget_Frame_State,
+		_: oni.Widget_Event(oni.Widget_Frame_State),
 	) -> oni.Colors {
 		if state.is_Pressed do return oni.RGBA{0, 0, 0, 255}
 		if state.is_hovered do return oni.RGBA{210, 60, 60, 255}

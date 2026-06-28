@@ -180,19 +180,18 @@ widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect 
 }
 
 /*
-Casts a typed widget state pointer to the generic Widget_State view.
+Casts a typed widget state pointer to the generic Widget_Frame_State view.
 */
-to_ui_state :: proc(state: ^$S) -> Widget_State {
+to_ui_state :: proc(state: ^$S) -> Widget_Frame_State {
 
-	return (^Widget_State)(cast(rawptr)state)^
+	return (^Widget_Frame_State)(cast(rawptr)state)^
 }
 
 /*
 Wraps a typed widget state pointer in a generic Widget_Event.
 */
-to_ui_event :: proc(state: ^$S) -> Widget_Event(Widget_State) {
-
-	return {state = to_ui_state(state)}
+to_ui_event :: proc(frame_state: ^$S) -> Widget_Event(Widget_Frame_State) {
+	return {frame_state = to_ui_state(state)}
 }
 
 /*
@@ -272,7 +271,7 @@ resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
 		return resolve_padding_struct(v)
 	case Pd:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding:
 		return {}, false
 	}
 
@@ -291,7 +290,7 @@ resolve_padding :: proc(
 	ok: bool,
 ) {
 	#partial switch v in p {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_padding(v(ui_state, ui_event), state, event)
@@ -375,7 +374,7 @@ resolve_radius :: proc(
 		return resolve_radius_struct(v)
 	case Radius_corners:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Radius:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Radius:
 		return resolve_radius(v(ui_state, ui_event), state, event)
 	}
 
@@ -426,7 +425,7 @@ resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
 		return resolve_border_struct(v)
 	case Bd:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border:
 		return {}, false
 	}
 
@@ -438,7 +437,7 @@ Resolves border width from a union value, evaluating proc callbacks when present
 */
 resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border: Bd, ok: bool) {
 	#partial switch v in b {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_border(v(ui_state, ui_event), state, event)
@@ -458,7 +457,7 @@ resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
 		return 0, false
 	case u16:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap:
 		return 0, false
 	}
 
@@ -470,7 +469,7 @@ Resolves child gap from a union value, evaluating proc callbacks when present.
 */
 resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
 	#partial switch v in g {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_child_gap(v(ui_state, ui_event), state, event)
@@ -547,7 +546,7 @@ resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
 		return {}, false
 	case Justify_Pos:
 		return resolve_align_pos(v)
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify:
 		return {}, false
 	}
 
@@ -566,7 +565,7 @@ resolve_align :: proc(
 	ok: bool,
 ) {
 	#partial switch v in a {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 
@@ -585,7 +584,10 @@ resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_La
 		return .HORIZONTAL, false
 	case Direction_Layout:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Widget_Direction:
 		return .HORIZONTAL, false
 	}
 	return .HORIZONTAL, false
@@ -603,7 +605,10 @@ resolve_direction :: proc(
 	ok: bool,
 ) {
 	#partial switch v in d {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction:
+	case proc(
+		     state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Widget_Direction:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 
@@ -796,7 +801,10 @@ resolve_texture_pos_value :: proc(p: Style_Image_Pos) -> (pos: Resolved_Image_Po
 		return {texture_pos_normalize(v.x), texture_pos_normalize(v.y), 0, 0}, true
 	case Resolved_Image_Pos:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Pos:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Image_Pos:
 		return {}, false
 	}
 
@@ -815,7 +823,7 @@ resolve_texture_pos :: proc(
 	ok: bool,
 ) {
 	#partial switch v in p {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Pos:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Pos:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_texture_pos_value(Style_Image_Pos(v(ui_state, ui_event)))
@@ -835,7 +843,10 @@ resolve_texture_fit_value :: proc(f: Style_Image_Fit) -> (fit: Image_Fit, ok: bo
 		return {}, false
 	case Image_Fit:
 		return v, true
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Fit:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Image_Fit:
 		return {}, false
 	}
 
@@ -854,7 +865,7 @@ resolve_texture_fit :: proc(
 	ok: bool,
 ) {
 	#partial switch v in f {
-	case proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Fit:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Fit:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_texture_fit_value(Style_Image_Fit(v(ui_state, ui_event)))

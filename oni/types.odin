@@ -40,7 +40,7 @@ KEY_COUNT :: 512
 Widget_ID :: string
 
 /*
-Per-frame edge-detected state for one mouse button in widget input handling.
+Per-frame edge-detected frame_state for one mouse button in widget input handling.
 */
 Widget_Mouse_Button_State :: struct {
 	down:     bool,
@@ -49,7 +49,7 @@ Widget_Mouse_Button_State :: struct {
 }
 
 /*
-Per-frame edge-detected state for one keyboard key in widget input handling.
+Per-frame edge-detected frame_state for one keyboard key in widget input handling.
 */
 Widget_Mouse_Key_State :: struct {
 	down:     bool,
@@ -78,28 +78,37 @@ Widget_Context :: struct {
 }
 
 /*
-Merges a widget-specific state struct with its resolved config type.
+Merges a widget-specific frame_state struct with its resolved config type.
 */
 Widget_Merged_State :: struct($S: typeid, $C: typeid) {
-	using state: S,
-	config:      C,
+	using frame_state: S,
+	config:            C,
 }
 
 w_ctx: Widget_Context
 
 /*
-Snapshot of widget state plus optional input metadata for event callbacks.
+Snapshot of widget frame_state plus optional input metadata for event callbacks.
 */
 Widget_Event :: struct($S: typeid) {
-	state:        S,
+	frame_state:  S,
 	mouse_button: u8,
 	key:          Scancode,
+}
+
+
+Mount :: enum {
+	UNSET,
+	RUNNING,
+	COMPLETED,
 }
 
 /*
 Per-frame interaction flags for a widget: hover, press, focus, and click edges.
 */
-Widget_State :: struct {
+Widget_Frame_State :: struct {
+	mounting:          Mount,
+	unmounting:        Mount,
 	is_hovered:        bool,
 	is_Pressed:        bool,
 	is_focused:        bool,
@@ -124,7 +133,7 @@ Cfg_Tri :: enum {
 }
 
 /*
-Tri-state config field: unset, inherit from parent, or explicit value.
+Tri-frame_state config field: unset, inherit from parent, or explicit value.
 */
 Cfg :: struct($T: typeid) {
 	mode:  Cfg_Tri,
@@ -147,7 +156,7 @@ Length :: struct {
 }
 
 /*
-Author-time widget style overrides using tri-state Cfg fields and dimension unions.
+Author-time widget style overrides using tri-frame_state Cfg fields and dimension unions.
 */
 Widget_Config :: struct {
 	id:             string,
@@ -272,7 +281,7 @@ Position :: union {
 		FIXED,
 		STICKY,
 	},
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Position,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Position,
 }
 
 Visibility :: union {
@@ -280,7 +289,7 @@ Visibility :: union {
 		VISIBLE,
 		HIDDEN,
 	},
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Visibility,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Visibility,
 }
 
 Overflow :: union {
@@ -289,7 +298,7 @@ Overflow :: union {
 		SCROLL,
 		HIDDEN,
 	},
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Overflow,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Overflow,
 }
 
 /*
@@ -323,7 +332,7 @@ Padding :: union {
 	Pd,
 	Pd_pos,
 	Pd_struct,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Padding,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding,
 }
 
 /*
@@ -351,7 +360,7 @@ Radius :: union {
 	f32,
 	Radius_struct,
 	Radius_corners,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Radius,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Radius,
 }
 
 /*
@@ -374,7 +383,7 @@ Border :: union {
 	f32,
 	Bd_struct,
 	Bd,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Border,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border,
 }
 
 /*
@@ -397,7 +406,7 @@ Width :: union {
 	Width_Mode,
 	f32,
 	Dim_struct,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Width,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Width,
 }
 
 Height_Mode :: enum {
@@ -410,13 +419,13 @@ Height :: union {
 	Height_Mode,
 	f32,
 	Dim_struct,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Height,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Height,
 }
 
 Gap :: union {
 	struct{},
 	u16,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Gap,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap,
 }
 
 Text_Warp :: union {
@@ -426,7 +435,7 @@ Text_Warp :: union {
 		NEWLINES,
 		BALANCE,
 	},
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Warp,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Warp,
 }
 
 Text_Align :: union {
@@ -436,7 +445,7 @@ Text_Align :: union {
 		CENTER,
 		RIGHT,
 	},
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Text_Align,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Align,
 }
 
 Justify_Align :: enum {
@@ -452,13 +461,13 @@ Justify_Align :: enum {
 Justify_X :: union {
 	struct{},
 	Justify_Align,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_X,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify_X,
 }
 
 Justify_Y :: union {
 	struct{},
 	Justify_Align,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify_Y,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify_Y,
 }
 
 /*
@@ -472,7 +481,7 @@ Justify_Pos :: struct {
 Justify :: union {
 	struct{},
 	Justify_Pos,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Justify,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify,
 }
 
 
@@ -490,7 +499,10 @@ Direction_Layout :: enum {
 Widget_Direction :: union {
 	struct{},
 	Direction_Layout,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Widget_Direction,
+	proc(
+		frame_state: Widget_Frame_State,
+		event: Widget_Event(Widget_Frame_State),
+	) -> Widget_Direction,
 }
 
 Image_Fit :: enum {
@@ -504,7 +516,7 @@ Image_Fit :: enum {
 Style_Image_Fit :: union {
 	struct{},
 	Image_Fit,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Fit,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Fit,
 }
 
 /*
@@ -534,7 +546,7 @@ Style_Image_Pos :: union {
 	Image_Pos,
 	Image_Pos_X_Y,
 	Resolved_Image_Pos,
-	proc(state: Widget_State, event: Widget_Event(Widget_State)) -> Image_Pos,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Pos,
 }
 
 SizingType :: enum {
@@ -674,14 +686,14 @@ Theme :: struct {
 }
 
 /*
-Keyboard modifier key state: shift, ctrl, alt, and super.
+Keyboard modifier key frame_state: shift, ctrl, alt, and super.
 */
 Input_Modifiers :: struct {
 	shift, ctrl, alt, super: bool,
 }
 
 /*
-Normalized gamepad axes, d-pad, triggers, and per-button down state.
+Normalized gamepad axes, d-pad, triggers, and per-button down frame_state.
 */
 Gamepad_Input :: struct {
 	connected:     bool,

@@ -49,8 +49,8 @@ button_active_variant: Button_Variant
 
 @(private)
 button_background :: proc(
-	state: oni.Widget_State,
-	_: oni.Widget_Event(oni.Widget_State),
+	state: oni.Widget_Frame_State,
+	_: oni.Widget_Event(oni.Widget_Frame_State),
 ) -> oni.Colors {
 	switch button_active_variant {
 	case .DEFAULT:

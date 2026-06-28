@@ -10,12 +10,12 @@ Button widget configuration extending Widget_Config.
 Button_Config :: oni.Widget_Config
 
 /*
-Button widget per-frame state merged with its fully resolved style config.
+Button widget per-frame frame_state merged with its fully resolved style config.
 */
-Button_State :: oni.Widget_Merged_State(oni.Widget_State, oni.Resolved_Widget_Config)
+Button_State :: oni.Widget_Merged_State(oni.Widget_Frame_State, oni.Resolved_Widget_Config)
 
 /*
-Button widget event snapshot with state and optional input metadata.
+Button widget event snapshot with frame_state and optional input metadata.
 */
 Button_Event :: oni.Widget_Event(Button_State)
 
@@ -25,7 +25,7 @@ Button widget props: config overrides, child callback, and input event handlers.
 */
 Button_Props :: struct {
 	config:            Button_Config,
-	child:             proc(state: Button_State),
+	child:             proc(frame_state: Button_State),
 	on_focus:          proc(event: Button_Event),
 	on_blur:           proc(event: Button_Event),
 	on_mouse_enter:    proc(event: Button_Event),
@@ -42,15 +42,15 @@ Button_Props :: struct {
 }
 
 /*
-Builds a button event carrying the current state and optional input metadata.
+Builds a button event carrying the current frame_state and optional input metadata.
 */
 @(private)
 button_event :: proc(
-	state: Button_State,
+	frame_state: Button_State,
 	mouse_button: u8 = 0,
 	key: oni.Scancode = oni.Scancode(0),
 ) -> Button_Event {
-	return {state = state, mouse_button = mouse_button, key = key}
+	return {frame_state = frame_state, mouse_button = mouse_button, key = key}
 }
 
 /*
@@ -65,10 +65,10 @@ button_props_override :: proc(props: Button_Props) -> Button_Config {
 Returns the default button theme config, muted when the widget is disabled.
 */
 @(private)
-button_theme_base :: proc(state: ^Button_State) -> Button_Config {
+button_theme_base :: proc(frame_state: ^Button_State) -> Button_Config {
 	color := oni.Color.FOREGROUND
 
-	if state.is_disabled {
+	if frame_state.is_disabled {
 		color = oni.Color.MUTED
 	}
 
@@ -86,24 +86,27 @@ button_theme_base :: proc(state: ^Button_State) -> Button_Config {
 }
 
 /*
-Merges theme defaults, prop overrides, and live state into a resolved config.
+Merges theme defaults, prop overrides, and live frame_state into a resolved config.
 */
 @(private)
-button_config :: proc(props: Button_Props, state: ^Button_State) -> oni.Resolved_Widget_Config {
-	event := button_event(state^)
-	base := button_theme_base(state)
+button_config :: proc(
+	props: Button_Props,
+	frame_state: ^Button_State,
+) -> oni.Resolved_Widget_Config {
+	event := button_event(frame_state^)
+	base := button_theme_base(frame_state)
 	override := button_props_override(props)
 
-	return oni.resolve_widget_config(base, override, state, event)
+	return oni.resolve_widget_config(base, override, frame_state, event)
 }
 
 /*
-Refreshes merged config on state and returns a fresh button event snapshot.
+Refreshes merged config on frame_state and returns a fresh button event snapshot.
 */
 @(private)
-button_refresh_merged :: proc(props: Button_Props, state: ^Button_State) -> Button_Event {
-	state.config = button_config(props, state)
-	return button_event(state^)
+button_refresh_merged :: proc(props: Button_Props, frame_state: ^Button_State) -> Button_Event {
+	frame_state.config = button_config(props, frame_state)
+	return button_event(frame_state^)
 }
 
 /*
@@ -126,17 +129,17 @@ Button :: proc(props: Button_Props) {
 		oni.w_ctx.auto_focused_id = key
 	}
 
-	state := Button_State {
+	frame_state := Button_State {
 		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
 		is_focused  = oni.w_ctx.focused_id == key,
 	}
 
-	event := button_refresh_merged(props, &state)
-	config := state.config
+	event := button_refresh_merged(props, &frame_state)
+	config := frame_state.config
 	child := props.child
 
 	if oni.ui_pass() == .Layout {
-		oni.Children(child, layout_id, config, state)
+		oni.Children(child, layout_id, config, frame_state)
 		return
 	}
 
@@ -149,36 +152,36 @@ Button :: proc(props: Button_Props) {
 		if h := oni.length_resolve(config.height, 0); h > 0 do rect.h = h
 	}
 
-	state.is_hovered = oni.pointer_over(rect, config.space)
-	state.is_left_clicked = state.is_hovered && oni.w_ctx.left_mouse.pressed
-	state.is_right_clicked = state.is_hovered && oni.w_ctx.right_mouse.pressed
-	state.is_middle_clicked = state.is_hovered && oni.w_ctx.middle_mouse.pressed
-	state.is_left_released = state.is_hovered && oni.w_ctx.left_mouse.released
-	state.is_right_released = state.is_hovered && oni.w_ctx.right_mouse.released
-	state.is_Pressed = state.is_hovered && oni.w_ctx.left_mouse.down
+	frame_state.is_hovered = oni.pointer_over(rect, config.space)
+	frame_state.is_left_clicked = frame_state.is_hovered && oni.w_ctx.left_mouse.pressed
+	frame_state.is_right_clicked = frame_state.is_hovered && oni.w_ctx.right_mouse.pressed
+	frame_state.is_middle_clicked = frame_state.is_hovered && oni.w_ctx.middle_mouse.pressed
+	frame_state.is_left_released = frame_state.is_hovered && oni.w_ctx.left_mouse.released
+	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
+	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
 
 	got_focus := false
 	lost_focus := false
 
-	if !state.is_disabled {
-		if state.is_hovered && oni.w_ctx.left_mouse.pressed && !state.is_focused {
+	if !frame_state.is_disabled {
+		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
 			oni.w_ctx.focused_id = key
-			state.is_focused = true
+			frame_state.is_focused = true
 			got_focus = true
 		}
 
-		if was_focused && !state.is_hovered && oni.w_ctx.left_mouse.pressed {
+		if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
 			oni.w_ctx.focused_id = {}
-			state.is_focused = false
+			frame_state.is_focused = false
 			lost_focus = true
 		}
 	}
 
-	event = button_refresh_merged(props, &state)
-	config = state.config
+	event = button_refresh_merged(props, &frame_state)
+	config = frame_state.config
 
-	if !state.is_disabled {
-		entered, left := oni.consume_hover_transition(key, state.is_hovered)
+	if !frame_state.is_disabled {
+		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
 			props.on_mouse_enter(event)
@@ -187,67 +190,69 @@ Button :: proc(props: Button_Props) {
 			props.on_mouse_leave(event)
 		}
 
-		if state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
+		if frame_state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
 			props.on_mouse_move(event)
 		}
 
-		if state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
-			props.on_contextmenu(button_event(state, mouse_button = sdl.BUTTON_RIGHT))
+		if frame_state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+			props.on_contextmenu(button_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
 		}
 
 		if got_focus && props.on_focus != nil {
-			props.on_focus(button_event(state, mouse_button = sdl.BUTTON_LEFT))
+			props.on_focus(button_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 		}
 
 		if lost_focus && props.on_blur != nil {
-			props.on_blur(button_event(state, mouse_button = sdl.BUTTON_LEFT))
+			props.on_blur(button_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 		}
 
-		if state.is_hovered && props.on_mouse_pressed != nil {
+		if frame_state.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
-				props.on_mouse_pressed(button_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_pressed(button_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.pressed {
-				props.on_mouse_pressed(button_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_pressed(button_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.pressed {
-				props.on_mouse_pressed(button_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_pressed(button_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
-		if state.is_hovered && props.on_mouse_down != nil {
+		if frame_state.is_hovered && props.on_mouse_down != nil {
 			if oni.w_ctx.left_mouse.down {
-				props.on_mouse_down(button_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_down(button_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.down {
-				props.on_mouse_down(button_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_down(button_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.down {
-				props.on_mouse_down(button_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_down(button_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE))
 			}
 		}
 
-		if state.is_hovered && props.on_mouse_released != nil {
+		if frame_state.is_hovered && props.on_mouse_released != nil {
 			if oni.w_ctx.left_mouse.released {
-				props.on_mouse_released(button_event(state, mouse_button = sdl.BUTTON_LEFT))
+				props.on_mouse_released(button_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 			}
 			if oni.w_ctx.right_mouse.released {
-				props.on_mouse_released(button_event(state, mouse_button = sdl.BUTTON_RIGHT))
+				props.on_mouse_released(button_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
 			}
 			if oni.w_ctx.middle_mouse.released {
-				props.on_mouse_released(button_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+				props.on_mouse_released(
+					button_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE),
+				)
 			}
 		}
 
 		clicked := oni.consume_pointer_click(
 			key,
-			state.is_hovered,
+			frame_state.is_hovered,
 			oni.w_ctx.left_mouse.pressed,
 			oni.w_ctx.left_mouse.released,
 		)
-		click_event := button_event(state, mouse_button = sdl.BUTTON_LEFT)
+		click_event := button_event(frame_state, mouse_button = sdl.BUTTON_LEFT)
 
-		if state.is_focused && props.on_click != nil {
+		if frame_state.is_focused && props.on_click != nil {
 			enter_key := oni.w_ctx.keys[int(sdl.Scancode.RETURN)]
 			space_key := oni.w_ctx.keys[int(sdl.Scancode.SPACE)]
 
@@ -264,18 +269,18 @@ Button :: proc(props: Button_Props) {
 			props.on_click(click_event)
 		}
 
-		if state.is_focused {
+		if frame_state.is_focused {
 			for scancode in 0 ..< oni.KEY_COUNT {
-				key_state := oni.w_ctx.keys[scancode]
-				key_event := button_event(state, key = oni.Scancode(scancode))
+				key_frame_state := oni.w_ctx.keys[scancode]
+				key_event := button_event(frame_state, key = oni.Scancode(scancode))
 
-				if props.on_key_pressed != nil && key_state.pressed {
+				if props.on_key_pressed != nil && key_frame_state.pressed {
 					props.on_key_pressed(key_event)
 				}
-				if props.on_key_down != nil && key_state.down {
+				if props.on_key_down != nil && key_frame_state.down {
 					props.on_key_down(key_event)
 				}
-				if props.on_key_released != nil && key_state.released {
+				if props.on_key_released != nil && key_frame_state.released {
 					props.on_key_released(key_event)
 				}
 			}
@@ -287,28 +292,32 @@ Button :: proc(props: Button_Props) {
 	}
 
 	background: oni.RGBA
-	if resolved_background, background_ok := oni.to_rgba(config.background, &state, event);
+	if resolved_background, background_ok := oni.to_rgba(config.background, &frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
 	border: oni.Bd
-	if resolved_border, border_ok := oni.resolve_border(config.border, &state, event); border_ok {
+	if resolved_border, border_ok := oni.resolve_border(config.border, &frame_state, event);
+	   border_ok {
 		border = resolved_border
 	}
 
 	border_color: oni.RGBA
-	if resolved_border_color, border_color_ok := oni.to_rgba(config.border_color, &state, event);
-	   border_color_ok {
+	if resolved_border_color, border_color_ok := oni.to_rgba(
+		config.border_color,
+		&frame_state,
+		event,
+	); border_color_ok {
 		border_color = resolved_border_color
 	}
 
 	radius: oni.Radius_corners
-	if resolved_radius, ok := oni.resolve_radius(config.radius, &state, event); ok {
+	if resolved_radius, ok := oni.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
 
 	oni.Draw_Rectangle(rect, background, radius, border, border_color)
 
-	oni.Children(child, layout_id, config, state)
+	oni.Children(child, layout_id, config, frame_state)
 }
