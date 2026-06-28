@@ -115,7 +115,8 @@ Rectangle :: proc(props: Rectangle_Props) {
 	key := oni.element_key(cfg.id)
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := oni.ui_id(layout_label)
-
+	layout_rect := oni.ui_layout_rect(layout_id)
+	rect := layout_rect
 
 	was_focused := oni.w_ctx.focused_id == key
 	should_auto_focus :=
@@ -136,6 +137,8 @@ Rectangle :: proc(props: Rectangle_Props) {
 	child := props.child
 
 	if oni.ui_pass() == .Layout {
+		// Layout pass
+
 		if props.on_mount != nil &&
 		   frame_state.mounting == .UNSET &&
 		   frame_state.mounting != .COMPLETED {
@@ -147,12 +150,27 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 		oni.Children(child, layout_id, config, frame_state)
 		return
+	} else {
+		// Draw pass
+
+		draw_widget_rectangle(
+			{
+				frame_state = &frame_state,
+				event = event,
+				rect = rect,
+				child = child,
+				layout_id = layout_id,
+			},
+		)
+
+		oni.Children(child, layout_id, config, frame_state)
+
+		// TODO: remove from layout tree
+		return
+
 	}
 
-
 	// Draw pass
-	layout_rect := oni.ui_layout_rect(layout_id)
-	rect := layout_rect
 	if rect.w == 0 {
 		if w := oni.length_resolve(config.width, 0); w > 0 do rect.w = w
 	}
@@ -298,14 +316,45 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 	config = frame_state.config
 
+	draw_widget_rectangle(
+		{
+			frame_state = &frame_state,
+			event = event,
+			rect = rect,
+			child = child,
+			layout_id = layout_id,
+		},
+	)
+}
+
+
+@(private)
+Draw_Widget_Rectangle :: struct {
+	frame_state: ^Rectangle_State,
+	event:       Rectangle_Event,
+	rect:        oni.Rect,
+	child:       proc(frame_state: Rectangle_State),
+	layout_id:   oni.UI_Id,
+}
+
+@(private)
+draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
+	child := props.child
+	event := props.event
+	frame_state := props.frame_state
+	layout_id := props.layout_id
+	rect := props.rect
+
+	config := frame_state.config
+
 	background: oni.RGBA
-	if resolved_background, background_ok := oni.to_rgba(config.background, &frame_state, event);
+	if resolved_background, background_ok := oni.to_rgba(config.background, frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
 	border: oni.Bd
-	if resolved_border, border_ok := oni.resolve_border(config.border, &frame_state, event);
+	if resolved_border, border_ok := oni.resolve_border(config.border, frame_state, event);
 	   border_ok {
 		border = resolved_border
 	}
@@ -313,18 +362,18 @@ Rectangle :: proc(props: Rectangle_Props) {
 	border_color: oni.RGBA
 	if resolved_border_color, border_color_ok := oni.to_rgba(
 		config.border_color,
-		&frame_state,
+		frame_state,
 		event,
 	); border_color_ok {
 		border_color = resolved_border_color
 	}
 
 	radius: oni.Radius_corners
-	if resolved_radius, ok := oni.resolve_radius(config.radius, &frame_state, event); ok {
+	if resolved_radius, ok := oni.resolve_radius(config.radius, frame_state, event); ok {
 		radius = resolved_radius
 	}
 
 	oni.Draw_Rectangle(rect, background, radius, border, border_color)
 
-	oni.Children(child, layout_id, config, frame_state)
+	oni.Children(child, layout_id, config, frame_state^)
 }
