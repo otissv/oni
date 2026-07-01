@@ -3,6 +3,7 @@ package tengu
 import "core:math"
 
 clamp01 :: proc(v: f32) -> f32 {
+	if !is_finite_f32(v) do return 0
 	return clamp(v, 0, 1)
 }
 

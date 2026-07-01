@@ -133,12 +133,13 @@ motion_result :: proc(value, velocity: $T, done: bool) -> Step_Result(T) {
 Returns the deterministic stepping plan for a frame in seconds.
 */
 plan_substeps :: proc(dt: f32, policy: Time_Policy = DEFAULT_TIME_POLICY) -> Substep_Plan {
-	if dt <= 0 || policy.max_dt <= 0 || policy.max_substeps <= 0 {
+	safe_dt := sanitize_dt(dt)
+	if safe_dt <= 0 || policy.max_dt <= 0 || policy.max_substeps <= 0 {
 		return {}
 	}
 
 	max_total_dt := policy.max_dt * f32(policy.max_substeps)
-	total_dt := math.min(dt, max_total_dt)
+	total_dt := math.min(safe_dt, max_total_dt)
 	steps := int(math.ceil(total_dt / policy.max_dt))
 	if steps < 1 do steps = 1
 

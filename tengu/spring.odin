@@ -33,10 +33,10 @@ MIN_SPRING_MASS :: f32(1e-6)
 
 spring_default_config :: proc(target: $T) -> Spring_Config(T) {
 	return Spring_Config(T) {
-		target           = target,
-		stiffness        = DEFAULT_SPRING_STIFFNESS,
-		damping          = DEFAULT_SPRING_DAMPING,
-		mass             = DEFAULT_SPRING_MASS,
+		target = target,
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping = DEFAULT_SPRING_DAMPING,
+		mass = DEFAULT_SPRING_MASS,
 		initial_velocity = {},
 	}
 }
@@ -48,10 +48,10 @@ spring_config :: proc(
 	mass: f32 = DEFAULT_SPRING_MASS,
 ) -> Spring_Config(T) {
 	return Spring_Config(T) {
-		target           = target,
-		stiffness        = stiffness,
-		damping          = damping,
-		mass             = mass,
+		target = target,
+		stiffness = stiffness,
+		damping = damping,
+		mass = mass,
 		initial_velocity = {},
 	}
 }
@@ -64,10 +64,10 @@ spring_config_with_velocity :: proc(
 	mass: f32 = DEFAULT_SPRING_MASS,
 ) -> Spring_Config(T) {
 	return Spring_Config(T) {
-		target           = target,
-		stiffness        = stiffness,
-		damping          = damping,
-		mass             = mass,
+		target = target,
+		stiffness = stiffness,
+		damping = damping,
+		mass = mass,
 		initial_velocity = initial_velocity,
 	}
 }
@@ -152,7 +152,10 @@ spring_integrate_substep :: proc(
 	target: T,
 	stiffness, damping, mass, dt: f32,
 	anim: Animatable(T),
-) -> (next_value: T, next_velocity: T) {
+) -> (
+	next_value: T,
+	next_velocity: T,
+) {
 	safe_mass := math.max(mass, MIN_SPRING_MASS)
 	displacement := anim.sub(value, target)
 	spring_force := anim.scale(displacement, -stiffness)
@@ -176,7 +179,8 @@ spring_step :: proc(
 	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
 	time: Time_Policy = DEFAULT_TIME_POLICY,
 ) -> Step_Result(T) {
-	if dt <= 0 {
+	safe_dt := sanitize_dt(dt)
+	if safe_dt <= 0 {
 		done := spring_is_at_rest(state^, anim, completion)
 		value := state.value
 		velocity := state.velocity
@@ -187,7 +191,7 @@ spring_step :: proc(
 		return motion_result(value, velocity, done)
 	}
 
-	plan := plan_substeps(dt, time)
+	plan := plan_substeps(safe_dt, time)
 	value := state.value
 	velocity := state.velocity
 	target := state.config.target

@@ -75,7 +75,13 @@ tween_cycle_local_t :: proc(active, duration: f32, repeat_count: int) -> f32 {
 }
 
 @(private)
-tween_cycle_position :: proc(active, duration: f32, repeat_count: int) -> (cycle_index: int, local_t: f32) {
+tween_cycle_position :: proc(
+	active, duration: f32,
+	repeat_count: int,
+) -> (
+	cycle_index: int,
+	local_t: f32,
+) {
 	if duration <= 0 do return 0, 1
 
 	progress_cycles := active / duration
@@ -207,8 +213,18 @@ tween_sample_at :: proc(
 }
 
 tween_init :: proc(state: ^Tween_State($T), config: Tween_Config(T)) {
-	state.config = config
+	state.config = tween_normalize_config(config)
 	state.elapsed = 0
+}
+
+tween_normalize_config :: proc(config: Tween_Config($T)) -> Tween_Config(T) {
+	c := config
+	switch _ in c.easing {
+	case Ease, Bezier:
+	case:
+		c.easing = Ease.LINEAR
+	}
+	return c
 }
 
 tween_restart :: proc(state: ^Tween_State($T)) {
@@ -238,8 +254,9 @@ tween_step :: proc(
 	anim: Animatable(T),
 	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
 ) -> Step_Result(T) {
-	if dt > 0 {
-		state.elapsed += dt
+	safe_dt := sanitize_dt(dt)
+	if safe_dt > 0 {
+		state.elapsed += safe_dt
 	}
 	return tween_sample_at(state^, state.elapsed, anim, completion)
 }
