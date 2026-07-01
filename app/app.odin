@@ -3,13 +3,14 @@ package app
 import oni "../oni"
 import set "../oni/set"
 import wg "../oni/widgets"
+import tengu "../tengu"
 import ui "./ui"
 import "core:fmt"
 
 
 ONI_IMAGE_PATH :: "assets/oni-2.avif"
 LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
-LIFECYCLE_FADE_STEP :: 0.01
+LIFECYCLE_UNMOUNT_DURATION :: tengu.Seconds(0.3)
 
 
 @(private)
@@ -22,8 +23,12 @@ Panel_State :: struct {
 @(private)
 lifecycle_demo_state: Lifecycle_Demo_State
 Lifecycle_Demo_State :: struct {
-	show:    bool,
-	opacity: f32,
+	show:                bool,
+	opacity:             f32,
+	mount_spring:        tengu.Spring_State(f32),
+	mount_spring_ready:  bool,
+	unmount_tween:       tengu.Tween_State(f32),
+	unmount_tween_ready: bool,
 }
 
 @(private)
@@ -50,7 +55,6 @@ run_init :: proc() {
 
 	tex, ok := oni.Load_Texture(ONI_IMAGE_PATH)
 	if ok do image_texture = tex
-	oni.Log_Debug("run_init")
 }
 
 
@@ -273,28 +277,42 @@ lifecycle_demo_background :: proc(
 
 @(private)
 lifecycle_demo_on_mount :: proc(_: wg.Rectangle_State) -> oni.Mount {
+	dt := f32(oni.Frame_Time())
 
-	oni.Log_Debug("mount")
-
-	lifecycle_demo_state.opacity += LIFECYCLE_FADE_STEP
-	if lifecycle_demo_state.opacity >= 1 {
-		lifecycle_demo_state.opacity = 1
-		return .COMPLETED
+	if !lifecycle_demo_state.mount_spring_ready {
+		tengu.spring_init(
+			&lifecycle_demo_state.mount_spring,
+			tengu.spring_config(f32(1)),
+			lifecycle_demo_state.opacity,
+		)
+		lifecycle_demo_state.mount_spring_ready = true
 	}
 
-
-	return .RUNNING
+	result := tengu.spring_step(&lifecycle_demo_state.mount_spring, dt, tengu.F32_Animatable())
+	lifecycle_demo_state.opacity = result.value
+	return result.done ? .COMPLETED : .RUNNING
 }
 
 @(private)
 lifecycle_demo_on_unmount :: proc(_: wg.Rectangle_State) -> oni.Mount {
-	lifecycle_demo_state.opacity -= LIFECYCLE_FADE_STEP
-	if lifecycle_demo_state.opacity <= 0 {
-		lifecycle_demo_state.opacity = 0
-		return .COMPLETED
+	dt := f32(oni.Frame_Time())
+
+	if !lifecycle_demo_state.unmount_tween_ready {
+		tengu.tween_init(
+			&lifecycle_demo_state.unmount_tween,
+			tengu.Tween_Config(f32) {
+				start = lifecycle_demo_state.opacity,
+				target = 0,
+				duration = LIFECYCLE_UNMOUNT_DURATION,
+				easing = tengu.Ease.OUT_CUBIC,
+			},
+		)
+		lifecycle_demo_state.unmount_tween_ready = true
 	}
 
-	return .RUNNING
+	result := tengu.tween_step(&lifecycle_demo_state.unmount_tween, dt, tengu.F32_Animatable())
+	lifecycle_demo_state.opacity = result.value
+	return result.done ? .COMPLETED : .RUNNING
 }
 
 
@@ -312,7 +330,7 @@ lifecycle_demo_panel_child :: proc(_: wg.Rectangle_State) {
 	wg.Text(
 		{
 			id = "lifecycle-demo-body",
-			text = "Fades in on mount, fades out on unmount. Use the toggle above to hide.",
+			text = "Springs in on mount, tweens out on unmount. Use the toggle above to hide.",
 			font = set.Font(oni.theme.font_body),
 			color = set.Colors(oni.theme.palette[.MUTED]),
 			font_size = set.F32(14),
@@ -362,9 +380,11 @@ Lifecycle_Demo :: proc() {
 		on_click = proc(_: ui.Button_Event) {
 			if lifecycle_demo_state.show {
 				lifecycle_demo_state.show = false
+				lifecycle_demo_state.unmount_tween_ready = false
 			} else {
 				lifecycle_demo_state.opacity = 0
 				lifecycle_demo_state.show = true
+				lifecycle_demo_state.mount_spring_ready = false
 			}
 		},
 	})
