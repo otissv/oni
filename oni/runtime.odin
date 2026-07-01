@@ -3,14 +3,25 @@ package oni
 Tick_Proc :: proc(dt: f32)
 Ready_Proc :: proc() -> bool
 
+@(private)
+has_init_run_once := false
+
+@(private)
+run_init_once :: proc(prc: proc()) {
+	if has_init_run_once do return
+	has_init_run_once = true
+	if prc != nil do prc()
+}
+
 /*
 Runs one full frame: timing, input, tick, UI end, and present.
 
 Pass app-specific tick and draw callbacks; returns early if state is nil
 or the window cannot render.
 */
-run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc) {
+run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 	if state == nil do return
+
 
 	dt := frame_time()
 	input_begin_frame()
@@ -20,8 +31,11 @@ run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc) {
 
 	ui_begin_frame()
 	if tick != nil do tick(f32(dt))
-	end_frame()
+
+	run_init_once(init)
 	present_frame(draw)
+
+	end_frame()
 }
 
 /*

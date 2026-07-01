@@ -7,8 +7,10 @@ import ui "./ui"
 import "core:fmt"
 
 
-PANEL_STATE_INITIALIZED: bool
 ONI_IMAGE_PATH :: "assets/oni-2.avif"
+LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
+LIFECYCLE_FADE_STEP :: 0.01
+
 
 @(private)
 panel_state: Panel_State
@@ -18,27 +20,41 @@ Panel_State :: struct {
 }
 
 @(private)
+lifecycle_demo_state: Lifecycle_Demo_State
+Lifecycle_Demo_State :: struct {
+	show:    bool,
+	opacity: f32,
+}
+
+@(private)
 image_texture: oni.Texture_Handle
 
 
-@(private)
-init_state :: proc() {
-	if PANEL_STATE_INITIALIZED do return
-	PANEL_STATE_INITIALIZED = true
+@(init)
+register_init :: proc "contextless" () {
+	init = run_init
+}
 
+@(private)
+run_init :: proc() {
 	panel := Panel_State {
-		background = set.Colors(oni.theme.palette[.BACKGROUND]),
+		background = set.Colors(oni.theme.palette[.SECONDARY]),
 		x          = set.F32(80),
 	}
 	panel_state = panel
 
+	lifecycle_demo_state = Lifecycle_Demo_State {
+		show    = true,
+		opacity = 1,
+	}
+
 	tex, ok := oni.Load_Texture(ONI_IMAGE_PATH)
 	if ok do image_texture = tex
+	oni.Log_Debug("run_init")
 }
 
 
 Panel :: proc() {
-
 	wg.Rectangle({
 		config = {
 			id = "artboard-panel",
@@ -246,9 +262,135 @@ Layout_Vertical :: proc(id: string, x: f32, y: f32) {
 
 
 @(private)
-view :: proc() {
-	init_state()
+lifecycle_demo_background :: proc(
+	_: oni.Widget_Frame_State,
+	_: oni.Widget_Event(oni.Widget_Frame_State),
+) -> oni.Colors {
+	base := oni.theme.palette[.ACCENT]
+	alpha := u8(min(max(lifecycle_demo_state.opacity, 0), 1) * 255)
+	return oni.RGBA{base.r, base.g, base.b, alpha}
+}
 
+@(private)
+lifecycle_demo_on_mount :: proc(_: wg.Rectangle_State) -> oni.Mount {
+	lifecycle_demo_state.opacity += LIFECYCLE_FADE_STEP
+	if lifecycle_demo_state.opacity >= 1 {
+		lifecycle_demo_state.opacity = 1
+		return .COMPLETED
+	}
+
+	return .RUNNING
+}
+
+@(private)
+lifecycle_demo_on_unmount :: proc(_: wg.Rectangle_State) -> oni.Mount {
+	lifecycle_demo_state.opacity -= LIFECYCLE_FADE_STEP
+	if lifecycle_demo_state.opacity <= 0 {
+		lifecycle_demo_state.opacity = 0
+		return .COMPLETED
+	}
+
+	return .RUNNING
+}
+
+
+@(private)
+lifecycle_demo_panel_child :: proc(_: wg.Rectangle_State) {
+	wg.Text(
+		{
+			id = "lifecycle-demo-title",
+			text = "Mount / unmount demo",
+			font = set.Font(oni.theme.font_heading),
+			color = set.Colors(oni.theme.palette[.FOREGROUND]),
+			font_size = set.F32(18),
+		},
+	)
+	wg.Text(
+		{
+			id = "lifecycle-demo-body",
+			text = "Fades in on mount, fades out on unmount. Use the toggle above to hide.",
+			font = set.Font(oni.theme.font_body),
+			color = set.Colors(oni.theme.palette[.MUTED]),
+			font_size = set.F32(14),
+			line_height = set.F32(1.3),
+		},
+	)
+}
+
+
+@(private)
+Lifecycle_Demo :: proc() {
+	// msg := fmt.tprintf("mount: {}", lifecycle_demo_state.opacity)
+	// // oni.Log_Debug(msg)
+
+	panel_config := wg.Rectangle_Config {
+		id           = LIFECYCLE_PANEL_ID,
+		x            = set.F32(900),
+		y            = set.F32(120),
+		width        = 320,
+		height       = 180,
+		background   = set.Colors(lifecycle_demo_background),
+		radius       = set.Radius(10),
+		border       = set.Border(2),
+		border_color = set.Colors(oni.theme.palette[.FOREGROUND]),
+		space        = set.Space(.SCREEN),
+		direction    = set.Direction(.VERTICAL),
+		padding      = set.Padding(oni.PADDING_MD),
+		gap          = set.Gap(u16(8)),
+		justify      = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .START}),
+	}
+
+	ui.Button({
+		id = "lifecycle-toggle",
+		variant = .OUTLINE,
+		x = set.F32(900),
+		y = set.F32(80),
+		space = set.Space(.SCREEN),
+		child = proc(_: ui.Button_state) {
+			label := lifecycle_demo_state.show ? "Hide panel" : "Show panel"
+			wg.Text(
+				{
+					id = "lifecycle-toggle-label",
+					text = label,
+					font = set.Font(oni.theme.font_body),
+					color = set.Colors(oni.theme.palette[.FOREGROUND]),
+					font_size = set.F32(14),
+				},
+			)
+		},
+		on_click = proc(_: ui.Button_Event) {
+			if lifecycle_demo_state.show {
+				lifecycle_demo_state.show = false
+			} else {
+				lifecycle_demo_state.opacity = 0
+				lifecycle_demo_state.show = true
+			}
+		},
+	})
+
+	if lifecycle_demo_state.show {
+		wg.Rectangle(
+			{
+				config = panel_config,
+				on_mount = lifecycle_demo_on_mount,
+				child = lifecycle_demo_panel_child,
+			},
+		)
+	} else {
+		wg.Rectangle(
+			{
+				config = panel_config,
+				unmount = true,
+				on_unmount = lifecycle_demo_on_unmount,
+				child = lifecycle_demo_panel_child,
+			},
+		)
+	}
+}
+
+
+@(private)
+view :: proc() {
 	oni.Begin_Artboard()
 	Panel()
 
@@ -277,6 +419,7 @@ view :: proc() {
 
 	oni.Begin_Screen()
 	Hud()
+	Lifecycle_Demo()
 
 	// Layout_Horizontal("layout-demo-1", x = 16, y = 480)
 	// Layout_Vertical("layout-demo-2", x = 16, y = 850)
@@ -285,6 +428,9 @@ view :: proc() {
 	oni.End_Screen()
 }
 
+
 app_draw :: proc() {
+
+
 	oni.Render(view)
 }
