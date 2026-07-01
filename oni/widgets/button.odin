@@ -24,9 +24,13 @@ Button_Event :: oni.Widget_Event(Button_State)
 Button widget props: config overrides, child callback, and input event handlers.
 */
 Button_Props :: struct {
-	config:            Button_Config,
-	child:             proc(frame_state: Button_State),
-	on_focus:          proc(event: Button_Event),
+	config:                       Button_Config,
+	child:                        proc(frame_state: Button_State),
+	unmount:                      bool,
+	can_interactive_during_mount: bool,
+	on_mount:                     proc(frame_state: Button_State) -> oni.Mount,
+	on_unmount:                   proc(frame_state: Button_State) -> oni.Mount,
+	on_focus:                     proc(event: Button_Event),
 	on_blur:           proc(event: Button_Event),
 	on_mouse_enter:    proc(event: Button_Event),
 	on_mouse_leave:    proc(event: Button_Event),
@@ -109,6 +113,16 @@ button_refresh_merged :: proc(props: Button_Props, frame_state: ^Button_State) -
 	return button_event(frame_state^)
 }
 
+@(private)
+button_lifecycle_handlers :: proc(props: Button_Props) -> Widget_Lifecycle_Handlers(Button_State) {
+	return {
+		unmount = props.unmount,
+		can_interactive_during_mount = props.can_interactive_during_mount,
+		on_mount = props.on_mount,
+		on_unmount = props.on_unmount,
+	}
+}
+
 /*
 Renders an interactive button with focus, pointer, and keyboard handling.
 
@@ -139,9 +153,23 @@ Button :: proc(props: Button_Props) {
 	child := props.child
 
 	if oni.ui_pass() == .Layout {
-		oni.Children(child, layout_id, config, frame_state)
+		skip_layout, ran_unmount := widget_run_layout_lifecycle(
+			button_lifecycle_handlers(props),
+			layout_id,
+			cfg.id != "",
+			&frame_state,
+		)
+		if ran_unmount {
+			event = button_refresh_merged(props, &frame_state)
+			config = frame_state.config
+		}
+		if !skip_layout {
+			oni.Children(child, layout_id, config, frame_state)
+		}
 		return
 	}
+
+	if !widget_prepare_draw(button_lifecycle_handlers(props), layout_id, &frame_state) do return
 
 	layout_rect := oni.ui_layout_rect(layout_id)
 	rect := layout_rect
@@ -163,7 +191,7 @@ Button :: proc(props: Button_Props) {
 	got_focus := false
 	lost_focus := false
 
-	if !frame_state.is_disabled {
+	if widget_can_interact(button_lifecycle_handlers(props), &frame_state) {
 		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
 			oni.w_ctx.focused_id = key
 			frame_state.is_focused = true
@@ -180,7 +208,7 @@ Button :: proc(props: Button_Props) {
 	event = button_refresh_merged(props, &frame_state)
 	config = frame_state.config
 
-	if !frame_state.is_disabled {
+	if widget_can_interact(button_lifecycle_handlers(props), &frame_state) {
 		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
@@ -287,7 +315,10 @@ Button :: proc(props: Button_Props) {
 		}
 	}
 
-	if should_auto_focus && !was_focused && props.on_focus != nil {
+	if should_auto_focus &&
+	   !was_focused &&
+	   props.on_focus != nil &&
+	   widget_can_interact(button_lifecycle_handlers(props), &frame_state) {
 		props.on_focus(event)
 	}
 

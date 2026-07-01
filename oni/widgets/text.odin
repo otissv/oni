@@ -40,8 +40,12 @@ Text_Event :: oni.Widget_Event(Text_Merged_State)
 Text widget props: config fields inlined plus input event handlers.
 */
 Text_Props :: struct {
-	using _:           Text_Config,
-	on_focus:          proc(event: Text_Event),
+	using _:                       Text_Config,
+	unmount:                       bool,
+	can_interactive_during_mount:  bool,
+	on_mount:                      proc(frame_state: Text_Merged_State) -> oni.Mount,
+	on_unmount:                    proc(frame_state: Text_Merged_State) -> oni.Mount,
+	on_focus:                      proc(event: Text_Event),
 	on_blur:           proc(event: Text_Event),
 	on_mouse_enter:    proc(event: Text_Event),
 	on_mouse_leave:    proc(event: Text_Event),
@@ -66,6 +70,16 @@ text_event :: proc(
 	key: oni.Scancode = oni.Scancode(0),
 ) -> Text_Event {
 	return {frame_state = frame_state, mouse_button = mouse_button, key = key}
+}
+
+@(private)
+text_lifecycle_handlers :: proc(props: Text_Props) -> Widget_Lifecycle_Handlers(Text_Merged_State) {
+	return {
+		unmount = props.unmount,
+		can_interactive_during_mount = props.can_interactive_during_mount,
+		on_mount = props.on_mount,
+		on_unmount = props.on_unmount,
+	}
 }
 
 /*
@@ -192,6 +206,18 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	style := frame_state.style
 
 	if oni.ui_pass() == .Layout {
+		skip_layout, ran_unmount := widget_run_layout_lifecycle(
+			text_lifecycle_handlers(props),
+			layout_id,
+			props.id != "",
+			&frame_state,
+		)
+		if ran_unmount {
+			event = text_refresh_merged(props, &frame_state)
+			style = frame_state.style
+		}
+		if skip_layout do return {}
+
 		node := oni.layout_push_node(layout_id, style)
 		max_w: f32
 		if props.max_w.mode == .Value do max_w = props.max_w.value
@@ -200,6 +226,8 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		oni.layout_pop_node()
 		return {}
 	}
+
+	if !widget_prepare_draw(text_lifecycle_handlers(props), layout_id, &frame_state) do return {}
 
 	rect := oni.widget_hit_rect(layout_id, style)
 
@@ -211,7 +239,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
 
-	if !frame_state.is_disabled {
+	if widget_can_interact(text_lifecycle_handlers(props), &frame_state) {
 		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
@@ -335,7 +363,10 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	event = text_refresh_merged(props, &frame_state)
 	style = frame_state.style
 
-	if should_auto_focus && !was_focused && props.on_focus != nil {
+	if should_auto_focus &&
+	   !was_focused &&
+	   props.on_focus != nil &&
+	   widget_can_interact(text_lifecycle_handlers(props), &frame_state) {
 		props.on_focus(event)
 	}
 

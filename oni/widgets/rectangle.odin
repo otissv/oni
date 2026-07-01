@@ -117,63 +117,13 @@ rect_resolve_hit_rect :: proc(rect: oni.Rect, config: oni.Resolved_Widget_Config
 }
 
 @(private)
-rect_can_interact :: proc(props: Rectangle_Props, frame_state: ^Rectangle_State) -> bool {
-	if frame_state.is_disabled do return false
-	if frame_state.unmounting == .RUNNING do return false
-	if frame_state.mounting == .RUNNING && !props.can_interactive_during_mount do return false
-	return true
-}
-
-@(private)
-rect_run_layout_lifecycle :: proc(
-	props: Rectangle_Props,
-	layout_id: oni.UI_Id,
-	cfg: Rectangle_Config,
-	frame_state: ^Rectangle_State,
-) -> (
-	skip_layout: bool,
-	ran_unmount: bool,
-) {
-	entry := oni.widget_lifecycle_entry(layout_id)
-	stable_id := cfg.id != ""
-	first_appearance := stable_id && !oni.ui_was_laid_out_prev(layout_id)
-
-	frame_state.mounting = entry.mounting
-	frame_state.unmounting = entry.unmounting
-
-	if props.on_mount != nil && stable_id {
-		switch entry.mounting {
-		case .UNSET:
-			if first_appearance {
-				entry.mounting = .RUNNING
-				frame_state.mounting = props.on_mount(frame_state^)
-				entry.mounting = frame_state.mounting
-			}
-		case .RUNNING:
-			frame_state.mounting = props.on_mount(frame_state^)
-			entry.mounting = frame_state.mounting
-		case .COMPLETED:
-			frame_state.mounting = .COMPLETED
-		}
+rect_lifecycle_handlers :: proc(props: Rectangle_Props) -> Widget_Lifecycle_Handlers(Rectangle_State) {
+	return {
+		unmount = props.unmount,
+		can_interactive_during_mount = props.can_interactive_during_mount,
+		on_mount = props.on_mount,
+		on_unmount = props.on_unmount,
 	}
-
-	if props.on_unmount != nil &&
-	   (props.unmount && (entry.unmounting == .RUNNING || entry.unmounting == .UNSET)) {
-		if props.unmount && entry.unmounting == .UNSET {
-			entry.unmounting = .RUNNING
-		}
-
-		ran_unmount = true
-		frame_state.unmounting = props.on_unmount(frame_state^)
-		entry.unmounting = frame_state.unmounting
-	}
-
-	if entry.unmounting == .COMPLETED || (props.unmount && entry.unmounting == .UNSET) {
-		skip_layout = true
-		oni.widget_lifecycle_remove(layout_id)
-	}
-
-	return
 }
 
 @(private)
@@ -198,7 +148,7 @@ rect_handle_interaction :: proc(
 	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
 
-	if !rect_can_interact(props, frame_state) do return
+	if !widget_can_interact(rect_lifecycle_handlers(props), frame_state) do return
 
 	if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
 		oni.w_ctx.focused_id = key
@@ -224,7 +174,7 @@ rect_dispatch_events :: proc(
 	got_focus: bool,
 	lost_focus: bool,
 ) {
-	if !rect_can_interact(props, frame_state) do return
+	if !widget_can_interact(rect_lifecycle_handlers(props), frame_state) do return
 
 	state := frame_state^
 
@@ -365,7 +315,12 @@ Rectangle :: proc(props: Rectangle_Props) {
 	rect := layout_rect
 
 	if oni.ui_pass() == .Layout {
-		skip_layout, ran_unmount := rect_run_layout_lifecycle(props, layout_id, cfg, &frame_state)
+		skip_layout, ran_unmount := widget_run_layout_lifecycle(
+			rect_lifecycle_handlers(props),
+			layout_id,
+			cfg.id != "",
+			&frame_state,
+		)
 
 		if ran_unmount {
 			event = rect_refresh_merged(props, &frame_state)
@@ -378,13 +333,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		return
 	}
 
-	if props.unmount && !oni.ui_has_layout_node(layout_id) do return
-
-	entry := oni.widget_lifecycle_entry(layout_id)
-	frame_state.mounting = entry.mounting
-	frame_state.unmounting = entry.unmounting
-
-	if !oni.ui_has_layout_node(layout_id) do return
+	if !widget_prepare_draw(rect_lifecycle_handlers(props), layout_id, &frame_state) do return
 
 	rect = rect_resolve_hit_rect(rect, config)
 
@@ -405,7 +354,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
-	   rect_can_interact(props, &frame_state) {
+	   widget_can_interact(rect_lifecycle_handlers(props), &frame_state) {
 		props.on_focus(event)
 	}
 

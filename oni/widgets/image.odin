@@ -13,15 +13,19 @@ Image_Event :: oni.Widget_Event(Image_State)
 Image widget props: source rect, tint, fit/pos overrides, and event handlers.
 */
 Image_Props :: struct {
-	config:            Image_Config,
-	texture:           oni.Texture_Handle,
-	src, dst:          oni.Rect,
-	tint:              oni.Colors,
-	alt:               string,
-	texture_fit:       oni.Cfg(oni.Style_Image_Fit),
-	texture_pos:       oni.Cfg(oni.Style_Image_Pos),
-	child:             proc(frame_state: Image_State),
-	on_focus:          proc(event: Image_Event),
+	config:                       Image_Config,
+	texture:                      oni.Texture_Handle,
+	src, dst:                     oni.Rect,
+	tint:                         oni.Colors,
+	alt:                          string,
+	texture_fit:                  oni.Cfg(oni.Style_Image_Fit),
+	texture_pos:                  oni.Cfg(oni.Style_Image_Pos),
+	child:                        proc(frame_state: Image_State),
+	unmount:                      bool,
+	can_interactive_during_mount: bool,
+	on_mount:                     proc(frame_state: Image_State) -> oni.Mount,
+	on_unmount:                   proc(frame_state: Image_State) -> oni.Mount,
+	on_focus:                     proc(event: Image_Event),
 	on_blur:           proc(event: Image_Event),
 	on_mouse_enter:    proc(event: Image_Event),
 	on_mouse_leave:    proc(event: Image_Event),
@@ -92,6 +96,16 @@ Refreshes merged config on frame_state and returns a fresh texture event snapsho
 image_refresh_merged :: proc(props: Image_Props, frame_state: ^Image_State) -> Image_Event {
 	frame_state.config = image_config(props, frame_state)
 	return image_event(frame_state^)
+}
+
+@(private)
+image_lifecycle_handlers :: proc(props: Image_Props) -> Widget_Lifecycle_Handlers(Image_State) {
+	return {
+		unmount = props.unmount,
+		can_interactive_during_mount = props.can_interactive_during_mount,
+		on_mount = props.on_mount,
+		on_unmount = props.on_unmount,
+	}
 }
 
 /*
@@ -184,6 +198,18 @@ Image :: proc(props: Image_Props) {
 	child := props.child
 
 	if oni.ui_pass() == .Layout {
+		skip_layout, ran_unmount := widget_run_layout_lifecycle(
+			image_lifecycle_handlers(props),
+			layout_id,
+			cfg.id != "",
+			&frame_state,
+		)
+		if ran_unmount {
+			event = image_refresh_merged(props, &frame_state)
+			config = frame_state.config
+		}
+		if skip_layout do return
+
 		oni.ui_push_scope(layout_id)
 		node := oni.layout_push_node(layout_id, config)
 		if measure := texture_measure_size(props, config, &frame_state, event);
@@ -197,6 +223,8 @@ Image :: proc(props: Image_Props) {
 		oni.ui_pop_scope()
 		return
 	}
+
+	if !widget_prepare_draw(image_lifecycle_handlers(props), layout_id, &frame_state) do return
 
 	layout_rect := oni.ui_layout_rect(layout_id)
 	rect := layout_rect
@@ -218,7 +246,7 @@ Image :: proc(props: Image_Props) {
 	got_focus := false
 	lost_focus := false
 
-	if !frame_state.is_disabled {
+	if widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
 		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
 			oni.w_ctx.focused_id = key
 			frame_state.is_focused = true
@@ -234,7 +262,7 @@ Image :: proc(props: Image_Props) {
 
 	event = image_refresh_merged(props, &frame_state)
 
-	if !frame_state.is_disabled {
+	if widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
 		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
@@ -339,7 +367,10 @@ Image :: proc(props: Image_Props) {
 		}
 	}
 
-	if should_auto_focus && !was_focused && props.on_focus != nil {
+	if should_auto_focus &&
+	   !was_focused &&
+	   props.on_focus != nil &&
+	   widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
 		props.on_focus(event)
 	}
 
