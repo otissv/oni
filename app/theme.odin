@@ -38,7 +38,7 @@ build_theme :: proc() -> oni.Theme {
 		justify = oni.Justify_Pos{x = .START, y = .START},
 		direction = .HORIZONTAL,
 		border_color = .BLACK,
-		background = .TRANSPARENT,
+		background = .BACKGROUND,
 		padding = 0,
 		radius = 0,
 		border = 0,

@@ -8,6 +8,8 @@ Per-widget cache entry keyed by UI_Id for shaped text and frame tracking.
 UI_Widget_Entry :: struct {
 	shaped:     Shaped_Text,
 	last_frame: u64,
+	mounting:   Mount,
+	unmounting: Mount,
 }
 
 /*
@@ -16,10 +18,12 @@ Per-frame UI bookkeeping: pass, scope/style stacks, widgets, and layout.
 UI_State :: struct {
 	frame:               u64,
 	pass:                UI_Pass,
-	scope_stack: [dynamic]UI_Id,
-	style_stack: [dynamic]Style_Context,
+	scope_stack:         [dynamic]UI_Id,
+	style_stack:         [dynamic]Style_Context,
 	widgets:             map[UI_Id]UI_Widget_Entry,
 	layout:              Layout_State,
+	layout_ids_prev:     map[UI_Id]bool,
+	layout_ids_snapshot: map[UI_Id]bool,
 }
 
 /*

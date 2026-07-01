@@ -26,7 +26,7 @@ Rectangle_Props :: struct {
 	config:                       Rectangle_Config,
 	child:                        proc(frame_state: Rectangle_State),
 	unmount:                      bool,
-	can_interactive_during_mount: bool, // default false
+	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Rectangle_State) -> oni.Mount,
 	on_unmount:                   proc(frame_state: Rectangle_State) -> oni.Mount,
 	on_focus:                     proc(event: Rectangle_Event),
@@ -104,19 +104,241 @@ rect_refresh_merged :: proc(
 	return rect_event(frame_state^)
 }
 
+@(private)
+rect_resolve_hit_rect :: proc(rect: oni.Rect, config: oni.Resolved_Widget_Config) -> oni.Rect {
+	out := rect
+	if out.w == 0 {
+		if w := oni.length_resolve(config.width, 0); w > 0 do out.w = w
+	}
+	if out.h == 0 {
+		if h := oni.length_resolve(config.height, 0); h > 0 do out.h = h
+	}
+	return out
+}
+
+@(private)
+rect_can_interact :: proc(props: Rectangle_Props, frame_state: ^Rectangle_State) -> bool {
+	if frame_state.is_disabled do return false
+	if frame_state.unmounting == .RUNNING do return false
+	if frame_state.mounting == .RUNNING && !props.can_interactive_during_mount do return false
+	return true
+}
+
+@(private)
+rect_run_layout_lifecycle :: proc(
+	props: Rectangle_Props,
+	layout_id: oni.UI_Id,
+	cfg: Rectangle_Config,
+	frame_state: ^Rectangle_State,
+) -> (
+	skip_layout: bool,
+	ran_unmount: bool,
+) {
+	entry := oni.widget_lifecycle_entry(layout_id)
+	stable_id := cfg.id != ""
+	first_appearance := stable_id && !oni.ui_was_laid_out_prev(layout_id)
+
+	frame_state.mounting = entry.mounting
+	frame_state.unmounting = entry.unmounting
+
+	if props.on_mount != nil && stable_id {
+		switch entry.mounting {
+		case .UNSET:
+			if first_appearance {
+				entry.mounting = .RUNNING
+				frame_state.mounting = props.on_mount(frame_state^)
+				entry.mounting = frame_state.mounting
+			}
+		case .RUNNING:
+			frame_state.mounting = props.on_mount(frame_state^)
+			entry.mounting = frame_state.mounting
+		case .COMPLETED:
+			frame_state.mounting = .COMPLETED
+		}
+	}
+
+	if props.on_unmount != nil &&
+	   (props.unmount && (entry.unmounting == .RUNNING || entry.unmounting == .UNSET)) {
+		if props.unmount && entry.unmounting == .UNSET {
+			entry.unmounting = .RUNNING
+		}
+
+		ran_unmount = true
+		frame_state.unmounting = props.on_unmount(frame_state^)
+		entry.unmounting = frame_state.unmounting
+	}
+
+	if entry.unmounting == .COMPLETED || (props.unmount && entry.unmounting == .UNSET) {
+		skip_layout = true
+	}
+
+	return
+}
+
+@(private)
+rect_handle_interaction :: proc(
+	props: Rectangle_Props,
+	frame_state: ^Rectangle_State,
+	key: string,
+	was_focused: bool,
+	should_auto_focus: bool,
+	rect: oni.Rect,
+) -> (
+	got_focus: bool,
+	lost_focus: bool,
+) {
+	config := frame_state.config
+
+	frame_state.is_hovered = oni.pointer_over(rect, config.space)
+	frame_state.is_left_clicked = frame_state.is_hovered && oni.w_ctx.left_mouse.pressed
+	frame_state.is_right_clicked = frame_state.is_hovered && oni.w_ctx.right_mouse.pressed
+	frame_state.is_middle_clicked = frame_state.is_hovered && oni.w_ctx.middle_mouse.pressed
+	frame_state.is_left_released = frame_state.is_hovered && oni.w_ctx.left_mouse.released
+	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
+	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
+
+	if !rect_can_interact(props, frame_state) do return
+
+	if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
+		oni.w_ctx.focused_id = key
+		frame_state.is_focused = true
+		got_focus = true
+	}
+
+	if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
+		oni.w_ctx.focused_id = {}
+		frame_state.is_focused = false
+		lost_focus = true
+	}
+
+	return
+}
+
+@(private)
+rect_dispatch_events :: proc(
+	props: Rectangle_Props,
+	frame_state: ^Rectangle_State,
+	event: Rectangle_Event,
+	key: string,
+	got_focus: bool,
+	lost_focus: bool,
+) {
+	if !rect_can_interact(props, frame_state) do return
+
+	state := frame_state^
+
+	entered, left := oni.consume_hover_transition(key, state.is_hovered)
+
+	if entered && props.on_mouse_enter != nil {
+		props.on_mouse_enter(event)
+	}
+	if left && props.on_mouse_leave != nil {
+		props.on_mouse_leave(event)
+	}
+
+	if state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
+		props.on_mouse_move(event)
+	}
+
+	if state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+		props.on_contextmenu(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+	}
+
+	if got_focus && props.on_focus != nil {
+		props.on_focus(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+	}
+
+	if lost_focus && props.on_blur != nil {
+		props.on_blur(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+	}
+
+	if state.is_hovered && props.on_mouse_pressed != nil {
+		if oni.w_ctx.left_mouse.pressed {
+			props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+		}
+		if oni.w_ctx.right_mouse.pressed {
+			props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+		}
+		if oni.w_ctx.middle_mouse.pressed {
+			props.on_mouse_pressed(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+		}
+	}
+
+	if state.is_hovered && props.on_mouse_down != nil {
+		if oni.w_ctx.left_mouse.down {
+			props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+		}
+		if oni.w_ctx.right_mouse.down {
+			props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+		}
+		if oni.w_ctx.middle_mouse.down {
+			props.on_mouse_down(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+		}
+	}
+
+	if state.is_hovered && props.on_mouse_released != nil {
+		if oni.w_ctx.left_mouse.released {
+			props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_LEFT))
+		}
+		if oni.w_ctx.right_mouse.released {
+			props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_RIGHT))
+		}
+		if oni.w_ctx.middle_mouse.released {
+			props.on_mouse_released(rect_event(state, mouse_button = sdl.BUTTON_MIDDLE))
+		}
+	}
+
+	clicked := oni.consume_pointer_click(
+		key,
+		state.is_hovered,
+		oni.w_ctx.left_mouse.pressed,
+		oni.w_ctx.left_mouse.released,
+	)
+	click_event := rect_event(state, mouse_button = sdl.BUTTON_LEFT)
+
+	if state.is_focused && props.on_click != nil {
+		enter_key := oni.w_ctx.keys[int(sdl.Scancode.RETURN)]
+		space_key := oni.w_ctx.keys[int(sdl.Scancode.SPACE)]
+
+		if enter_key.pressed {
+			clicked = true
+			click_event.key = oni.Scancode(sdl.Scancode.RETURN)
+		} else if space_key.pressed {
+			clicked = true
+			click_event.key = oni.Scancode(sdl.Scancode.SPACE)
+		}
+	}
+
+	if clicked && props.on_click != nil {
+		props.on_click(click_event)
+	}
+
+	if state.is_focused {
+		for scancode in 0 ..< oni.KEY_COUNT {
+			key_frame_state := oni.w_ctx.keys[scancode]
+			key_event := rect_event(state, key = oni.Scancode(scancode))
+
+			if props.on_key_pressed != nil && key_frame_state.pressed {
+				props.on_key_pressed(key_event)
+			}
+			if props.on_key_down != nil && key_frame_state.down {
+				props.on_key_down(key_event)
+			}
+			if props.on_key_released != nil && key_frame_state.released {
+				props.on_key_released(key_event)
+			}
+		}
+	}
+}
+
 /*
 Renders a styled rectangle container with full pointer and keyboard interaction.
 
 Runs layout on the layout pass and draws chrome plus children on the draw pass.
 */
 Rectangle :: proc(props: Rectangle_Props) {
-	// Layout pass
 	cfg := props.config
 	key := oni.element_key(cfg.id)
-	layout_label := cfg.id != "" ? cfg.id : key
-	layout_id := oni.ui_id(layout_label)
-	layout_rect := oni.ui_layout_rect(layout_id)
-	rect := layout_rect
 
 	was_focused := oni.w_ctx.focused_id == key
 	should_auto_focus :=
@@ -136,185 +358,55 @@ Rectangle :: proc(props: Rectangle_Props) {
 	config := frame_state.config
 	child := props.child
 
+	layout_label := cfg.id != "" ? cfg.id : key
+	layout_id := oni.ui_id(layout_label)
+	layout_rect := oni.ui_layout_rect(layout_id)
+	rect := layout_rect
+
 	if oni.ui_pass() == .Layout {
-		// Layout pass
+		skip_layout, ran_unmount := rect_run_layout_lifecycle(props, layout_id, cfg, &frame_state)
 
-		if props.on_mount != nil &&
-		   frame_state.mounting == .UNSET &&
-		   frame_state.mounting != .COMPLETED {
-			frame_state.mounting = props.on_mount(frame_state)
-		} else if props.on_unmount != nil &&
-		   (props.unmount || frame_state.unmounting == .RUNNING) {
-			frame_state.unmounting = props.on_unmount(frame_state)
+		if ran_unmount {
+			event = rect_refresh_merged(props, &frame_state)
+			config = frame_state.config
 		}
 
-		oni.Children(child, layout_id, config, frame_state)
+		if !skip_layout {
+			oni.Children(child, layout_id, config, frame_state)
+		}
 		return
-	} else {
-		// Draw pass
-
-		draw_widget_rectangle(
-			{
-				frame_state = &frame_state,
-				event = event,
-				rect = rect,
-				child = child,
-				layout_id = layout_id,
-			},
-		)
-
-		oni.Children(child, layout_id, config, frame_state)
-
-		// TODO: remove from layout tree
-		return
-
 	}
 
-	// Draw pass
-	if rect.w == 0 {
-		if w := oni.length_resolve(config.width, 0); w > 0 do rect.w = w
-	}
-	if rect.h == 0 {
-		if h := oni.length_resolve(config.height, 0); h > 0 do rect.h = h
-	}
+	entry := oni.widget_lifecycle_entry(layout_id)
+	frame_state.mounting = entry.mounting
+	frame_state.unmounting = entry.unmounting
 
-	frame_state.is_hovered = oni.pointer_over(rect, config.space)
-	frame_state.is_left_clicked = frame_state.is_hovered && oni.w_ctx.left_mouse.pressed
-	frame_state.is_right_clicked = frame_state.is_hovered && oni.w_ctx.right_mouse.pressed
-	frame_state.is_middle_clicked = frame_state.is_hovered && oni.w_ctx.middle_mouse.pressed
-	frame_state.is_left_released = frame_state.is_hovered && oni.w_ctx.left_mouse.released
-	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
-	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
+	if entry.unmounting == .COMPLETED do return
+	if entry.unmounting == .UNSET && props.unmount do return
+	if !oni.ui_has_layout_node(layout_id) do return
 
-	got_focus := false
-	lost_focus := false
+	rect = rect_resolve_hit_rect(rect, config)
 
-	if !frame_state.is_disabled {
-		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
-			oni.w_ctx.focused_id = key
-			frame_state.is_focused = true
-			got_focus = true
-		}
-
-		if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
-			oni.w_ctx.focused_id = {}
-			frame_state.is_focused = false
-			lost_focus = true
-		}
-	}
+	got_focus, lost_focus := rect_handle_interaction(
+		props,
+		&frame_state,
+		key,
+		was_focused,
+		should_auto_focus,
+		rect,
+	)
 
 	event = rect_refresh_merged(props, &frame_state)
+	config = frame_state.config
 
-	if !frame_state.is_disabled {
-		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
+	rect_dispatch_events(props, &frame_state, event, key, got_focus, lost_focus)
 
-		if entered && props.on_mouse_enter != nil {
-			props.on_mouse_enter(event)
-		}
-		if left && props.on_mouse_leave != nil {
-			props.on_mouse_leave(event)
-		}
-
-		if frame_state.is_hovered && oni.w_ctx.mouse_moved && props.on_mouse_move != nil {
-			props.on_mouse_move(event)
-		}
-
-		if frame_state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
-			props.on_contextmenu(rect_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
-		}
-
-		if got_focus && props.on_focus != nil {
-			props.on_focus(rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-		}
-
-		if lost_focus && props.on_blur != nil {
-			props.on_blur(rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-		}
-
-		if frame_state.is_hovered && props.on_mouse_pressed != nil {
-			if oni.w_ctx.left_mouse.pressed {
-				props.on_mouse_pressed(rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-			}
-			if oni.w_ctx.right_mouse.pressed {
-				props.on_mouse_pressed(rect_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
-			}
-			if oni.w_ctx.middle_mouse.pressed {
-				props.on_mouse_pressed(rect_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE))
-			}
-		}
-
-		if frame_state.is_hovered && props.on_mouse_down != nil {
-			if oni.w_ctx.left_mouse.down {
-				props.on_mouse_down(rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-			}
-			if oni.w_ctx.right_mouse.down {
-				props.on_mouse_down(rect_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
-			}
-			if oni.w_ctx.middle_mouse.down {
-				props.on_mouse_down(rect_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE))
-			}
-		}
-
-		if frame_state.is_hovered && props.on_mouse_released != nil {
-			if oni.w_ctx.left_mouse.released {
-				props.on_mouse_released(rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-			}
-			if oni.w_ctx.right_mouse.released {
-				props.on_mouse_released(rect_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
-			}
-			if oni.w_ctx.middle_mouse.released {
-				props.on_mouse_released(rect_event(frame_state, mouse_button = sdl.BUTTON_MIDDLE))
-			}
-		}
-
-		clicked := oni.consume_pointer_click(
-			key,
-			frame_state.is_hovered,
-			oni.w_ctx.left_mouse.pressed,
-			oni.w_ctx.left_mouse.released,
-		)
-		click_event := rect_event(frame_state, mouse_button = sdl.BUTTON_LEFT)
-
-		if frame_state.is_focused && props.on_click != nil {
-			enter_key := oni.w_ctx.keys[int(sdl.Scancode.RETURN)]
-			space_key := oni.w_ctx.keys[int(sdl.Scancode.SPACE)]
-
-			if enter_key.pressed {
-				clicked = true
-				click_event.key = oni.Scancode(sdl.Scancode.RETURN)
-			} else if space_key.pressed {
-				clicked = true
-				click_event.key = oni.Scancode(sdl.Scancode.SPACE)
-			}
-		}
-
-		if clicked && props.on_click != nil {
-			props.on_click(click_event)
-		}
-
-		if frame_state.is_focused {
-			for scancode in 0 ..< oni.KEY_COUNT {
-				key_frame_state := oni.w_ctx.keys[scancode]
-				key_event := rect_event(frame_state, key = oni.Scancode(scancode))
-
-				if props.on_key_pressed != nil && key_frame_state.pressed {
-					props.on_key_pressed(key_event)
-				}
-				if props.on_key_down != nil && key_frame_state.down {
-					props.on_key_down(key_event)
-				}
-				if props.on_key_released != nil && key_frame_state.released {
-					props.on_key_released(key_event)
-				}
-			}
-		}
-	}
-
-	if should_auto_focus && !was_focused && props.on_focus != nil {
+	if should_auto_focus &&
+	   !was_focused &&
+	   props.on_focus != nil &&
+	   rect_can_interact(props, &frame_state) {
 		props.on_focus(event)
 	}
-
-	config = frame_state.config
 
 	draw_widget_rectangle(
 		{

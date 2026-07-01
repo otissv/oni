@@ -17,8 +17,17 @@ ui_init :: proc() {
 	if state.ui.widgets == nil {
 		state.ui.widgets = make(map[UI_Id]UI_Widget_Entry)
 	}
+
 	if state.ui.layout.id_to_node == nil {
 		state.ui.layout.id_to_node = make(map[UI_Id]int)
+	}
+
+	if state.ui.layout_ids_prev == nil {
+		state.ui.layout_ids_prev = make(map[UI_Id]bool)
+	}
+
+	if state.ui.layout_ids_snapshot == nil {
+		state.ui.layout_ids_snapshot = make(map[UI_Id]bool)
 	}
 }
 
@@ -46,6 +55,10 @@ ui_shutdown :: proc() {
 	layout_reset()
 	delete(state.ui.layout.id_to_node)
 	state.ui.layout.id_to_node = nil
+	delete(state.ui.layout_ids_prev)
+	state.ui.layout_ids_prev = nil
+	delete(state.ui.layout_ids_snapshot)
+	state.ui.layout_ids_snapshot = nil
 
 	state.ui.frame = 0
 	state.ui.pass = .Layout
@@ -60,6 +73,10 @@ ui_begin_frame :: proc() {
 	ui_init()
 	state.ui.frame += 1
 	state.ui.pass = .Layout
+	clear(&state.ui.layout_ids_prev)
+	for id in state.ui.layout_ids_snapshot {
+		state.ui.layout_ids_prev[id] = true
+	}
 	clear(&state.ui.scope_stack)
 	clear(&state.ui.style_stack)
 	layout_reset()
@@ -87,6 +104,10 @@ ui_begin_frame :: proc() {
 Switches the UI pass from layout to draw after measurement completes.
 */
 ui_end_layout_pass :: proc() {
+	clear(&state.ui.layout_ids_snapshot)
+	for id in state.ui.layout.id_to_node {
+		state.ui.layout_ids_snapshot[id] = true
+	}
 	state.ui.pass = .Draw
 }
 
@@ -145,6 +166,21 @@ ui_layout_rect :: proc(id: UI_Id) -> Rect {
 		return state.ui.layout.nodes[node_index].rect
 	}
 	return {}
+}
+
+/*
+Returns whether a UI id was registered in the layout tree during the previous frame.
+*/
+ui_was_laid_out_prev :: proc(id: UI_Id) -> bool {
+	return state.ui.layout_ids_prev[id]
+}
+
+/*
+Returns whether a UI id is registered in the current frame layout tree.
+*/
+ui_has_layout_node :: proc(id: UI_Id) -> bool {
+	_, ok := state.ui.layout.id_to_node[id]
+	return ok
 }
 
 /*

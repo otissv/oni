@@ -174,6 +174,10 @@ Clears the entry's pool_slot to INVALID_SHAPE_POOL_SLOT.
 */
 shaped_text_pool_unregister :: proc(cache: ^Shaped_Text) {
 	if cache.pool_slot == INVALID_SHAPE_POOL_SLOT do return
+	if state.fonts.shape_pool.count <= 0 {
+		cache.pool_slot = INVALID_SHAPE_POOL_SLOT
+		return
+	}
 
 	slot := cache.pool_slot
 	last := state.fonts.shape_pool.count - 1

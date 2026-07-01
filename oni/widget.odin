@@ -763,6 +763,26 @@ widget_shaped :: proc(id: Widget_ID) -> ^Shaped_Text {
 }
 
 /*
+Returns the per-widget cache entry for a layout id, creating it when missing.
+
+Updates last_frame so the entry survives ui_end_frame pruning.
+*/
+widget_lifecycle_entry :: proc(layout_id: UI_Id) -> ^UI_Widget_Entry {
+	ui_init()
+
+	if _, ok := state.ui.widgets[layout_id]; !ok {
+		state.ui.widgets[layout_id] = UI_Widget_Entry {
+			shaped = {pool_slot = INVALID_SHAPE_POOL_SLOT},
+		}
+	}
+
+	entry := &state.ui.widgets[layout_id]
+	entry.last_frame = state.ui.frame
+
+	return entry
+}
+
+/*
 Converts texture position values above 1 from percent (0–100) to normalized 0–1.
 */
 @(private)

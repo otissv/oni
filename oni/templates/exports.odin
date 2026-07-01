@@ -23,6 +23,9 @@ Persistent :: struct {
 
 persistent: ^Persistent
 
+// Optional once-per-run hook; wire from app.odin when needed (see templates/app.odin).
+init: proc()
+
 /*
 Re-binds oni engine and theme globals to the current persistent state.
 
@@ -131,7 +134,7 @@ Exported hot-reload entry point called each loop iteration by the host.
 app_update :: proc() {
 	if persistent == nil do return
 	bind()
-	oni.Run_Frame(app_tick, app_draw)
+	oni.Run_Frame(app_tick, app_draw, init)
 }
 
 /*

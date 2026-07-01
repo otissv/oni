@@ -13,6 +13,16 @@ import sdl "vendor:sdl3"
 
 default_context: runtime.Context
 
+/*
+Restores the host thread context before calling into the app shared library.
+
+App code uses core:log via oni.log; without this, context.logger is nil in the
+loaded .so and log calls are silently dropped.
+*/
+use_host_context :: proc() {
+	context = default_context
+}
+
 when ODIN_OS == .Windows {
 	APP_LIB_EXT :: ".dll"
 } else when ODIN_OS == .Darwin {
@@ -49,26 +59,26 @@ app_lib_path :: proc() -> string {
 Function pointers loaded from the app shared library for the host lifecycle.
 */
 App_API :: struct {
-	lib:             dynlib.Library,
-	init_window:     proc(),
-	init:            proc(),
-	update:          proc(),
-	should_run:      proc() -> bool,
-	shutdown:        proc(),
-	shutdown_window: proc(),
-	memory:          proc() -> rawptr,
-	memory_size:     proc() -> int,
-	hot_reloaded:    proc(mem: rawptr),
-	reset:           proc(),
-	realloc:         proc(new_size: int),
-	force_reload:       proc() -> bool,
-	force_restart:      proc() -> bool,
-	peek_force_reload:  proc() -> bool,
-	peek_force_restart: proc() -> bool,
-	consume_force_reload: proc(),
+	lib:                   dynlib.Library,
+	init_window:           proc(),
+	init:                  proc(),
+	update:                proc(),
+	should_run:            proc() -> bool,
+	shutdown:              proc(),
+	shutdown_window:       proc(),
+	memory:                proc() -> rawptr,
+	memory_size:           proc() -> int,
+	hot_reloaded:          proc(mem: rawptr),
+	reset:                 proc(),
+	realloc:               proc(new_size: int),
+	force_reload:          proc() -> bool,
+	force_restart:         proc() -> bool,
+	peek_force_reload:     proc() -> bool,
+	peek_force_restart:    proc() -> bool,
+	consume_force_reload:  proc(),
 	consume_force_restart: proc(),
-	loaded_mod_nsec:    i64,
-	api_version:     int,
+	loaded_mod_nsec:       i64,
+	api_version:           int,
 }
 
 /*
@@ -83,12 +93,14 @@ reloader :: proc(
 	old_apis: ^[dynamic]App_API,
 	tracking: ^mem.Tracking_Allocator,
 ) {
+	use_host_context()
 	app_api.update()
 
 	if reload_cooldown^ > 0 {
 		reload_cooldown^ -= 1
 	}
 
+	use_host_context()
 	want_reload := app_api.peek_force_reload()
 	want_restart := app_api.peek_force_restart()
 	reload := want_reload || want_restart
@@ -111,6 +123,7 @@ reloader :: proc(
 	if reload {
 		new_api, new_loaded := load_app_api(api_version^)
 		if new_loaded {
+			use_host_context()
 			app_api.consume_force_reload()
 			app_api.consume_force_restart()
 			perform_reload(app_api, new_api, want_restart, reason, old_apis)
@@ -127,6 +140,7 @@ reloader :: proc(
 		}
 		wait_for_enter()
 
+		use_host_context()
 		app_api.shutdown()
 
 		for &old in old_apis {
@@ -291,11 +305,15 @@ init_app :: proc(
 	}
 
 	api_version += 1
+	use_host_context()
 	app_api.init_window()
+	use_host_context()
 	app_api.init()
 
+	use_host_context()
 	if !app_api.should_run() {
 		fmt.println("App exited during init. Check build/hot_reload/app.log for details.")
+		use_host_context()
 		app_api.shutdown()
 		unload_app_api(&app_api)
 		return
@@ -314,6 +332,7 @@ shutdown_app :: proc(
 	tracking: ^mem.Tracking_Allocator,
 	old_apis: ^[dynamic]App_API,
 ) {
+	use_host_context()
 	app_api.shutdown()
 
 	if reset_tracking_allocator(tracking) {
@@ -325,6 +344,7 @@ shutdown_app :: proc(
 	}
 	delete(old_apis^)
 
+	use_host_context()
 	app_api.shutdown_window()
 	unload_app_api(app_api)
 }
@@ -341,18 +361,23 @@ perform_reload :: proc(
 	reason: string,
 	old_apis: ^[dynamic]App_API,
 ) {
+	use_host_context()
 	layout_changed := app_api.memory_size() != new_api.memory_size()
 	full_restart := want_restart || layout_changed
 
 	append(old_apis, app_api^)
+	use_host_context()
 	app_memory := app_api.memory()
 	app_api^ = new_api
+	use_host_context()
 	app_api.hot_reloaded(app_memory)
 
 	if full_restart && layout_changed {
+		use_host_context()
 		app_api.realloc(new_api.memory_size())
 		fmt.printfln("Reload ({0}): memory layout changed, state reset", reason)
 	} else if full_restart {
+		use_host_context()
 		app_api.reset()
 		fmt.printfln("Reload ({0}): full restart", reason)
 	} else {

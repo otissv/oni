@@ -33,6 +33,8 @@ Dpi_Sync :: dpi_sync
 
 Log_Error :: log_error
 Log_Errorf :: log_errorf
+Log_Debug :: log
+Log_Debugf :: logf
 
 Draw_Rectangle :: draw_rect
 Draw_Line :: draw_line
