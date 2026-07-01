@@ -170,6 +170,7 @@ rect_run_layout_lifecycle :: proc(
 
 	if entry.unmounting == .COMPLETED || (props.unmount && entry.unmounting == .UNSET) {
 		skip_layout = true
+		oni.widget_lifecycle_remove(layout_id)
 	}
 
 	return
@@ -377,12 +378,12 @@ Rectangle :: proc(props: Rectangle_Props) {
 		return
 	}
 
+	if props.unmount && !oni.ui_has_layout_node(layout_id) do return
+
 	entry := oni.widget_lifecycle_entry(layout_id)
 	frame_state.mounting = entry.mounting
 	frame_state.unmounting = entry.unmounting
 
-	if entry.unmounting == .COMPLETED do return
-	if entry.unmounting == .UNSET && props.unmount do return
 	if !oni.ui_has_layout_node(layout_id) do return
 
 	rect = rect_resolve_hit_rect(rect, config)

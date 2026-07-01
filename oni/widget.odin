@@ -783,6 +783,19 @@ widget_lifecycle_entry :: proc(layout_id: UI_Id) -> ^UI_Widget_Entry {
 }
 
 /*
+Removes a widget lifecycle entry and releases any shaped text it holds.
+
+Call when a widget leaves the layout tree so mount/unmount state resets on remount.
+*/
+widget_lifecycle_remove :: proc(layout_id: UI_Id) {
+	if state.ui.widgets == nil do return
+	if entry, ok := &state.ui.widgets[layout_id]; ok {
+		shaped_text_release(&entry.shaped)
+		delete_key(&state.ui.widgets, layout_id)
+	}
+}
+
+/*
 Converts texture position values above 1 from percent (0–100) to normalized 0–1.
 */
 @(private)

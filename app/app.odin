@@ -273,11 +273,15 @@ lifecycle_demo_background :: proc(
 
 @(private)
 lifecycle_demo_on_mount :: proc(_: wg.Rectangle_State) -> oni.Mount {
+
+	oni.Log_Debug("mount")
+
 	lifecycle_demo_state.opacity += LIFECYCLE_FADE_STEP
 	if lifecycle_demo_state.opacity >= 1 {
 		lifecycle_demo_state.opacity = 1
 		return .COMPLETED
 	}
+
 
 	return .RUNNING
 }
@@ -320,9 +324,6 @@ lifecycle_demo_panel_child :: proc(_: wg.Rectangle_State) {
 
 @(private)
 Lifecycle_Demo :: proc() {
-	// msg := fmt.tprintf("mount: {}", lifecycle_demo_state.opacity)
-	// // oni.Log_Debug(msg)
-
 	panel_config := wg.Rectangle_Config {
 		id           = LIFECYCLE_PANEL_ID,
 		x            = set.F32(900),
