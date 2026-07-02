@@ -54,7 +54,7 @@ Per-frame app update passed to oni.Run_Frame.
 Handles mouse-wheel zoom around the cursor in screen space.
 */
 app_tick :: proc(dt: f32) {
-	_ = dt
+	frame_dt = dt
 
 	if persistent.engine.input.mouse_wheel_y == 0 do return
 

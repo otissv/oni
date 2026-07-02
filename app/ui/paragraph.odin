@@ -6,9 +6,8 @@ import wg "../../oni/widgets"
 
 
 Paragraph_Props :: struct {
-	id:    string,
-	text:  string,
-	theme: ^oni.Theme,
+	using _: wg.Text_Config,
+	theme:   ^oni.Theme,
 }
 
 Paragraph :: proc(props: Paragraph_Props) {
@@ -22,6 +21,7 @@ Paragraph :: proc(props: Paragraph_Props) {
 		return oni.theme.palette[.FOREGROUND]
 	}
 
+
 	wg.Text(
 		{
 			id = props.id,
@@ -29,9 +29,11 @@ Paragraph :: proc(props: Paragraph_Props) {
 			height = set.Height(200),
 			text = props.text,
 			font = set.Font(props.theme.font_body),
-			font_size = set.F32(20),
+			font_size = set.F32(100),
 			line_height = set.F32(1.5),
 			color = set.Colors(paragraph_color),
+			x = props.x,
+			y = props.y,
 		},
 	)
 }

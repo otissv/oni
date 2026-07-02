@@ -159,11 +159,9 @@ Button :: proc(props: Button_props) {
 	button_apply_variant(&base, props.variant)
 	button_apply_size(&base, props.size)
 
-	override := props
-
 	wg.Rectangle(
 		{
-			config = oni.merge_widget_config(base, override),
+			config = oni.merge_widget_config(base, props),
 			child = props.child,
 			on_focus = props.on_focus,
 			on_blur = props.on_blur,
