@@ -1,6 +1,7 @@
 package tengu
 
 import "core:math"
+import "core:mem"
 import "core:strings"
 
 /*
@@ -74,33 +75,75 @@ Timeline_State :: struct($T: typeid) {
 	elapsed:  f32,
 }
 
-timeline_track_spec :: proc(
-	name: string,
-	offset: Seconds,
-	stepper: Stepper($T),
-	hold_value: T,
-) -> Timeline_Track_Spec(T) {
-	return Timeline_Track_Spec(T) {
-		name = name,
-		offset = offset,
-		stepper = stepper,
-		hold_value = hold_value,
-	}
+Timeline_Compile_Params :: struct($T: typeid) {
+	spec:      Timeline_Spec(T),
+	anim:      Animatable(T),
+	allocator: mem.Allocator,
+}
+
+Timeline_Init_Params :: struct($T: typeid) {
+	state:     ^Timeline_State(T),
+	spec:      Timeline_Spec(T),
+	config:    Timeline_Config(T),
+	allocator: mem.Allocator,
+}
+
+Timeline_Reconfigure_Params :: struct($T: typeid) {
+	state:      ^Timeline_State(T),
+	config:     Timeline_Config(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Timeline_Sync_Params :: struct($T: typeid) {
+	state:      ^Timeline_State(T),
+	elapsed:    f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Timeline_Seek_Params :: struct($T: typeid) {
+	state:      ^Timeline_State(T),
+	elapsed:    f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Timeline_Seek_To_Label_Params :: struct($T: typeid) {
+	state:      ^Timeline_State(T),
+	name:       string,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Timeline_Is_Finished_Params :: struct($T: typeid) {
+	state:      Timeline_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Timeline_Sample_At_Params :: struct($T: typeid) {
+	state:      ^Timeline_State(T),
+	elapsed:    f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
 }
 
 timeline_label :: proc(name: string, time: Seconds) -> Timeline_Label {
 	return Timeline_Label{name = name, time = time}
 }
 
-timeline_spec :: proc(
-	tracks: []Timeline_Track_Spec($T),
-	labels: []Timeline_Label = nil,
-	primary_index: int = 0,
-) -> Timeline_Spec(T) {
+Timeline_Spec_Params :: struct($T: typeid) {
+	tracks:        []Timeline_Track_Spec(T),
+	labels:        []Timeline_Label,
+	primary_index: int,
+}
+
+timeline_spec :: proc(p: Timeline_Spec_Params($T)) -> Timeline_Spec(T) {
 	return Timeline_Spec(T) {
-		tracks = tracks,
-		labels = labels,
-		primary_index = primary_index,
+		tracks = p.tracks,
+		labels = p.labels,
+		primary_index = p.primary_index,
 	}
 }
 
@@ -137,27 +180,26 @@ timeline_clone_label :: proc(
 Compiles track metadata and label markers from a timeline specification. Returned
 strings in `config` must be released with `timeline_config_destroy`.
 */
-timeline_compile :: proc(
-	spec: Timeline_Spec($T),
-	anim: Animatable(T),
-	allocator := context.allocator,
-) -> (
+timeline_compile :: proc(p: Timeline_Compile_Params($T)) -> (
 	config: Timeline_Config(T),
 	err: Timeline_Compile_Error,
 ) {
-	for label, index in spec.labels {
-		for prior in spec.labels[:index] {
+	allocator := p.allocator
+	if allocator.procedure == nil do allocator = context.allocator
+
+	for label, index in p.spec.labels {
+		for prior in p.spec.labels[:index] {
 			if label.name == prior.name do return config, .DUPLICATE_LABEL
 		}
 	}
 
-	tracks := make([]Timeline_Track(T), len(spec.tracks), allocator)
-	if len(spec.tracks) > 0 && tracks == nil do return config, .OUT_OF_MEMORY
+	tracks := make([]Timeline_Track(T), len(p.spec.tracks), allocator)
+	if len(p.spec.tracks) > 0 && tracks == nil do return config, .OUT_OF_MEMORY
 
 	total_duration: f32 = 0
 
-	for track_spec, index in spec.tracks {
-		duration := stepper_estimated_duration(track_spec.stepper, anim)
+	for track_spec, index in p.spec.tracks {
+		duration := stepper_estimated_duration(track_spec.stepper, p.anim)
 
 		end_time: f32
 		if math.is_inf(duration) {
@@ -188,13 +230,13 @@ timeline_compile :: proc(
 		}
 	}
 
-	labels := make([]Timeline_Label, len(spec.labels), allocator)
-	if len(spec.labels) > 0 && labels == nil {
+	labels := make([]Timeline_Label, len(p.spec.labels), allocator)
+	if len(p.spec.labels) > 0 && labels == nil {
 		timeline_config_destroy(Timeline_Config(T){tracks = tracks}, allocator)
 		return config, .OUT_OF_MEMORY
 	}
 
-	for label, index in spec.labels {
+	for label, index in p.spec.labels {
 		compiled, ok := timeline_clone_label(label, allocator)
 		if !ok {
 			timeline_config_destroy(
@@ -206,7 +248,7 @@ timeline_compile :: proc(
 		labels[index] = compiled
 	}
 
-	primary_index := spec.primary_index
+	primary_index := p.spec.primary_index
 	if primary_index < 0 || primary_index >= len(tracks) do primary_index = 0
 
 	config = Timeline_Config(T) {
@@ -228,33 +270,31 @@ timeline_destroy :: proc(state: Timeline_State($T), allocator := context.allocat
 Builds delay-wrapped parallel playback from a compiled config and the original
 track stepper references in `spec`.
 */
-timeline_init :: proc(
-	state: ^Timeline_State($T),
-	spec: Timeline_Spec(T),
-	config: Timeline_Config(T),
-	allocator := context.allocator,
-) -> bool {
-	if len(spec.tracks) != len(config.tracks) do return false
+timeline_init :: proc(p: Timeline_Init_Params($T)) -> bool {
+	if len(p.spec.tracks) != len(p.config.tracks) do return false
 
-	delays := make([]Delay_State(T), len(spec.tracks), allocator)
-	steppers := make([]Stepper(T), len(spec.tracks), allocator)
-	if len(spec.tracks) > 0 && (delays == nil || steppers == nil) {
+	allocator := p.allocator
+	if allocator.procedure == nil do allocator = context.allocator
+
+	delays := make([]Delay_State(T), len(p.spec.tracks), allocator)
+	steppers := make([]Stepper(T), len(p.spec.tracks), allocator)
+	if len(p.spec.tracks) > 0 && (delays == nil || steppers == nil) {
 		delete(delays, allocator)
 		delete(steppers, allocator)
 		return false
 	}
 
-	for track, index in spec.tracks {
-		delay_init(&delays[index], track.stepper, f32(track.offset), track.hold_value)
+	for track, index in p.spec.tracks {
+		delay_init(Delay_Init_Params(T){state = &delays[index], child = track.stepper, delay = f32(track.offset), hold_value = track.hold_value})
 		steppers[index] = delay_stepper(&delays[index])
 	}
 
-	parallel_init(&state.parallel, steppers, config.primary_index)
+	parallel_init(Parallel_Init_Params(T){state = &p.state.parallel, children = steppers, primary_index = p.config.primary_index})
 
-	state.config = config
-	state.delays = delays
-	state.steppers = steppers
-	state.elapsed = 0
+	p.state.config = p.config
+	p.state.delays = delays
+	p.state.steppers = steppers
+	p.state.elapsed = 0
 	return true
 }
 
@@ -263,43 +303,28 @@ timeline_restart :: proc(state: ^Timeline_State($T)) {
 	parallel_restart(&state.parallel)
 }
 
-timeline_reconfigure :: proc(
-	state: ^Timeline_State($T),
-	config: Timeline_Config(T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) {
-	state.config = config
-	timeline_sync(state, 0, anim, completion)
+timeline_reconfigure :: proc(p: Timeline_Reconfigure_Params($T)) {
+	p.state.config = p.config
+	timeline_sync(Timeline_Sync_Params(T){state = p.state, elapsed = 0, anim = p.anim, completion = p.completion})
 }
 
 @(private)
-timeline_sync :: proc(
-	state: ^Timeline_State($T),
-	elapsed: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) {
-	clamped_elapsed := elapsed
+timeline_sync :: proc(p: Timeline_Sync_Params($T)) {
+	clamped_elapsed := p.elapsed
 	if clamped_elapsed < 0 do clamped_elapsed = 0
-	state.elapsed = clamped_elapsed
+	p.state.elapsed = clamped_elapsed
 
-	for &delay, index in state.delays {
+	for &delay, index in p.state.delays {
 		delay_restart(&delay)
-		local_t := clamped_elapsed - state.config.tracks[index].offset
+		local_t := clamped_elapsed - p.state.config.tracks[index].offset
 		if local_t > 0 {
-			delay_step(&delay, local_t, anim, completion)
+			delay_step(Delay_Step_Params(T){state = &delay, dt = local_t, anim = p.anim, completion = p.completion})
 		}
 	}
 }
 
-timeline_seek :: proc(
-	state: ^Timeline_State($T),
-	elapsed: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) {
-	timeline_sync(state, elapsed, anim, completion)
+timeline_seek :: proc(p: Timeline_Seek_Params($T)) {
+	timeline_sync(Timeline_Sync_Params(T){state = p.state, elapsed = p.elapsed, anim = p.anim, completion = p.completion})
 }
 
 timeline_label_time :: proc(config: Timeline_Config($T), name: string) -> (time: f32, found: bool) {
@@ -309,15 +334,10 @@ timeline_label_time :: proc(config: Timeline_Config($T), name: string) -> (time:
 	return 0, false
 }
 
-timeline_seek_to_label :: proc(
-	state: ^Timeline_State($T),
-	name: string,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	time, found := timeline_label_time(state.config, name)
+timeline_seek_to_label :: proc(p: Timeline_Seek_To_Label_Params($T)) -> bool {
+	time, found := timeline_label_time(p.state.config, p.name)
 	if !found do return false
-	timeline_seek(state, time, anim, completion)
+	timeline_seek(Timeline_Seek_Params(T){state = p.state, elapsed = time, anim = p.anim, completion = p.completion})
 	return true
 }
 
@@ -332,12 +352,8 @@ timeline_is_finished_at :: proc(config: Timeline_Config($T), elapsed: f32) -> bo
 	return true
 }
 
-timeline_is_finished :: proc(
-	state: Timeline_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return parallel_is_finished(state.parallel, anim, completion)
+timeline_is_finished :: proc(p: Timeline_Is_Finished_Params($T)) -> bool {
+	return parallel_is_finished(Parallel_Is_Finished_Params(T){state = p.state.parallel, anim = p.anim, completion = p.completion})
 }
 
 /*
@@ -350,32 +366,23 @@ timeline_progress :: proc(state: Timeline_State($T)) -> f32 {
 	return clamp01(state.elapsed / total_duration)
 }
 
-timeline_sample_at :: proc(
-	state: ^Timeline_State($T),
-	elapsed: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if len(state.steppers) == 0 do return value_result(anim.zero(), true)
+timeline_sample_at :: proc(p: Timeline_Sample_At_Params($T)) -> Step_Result(T) {
+	if len(p.state.steppers) == 0 do return value_result(p.anim.zero(), true)
 
-	timeline_sync(state, elapsed, anim, completion)
+	timeline_sync(Timeline_Sync_Params(T){state = p.state, elapsed = p.elapsed, anim = p.anim, completion = p.completion})
 
-	result := parallel_step(&state.parallel, 0, anim, completion)
-	result.done = timeline_is_finished(state^, anim, completion)
+	result := parallel_step(Parallel_Step_Params(T){state = &p.state.parallel, dt = 0, anim = p.anim, completion = p.completion})
+	result.done = timeline_is_finished(Timeline_Is_Finished_Params(T){state = p.state^, anim = p.anim, completion = p.completion})
 	return result
 }
 
-timeline_step :: proc(
-	state: ^Timeline_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if len(state.steppers) == 0 do return value_result(anim.zero(), true)
+timeline_step :: proc(p: Step_Params($T)) -> Step_Result(T) {
+	state := (^Timeline_State(T))(p.state)
+	if len(state.steppers) == 0 do return value_result(p.anim.zero(), true)
 
-	safe_dt := sanitize_dt(dt)
+	safe_dt := sanitize_dt(p.dt)
 	if safe_dt > 0 do state.elapsed += safe_dt
-	return parallel_step(&state.parallel, safe_dt, anim, completion)
+	return parallel_step(Parallel_Step_Params(T){state = &state.parallel, dt = safe_dt, anim = p.anim, completion = p.completion})
 }
 
 timeline_stepper :: proc(state: ^Timeline_State($T)) -> Stepper(T) {

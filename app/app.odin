@@ -281,14 +281,24 @@ lifecycle_demo_on_mount :: proc(_: wg.Rectangle_State) -> oni.Mount {
 
 	if !lifecycle_demo_state.mount_spring_ready {
 		tengu.spring_init(
-			&lifecycle_demo_state.mount_spring,
-			tengu.spring_config(f32(1)),
-			lifecycle_demo_state.opacity,
+			tengu.Spring_Init_Params(f32) {
+				state = &lifecycle_demo_state.mount_spring,
+				config = tengu.spring_default_config(f32(1)),
+				start_value = lifecycle_demo_state.opacity,
+			},
 		)
 		lifecycle_demo_state.mount_spring_ready = true
 	}
 
-	result := tengu.spring_step(&lifecycle_demo_state.mount_spring, dt, tengu.F32_Animatable())
+	result := tengu.spring_step(
+		tengu.Motion_Step_Params(f32) {
+			state = &lifecycle_demo_state.mount_spring,
+			dt = dt,
+			anim = tengu.F32_Animatable(),
+			completion = tengu.DEFAULT_COMPLETION_POLICY,
+			time = tengu.DEFAULT_TIME_POLICY,
+		},
+	)
 	lifecycle_demo_state.opacity = result.value
 	return result.done ? .COMPLETED : .RUNNING
 }
@@ -310,7 +320,14 @@ lifecycle_demo_on_unmount :: proc(_: wg.Rectangle_State) -> oni.Mount {
 		lifecycle_demo_state.unmount_tween_ready = true
 	}
 
-	result := tengu.tween_step(&lifecycle_demo_state.unmount_tween, dt, tengu.F32_Animatable())
+	result := tengu.tween_step(
+		tengu.Step_Params(f32) {
+			state = &lifecycle_demo_state.unmount_tween,
+			dt = dt,
+			anim = tengu.F32_Animatable(),
+			completion = tengu.DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	lifecycle_demo_state.opacity = result.value
 	return result.done ? .COMPLETED : .RUNNING
 }

@@ -6,7 +6,7 @@ import "core:testing"
 expect_close :: proc(t: ^testing.T, got, want: f32, epsilon: f32 = 1e-4, loc := #caller_location) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_f32({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -23,7 +23,7 @@ expect_vec2_close :: proc(
 ) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_vec2({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -40,7 +40,7 @@ expect_rgba_close :: proc(
 ) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_rgba({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -57,7 +57,7 @@ expect_vec3_close :: proc(
 ) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_vec3({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -74,7 +74,7 @@ expect_vec4_close :: proc(
 ) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_vec4({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -91,7 +91,7 @@ expect_rect_close :: proc(
 ) {
 	testing.expectf(
 		t,
-		approx_eq(got, want, epsilon),
+		approx_eq_rect({a = got, b = want, epsilon = epsilon}),
 		"got=%v want=%v epsilon=%v",
 		got,
 		want,
@@ -151,9 +151,18 @@ is_done_respects_distance_and_speed :: proc(t: ^testing.T) {
 		snap_to_target       = true,
 	}
 
-	testing.expect(t, is_done(0.005, 0.01, policy))
-	testing.expect(t, !is_done(0.02, 0.01, policy))
-	testing.expect(t, !is_done(0.005, 0.1, policy))
+	testing.expect(
+		t,
+		is_done(Is_Done_Params{distance_to_target = 0.005, speed = 0.01, policy = policy}),
+	)
+	testing.expect(
+		t,
+		!is_done(Is_Done_Params{distance_to_target = 0.02, speed = 0.01, policy = policy}),
+	)
+	testing.expect(
+		t,
+		!is_done(Is_Done_Params{distance_to_target = 0.005, speed = 0.1, policy = policy}),
+	)
 }
 
 @(test)
@@ -166,15 +175,48 @@ snap_if_done_snaps_only_when_enabled :: proc(t: ^testing.T) {
 		rest_speed_threshold = 0.05,
 		snap_to_target       = true,
 	}
-	testing.expect_value(t, snap_if_done(value, target, true, snapping), target)
-	testing.expect_value(t, snap_if_done(value, target, false, snapping), value)
+	testing.expect_value(
+		t,
+		snap_if_done(
+			Snap_If_Done_Params(f32) {
+				value = value,
+				target = target,
+				done = true,
+				policy = snapping,
+			},
+		),
+		target,
+	)
+	testing.expect_value(
+		t,
+		snap_if_done(
+			Snap_If_Done_Params(f32) {
+				value = value,
+				target = target,
+				done = false,
+				policy = snapping,
+			},
+		),
+		value,
+	)
 
 	no_snap := Completion_Policy {
 		distance_epsilon     = 0.01,
 		rest_speed_threshold = 0.05,
 		snap_to_target       = false,
 	}
-	testing.expect_value(t, snap_if_done(value, target, true, no_snap), value)
+	testing.expect_value(
+		t,
+		snap_if_done(
+			Snap_If_Done_Params(f32) {
+				value = value,
+				target = target,
+				done = true,
+				policy = no_snap,
+			},
+		),
+		value,
+	)
 }
 
 @(test)
@@ -184,9 +226,11 @@ step_results_carry_expected_fields :: proc(t: ^testing.T) {
 	testing.expect_value(t, value.done, true)
 	testing.expect_value(t, value.has_velocity, false)
 
-	motion := motion_result(Vec2{1, 2}, Vec2{0.5, -0.5}, false)
-	testing.expect(t, approx_eq(motion.value, Vec2{1, 2}))
-	testing.expect(t, approx_eq(motion.velocity, Vec2{0.5, -0.5}))
+	motion := motion_result(
+		Motion_Result_Params(Vec2){value = Vec2{1, 2}, velocity = Vec2{0.5, -0.5}, done = false},
+	)
+	testing.expect(t, approx_eq_vec2({a = motion.value, b = Vec2{1, 2}}))
+	testing.expect(t, approx_eq_vec2({a = motion.velocity, b = Vec2{0.5, -0.5}}))
 	testing.expect_value(t, motion.has_velocity, true)
 	testing.expect_value(t, motion.done, false)
 }
@@ -195,40 +239,40 @@ step_results_carry_expected_fields :: proc(t: ^testing.T) {
 
 @(test)
 clamp_wrap_and_progress :: proc(t: ^testing.T) {
-	expect_close(t, clamp(5, 0, 3), 3)
-	expect_close(t, clamp(-1, 0, 3), 0)
+	expect_close(t, clamp({v = 5, lo = 0, hi = 3}), 3)
+	expect_close(t, clamp({v = -1, lo = 0, hi = 3}), 0)
 
 	expect_close(t, wrap(5, 3), 2)
 	expect_close(t, wrap(-1, 3), 2)
 	expect_close(t, wrap(0, 0), 0)
 
-	expect_close(t, wrap_range(13, 10, 20), 13)
-	expect_close(t, wrap_range(21, 10, 20), 11)
-	expect_close(t, wrap_range(10, 10, 10), 10)
+	expect_close(t, wrap_range({v = 13, lo = 10, hi = 20}), 13)
+	expect_close(t, wrap_range({v = 21, lo = 10, hi = 20}), 11)
+	expect_close(t, wrap_range({v = 10, lo = 10, hi = 10}), 10)
 
-	expect_close(t, inverse_lerp(0, 10, 5), 0.5)
-	expect_close(t, inverse_lerp(5, 5, 7), 0)
-	expect_close(t, progress(0, 10, 15), 1)
-	expect_close(t, progress(0, 10, -2), 0)
-	expect_close(t, lerp(0, 10, 0.25), 2.5)
+	expect_close(t, inverse_lerp({a = 0, b = 10, value = 5}), 0.5)
+	expect_close(t, inverse_lerp({a = 5, b = 5, value = 7}), 0)
+	expect_close(t, progress({a = 0, b = 10, value = 15}), 1)
+	expect_close(t, progress({a = 0, b = 10, value = -2}), 0)
+	expect_close(t, lerp({a = 0, b = 10, t = 0.25}), 2.5)
 }
 
 @(test)
 shortest_angle_and_mix_angle :: proc(t: ^testing.T) {
 	expect_close(t, shortest_angle_delta_deg(350, 10), 20)
 	expect_close(t, shortest_angle_delta_deg(10, 350), -20)
-	expect_close(t, mix_angle_deg(350, 10, 0.5), 360)
-	expect_close(t, mix_angle_deg(0, 90, 0.5), 45)
+	expect_close(t, mix_angle_deg({a = 350, b = 10, t = 0.5}), 360)
+	expect_close(t, mix_angle_deg({a = 0, b = 90, t = 0.5}), 45)
 
 	pi := f32(math.PI)
 	expect_close(t, shortest_angle_delta_rad(0, pi), pi)
-	expect_close(t, mix_angle_rad(0, pi, 0.5), pi * 0.5)
+	expect_close(t, mix_angle_rad({a = 0, b = pi, t = 0.5}), pi * 0.5)
 }
 
 @(test)
 bezier_helpers_sample_curve :: proc(t: ^testing.T) {
-	expect_close(t, bezier_sample_1d(0.25, 0.75, 0), 0)
-	expect_close(t, bezier_sample_1d(0.25, 0.75, 1), 1)
+	expect_close(t, bezier_sample_1d({p1 = 0.25, p2 = 0.75, t = 0}), 0)
+	expect_close(t, bezier_sample_1d({p1 = 0.25, p2 = 0.75, t = 1}), 1)
 	expect_close(t, ease_out_bounce(0), 0)
 }
 
@@ -272,10 +316,10 @@ EASE_GOLDEN_VALUES := [?]Ease_Golden {
 	{.IN_ELASTIC, {0, -0.00552427173, -0.015625, 0.0883883476, 1}},
 	{.OUT_ELASTIC, {0, 0.911611652, 1.015625, 1.00552427, 1}},
 	{.IN_OUT_ELASTIC, {0, 0.0119694444, 0.5, 0.988030556, 1}},
-	{.CSS_EASE, {0, 0.408510591, 0.802403388, 0.960458978, 1}},
-	{.CSS_EASE_IN, {0, 0.0934646507, 0.315356813, 0.621861869, 1}},
-	{.CSS_EASE_OUT, {0, 0.378138131, 0.684643187, 0.906535349, 1}},
-	{.CSS_EASE_IN_OUT, {0, 0.129161931, 0.5, 0.870838069, 1}},
+	{.EASE, {0, 0.408510591, 0.802403388, 0.960458978, 1}},
+	{.EASE_IN, {0, 0.0934646507, 0.315356813, 0.621861869, 1}},
+	{.EASE_OUT, {0, 0.378138131, 0.684643187, 0.906535349, 1}},
+	{.EASE_IN_OUT, {0, 0.129161931, 0.5, 0.870838069, 1}},
 }
 
 @(test)
@@ -292,7 +336,7 @@ ease_matches_golden_reference_values :: proc(t: ^testing.T) {
 			want := entry.values[i]
 			testing.expectf(
 				t,
-				approx_eq(got, want, 1e-5),
+				approx_eq_f32({a = got, b = want, epsilon = 1e-5}),
 				"%v at t=%v got=%v want=%v",
 				entry.kind,
 				sample,
@@ -311,7 +355,7 @@ ease_matches_golden_reference_values :: proc(t: ^testing.T) {
 mix_rgba_with_policy_interpolates_premultiplied :: proc(t: ^testing.T) {
 	a := RGBA{1, 0, 0, 1}
 	b := RGBA{0, 0, 1, 1}
-	mixed := mix_rgba_with_policy(a, b, 0.5, .PREMULTIPLIED_ALPHA)
+	mixed := mix_rgba_with_policy({a = a, b = b, t = 0.5, policy = .PREMULTIPLIED_ALPHA})
 	expect_rgba_close(t, mixed, RGBA{0.5, 0, 0.5, 1})
 }
 
@@ -324,7 +368,7 @@ clamp01_and_scalar_builtins :: proc(t: ^testing.T) {
 	expect_close(t, add_f32(2, 3), 5)
 	expect_close(t, sub_f32(5, 2), 3)
 	expect_close(t, scale_f32(4, 2.5), 10)
-	expect_close(t, mix_f32(0, 10, 0.3), 3)
+	expect_close(t, mix_f32({a = 0, b = 10, t = 0.3}), 3)
 	expect_close(t, distance_f32(2, 7), 5)
 }
 
@@ -335,7 +379,7 @@ vector_builtins :: proc(t: ^testing.T) {
 	expect_vec2_close(t, add_vec2(a, b), Vec2{5, 8})
 	expect_vec2_close(t, sub_vec2(b, a), Vec2{3, 4})
 	expect_vec2_close(t, scale_vec2(a, 2), Vec2{2, 4})
-	expect_vec2_close(t, mix_vec2(a, b, 0.5), Vec2{2.5, 4})
+	expect_vec2_close(t, mix_vec2({a = a, b = b, t = 0.5}), Vec2{2.5, 4})
 	expect_close(t, distance_vec2({0, 0}, {3, 4}), 5)
 
 	v3a := Vec3{1, 0, 2}
@@ -353,11 +397,15 @@ rgba_builtins_and_premultiply :: proc(t: ^testing.T) {
 	premul := premultiply_rgba(c)
 	expect_rgba_close(t, premul, RGBA{0.5, 0.25, 0.125, 0.5})
 	expect_rgba_close(t, unpremultiply_rgba(premul), c)
-	testing.expect(t, approx_eq(unpremultiply_rgba(RGBA{}), RGBA{}))
+	testing.expect(t, approx_eq_rgba({a = unpremultiply_rgba(RGBA{}), b = RGBA{}}))
 
 	expect_rgba_close(t, add_rgba(RGBA{1, 0, 0, 1}, RGBA{0, 1, 0, 0}), RGBA{1, 1, 0, 1})
 	expect_rgba_close(t, scale_rgba(RGBA{1, 2, 3, 4}, 0.5), RGBA{0.5, 1, 1.5, 2})
-	expect_rgba_close(t, mix_rgba(RGBA{1, 0, 0, 1}, RGBA{0, 0, 1, 1}, 0.5), RGBA{0.5, 0, 0.5, 1})
+	expect_rgba_close(
+		t,
+		mix_rgba({a = RGBA{1, 0, 0, 1}, b = RGBA{0, 0, 1, 1}, t = 0.5}),
+		RGBA{0.5, 0, 0.5, 1},
+	)
 	expect_close(t, distance_rgba(RGBA{0, 0, 0, 0}, RGBA{3, 4, 0, 0}), 5)
 }
 
@@ -366,25 +414,25 @@ rect_builtins :: proc(t: ^testing.T) {
 	a := Rect{1, 2, 3, 4}
 	b := Rect{5, 1, 1, 2}
 	expect_close(t, distance_rect(a, b), math.sqrt(f32(25)))
-	expect_close(t, mix_rect(a, b, 0.5).x, 3)
-	expect_close(t, mix_rect(a, b, 0.5).y, 1.5)
+	expect_close(t, mix_rect({a = a, b = b, t = 0.5}).x, 3)
+	expect_close(t, mix_rect({a = a, b = b, t = 0.5}).y, 1.5)
 }
 
 @(test)
 animatable_adapters_match_builtins :: proc(t: ^testing.T) {
 	f32_anim := F32_Animatable()
-	expect_close(t, f32_anim.mix(0, 10, 0.5), 5)
+	expect_close(t, f32_anim.mix({a = 0, b = 10, t = 0.5}), 5)
 	expect_close(t, f32_anim.distance(2, 7), 5)
 	testing.expect_value(t, f32_anim.velocity_support, Velocity_Support.VALUE_TYPE)
 
 	vec2_anim := animatable_of(Vec2{})
-	expect_vec2_close(t, vec2_anim.mix(Vec2{0, 0}, Vec2{10, 20}, 0.5), Vec2{5, 10})
+	expect_vec2_close(t, vec2_anim.mix({a = Vec2{0, 0}, b = Vec2{10, 20}, t = 0.5}), Vec2{5, 10})
 	expect_close(t, vec2_anim.distance(Vec2{0, 0}, Vec2{3, 4}), 5)
 
 	rgba_anim := RGBA_Animatable()
 	expect_rgba_close(
 		t,
-		rgba_anim.mix(RGBA{1, 0, 0, 1}, RGBA{0, 0, 1, 1}, 0.5),
+		rgba_anim.mix({a = RGBA{1, 0, 0, 1}, b = RGBA{0, 0, 1, 1}, t = 0.5}),
 		RGBA{0.5, 0, 0.5, 1},
 	)
 
@@ -395,9 +443,9 @@ animatable_adapters_match_builtins :: proc(t: ^testing.T) {
 
 @(test)
 approx_eq_uses_distance_epsilon :: proc(t: ^testing.T) {
-	testing.expect(t, approx_eq(1, 1.00005))
-	testing.expect(t, !approx_eq(1, 1.01))
-	testing.expect(t, approx_eq(Vec2{1, 2}, Vec2{1.00005, 2.00005}))
+	testing.expect(t, approx_eq_f32({a = 1, b = 1.00005}))
+	testing.expect(t, !approx_eq_f32({a = 1, b = 1.01}))
+	testing.expect(t, approx_eq_vec2({a = Vec2{1, 2}, b = Vec2{1.00005, 2.00005}}))
 }
 
 // --- tween.odin ---
@@ -422,7 +470,14 @@ tween_f32_config :: proc(
 }
 
 step_tween :: proc(state: ^Tween_State(f32), dt: f32) -> Step_Result(f32) {
-	return tween_step(state, dt, F32_Animatable())
+	return tween_step(
+		Step_Params(f32) {
+			state = state,
+			dt = dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 }
 
 @(test)
@@ -499,10 +554,10 @@ tween_easing_affects_midpoint :: proc(t: ^testing.T) {
 @(test)
 tween_bezier_easing :: proc(t: ^testing.T) {
 	state: Tween_State(f32)
-	tween_init(&state, tween_f32_config(0, 10, 1.0, 0, CSS_EASE))
+	tween_init(&state, tween_f32_config(0, 10, 1.0, 0, EASE))
 
 	result := step_tween(&state, 0.5)
-	want := 10 * bezier_ease(CSS_EASE, 0.5)
+	want := 10 * bezier_ease(EASE, 0.5)
 	expect_close(t, result.value, want, 1e-3)
 }
 
@@ -560,7 +615,14 @@ tween_infinite_repeat_never_finishes :: proc(t: ^testing.T) {
 
 	_ = step_tween(&state, 10)
 	testing.expect(t, !tween_is_finished(state))
-	result := tween_sample_at(state, state.elapsed, F32_Animatable())
+	result := tween_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, result.done, false)
 }
 
@@ -570,13 +632,27 @@ tween_seek_samples_without_stepping :: proc(t: ^testing.T) {
 	tween_init(&state, tween_f32_config(0, 10, 1.0))
 
 	tween_seek(&state, 0.25)
-	result := tween_sample_at(state, state.elapsed, F32_Animatable())
+	result := tween_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 2.5)
 	testing.expect_value(t, state.elapsed, 0.25)
 	testing.expect_value(t, result.done, false)
 
 	tween_seek(&state, 1.0)
-	result = tween_sample_at(state, state.elapsed, F32_Animatable())
+	result = tween_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -639,10 +715,24 @@ tween_vec2_values :: proc(t: ^testing.T) {
 		},
 	)
 
-	result := tween_step(&state, 0.5, Vec2_Animatable())
+	result := tween_step(
+		Step_Params(Vec2) {
+			state = &state,
+			dt = 0.5,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_vec2_close(t, result.value, Vec2{5, 10})
 
-	result = tween_step(&state, 0.5, Vec2_Animatable())
+	result = tween_step(
+		Step_Params(Vec2) {
+			state = &state,
+			dt = 0.5,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_vec2_close(t, result.value, Vec2{10, 20})
 	testing.expect_value(t, result.done, true)
 }
@@ -658,8 +748,17 @@ tween_snap_can_be_disabled :: proc(t: ^testing.T) {
 		snap_to_target       = false,
 	}
 
-	_ = tween_step(&state, 1.0, F32_Animatable(), no_snap)
-	result := tween_sample_at(state, state.elapsed, F32_Animatable(), no_snap)
+	_ = tween_step(
+		Step_Params(f32){state = &state, dt = 1.0, anim = F32_Animatable(), completion = no_snap},
+	)
+	result := tween_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = no_snap,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -675,7 +774,15 @@ run_spring_until_done :: proc(
 ) -> Step_Result(T) {
 	result: Step_Result(T)
 	for _ in 0 ..< max_frames {
-		result = spring_step(state, dt, anim, completion)
+		result = spring_step(
+			Motion_Step_Params(T) {
+				state = state,
+				dt = dt,
+				anim = anim,
+				completion = completion,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		if result.done do break
 	}
 	return result
@@ -688,28 +795,74 @@ SPRING_TEST_COMPLETION :: Completion_Policy {
 }
 
 step_spring :: proc(state: ^Spring_State(f32), dt: f32) -> Step_Result(f32) {
-	return spring_step(state, dt, F32_Animatable())
+	return spring_step(
+		Motion_Step_Params(f32) {
+			state = state,
+			dt = dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 }
 
 @(test)
 spring_reaches_target_and_snaps :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(100), 200, 30, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(100),
+				stiffness = 200,
+				damping = 30,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 
 	result := run_spring_until_done(&state, 1.0 / 60.0, F32_Animatable(), SPRING_TEST_COMPLETION)
 	expect_close(t, result.value, 100)
 	testing.expect_value(t, result.done, true)
 	testing.expect_value(t, result.has_velocity, true)
 	expect_close(t, result.velocity, 0)
-	testing.expect(t, spring_is_at_rest(state, F32_Animatable(), SPRING_TEST_COMPLETION))
+	testing.expect(
+		t,
+		spring_is_at_rest(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = F32_Animatable(),
+				completion = SPRING_TEST_COMPLETION,
+			},
+		),
+	)
 }
 
 @(test)
 spring_initial_velocity_affects_motion :: proc(t: ^testing.T) {
 	no_velocity: Spring_State(f32)
-	spring_init(&no_velocity, spring_config(f32(0), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &no_velocity,
+			config = Spring_Config(f32){target = f32(0), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0,
+		},
+	)
 	with_velocity: Spring_State(f32)
-	spring_init(&with_velocity, spring_config_with_velocity(f32(0), 50, 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &with_velocity,
+			config = Spring_Config(f32) {
+				target = f32(0),
+				initial_velocity = 50,
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 
 	no_velocity_result := step_spring(&no_velocity, 0.05)
 	with_velocity_result := step_spring(&with_velocity, 0.05)
@@ -721,7 +874,13 @@ spring_initial_velocity_affects_motion :: proc(t: ^testing.T) {
 @(test)
 spring_rest_thresholds_gate_completion :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(0), 200, 26, 1), 0.001)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32){target = f32(0), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0.001,
+		},
+	)
 
 	loose := Completion_Policy {
 		distance_epsilon     = 0.01,
@@ -734,26 +893,63 @@ spring_rest_thresholds_gate_completion :: proc(t: ^testing.T) {
 		snap_to_target       = true,
 	}
 
-	loose_result := spring_step(&state, 0, F32_Animatable(), loose)
-	strict_result := spring_step(&state, 0, F32_Animatable(), strict)
+	loose_result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &state,
+			dt = 0,
+			anim = F32_Animatable(),
+			completion = loose,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
+	strict_result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &state,
+			dt = 0,
+			anim = F32_Animatable(),
+			completion = strict,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect_value(t, loose_result.done, true)
 	testing.expect_value(t, strict_result.done, false)
 }
 
 @(test)
 spring_large_dt_uses_deterministic_substeps :: proc(t: ^testing.T) {
-	config := spring_config(f32(10), 180, 24, 1)
+	config := Spring_Config(f32) {
+		target    = f32(10),
+		stiffness = 180,
+		damping   = 24,
+		mass      = 1,
+	}
 
 	single: Spring_State(f32)
-	spring_init(&single, config, 0)
-	single_result := spring_step(&single, 0.5, F32_Animatable())
+	spring_init(Spring_Init_Params(f32){state = &single, config = config, start_value = 0})
+	single_result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &single,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
 	substepped: Spring_State(f32)
-	spring_init(&substepped, config, 0)
+	spring_init(Spring_Init_Params(f32){state = &substepped, config = config, start_value = 0})
 	substep_plan := plan_substeps(0.5, DEFAULT_TIME_POLICY)
 	substepped_result: Step_Result(f32)
 	for _ in 0 ..< substep_plan.steps {
-		substepped_result = spring_step(&substepped, substep_plan.substep_dt, F32_Animatable())
+		substepped_result = spring_step(
+			Motion_Step_Params(f32) {
+				state = &substepped,
+				dt = substep_plan.substep_dt,
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 	}
 
 	expect_close(t, single_result.value, substepped_result.value)
@@ -765,7 +961,18 @@ spring_large_dt_uses_deterministic_substeps :: proc(t: ^testing.T) {
 @(test)
 spring_mid_flight_target_change_continues_from_current_value :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(100), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(100),
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 
 	_ = step_spring(&state, 0.1)
 	value_before_retarget := state.value
@@ -784,7 +991,18 @@ spring_mid_flight_target_change_continues_from_current_value :: proc(t: ^testing
 @(test)
 spring_target_change_via_config_preserves_motion :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(100), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(100),
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 	_ = step_spring(&state, 0.1)
 
 	value_before := state.value
@@ -802,12 +1020,26 @@ spring_target_change_via_config_preserves_motion :: proc(t: ^testing.T) {
 @(test)
 spring_reconfigure_preserves_motion :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(100), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(100),
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 	_ = step_spring(&state, 0.1)
 
 	value_before := state.value
 	velocity_before := state.velocity
-	spring_reconfigure(&state, spring_config(f32(100), 400, 40, 1))
+	spring_reconfigure(
+		&state,
+		Spring_Config(f32){target = f32(100), stiffness = 400, damping = 40, mass = 1},
+	)
 
 	testing.expect_value(t, state.value, value_before)
 	testing.expect_value(t, state.velocity, velocity_before)
@@ -816,7 +1048,19 @@ spring_reconfigure_preserves_motion :: proc(t: ^testing.T) {
 @(test)
 spring_restart_applies_initial_velocity :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config_with_velocity(f32(0), 25, 200, 26, 1), 10)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(0),
+				initial_velocity = 25,
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 10,
+		},
+	)
 	_ = step_spring(&state, 0.2)
 
 	spring_restart(&state, 5)
@@ -827,7 +1071,13 @@ spring_restart_applies_initial_velocity :: proc(t: ^testing.T) {
 @(test)
 spring_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(10), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32){target = f32(10), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0,
+		},
+	)
 
 	_ = step_spring(&state, 0.1)
 	value_before := state.value
@@ -843,7 +1093,13 @@ spring_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 @(test)
 spring_snap_can_be_disabled :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(0), 200, 26, 1), 0.001)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32){target = f32(0), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0.001,
+		},
+	)
 
 	no_snap := Completion_Policy {
 		distance_epsilon     = 0.01,
@@ -851,20 +1107,33 @@ spring_snap_can_be_disabled :: proc(t: ^testing.T) {
 		snap_to_target       = false,
 	}
 
-	result := spring_step(&state, 0, F32_Animatable(), no_snap)
+	result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &state,
+			dt = 0,
+			anim = F32_Animatable(),
+			completion = no_snap,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect_value(t, result.done, true)
 	expect_close(t, result.value, 0.001)
 }
 
 @(test)
 spring_config_from_frequency_sets_physics :: proc(t: ^testing.T) {
-	config := spring_config_from_frequency(f32(10), 2, 0.8, 1)
+	config := Spring_Config(f32) {
+		target    = f32(10),
+		stiffness = math.max(1, MIN_SPRING_MASS) * (f32(2 * math.PI) * 2) * (f32(2 * math.PI) * 2),
+		damping   = 2 * math.max(1, MIN_SPRING_MASS) * 0.8 * (f32(2 * math.PI) * 2),
+		mass      = math.max(1, MIN_SPRING_MASS),
+	}
 	omega := f32(2 * math.PI) * 2
 	expect_close(t, config.stiffness, omega * omega)
 	expect_close(t, config.damping, 2 * 0.8 * omega)
 
 	state: Spring_State(f32)
-	spring_init(&state, config, 0)
+	spring_init(Spring_Init_Params(f32){state = &state, config = config, start_value = 0})
 	result := run_spring_until_done(&state, 1.0 / 60.0, F32_Animatable(), SPRING_TEST_COMPLETION)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
@@ -873,9 +1142,28 @@ spring_config_from_frequency_sets_physics :: proc(t: ^testing.T) {
 @(test)
 spring_vec2_values :: proc(t: ^testing.T) {
 	state: Spring_State(Vec2)
-	spring_init(&state, spring_config(Vec2{20, 40}, 200, 26, 1), Vec2{0, 0})
+	spring_init(
+		Spring_Init_Params(Vec2) {
+			state = &state,
+			config = Spring_Config(Vec2) {
+				target = Vec2{20, 40},
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = Vec2{0, 0},
+		},
+	)
 
-	result := spring_step(&state, 1.0 / 60.0, Vec2_Animatable())
+	result := spring_step(
+		Motion_Step_Params(Vec2) {
+			state = &state,
+			dt = 1.0 / 60.0,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect(t, result.value.x > 0 && result.value.y > 0)
 	testing.expect_value(t, result.has_velocity, true)
 
@@ -887,7 +1175,18 @@ spring_vec2_values :: proc(t: ^testing.T) {
 @(test)
 spring_interruption_sequence_is_stable :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(100), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32) {
+				target = f32(100),
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = 0,
+		},
+	)
 
 	_ = step_spring(&state, 0.08)
 	spring_set_target(&state, 80)
@@ -924,7 +1223,17 @@ run_slot_spring_until_done :: proc(
 ) -> Step_Result(T) {
 	result: Step_Result(T)
 	for _ in 0 ..< max_frames {
-		result = spring_to(slot, target, dt, options, anim, completion)
+		result = spring_to(
+			Spring_To_Params(T) {
+				slot = slot,
+				target = target,
+				dt = dt,
+				options = options,
+				anim = anim,
+				completion = completion,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		if result.done do break
 	}
 	return result
@@ -933,7 +1242,7 @@ run_slot_spring_until_done :: proc(
 @(test)
 slot_init_starts_idle_at_value :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 3, .SPRING)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 3, kind = .SPRING})
 
 	testing.expect_value(t, slot_value(slot), f32(3))
 	testing.expect_value(t, slot_target(slot), f32(3))
@@ -944,8 +1253,13 @@ slot_init_starts_idle_at_value :: proc(t: ^testing.T) {
 @(test)
 spring_to_reaches_target_from_current :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING)
-	options := spring_slot_options(f32(0))
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
 	result := run_slot_spring_until_done(&slot, 100, options, 1.0 / 60.0, F32_Animatable())
 	expect_close(t, result.value, 100)
@@ -957,15 +1271,40 @@ spring_to_reaches_target_from_current :: proc(t: ^testing.T) {
 @(test)
 spring_to_target_change_continues_from_current_value :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING)
-	options := spring_slot_options(f32(0))
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
-	_ = spring_to(&slot, 100, 0.1, options, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0.1,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	value_before := slot_value(slot)
 	velocity_before := slot.spring.velocity
 	testing.expect(t, value_before > 0 && value_before < 100)
 
-	result := spring_to(&slot, 50, 0, options, F32_Animatable())
+	result := spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 50,
+			dt = 0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect_value(t, slot_value(slot), value_before)
 	testing.expect_value(t, slot.spring.velocity, velocity_before)
 	testing.expect_value(t, result.done, false)
@@ -978,14 +1317,56 @@ spring_to_target_change_continues_from_current_value :: proc(t: ^testing.T) {
 @(test)
 spring_to_from_start_policy_restarts_on_target_change :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING, .FROM_START)
-	options := spring_slot_options(f32(0))
+	slot_init(
+		Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING, start_policy = .FROM_START},
+	)
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
-	_ = spring_to(&slot, 100, 0.1, options, F32_Animatable())
-	_ = spring_to(&slot, 100, 0.1, options, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0.1,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0.1,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
-	options = spring_slot_options(f32(25))
-	_ = spring_to(&slot, 75, 0, options, F32_Animatable())
+	options = Spring_Slot_Options(f32) {
+		start     = f32(25),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 75,
+			dt = 0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	expect_close(t, slot_value(slot), 25)
 	expect_close(t, slot.spring.velocity, 0)
 }
@@ -993,15 +1374,45 @@ spring_to_from_start_policy_restarts_on_target_change :: proc(t: ^testing.T) {
 @(test)
 spring_to_config_change_preserves_motion :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING)
-	options := spring_slot_options(f32(0))
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
-	_ = spring_to(&slot, 100, 0.1, options, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0.1,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	value_before := slot_value(slot)
 	velocity_before := slot.spring.velocity
 
-	stiffer := spring_slot_options(f32(0), 400, 40, 1)
-	_ = spring_to(&slot, 100, 0, stiffer, F32_Animatable())
+	stiffer := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = 400,
+		damping   = 40,
+		mass      = 1,
+	}
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0,
+			options = stiffer,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
 	testing.expect_value(t, slot_value(slot), value_before)
 	testing.expect_value(t, slot.spring.velocity, velocity_before)
@@ -1011,15 +1422,39 @@ spring_to_config_change_preserves_motion :: proc(t: ^testing.T) {
 @(test)
 tween_to_completes_and_reports_done :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	result := tween_to(&slot, 10, 0.5, options, F32_Animatable())
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, result.done, false)
 	testing.expect(t, slot_is_active(slot))
 
-	result = tween_to(&slot, 10, 0.5, options, F32_Animatable())
+	result = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 	testing.expect(t, slot_is_done(slot))
@@ -1028,37 +1463,111 @@ tween_to_completes_and_reports_done :: proc(t: ^testing.T) {
 @(test)
 tween_to_target_change_restarts_from_current_value :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	_ = tween_to(&slot, 10, 0.5, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, slot_value(slot), 5)
 
-	result := tween_to(&slot, 20, 0, options, F32_Animatable())
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 20,
+			dt = 0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, slot.tween.config.start, f32(5))
 	testing.expect_value(t, slot.tween.config.target, f32(20))
 	testing.expect_value(t, slot.tween.elapsed, f32(0))
 
-	result = tween_to(&slot, 20, 0.5, options, F32_Animatable())
+	result = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 20,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 12.5)
 }
 
 @(test)
 tween_to_from_start_policy_uses_explicit_start :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN, .FROM_START)
-	options := tween_slot_options(f32(5), 1.0)
+	slot_init(
+		Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN, start_policy = .FROM_START},
+	)
+	options := Tween_Slot_Options(f32) {
+		start        = f32(5),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	result := tween_to(&slot, 15, 0.5, options, F32_Animatable())
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 15,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, slot.tween.config.start, f32(5))
 
-	options = tween_slot_options(f32(2), 1.0)
-	_ = tween_to(&slot, 15, 1.0, options, F32_Animatable())
+	options = Tween_Slot_Options(f32) {
+		start        = f32(2),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 15,
+			dt = 1.0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect(t, slot_is_done(slot))
 
-	result = tween_to(&slot, 30, 0, options, F32_Animatable())
+	result = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 30,
+			dt = 0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 2)
 	testing.expect_value(t, slot.tween.config.start, f32(2))
 }
@@ -1066,14 +1575,44 @@ tween_to_from_start_policy_uses_explicit_start :: proc(t: ^testing.T) {
 @(test)
 tween_to_config_change_restarts_from_current_value :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	_ = tween_to(&slot, 10, 0.5, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, slot_value(slot), 5)
 
-	slower := tween_slot_options(f32(0), Seconds(2.0))
-	result := tween_to(&slot, 10, 0, slower, F32_Animatable())
+	slower := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = Seconds(2.0),
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0,
+			options = slower,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, slot.tween.config.duration, Seconds(2.0))
 	testing.expect_value(t, slot.tween.elapsed, f32(0))
@@ -1082,15 +1621,45 @@ tween_to_config_change_restarts_from_current_value :: proc(t: ^testing.T) {
 @(test)
 transition_to_uses_slot_kind :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	slot.tween_opts = tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	tween_opts := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
+	slot.tween_opts = tween_opts
 
-	result := transition_to(&slot, 10, 0.5, F32_Animatable())
+	result := transition_to(
+		Transition_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 
-	slot_init(&slot, 0, .SPRING)
-	slot.spring_opts = spring_slot_options(f32(0))
-	result = transition_to(&slot, 10, 1.0 / 60.0, F32_Animatable())
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	slot.spring_opts = Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
+	result = transition_to(
+		Transition_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 1.0 / 60.0,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect(t, result.value > 0)
 	testing.expect_value(t, result.done, false)
 }
@@ -1098,10 +1667,25 @@ transition_to_uses_slot_kind :: proc(t: ^testing.T) {
 @(test)
 slot_reset_clears_active_transition :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	_ = tween_to(&slot, 10, 0.25, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.25,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect(t, slot_is_active(slot))
 
 	slot_reset(&slot, 7)
@@ -1114,10 +1698,25 @@ slot_reset_clears_active_transition :: proc(t: ^testing.T) {
 @(test)
 slot_restart_replays_active_transition :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	_ = tween_to(&slot, 10, 0.75, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.75,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, slot_value(slot), 7.5)
 
 	slot_restart(&slot)
@@ -1125,21 +1724,60 @@ slot_restart_replays_active_transition :: proc(t: ^testing.T) {
 	expect_close(t, slot_value(slot), 7.5)
 	testing.expect_value(t, slot.tween.config.start, f32(7.5))
 
-	result := tween_to(&slot, 10, 0.25, options, F32_Animatable())
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.25,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 8.125)
 }
 
 @(test)
 slot_mode_switch_reinitializes_animator :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING)
-	spring_opts := spring_slot_options(f32(0))
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	spring_opts := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
-	_ = spring_to(&slot, 10, 0.1, spring_opts, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.1,
+			options = spring_opts,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	spring_value := slot_value(slot)
 
-	tween_opts := tween_slot_options(f32(0), 1.0)
-	result := tween_to(&slot, 20, 0, tween_opts, F32_Animatable())
+	tween_opts := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
+	result := tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 20,
+			dt = 0,
+			options = tween_opts,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, slot.kind, Transition_Kind.TWEEN)
 	expect_close(t, result.value, spring_value)
 	testing.expect_value(t, slot.tween.config.target, f32(20))
@@ -1148,8 +1786,13 @@ slot_mode_switch_reinitializes_animator :: proc(t: ^testing.T) {
 @(test)
 spring_to_vec2_slot :: proc(t: ^testing.T) {
 	slot: Slot(Vec2)
-	slot_init(&slot, Vec2{0, 0}, .SPRING)
-	options := spring_slot_options(Vec2{0, 0})
+	slot_init(Slot_Init_Params(Vec2){slot = &slot, value = Vec2{0, 0}, kind = .SPRING})
+	options := Spring_Slot_Options(Vec2) {
+		start     = Vec2{0, 0},
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
 	result := run_slot_spring_until_done(
 		&slot,
@@ -1165,19 +1808,48 @@ spring_to_vec2_slot :: proc(t: ^testing.T) {
 @(test)
 tween_to_same_target_and_config_does_not_restart :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	options := tween_slot_options(f32(0), 1.0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
-	_ = tween_to(&slot, 10, 0.25, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.25,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	elapsed_before := slot.tween.elapsed
 
-	_ = tween_to(&slot, 10, 0.25, options, F32_Animatable())
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.25,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, slot.tween.elapsed, elapsed_before + 0.25)
 }
 
 @(test)
 spring_slot_options_from_frequency_sets_physics :: proc(t: ^testing.T) {
-	options := spring_slot_options_from_frequency(f32(0), 2, 0.8, 1)
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = math.max(1, MIN_SPRING_MASS) * (f32(2 * math.PI) * 2) * (f32(2 * math.PI) * 2),
+		damping   = 2 * math.max(1, MIN_SPRING_MASS) * 0.8 * (f32(2 * math.PI) * 2),
+		mass      = math.max(1, MIN_SPRING_MASS),
+	}
 	omega := f32(2 * math.PI) * 2
 	expect_close(t, options.stiffness, omega * omega)
 	expect_close(t, options.damping, 2 * 0.8 * omega)
@@ -1186,28 +1858,84 @@ spring_slot_options_from_frequency_sets_physics :: proc(t: ^testing.T) {
 @(test)
 slot_set_start_policy_affects_next_target_change :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING, .FROM_CURRENT)
-	options := spring_slot_options(f32(0))
+	slot_init(
+		Slot_Init_Params(f32) {
+			slot = &slot,
+			value = 0,
+			kind = .SPRING,
+			start_policy = .FROM_CURRENT,
+		},
+	)
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 
-	_ = spring_to(&slot, 100, 0.1, options, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 100,
+			dt = 0.1,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	mid_value := slot_value(slot)
 
 	slot_set_start_policy(&slot, .FROM_START)
-	options = spring_slot_options(f32(4))
-	_ = spring_to(&slot, 40, 0, options, F32_Animatable())
+	options = Spring_Slot_Options(f32) {
+		start     = f32(4),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 40,
+			dt = 0,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	expect_close(t, slot_value(slot), 4)
 
-	_ = spring_to(&slot, 40, 0.05, options, F32_Animatable())
+	_ = spring_to(
+		Spring_To_Params(f32) {
+			slot = &slot,
+			target = 40,
+			dt = 0.05,
+			options = options,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect(t, slot_value(slot) != mid_value)
 }
 
 // --- keyframes.odin ---
 
 keyframes_f32_stops :: proc(stops: []Keyframe_Stop(f32)) -> Keyframes_Spec(f32) {
-	return keyframes_spec_duration(f32(0), stops)
+	return Keyframes_Spec(f32) {
+		start = f32(0),
+		stops = stops,
+		timing_mode = .DURATION,
+		repeat_count = 1,
+		repeat_mode = .RESTART,
+	}
 }
 
-compile_keyframes_f32 :: proc(stops: []Keyframe_Stop(f32), allocator := context.allocator) -> Keyframes_Config(f32) {
+compile_keyframes_f32 :: proc(
+	stops: []Keyframe_Stop(f32),
+	allocator := context.allocator,
+) -> Keyframes_Config(f32) {
 	spec := keyframes_f32_stops(stops)
 	config, err := keyframes_compile(spec, allocator)
 	if err != .NONE do panic("keyframes compile failed")
@@ -1215,14 +1943,21 @@ compile_keyframes_f32 :: proc(stops: []Keyframe_Stop(f32), allocator := context.
 }
 
 step_keyframes :: proc(state: ^Keyframes_State(f32), dt: f32) -> Step_Result(f32) {
-	return keyframes_step(state, dt, F32_Animatable())
+	return keyframes_step(
+		Step_Params(f32) {
+			state = state,
+			dt = dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 }
 
 @(test)
 keyframes_compile_duration_mode :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_duration(f32(10), 1.0),
-		keyframes_stop_duration(f32(20), 1.0),
+		Keyframe_Stop(f32){value = f32(10), duration = 1.0},
+		Keyframe_Stop(f32){value = f32(20), duration = 1.0},
 	}
 	config, err := keyframes_compile(keyframes_f32_stops(stops))
 	defer keyframes_config_destroy(config)
@@ -1238,10 +1973,15 @@ keyframes_compile_duration_mode :: proc(t: ^testing.T) {
 @(test)
 keyframes_compile_offset_mode :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_offset(f32(10), 0.5),
-		keyframes_stop_offset(f32(20), 1.0),
+		Keyframe_Stop(f32){value = f32(10), offset = 0.5},
+		Keyframe_Stop(f32){value = f32(20), offset = 1.0},
 	}
-	spec := keyframes_spec_offset(f32(0), stops, 2.0)
+	spec := Keyframes_Spec(f32) {
+		start          = f32(0),
+		stops          = stops,
+		timing_mode    = .OFFSET,
+		total_duration = 2.0,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1254,27 +1994,44 @@ keyframes_compile_offset_mode :: proc(t: ^testing.T) {
 @(test)
 keyframes_compile_rejects_invalid_offsets :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_offset(f32(10), 0.75),
-		keyframes_stop_offset(f32(20), 0.5),
+		Keyframe_Stop(f32){value = f32(10), offset = 0.75},
+		Keyframe_Stop(f32){value = f32(20), offset = 0.5},
 	}
-	spec := keyframes_spec_offset(f32(0), stops, 1.0)
+	spec := Keyframes_Spec(f32) {
+		start          = f32(0),
+		stops          = stops,
+		timing_mode    = .OFFSET,
+		total_duration = 1.0,
+	}
 	_, err := keyframes_compile(spec)
 	testing.expect_value(t, err, Keyframes_Compile_Error.INVALID_OFFSET_ORDER)
 
-	out_of_range := []Keyframe_Stop(f32){keyframes_stop_offset(f32(10), 1.5)}
-	spec = keyframes_spec_offset(f32(0), out_of_range, 1.0)
+	out_of_range := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), offset = 1.5}}
+	spec = Keyframes_Spec(f32) {
+		start          = f32(0),
+		stops          = out_of_range,
+		timing_mode    = .OFFSET,
+		total_duration = 1.0,
+	}
 	_, err = keyframes_compile(spec)
 	testing.expect_value(t, err, Keyframes_Compile_Error.INVALID_OFFSET_RANGE)
 
-	_, err = keyframes_compile(keyframes_spec_offset(f32(0), out_of_range, 0))
+	_, err = keyframes_compile(
+		Keyframes_Spec(f32) {
+			start = f32(0),
+			stops = out_of_range,
+			timing_mode = .OFFSET,
+			total_duration = 0,
+		},
+	)
 	testing.expect_value(t, err, Keyframes_Compile_Error.INVALID_TOTAL_DURATION)
 }
 
 @(test)
 keyframes_linear_completes_and_snaps :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_duration(f32(10), 1.0),
-		keyframes_stop_duration(f32(20), 1.0),
+		Keyframe_Stop(f32){value = f32(10), duration = 1.0},
+		Keyframe_Stop(f32){value = f32(20), duration = 1.0},
 	}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
@@ -1299,8 +2056,15 @@ keyframes_linear_completes_and_snaps :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_delay_holds_start :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
-	spec := keyframes_spec_duration(f32(0), stops, 0.25)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(0),
+		stops        = stops,
+		delay        = 0.25,
+		timing_mode  = .DURATION,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1323,8 +2087,15 @@ keyframes_delay_holds_start :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_zero_duration_snaps_after_delay :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(9), 0)}
-	spec := keyframes_spec_duration(f32(3), stops, 0.1)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(9), duration = 0}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(3),
+		stops        = stops,
+		delay        = 0.1,
+		timing_mode  = .DURATION,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1344,8 +2115,8 @@ keyframes_zero_duration_snaps_after_delay :: proc(t: ^testing.T) {
 @(test)
 keyframes_per_segment_easing :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_duration(f32(10), 1.0, Ease.LINEAR),
-		keyframes_stop_duration(f32(20), 1.0, Ease.IN_QUAD),
+		Keyframe_Stop(f32){value = f32(10), duration = 1.0, easing = Ease.LINEAR},
+		Keyframe_Stop(f32){value = f32(20), duration = 1.0, easing = Ease.IN_QUAD},
 	}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
@@ -1360,8 +2131,15 @@ keyframes_per_segment_easing :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_repeat_restart :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.5)}
-	spec := keyframes_spec_duration(f32(0), stops, 0, 2, .RESTART)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.5}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(0),
+		stops        = stops,
+		delay        = 0,
+		repeat_count = 2,
+		repeat_mode  = .RESTART,
+		timing_mode  = .DURATION,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1388,8 +2166,15 @@ keyframes_repeat_restart :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_repeat_reverse :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.5)}
-	spec := keyframes_spec_duration(f32(0), stops, 0, 2, .REVERSE)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.5}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(0),
+		stops        = stops,
+		delay        = 0,
+		repeat_count = 2,
+		repeat_mode  = .REVERSE,
+		timing_mode  = .DURATION,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1408,8 +2193,15 @@ keyframes_repeat_reverse :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_reverse_odd_cycles_end_at_last_value :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.5)}
-	spec := keyframes_spec_duration(f32(0), stops, 0, 3, .REVERSE)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.5}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(0),
+		stops        = stops,
+		delay        = 0,
+		repeat_count = 3,
+		repeat_mode  = .REVERSE,
+		timing_mode  = .DURATION,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1425,8 +2217,15 @@ keyframes_reverse_odd_cycles_end_at_last_value :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_infinite_repeat_never_finishes :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.25)}
-	spec := keyframes_spec_duration(f32(0), stops, 0, 0, .RESTART)
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.25}}
+	spec := Keyframes_Spec(f32) {
+		start        = f32(0),
+		stops        = stops,
+		delay        = 0,
+		repeat_count = 0,
+		repeat_mode  = .RESTART,
+		timing_mode  = .DURATION,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1436,15 +2235,22 @@ keyframes_infinite_repeat_never_finishes :: proc(t: ^testing.T) {
 
 	_ = step_keyframes(&state, 10)
 	testing.expect(t, !keyframes_is_finished(state))
-	result := keyframes_sample_at(state, state.elapsed, F32_Animatable())
+	result := keyframes_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, result.done, false)
 }
 
 @(test)
 keyframes_seek_samples_without_stepping :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_duration(f32(10), 1.0),
-		keyframes_stop_duration(f32(20), 1.0),
+		Keyframe_Stop(f32){value = f32(10), duration = 1.0},
+		Keyframe_Stop(f32){value = f32(20), duration = 1.0},
 	}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
@@ -1453,20 +2259,34 @@ keyframes_seek_samples_without_stepping :: proc(t: ^testing.T) {
 	keyframes_init(&state, config)
 
 	keyframes_seek(&state, 0.5)
-	result := keyframes_sample_at(state, state.elapsed, F32_Animatable())
+	result := keyframes_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, state.elapsed, 0.5)
 	testing.expect_value(t, result.done, false)
 
 	keyframes_seek(&state, 2.0)
-	result = keyframes_sample_at(state, state.elapsed, F32_Animatable())
+	result = keyframes_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 20)
 	testing.expect_value(t, result.done, true)
 }
 
 @(test)
 keyframes_seek_clamps_negative_elapsed :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -1478,7 +2298,7 @@ keyframes_seek_clamps_negative_elapsed :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_negative_dt_does_not_advance :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -1493,7 +2313,7 @@ keyframes_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_restart_resets_elapsed :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -1510,7 +2330,7 @@ keyframes_restart_resets_elapsed :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_reconfigure_restarts_playback :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -1518,7 +2338,7 @@ keyframes_reconfigure_restarts_playback :: proc(t: ^testing.T) {
 	keyframes_init(&state, config)
 	_ = step_keyframes(&state, 1.0)
 
-	new_stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(20), 1.0)}
+	new_stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(20), duration = 1.0}}
 	new_config := compile_keyframes_f32(new_stops)
 	defer keyframes_config_destroy(new_config)
 
@@ -1544,10 +2364,14 @@ keyframes_empty_stops_hold_start :: proc(t: ^testing.T) {
 
 @(test)
 keyframes_vec2_values :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(Vec2) {
-		keyframes_stop_duration(Vec2{10, 20}, 1.0),
+	stops := []Keyframe_Stop(Vec2){Keyframe_Stop(Vec2){value = Vec2{10, 20}, duration = 1.0}}
+	spec := Keyframes_Spec(Vec2) {
+		start        = Vec2{0, 0},
+		stops        = stops,
+		timing_mode  = .DURATION,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
 	}
-	spec := keyframes_spec_duration(Vec2{0, 0}, stops)
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
@@ -1555,17 +2379,31 @@ keyframes_vec2_values :: proc(t: ^testing.T) {
 	state: Keyframes_State(Vec2)
 	keyframes_init(&state, config)
 
-	result := keyframes_step(&state, 0.5, Vec2_Animatable())
+	result := keyframes_step(
+		Step_Params(Vec2) {
+			state = &state,
+			dt = 0.5,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_vec2_close(t, result.value, Vec2{5, 10})
 
-	result = keyframes_step(&state, 0.5, Vec2_Animatable())
+	result = keyframes_step(
+		Step_Params(Vec2) {
+			state = &state,
+			dt = 0.5,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_vec2_close(t, result.value, Vec2{10, 20})
 	testing.expect_value(t, result.done, true)
 }
 
 @(test)
 keyframes_snap_can_be_disabled :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -1578,8 +2416,17 @@ keyframes_snap_can_be_disabled :: proc(t: ^testing.T) {
 		snap_to_target       = false,
 	}
 
-	_ = keyframes_step(&state, 1.0, F32_Animatable(), no_snap)
-	result := keyframes_sample_at(state, state.elapsed, F32_Animatable(), no_snap)
+	_ = keyframes_step(
+		Step_Params(f32){state = &state, dt = 1.0, anim = F32_Animatable(), completion = no_snap},
+	)
+	result := keyframes_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = no_snap,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -1595,7 +2442,15 @@ run_decay_until_done :: proc(
 ) -> Step_Result(T) {
 	result: Step_Result(T)
 	for _ in 0 ..< max_frames {
-		result = decay_step(state, dt, anim, completion)
+		result = decay_step(
+			Motion_Step_Params(T) {
+				state = state,
+				dt = dt,
+				anim = anim,
+				completion = completion,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		if result.done do break
 	}
 	return result
@@ -1608,7 +2463,15 @@ DECAY_TEST_COMPLETION :: Completion_Policy {
 }
 
 step_decay :: proc(state: ^Decay_State(f32), dt: f32) -> Step_Result(f32) {
-	return decay_step(state, dt, F32_Animatable())
+	return decay_step(
+		Motion_Step_Params(f32) {
+			state = state,
+			dt = dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 }
 
 decay_exponential_displacement :: proc(velocity, time_constant, dt: f32) -> f32 {
@@ -1624,20 +2487,41 @@ decay_exponential_velocity :: proc(velocity, time_constant, dt: f32) -> f32 {
 @(test)
 decay_reaches_rest_and_zeros_velocity :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(100), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(100), 0.5),
+			start_value = 0,
+		},
+	)
 
 	result := run_decay_until_done(&state, 1.0 / 60.0, F32_Animatable(), DECAY_TEST_COMPLETION)
 	testing.expect_value(t, result.done, true)
 	testing.expect_value(t, result.has_velocity, true)
 	expect_close(t, result.velocity, 0)
 	testing.expect(t, result.value > 0)
-	testing.expect(t, decay_is_at_rest(state, F32_Animatable(), DECAY_TEST_COMPLETION))
+	testing.expect(
+		t,
+		decay_is_at_rest(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = F32_Animatable(),
+				completion = DECAY_TEST_COMPLETION,
+			},
+		),
+	)
 }
 
 @(test)
 decay_exponential_step_matches_closed_form :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(80), 0.4), 5)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(80), 0.4),
+			start_value = 5,
+		},
+	)
 
 	result := step_decay(&state, 0.1)
 	want_value := 5 + decay_exponential_displacement(80, 0.4, 0.1)
@@ -1650,9 +2534,21 @@ decay_exponential_step_matches_closed_form :: proc(t: ^testing.T) {
 @(test)
 decay_initial_velocity_affects_motion :: proc(t: ^testing.T) {
 	slow: Decay_State(f32)
-	decay_init(&slow, decay_config(f32(20), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &slow,
+			config = decay_config(f32(20), 0.5),
+			start_value = 0,
+		},
+	)
 	fast: Decay_State(f32)
-	decay_init(&fast, decay_config(f32(80), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &fast,
+			config = decay_config(f32(80), 0.5),
+			start_value = 0,
+		},
+	)
 
 	slow_result := step_decay(&slow, 0.05)
 	fast_result := step_decay(&fast, 0.05)
@@ -1664,7 +2560,13 @@ decay_initial_velocity_affects_motion :: proc(t: ^testing.T) {
 @(test)
 decay_rest_thresholds_gate_completion :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(0.001), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(0.001), 0.5),
+			start_value = 0,
+		},
+	)
 
 	loose := Completion_Policy {
 		distance_epsilon     = 0.01,
@@ -1677,8 +2579,24 @@ decay_rest_thresholds_gate_completion :: proc(t: ^testing.T) {
 		snap_to_target       = true,
 	}
 
-	loose_result := decay_step(&state, 0, F32_Animatable(), loose)
-	strict_result := decay_step(&state, 0, F32_Animatable(), strict)
+	loose_result := decay_step(
+		Motion_Step_Params(f32) {
+			state = &state,
+			dt = 0,
+			anim = F32_Animatable(),
+			completion = loose,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
+	strict_result := decay_step(
+		Motion_Step_Params(f32) {
+			state = &state,
+			dt = 0,
+			anim = F32_Animatable(),
+			completion = strict,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect_value(t, loose_result.done, true)
 	testing.expect_value(t, strict_result.done, false)
 }
@@ -1688,15 +2606,31 @@ decay_large_dt_uses_deterministic_substeps :: proc(t: ^testing.T) {
 	config := decay_config(f32(50), 0.35)
 
 	single: Decay_State(f32)
-	decay_init(&single, config, 0)
-	single_result := decay_step(&single, 0.5, F32_Animatable())
+	decay_init(Decay_Init_Params(f32){state = &single, config = config, start_value = 0})
+	single_result := decay_step(
+		Motion_Step_Params(f32) {
+			state = &single,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
 	substepped: Decay_State(f32)
-	decay_init(&substepped, config, 0)
+	decay_init(Decay_Init_Params(f32){state = &substepped, config = config, start_value = 0})
 	substep_plan := plan_substeps(0.5, DEFAULT_TIME_POLICY)
 	substepped_result: Step_Result(f32)
 	for _ in 0 ..< substep_plan.steps {
-		substepped_result = decay_step(&substepped, substep_plan.substep_dt, F32_Animatable())
+		substepped_result = decay_step(
+			Motion_Step_Params(f32) {
+				state = &substepped,
+				dt = substep_plan.substep_dt,
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 	}
 
 	expect_close(t, single_result.value, substepped_result.value)
@@ -1707,7 +2641,13 @@ decay_large_dt_uses_deterministic_substeps :: proc(t: ^testing.T) {
 @(test)
 decay_set_velocity_interrupts_from_current_value :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(100), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(100), 0.5),
+			start_value = 0,
+		},
+	)
 
 	_ = step_decay(&state, 0.1)
 	value_before := state.value
@@ -1726,7 +2666,13 @@ decay_set_velocity_interrupts_from_current_value :: proc(t: ^testing.T) {
 @(test)
 decay_reconfigure_preserves_motion :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(100), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(100), 0.5),
+			start_value = 0,
+		},
+	)
 	_ = step_decay(&state, 0.1)
 
 	value_before := state.value
@@ -1741,7 +2687,13 @@ decay_reconfigure_preserves_motion :: proc(t: ^testing.T) {
 @(test)
 decay_restart_applies_initial_velocity :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(60), 0.5), 10)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(60), 0.5),
+			start_value = 10,
+		},
+	)
 	_ = step_decay(&state, 0.2)
 
 	decay_restart(&state, 4)
@@ -1752,7 +2704,13 @@ decay_restart_applies_initial_velocity :: proc(t: ^testing.T) {
 @(test)
 decay_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(50), 0.5), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(50), 0.5),
+			start_value = 0,
+		},
+	)
 
 	_ = step_decay(&state, 0.1)
 	value_before := state.value
@@ -1769,9 +2727,17 @@ decay_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 decay_bounded_clamp_stops_at_limit :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
 	decay_init(
-		&state,
-		decay_config_bounded(f32(200), 0, 50, 0.25, .CLAMP),
-		0,
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = Decay_Config(f32) {
+				initial_velocity = f32(200),
+				bounds_min = f32(0),
+				bounds_max = f32(50),
+				time_constant = 0.25,
+				bounds_mode = .CLAMP,
+			},
+			start_value = 0,
+		},
 	)
 
 	result := run_decay_until_done(&state, 1.0 / 60.0, F32_Animatable(), DECAY_TEST_COMPLETION)
@@ -1784,9 +2750,18 @@ decay_bounded_clamp_stops_at_limit :: proc(t: ^testing.T) {
 decay_bounded_bounce_reflects_velocity :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
 	decay_init(
-		&state,
-		decay_config_bounded(f32(500), 0, 20, 0.15, .BOUNCE, 0.5),
-		0,
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = Decay_Config(f32) {
+				initial_velocity = f32(500),
+				bounds_min = f32(0),
+				bounds_max = f32(20),
+				time_constant = 0.15,
+				bounds_mode = .BOUNCE,
+				bounce = 0.5,
+			},
+			start_value = 0,
+		},
 	)
 
 	result := step_decay(&state, 0.05)
@@ -1798,7 +2773,13 @@ decay_bounded_bounce_reflects_velocity :: proc(t: ^testing.T) {
 @(test)
 decay_unbounded_negative_velocity_moves_downward :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(-90), 0.4), 25)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(-90), 0.4),
+			start_value = 25,
+		},
+	)
 
 	result := step_decay(&state, 0.1)
 	testing.expect(t, result.value < 25)
@@ -1817,9 +2798,23 @@ decay_default_config_matches_package_defaults :: proc(t: ^testing.T) {
 @(test)
 decay_vec2_values :: proc(t: ^testing.T) {
 	state: Decay_State(Vec2)
-	decay_init(&state, decay_config(Vec2{40, -30}, 0.45), Vec2{1, 2})
+	decay_init(
+		Decay_Init_Params(Vec2) {
+			state = &state,
+			config = decay_config(Vec2{40, -30}, 0.45),
+			start_value = Vec2{1, 2},
+		},
+	)
 
-	result := decay_step(&state, 1.0 / 60.0, Vec2_Animatable())
+	result := decay_step(
+		Motion_Step_Params(Vec2) {
+			state = &state,
+			dt = 1.0 / 60.0,
+			anim = Vec2_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect(t, result.value.x > 1)
 	testing.expect(t, result.value.y < 2)
 	testing.expect_value(t, result.has_velocity, true)
@@ -1834,15 +2829,17 @@ decay_vec2_values :: proc(t: ^testing.T) {
 decay_vec2_bounded_clamp :: proc(t: ^testing.T) {
 	state: Decay_State(Vec2)
 	decay_init(
-		&state,
-		decay_config_bounded(
-			Vec2{100, -100},
-			Vec2{-10, -10},
-			Vec2{10, 10},
-			0.25,
-			.CLAMP,
-		),
-		Vec2{0, 0},
+		Decay_Init_Params(Vec2) {
+			state = &state,
+			config = Decay_Config(Vec2) {
+				initial_velocity = Vec2{100, -100},
+				bounds_min = Vec2{-10, -10},
+				bounds_max = Vec2{10, 10},
+				time_constant = 0.25,
+				bounds_mode = .CLAMP,
+			},
+			start_value = Vec2{0, 0},
+		},
 	)
 
 	result := run_decay_until_done(&state, 1.0 / 60.0, Vec2_Animatable(), DECAY_TEST_COMPLETION)
@@ -1863,17 +2860,45 @@ compose_tween :: proc(start, target: f32, duration: Seconds) -> Tween_State(f32)
 delay_holds_value_then_runs_child :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 1.0)
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.25, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.25,
+			hold_value = 0,
+		},
+	)
 
-	result := delay_step(&delay_state, 0.1, F32_Animatable())
+	result := delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, false)
 
-	result = delay_step(&delay_state, 0.15, F32_Animatable())
+	result = delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.15,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, false)
 
-	result = delay_step(&delay_state, 0.25, F32_Animatable())
+	result = delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 2.5)
 	testing.expect_value(t, result.done, false)
 }
@@ -1882,9 +2907,23 @@ delay_holds_value_then_runs_child :: proc(t: ^testing.T) {
 delay_passes_overflow_dt_to_child :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 1.0)
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.2, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.2,
+			hold_value = 0,
+		},
+	)
 
-	result := delay_step(&delay_state, 0.35, F32_Animatable())
+	result := delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.35,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 1.5)
 	testing.expect_value(t, result.done, false)
 }
@@ -1893,11 +2932,32 @@ delay_passes_overflow_dt_to_child :: proc(t: ^testing.T) {
 delay_stepper_wraps_tween :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 0.5)
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.1, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.1,
+			hold_value = 0,
+		},
+	)
 
 	stepper := delay_stepper(&delay_state)
-	_ = stepper_step(stepper, 0.1, F32_Animatable())
-	result := stepper_step(stepper, 0.25, F32_Animatable())
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result := stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, result.done, false)
 }
@@ -1911,19 +2971,47 @@ sequence_runs_children_in_order :: proc(t: ^testing.T) {
 	sequence_state: Sequence_State(f32)
 	sequence_init(&sequence_state, steppers[:])
 
-	result := sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result := sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, result.done, false)
 
-	result = sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 
-	result = sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 15)
 	testing.expect_value(t, result.done, false)
 
-	result = sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 20)
 	testing.expect_value(t, result.done, true)
 }
@@ -1933,7 +3021,14 @@ sequence_empty_is_immediately_done :: proc(t: ^testing.T) {
 	sequence_state: Sequence_State(f32)
 	sequence_init(&sequence_state, nil)
 
-	result := sequence_step(&sequence_state, 0.1, F32_Animatable())
+	result := sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, true)
 }
@@ -1945,17 +3040,44 @@ parallel_steps_all_children :: proc(t: ^testing.T) {
 
 	steppers := [2]Stepper(f32){tween_stepper(&fast), tween_stepper(&slow)}
 	parallel_state: Parallel_State(f32)
-	parallel_init(&parallel_state, steppers[:], 0)
+	parallel_init(
+		Parallel_Init_Params(f32) {
+			state = &parallel_state,
+			children = steppers[:],
+			primary_index = 0,
+		},
+	)
 
-	result := parallel_step(&parallel_state, 0.25, F32_Animatable())
+	result := parallel_step(
+		Parallel_Step_Params(f32) {
+			state = &parallel_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, result.done, false)
 
-	result = parallel_step(&parallel_state, 0.25, F32_Animatable())
+	result = parallel_step(
+		Parallel_Step_Params(f32) {
+			state = &parallel_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 
-	result = parallel_step(&parallel_state, 0.5, F32_Animatable())
+	result = parallel_step(
+		Parallel_Step_Params(f32) {
+			state = &parallel_state,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -1964,13 +3086,34 @@ parallel_steps_all_children :: proc(t: ^testing.T) {
 repeat_restarts_child_for_finite_cycles :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 0.5)
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, tween_stepper(&child), 2, 0)
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = tween_stepper(&child),
+			repeat_count = 2,
+			cycle_start = 0,
+		},
+	)
 
-	result := repeat_step(&repeat_state, 0.5, F32_Animatable())
+	result := repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 
-	result = repeat_step(&repeat_state, 0.5, F32_Animatable())
+	result = repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -1979,10 +3122,33 @@ repeat_restarts_child_for_finite_cycles :: proc(t: ^testing.T) {
 repeat_infinite_never_finishes :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 0.25)
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, tween_stepper(&child), 0, 0)
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = tween_stepper(&child),
+			repeat_count = 0,
+			cycle_start = 0,
+		},
+	)
 
-	_ = repeat_step(&repeat_state, 1.0, F32_Animatable())
-	testing.expect(t, !repeat_is_finished(repeat_state, F32_Animatable()))
+	_ = repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 1.0,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		!repeat_is_finished(
+			Repeat_Is_Finished_Params(f32) {
+				state = repeat_state,
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 }
 
 @(test)
@@ -1994,23 +3160,60 @@ stagger_offsets_child_starts :: proc(t: ^testing.T) {
 	hold_values := [2]f32{0, 0}
 
 	stagger_state: Stagger_State(f32)
-	err := stagger_init(&stagger_state, children[:], hold_values[:], 0.2)
+	err := stagger_init(
+		Stagger_Init_Params(f32) {
+			state = &stagger_state,
+			children = children[:],
+			hold_values = hold_values[:],
+			interval = 0.2,
+			primary_index = 0,
+			allocator = context.allocator,
+		},
+	)
 	defer stagger_destroy(stagger_state)
 	testing.expect_value(t, err, Stagger_Init_Error.NONE)
 
-	result := stagger_step(&stagger_state, 0.1, F32_Animatable())
+	result := stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 2)
 	testing.expect_value(t, result.done, false)
 
-	result = stagger_step(&stagger_state, 0.1, F32_Animatable())
+	result = stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 4)
 	testing.expect_value(t, result.done, false)
 
-	result = stagger_step(&stagger_state, 0.4, F32_Animatable())
+	result = stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.4,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 
-	result = stagger_step(&stagger_state, 0.4, F32_Animatable())
+	result = stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.4,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -2018,12 +3221,32 @@ stagger_offsets_child_starts :: proc(t: ^testing.T) {
 @(test)
 compose_steppers_work_with_spring :: proc(t: ^testing.T) {
 	spring_state: Spring_State(f32)
-	spring_init(&spring_state, spring_config(f32(10), 200, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &spring_state,
+			config = Spring_Config(f32){target = f32(10), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0,
+		},
+	)
 
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, spring_stepper(&spring_state), 0.05, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = spring_stepper(&spring_state),
+			delay = 0.05,
+			hold_value = 0,
+		},
+	)
 
-	_ = delay_step(&delay_state, 0.05, F32_Animatable())
+	_ = delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.05,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	result := run_spring_until_done(
 		&spring_state,
 		1.0 / 60.0,
@@ -2036,7 +3259,7 @@ compose_steppers_work_with_spring :: proc(t: ^testing.T) {
 
 @(test)
 compose_steppers_work_with_keyframes :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.5)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.5}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -2044,13 +3267,34 @@ compose_steppers_work_with_keyframes :: proc(t: ^testing.T) {
 	keyframes_init(&keyframe_state, config)
 
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, keyframes_stepper(&keyframe_state), 2, f32(0))
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = keyframes_stepper(&keyframe_state),
+			repeat_count = 2,
+			cycle_start = f32(0),
+		},
+	)
 
-	result := repeat_step(&repeat_state, 0.5, F32_Animatable())
+	result := repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 
-	result = repeat_step(&repeat_state, 0.5, F32_Animatable())
+	result = repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 0.5,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -2058,38 +3302,93 @@ compose_steppers_work_with_keyframes :: proc(t: ^testing.T) {
 @(test)
 compose_steppers_work_with_decay :: proc(t: ^testing.T) {
 	decay_state: Decay_State(f32)
-	decay_init(&decay_state, decay_config(f32(80), 0.4), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &decay_state,
+			config = decay_config(f32(80), 0.4),
+			start_value = 0,
+		},
+	)
 
 	sequence_children := [1]Stepper(f32){decay_stepper(&decay_state)}
 	sequence_state: Sequence_State(f32)
 	sequence_init(&sequence_state, sequence_children[:])
 
-	result := run_decay_until_done(&decay_state, 1.0 / 60.0, F32_Animatable(), DECAY_TEST_COMPLETION)
+	result := run_decay_until_done(
+		&decay_state,
+		1.0 / 60.0,
+		F32_Animatable(),
+		DECAY_TEST_COMPLETION,
+	)
 	testing.expect_value(t, result.done, true)
-	testing.expect(t, sequence_is_finished(sequence_state, F32_Animatable(), DECAY_TEST_COMPLETION))
+	testing.expect(
+		t,
+		sequence_is_finished(
+			Sequence_Is_Finished_Params(f32) {
+				state = sequence_state,
+				anim = F32_Animatable(),
+				completion = DECAY_TEST_COMPLETION,
+			},
+		),
+	)
 }
 
 @(test)
 nested_sequence_of_delay_and_tween :: proc(t: ^testing.T) {
 	inner := compose_tween(0, 5, 0.5)
 	inner_delay: Delay_State(f32)
-	delay_init(&inner_delay, tween_stepper(&inner), 0.1, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &inner_delay,
+			child = tween_stepper(&inner),
+			delay = 0.1,
+			hold_value = 0,
+		},
+	)
 
 	outer := compose_tween(5, 15, 0.5)
 	steppers := [2]Stepper(f32){delay_stepper(&inner_delay), tween_stepper(&outer)}
 	sequence_state: Sequence_State(f32)
 	sequence_init(&sequence_state, steppers[:])
 
-	_ = sequence_step(&sequence_state, 0.1, F32_Animatable())
-	result := sequence_step(&sequence_state, 0.35, F32_Animatable())
+	_ = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result := sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.35,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 3.5)
 	testing.expect_value(t, result.done, false)
 
-	result = sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, result.done, false)
 
-	result = sequence_step(&sequence_state, 0.25, F32_Animatable())
+	result = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, false)
 }
@@ -2102,8 +3401,10 @@ compile_timeline_f32 :: proc(
 	primary_index: int = 0,
 	allocator := context.allocator,
 ) -> Timeline_Config(f32) {
-	spec := timeline_spec(tracks, labels, primary_index)
-	config, err := timeline_compile(spec, F32_Animatable(), allocator)
+	spec := timeline_spec(Timeline_Spec_Params(f32){tracks = tracks, labels = labels, primary_index = primary_index})
+	config, err := timeline_compile(
+		Timeline_Compile_Params(f32){spec = spec, anim = F32_Animatable(), allocator = allocator},
+	)
 	if err != .NONE do panic("timeline compile failed")
 	return config
 }
@@ -2115,14 +3416,21 @@ init_timeline_f32 :: proc(
 	primary_index: int = 0,
 	allocator := context.allocator,
 ) -> Timeline_Config(f32) {
-	spec := timeline_spec(tracks, labels, primary_index)
+	spec := timeline_spec(Timeline_Spec_Params(f32){tracks = tracks, labels = labels, primary_index = primary_index})
 	config := compile_timeline_f32(tracks, labels, primary_index, allocator)
-	if !timeline_init(state, spec, config, allocator) do panic("timeline init failed")
+	if !timeline_init(Timeline_Init_Params(f32){state = state, spec = spec, config = config, allocator = allocator}) do panic("timeline init failed")
 	return config
 }
 
 step_timeline :: proc(state: ^Timeline_State(f32), dt: f32) -> Step_Result(f32) {
-	return timeline_step(state, dt, F32_Animatable())
+	return timeline_step(
+		Step_Params(f32) {
+			state = state,
+			dt = dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 }
 
 @(test)
@@ -2131,8 +3439,18 @@ timeline_compile_records_offsets_and_duration :: proc(t: ^testing.T) {
 	second := compose_tween(0, 20, 1.0)
 
 	tracks := [2]Timeline_Track_Spec(f32) {
-		timeline_track_spec("alpha", 0, tween_stepper(&first), 0),
-		timeline_track_spec("beta", 0.25, tween_stepper(&second), 0),
+		Timeline_Track_Spec(f32) {
+			name = "alpha",
+			offset = 0,
+			stepper = tween_stepper(&first),
+			hold_value = 0,
+		},
+		Timeline_Track_Spec(f32) {
+			name = "beta",
+			offset = 0.25,
+			stepper = tween_stepper(&second),
+			hold_value = 0,
+		},
 	}
 	config := compile_timeline_f32(tracks[:])
 	defer timeline_config_destroy(config)
@@ -2148,10 +3466,22 @@ timeline_compile_records_offsets_and_duration :: proc(t: ^testing.T) {
 @(test)
 timeline_compile_rejects_duplicate_labels :: proc(t: ^testing.T) {
 	first := compose_tween(0, 10, 0.5)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("alpha", 0, tween_stepper(&first), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "alpha",
+			offset = 0,
+			stepper = tween_stepper(&first),
+			hold_value = 0,
+		},
+	}
 	labels := [2]Timeline_Label{timeline_label("intro", 0), timeline_label("intro", 0.25)}
 
-	_, err := timeline_compile(timeline_spec(tracks[:], labels[:]), F32_Animatable())
+	_, err := timeline_compile(
+		Timeline_Compile_Params(f32) {
+			spec = timeline_spec(Timeline_Spec_Params(f32){tracks = tracks[:], labels = labels[:]}),
+			anim = F32_Animatable(),
+		},
+	)
 	testing.expect_value(t, err, Timeline_Compile_Error.DUPLICATE_LABEL)
 }
 
@@ -2161,8 +3491,18 @@ timeline_overlapping_tracks_run_in_parallel :: proc(t: ^testing.T) {
 	slow := compose_tween(0, 100, 1.0)
 
 	tracks := [2]Timeline_Track_Spec(f32) {
-		timeline_track_spec("fast", 0, tween_stepper(&fast), 0),
-		timeline_track_spec("slow", 0.25, tween_stepper(&slow), 0),
+		Timeline_Track_Spec(f32) {
+			name = "fast",
+			offset = 0,
+			stepper = tween_stepper(&fast),
+			hold_value = 0,
+		},
+		Timeline_Track_Spec(f32) {
+			name = "slow",
+			offset = 0.25,
+			stepper = tween_stepper(&slow),
+			hold_value = 0,
+		},
 	}
 
 	timeline_state: Timeline_State(f32)
@@ -2194,8 +3534,18 @@ timeline_primary_track_selects_returned_value :: proc(t: ^testing.T) {
 	slow := compose_tween(0, 100, 1.0)
 
 	tracks := [2]Timeline_Track_Spec(f32) {
-		timeline_track_spec("fast", 0, tween_stepper(&fast), 0),
-		timeline_track_spec("slow", 0, tween_stepper(&slow), 0),
+		Timeline_Track_Spec(f32) {
+			name = "fast",
+			offset = 0,
+			stepper = tween_stepper(&fast),
+			hold_value = 0,
+		},
+		Timeline_Track_Spec(f32) {
+			name = "slow",
+			offset = 0,
+			stepper = tween_stepper(&slow),
+			hold_value = 0,
+		},
 	}
 
 	timeline_state: Timeline_State(f32)
@@ -2209,7 +3559,14 @@ timeline_primary_track_selects_returned_value :: proc(t: ^testing.T) {
 @(test)
 timeline_labels_compile_and_seek :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 	labels := [2]Timeline_Label{timeline_label("start", 0), timeline_label("mid", 0.5)}
 
 	timeline_state: Timeline_State(f32)
@@ -2220,8 +3577,25 @@ timeline_labels_compile_and_seek :: proc(t: ^testing.T) {
 	testing.expect(t, found)
 	expect_close(t, time, 0.5)
 
-	testing.expect(t, timeline_seek_to_label(&timeline_state, "mid", F32_Animatable()))
-	result := timeline_sample_at(&timeline_state, timeline_state.elapsed, F32_Animatable())
+	testing.expect(
+		t,
+		timeline_seek_to_label(
+			Timeline_Seek_To_Label_Params(f32) {
+				state = &timeline_state,
+				name = "mid",
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	result := timeline_sample_at(
+		Timeline_Sample_At_Params(f32) {
+			state = &timeline_state,
+			elapsed = timeline_state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 5)
 	testing.expect_value(t, timeline_state.elapsed, 0.5)
 }
@@ -2229,20 +3603,55 @@ timeline_labels_compile_and_seek :: proc(t: ^testing.T) {
 @(test)
 timeline_seek_samples_without_stepping :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 
-	timeline_seek(&timeline_state, 0.25, F32_Animatable())
-	result := timeline_sample_at(&timeline_state, timeline_state.elapsed, F32_Animatable())
+	timeline_seek(
+		Timeline_Seek_Params(f32) {
+			state = &timeline_state,
+			elapsed = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result := timeline_sample_at(
+		Timeline_Sample_At_Params(f32) {
+			state = &timeline_state,
+			elapsed = timeline_state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 2.5)
 	testing.expect_value(t, timeline_state.elapsed, 0.25)
 	testing.expect_value(t, result.done, false)
 
-	timeline_seek(&timeline_state, 1.0, F32_Animatable())
-	result = timeline_sample_at(&timeline_state, timeline_state.elapsed, F32_Animatable())
+	timeline_seek(
+		Timeline_Seek_Params(f32) {
+			state = &timeline_state,
+			elapsed = 1.0,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result = timeline_sample_at(
+		Timeline_Sample_At_Params(f32) {
+			state = &timeline_state,
+			elapsed = timeline_state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -2250,20 +3659,41 @@ timeline_seek_samples_without_stepping :: proc(t: ^testing.T) {
 @(test)
 timeline_seek_clamps_negative_elapsed :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 
-	timeline_seek(&timeline_state, -1, F32_Animatable())
+	timeline_seek(
+		Timeline_Seek_Params(f32) {
+			state = &timeline_state,
+			elapsed = -1,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, timeline_state.elapsed, 0)
 }
 
 @(test)
 timeline_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
@@ -2278,7 +3708,14 @@ timeline_negative_dt_does_not_advance :: proc(t: ^testing.T) {
 @(test)
 timeline_restart_resets_playback :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
@@ -2298,18 +3735,43 @@ timeline_empty_is_immediately_done :: proc(t: ^testing.T) {
 	tracks: []Timeline_Track_Spec(f32)
 	config := compile_timeline_f32(tracks)
 	defer timeline_config_destroy(config)
-	testing.expect(t, timeline_init(&timeline_state, timeline_spec(tracks), config))
+	testing.expect(
+		t,
+		timeline_init(
+			Timeline_Init_Params(f32) {
+				state = &timeline_state,
+				spec = timeline_spec(Timeline_Spec_Params(f32){tracks = tracks}),
+				config = config,
+			},
+		),
+	)
 
 	result := step_timeline(&timeline_state, 0.1)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, true)
-	testing.expect(t, timeline_is_finished(timeline_state, F32_Animatable()))
+	testing.expect(
+		t,
+		timeline_is_finished(
+			Timeline_Is_Finished_Params(f32) {
+				state = timeline_state,
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 }
 
 @(test)
 timeline_progress_reports_normalized_time :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
@@ -2325,15 +3787,36 @@ timeline_progress_reports_normalized_time :: proc(t: ^testing.T) {
 @(test)
 timeline_stepper_wraps_runtime_state :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 0.5)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 
 	stepper := timeline_stepper(&timeline_state)
-	_ = stepper_step(stepper, 0.25, F32_Animatable())
-	result := stepper_step(stepper, 0.25, F32_Animatable())
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result := stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
 }
@@ -2341,7 +3824,14 @@ timeline_stepper_wraps_runtime_state :: proc(t: ^testing.T) {
 @(test)
 timeline_reconfigure_restarts_playback :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	config := init_timeline_f32(&timeline_state, tracks[:])
@@ -2349,7 +3839,14 @@ timeline_reconfigure_restarts_playback :: proc(t: ^testing.T) {
 
 	_ = step_timeline(&timeline_state, 1.0)
 
-	timeline_reconfigure(&timeline_state, config, F32_Animatable())
+	timeline_reconfigure(
+		Timeline_Reconfigure_Params(f32) {
+			state = &timeline_state,
+			config = config,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect_value(t, timeline_state.elapsed, 0)
 
 	result := step_timeline(&timeline_state, 0.5)
@@ -2359,7 +3856,14 @@ timeline_reconfigure_restarts_playback :: proc(t: ^testing.T) {
 @(test)
 timeline_offset_holds_track_value_before_start :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 0.5)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0.2, tween_stepper(&tween_state), 3)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0.2,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 3,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
@@ -2384,7 +3888,12 @@ timeline_sequence_track_respects_offset :: proc(t: ^testing.T) {
 	sequence_init(&sequence_state, steppers[:])
 
 	tracks := [1]Timeline_Track_Spec(f32) {
-		timeline_track_spec("sequence", 0.1, sequence_stepper(&sequence_state), 0),
+		Timeline_Track_Spec(f32) {
+			name = "sequence",
+			offset = 0.1,
+			stepper = sequence_stepper(&sequence_state),
+			hold_value = 0,
+		},
 	}
 
 	timeline_state: Timeline_State(f32)
@@ -2411,11 +3920,25 @@ tween_observability_reports_progress_elapsed_and_target :: proc(t: ^testing.T) {
 	expect_close(t, tween_progress(state), 0)
 	expect_close(t, tween_elapsed(state), 0)
 
-	_ = tween_step(&state, 0.5, anim)
+	_ = tween_step(
+		Step_Params(f32) {
+			state = &state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, tween_progress(state), 0.5)
 	expect_close(t, tween_elapsed(state), 0.5)
 
-	_ = tween_step(&state, 0.5, anim)
+	_ = tween_step(
+		Step_Params(f32) {
+			state = &state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect(t, tween_is_idle(state))
 	testing.expect_value(t, tween_status(state), Animator_Status.IDLE)
 	expect_close(t, tween_progress(state), 1)
@@ -2423,52 +3946,168 @@ tween_observability_reports_progress_elapsed_and_target :: proc(t: ^testing.T) {
 
 @(test)
 spring_observability_reports_target_and_motion_progress :: proc(t: ^testing.T) {
-	config := spring_config(f32(10))
+	config := Spring_Config(f32) {
+		target    = f32(10),
+		stiffness = 200,
+		damping   = 26,
+		mass      = 1,
+	}
 	state: Spring_State(f32)
-	spring_init(&state, config, 0)
+	spring_init(Spring_Init_Params(f32){state = &state, config = config, start_value = 0})
 	anim := F32_Animatable()
 
-	testing.expect(t, spring_is_active(state, anim))
+	testing.expect(
+		t,
+		spring_is_active(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 	testing.expect_value(t, spring_target(state), f32(10))
-	expect_close(t, spring_progress(state, anim), 0)
+	expect_close(
+		t,
+		spring_progress(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0,
+	)
 
 	_ = run_spring_until_done(&state, 1.0 / 60.0, anim, SPRING_TEST_COMPLETION)
-	testing.expect(t, spring_is_idle(state, anim))
-	expect_close(t, spring_progress(state, anim), 1)
+	testing.expect(
+		t,
+		spring_is_idle(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = SPRING_TEST_COMPLETION,
+			},
+		),
+	)
+	expect_close(
+		t,
+		spring_progress(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		1,
+	)
 }
 
 @(test)
 decay_observability_reports_motion_progress :: proc(t: ^testing.T) {
 	config := decay_config(f32(100))
 	state: Decay_State(f32)
-	decay_init(&state, config, 0)
+	decay_init(Decay_Init_Params(f32){state = &state, config = config, start_value = 0})
 	anim := F32_Animatable()
 
-	testing.expect(t, decay_is_active(state, anim))
-	expect_close(t, decay_progress(state, anim), 0)
+	testing.expect(
+		t,
+		decay_is_active(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	expect_close(
+		t,
+		decay_progress(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0,
+	)
 
 	_ = run_decay_until_done(&state, 1.0 / 60.0, anim, DECAY_TEST_COMPLETION)
-	testing.expect(t, decay_is_idle(state, anim))
-	expect_close(t, decay_progress(state, anim), 1)
+	testing.expect(
+		t,
+		decay_is_idle(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	expect_close(
+		t,
+		decay_progress(
+			Animatable_Query_Params(f32) {
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		1,
+	)
 }
 
 @(test)
 slot_observability_reports_idle_active_and_progress :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
 	anim := F32_Animatable()
-	options := tween_slot_options(f32(0), 1.0)
+	options := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 
 	testing.expect(t, slot_is_idle(slot))
 	testing.expect_value(t, slot_status(slot), Animator_Status.IDLE)
-	expect_close(t, slot_progress(slot, anim), 1)
+	expect_close(
+		t,
+		slot_progress(
+			Animatable_Query_Params(f32) {
+				state = &slot,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		1,
+	)
 	expect_close(t, slot_elapsed(slot), 0)
 	testing.expect_value(t, slot_target(slot), f32(0))
 
-	_ = tween_to(&slot, 10, 0.5, options, anim)
+	_ = tween_to(
+		Tween_To_Params(f32) {
+			slot = &slot,
+			target = 10,
+			dt = 0.5,
+			options = options,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	testing.expect(t, slot_is_active(slot))
 	testing.expect(t, !slot_is_idle(slot))
-	expect_close(t, slot_progress(slot, anim), 0.5)
+	expect_close(
+		t,
+		slot_progress(
+			Animatable_Query_Params(f32) {
+				state = &slot,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.5,
+	)
 	expect_close(t, slot_elapsed(slot), 0.5)
 	testing.expect_value(t, slot_target(slot), f32(10))
 }
@@ -2479,8 +4118,21 @@ stepper_snapshot_reports_unified_fields :: proc(t: ^testing.T) {
 	stepper := tween_stepper(&state)
 	anim := F32_Animatable()
 
-	_ = stepper_step(stepper, 0.25, anim)
-	snapshot := stepper_snapshot(stepper, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	snapshot := stepper_snapshot(
+		Stepper_Query_Params(f32) {
+			stepper = stepper,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	testing.expect_value(t, snapshot.tag, Stepper_Tag.Tween)
 	testing.expect_value(t, snapshot.status, Animator_Status.ACTIVE)
@@ -2497,22 +4149,53 @@ stepper_snapshot_reports_unified_fields :: proc(t: ^testing.T) {
 stepper_elapsed_and_target_for_composition :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 1.0)
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.5, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.5,
+			hold_value = 0,
+		},
+	)
 	stepper := delay_stepper(&delay_state)
 	anim := F32_Animatable()
 
-	_ = stepper_step(stepper, 0.25, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	elapsed, has_elapsed := stepper_elapsed(stepper)
 	testing.expect(t, has_elapsed)
 	expect_close(t, elapsed, 0.25)
-	expect_close(t, stepper_progress(stepper, anim), 0.5)
+	expect_close(
+		t,
+		stepper_progress(
+			Stepper_Query_Params(f32) {
+				stepper = stepper,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.5,
+	)
 
-	target, has_target := stepper_target(stepper, anim)
+	target, has_target := stepper_target(Stepper_Query_Params(f32){stepper = stepper, anim = anim})
 	testing.expect(t, has_target)
 	expect_close(t, target, 0)
 
-	_ = stepper_step(stepper, 0.25, anim)
-	target, has_target = stepper_target(stepper, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	target, has_target = stepper_target(Stepper_Query_Params(f32){stepper = stepper, anim = anim})
 	testing.expect(t, has_target)
 	expect_close(t, target, 10)
 }
@@ -2527,25 +4210,120 @@ sequence_progress_advances_with_child :: proc(t: ^testing.T) {
 	sequence_init(&sequence_state, steppers[:])
 	anim := F32_Animatable()
 
-	expect_close(t, sequence_progress(sequence_state, anim), 0)
-	_ = sequence_step(&sequence_state, 0.5, anim)
-	expect_close(t, sequence_progress(sequence_state, anim), 0.25)
-	_ = sequence_step(&sequence_state, 0.5, anim)
-	expect_close(t, sequence_progress(sequence_state, anim), 0.5)
+	expect_close(
+		t,
+		sequence_progress(
+			Sequence_Is_Finished_Params(f32) {
+				state = sequence_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0,
+	)
+	_ = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		sequence_progress(
+			Sequence_Is_Finished_Params(f32) {
+				state = sequence_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.25,
+	)
+	_ = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		sequence_progress(
+			Sequence_Is_Finished_Params(f32) {
+				state = sequence_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.5,
+	)
 }
 
 @(test)
 repeat_progress_tracks_completed_cycles :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 1.0)
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, tween_stepper(&child), 2, 0)
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = tween_stepper(&child),
+			repeat_count = 2,
+			cycle_start = 0,
+		},
+	)
 	anim := F32_Animatable()
 
-	expect_close(t, repeat_progress(repeat_state, anim), 0)
-	_ = repeat_step(&repeat_state, 1.0, anim)
-	expect_close(t, repeat_progress(repeat_state, anim), 0.5)
-	_ = repeat_step(&repeat_state, 1.0, anim)
-	expect_close(t, repeat_progress(repeat_state, anim), 1)
+	expect_close(
+		t,
+		repeat_progress(
+			Repeat_Is_Finished_Params(f32) {
+				state = repeat_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0,
+	)
+	_ = repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 1.0,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		repeat_progress(
+			Repeat_Is_Finished_Params(f32) {
+				state = repeat_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.5,
+	)
+	_ = repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 1.0,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		repeat_progress(
+			Repeat_Is_Finished_Params(f32) {
+				state = repeat_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		1,
+	)
 }
 
 @(test)
@@ -2590,11 +4368,18 @@ trace_hook_receives_step_events :: proc(t: ^testing.T) {
 			ctx.last = info
 		}
 
-		set_animation_trace_hook(f32, trace_fn, &ctx)
+		set_animation_trace_hook(f32, Set_Animation_Trace_Hook_Params(f32){callback = trace_fn, user_data = &ctx})
 		defer clear_animation_trace_hook()
 
 		state := compose_tween(0, 10, 1.0)
-		result := tween_step_traced(&state, 0.25, F32_Animatable())
+		result := tween_step_traced(
+			Tween_Step_Traced_Params(f32) {
+				state = &state,
+				dt = 0.25,
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 
 		testing.expect_value(t, ctx.count, 1)
 		testing.expect_value(t, ctx.last.kind, Trace_Kind.STEP)
@@ -2607,7 +4392,7 @@ trace_hook_receives_step_events :: proc(t: ^testing.T) {
 	}
 }
 
-// --- harden.odin / version.odin (phase 12) ---
+// --- guards.odin / version.odin (phase 12) ---
 
 fuzz_rng_next :: proc(state: ^u64) -> u64 {
 	// Deterministic LCG for reproducible fuzz inputs.
@@ -2641,7 +4426,13 @@ fuzz_rng_dt :: proc(state: ^u64) -> f32 {
 }
 
 expect_step_finite_f32 :: proc(t: ^testing.T, result: Step_Result(f32), loc := #caller_location) {
-	testing.expectf(t, step_value_is_finite(result), "non-finite step result: %v", result, loc = loc)
+	testing.expectf(
+		t,
+		step_value_is_finite(result),
+		"non-finite step result: %v",
+		result,
+		loc = loc,
+	)
 }
 
 @(test)
@@ -2674,8 +4465,8 @@ version_reports_stable_1_0_0 :: proc(t: ^testing.T) {
 	testing.expect_value(t, VERSION_PATCH, 0)
 	testing.expect_value(t, version_string(), "1.0.0")
 	testing.expect_value(t, API_STABILITY, API_Stability.STABLE)
-	testing.expect(t, version_at_least(1, 0, 0))
-	testing.expect(t, version_matches(1, 0, 0))
+	testing.expect(t, version_at_least({major = 1, minor = 0, patch = 0}))
+	testing.expect(t, version_matches({major = 1, minor = 0, patch = 0}))
 }
 
 @(test)
@@ -2698,7 +4489,14 @@ fuzz_tween_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	rng: u64 = 0xC0FFEE
 	for _ in 0 ..< 512 {
 		dt := fuzz_rng_dt(&rng)
-		result := tween_step(&state, dt, anim)
+		result := tween_step(
+			Step_Params(f32) {
+				state = &state,
+				dt = dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 }
@@ -2706,13 +4504,27 @@ fuzz_tween_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 @(test)
 fuzz_spring_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(10), 180, 24, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32){target = f32(10), stiffness = 180, damping = 24, mass = 1},
+			start_value = 0,
+		},
+	)
 	anim := F32_Animatable()
 
 	rng: u64 = 0xBEEF
 	for _ in 0 ..< 512 {
 		dt := fuzz_rng_dt(&rng)
-		result := spring_step(&state, dt, anim)
+		result := spring_step(
+			Motion_Step_Params(f32) {
+				state = &state,
+				dt = dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 }
@@ -2720,20 +4532,34 @@ fuzz_spring_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 @(test)
 fuzz_decay_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	state: Decay_State(f32)
-	decay_init(&state, decay_config(f32(80), 0.4), 0)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &state,
+			config = decay_config(f32(80), 0.4),
+			start_value = 0,
+		},
+	)
 	anim := F32_Animatable()
 
 	rng: u64 = 0xDEAD
 	for _ in 0 ..< 512 {
 		dt := fuzz_rng_dt(&rng)
-		result := decay_step(&state, dt, anim)
+		result := decay_step(
+			Motion_Step_Params(f32) {
+				state = &state,
+				dt = dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 }
 
 @(test)
 fuzz_keyframes_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -2744,7 +4570,14 @@ fuzz_keyframes_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	rng: u64 = 0xF00D
 	for _ in 0 ..< 512 {
 		dt := fuzz_rng_dt(&rng)
-		result := keyframes_step(&state, dt, anim)
+		result := keyframes_step(
+			Step_Params(f32) {
+				state = &state,
+				dt = dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 }
@@ -2752,7 +4585,14 @@ fuzz_keyframes_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 @(test)
 fuzz_timeline_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
@@ -2762,7 +4602,14 @@ fuzz_timeline_step_never_produces_non_finite_values :: proc(t: ^testing.T) {
 	rng: u64 = 0xFACE
 	for _ in 0 ..< 256 {
 		dt := fuzz_rng_dt(&rng)
-		result := timeline_step(&timeline_state, dt, anim)
+		result := timeline_step(
+			Step_Params(f32) {
+				state = &timeline_state,
+				dt = dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 }
@@ -2799,7 +4646,14 @@ tween_golden_frame_sequence :: proc(t: ^testing.T) {
 	anim := F32_Animatable()
 
 	for frame in TWEEN_GOLDEN_FRAMES {
-		result := tween_step(&state, frame.dt, anim)
+		result := tween_step(
+			Step_Params(f32) {
+				state = &state,
+				dt = frame.dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_close(t, result.value, frame.value, 1e-5)
 		testing.expect_value(t, result.done, frame.done)
 	}
@@ -2823,11 +4677,25 @@ SPRING_GOLDEN_FRAMES := [?]Spring_Golden_Frame {
 @(test)
 spring_golden_frame_sequence :: proc(t: ^testing.T) {
 	state: Spring_State(f32)
-	spring_init(&state, spring_config(f32(10), 170, 26, 1), 0)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &state,
+			config = Spring_Config(f32){target = f32(10), stiffness = 170, damping = 26, mass = 1},
+			start_value = 0,
+		},
+	)
 	anim := F32_Animatable()
 
 	for frame in SPRING_GOLDEN_FRAMES {
-		result := spring_step(&state, frame.dt, anim)
+		result := spring_step(
+			Motion_Step_Params(f32) {
+				state = &state,
+				dt = frame.dt,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		expect_close(t, result.value, frame.value, 1e-4)
 		expect_close(t, result.velocity, frame.velocity, 1e-3)
 		testing.expect_value(t, result.done, false)
@@ -2847,8 +4715,8 @@ tween_large_dt_jumps_to_completion :: proc(t: ^testing.T) {
 @(test)
 keyframes_large_dt_completes_deterministically :: proc(t: ^testing.T) {
 	stops := []Keyframe_Stop(f32) {
-		keyframes_stop_duration(f32(10), 0.5),
-		keyframes_stop_duration(f32(20), 0.5),
+		Keyframe_Stop(f32){value = f32(10), duration = 0.5},
+		Keyframe_Stop(f32){value = f32(20), duration = 0.5},
 	}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
@@ -2867,7 +4735,14 @@ tween_seek_past_end_snaps_to_terminal :: proc(t: ^testing.T) {
 	tween_init(&state, tween_f32_config(0, 10, 1.0, 0, Ease.LINEAR, 2, .REVERSE))
 
 	tween_seek(&state, 100)
-	result := tween_sample_at(state, state.elapsed, F32_Animatable())
+	result := tween_sample_at(
+		state,
+		Sample_At_Params(f32) {
+			elapsed = state.elapsed,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, true)
 }
@@ -2884,16 +4759,37 @@ tween_infinite_repeat_at_zero_elapsed_starts_at_start :: proc(t: ^testing.T) {
 
 @(test)
 spring_infinite_dt_matches_substep_cap :: proc(t: ^testing.T) {
-	config := spring_config(f32(10), 180, 24, 1)
+	config := Spring_Config(f32) {
+		target    = f32(10),
+		stiffness = 180,
+		damping   = 24,
+		mass      = 1,
+	}
 
 	infinite: Spring_State(f32)
-	spring_init(&infinite, config, 0)
-	infinite_result := spring_step(&infinite, math.inf_f32(32), F32_Animatable())
+	spring_init(Spring_Init_Params(f32){state = &infinite, config = config, start_value = 0})
+	infinite_result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &infinite,
+			dt = math.inf_f32(32),
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
 	capped: Spring_State(f32)
-	spring_init(&capped, config, 0)
+	spring_init(Spring_Init_Params(f32){state = &capped, config = config, start_value = 0})
 	max_dt := DEFAULT_TIME_POLICY.max_dt * f32(DEFAULT_TIME_POLICY.max_substeps)
-	capped_result := spring_step(&capped, max_dt, F32_Animatable())
+	capped_result := spring_step(
+		Motion_Step_Params(f32) {
+			state = &capped,
+			dt = max_dt,
+			anim = F32_Animatable(),
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 
 	expect_close(t, infinite_result.value, capped_result.value)
 	expect_close(t, infinite_result.velocity, capped_result.velocity)
@@ -2902,13 +4798,28 @@ spring_infinite_dt_matches_substep_cap :: proc(t: ^testing.T) {
 @(test)
 slot_interruption_chain_remains_finite :: proc(t: ^testing.T) {
 	slot: Slot(f32)
-	slot_init(&slot, 0, .SPRING)
-	options := spring_slot_options(f32(0))
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	options := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 	anim := F32_Animatable()
 
 	targets := [?]f32{100, 80, 60, 40, 20, 0}
 	for target in targets {
-		result := spring_to(&slot, target, 0.08, options, anim)
+		result := spring_to(
+			Spring_To_Params(f32) {
+				slot = &slot,
+				target = target,
+				dt = 0.08,
+				options = options,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		expect_step_finite_f32(t, result)
 	}
 
@@ -2920,24 +4831,61 @@ slot_interruption_chain_remains_finite :: proc(t: ^testing.T) {
 @(test)
 timeline_seek_past_end_is_finished :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 	anim := F32_Animatable()
 
-	timeline_seek(&timeline_state, 100, anim)
-	result := timeline_sample_at(&timeline_state, timeline_state.elapsed, anim)
+	timeline_seek(
+		Timeline_Seek_Params(f32) {
+			state = &timeline_state,
+			elapsed = 100,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	result := timeline_sample_at(
+		Timeline_Sample_At_Params(f32) {
+			state = &timeline_state,
+			elapsed = timeline_state.elapsed,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 10)
 	testing.expect_value(t, result.done, true)
-	testing.expect(t, timeline_is_finished(timeline_state, anim))
+	testing.expect(
+		t,
+		timeline_is_finished(
+			Timeline_Is_Finished_Params(f32) {
+				state = timeline_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 }
 
 @(test)
 timeline_unknown_label_seek_fails :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
 	timeline_state: Timeline_State(f32)
 	config := init_timeline_f32(&timeline_state, tracks[:])
@@ -2945,16 +4893,34 @@ timeline_unknown_label_seek_fails :: proc(t: ^testing.T) {
 
 	_, found := timeline_label_time(config, "missing")
 	testing.expect(t, !found)
-	testing.expect(t, !timeline_seek_to_label(&timeline_state, "missing", F32_Animatable()))
+	testing.expect(
+		t,
+		!timeline_seek_to_label(
+			Timeline_Seek_To_Label_Params(f32) {
+				state = &timeline_state,
+				name = "missing",
+				anim = F32_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 }
 
 @(test)
 timeline_primary_out_of_range_falls_back :: proc(t: ^testing.T) {
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 
-	spec := timeline_spec(tracks[:], nil, 99)
-	config, err := timeline_compile(spec, F32_Animatable())
+	spec := timeline_spec(Timeline_Spec_Params(f32){tracks = tracks[:], primary_index = 99})
+	config, err := timeline_compile(
+		Timeline_Compile_Params(f32){spec = spec, anim = F32_Animatable()},
+	)
 	defer timeline_config_destroy(config)
 	testing.expect_value(t, err, Timeline_Compile_Error.NONE)
 	testing.expect_value(t, config.primary_index, 0)
@@ -2968,17 +4934,35 @@ validate_keyframes_config_rejects_negative_segment :: proc(t: ^testing.T) {
 	config.segments[0].duration = -1
 	defer delete(config.segments)
 
-	testing.expect_value(t, validate_keyframes_config(config), Config_Validity.NEGATIVE_SEGMENT_DURATION)
+	testing.expect_value(
+		t,
+		validate_keyframes_config(config),
+		Config_Validity.NEGATIVE_SEGMENT_DURATION,
+	)
 }
 
 @(test)
 repeat_seek_edge_zero_cycles_reports_done :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 0.5)
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, tween_stepper(&child), 0, 0)
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = tween_stepper(&child),
+			repeat_count = 0,
+			cycle_start = 0,
+		},
+	)
 	anim := F32_Animatable()
 
-	result := repeat_step(&repeat_state, 0, anim)
+	result := repeat_step(
+		Repeat_Step_Params(f32) {
+			state = &repeat_state,
+			dt = 0,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, result.value, 0)
 	testing.expect_value(t, result.done, false)
 }
@@ -2999,16 +4983,20 @@ zero_helpers_and_remaining_builtins :: proc(t: ^testing.T) {
 	expect_vec2_close(t, Vec2{add_vec3(v3a, v3b).x, add_vec3(v3a, v3b).y}, Vec2{5, 7})
 	expect_close(t, sub_vec3(v3b, v3a).z, 3)
 	expect_close(t, scale_vec3(v3a, 2).y, 4)
-	expect_close(t, mix_vec3(v3a, v3b, 0.5).x, 2.5)
+	expect_close(t, mix_vec3({a = v3a, b = v3b, t = 0.5}).x, 2.5)
 
 	v4a := Vec4{1, 2, 3, 4}
 	v4b := Vec4{5, 6, 7, 8}
 	expect_close(t, add_vec4(v4a, v4b).w, 12)
 	expect_close(t, sub_vec4(v4b, v4a).x, 4)
 	expect_close(t, scale_vec4(v4a, 0.5).z, 1.5)
-	expect_close(t, mix_vec4(v4a, v4b, 0.5).y, 4)
+	expect_close(t, mix_vec4({a = v4a, b = v4b, t = 0.5}).y, 4)
 
-	expect_rgba_close(t, sub_rgba(RGBA{1, 1, 1, 1}, RGBA{0.25, 0.5, 0.75, 0.25}), RGBA{0.75, 0.5, 0.25, 0.75})
+	expect_rgba_close(
+		t,
+		sub_rgba(RGBA{1, 1, 1, 1}, RGBA{0.25, 0.5, 0.75, 0.25}),
+		RGBA{0.75, 0.5, 0.25, 0.75},
+	)
 
 	ra := Rect{1, 2, 3, 4}
 	rb := Rect{5, 6, 7, 8}
@@ -3030,24 +5018,42 @@ animatable_factory_and_approx_eq_overloads :: proc(t: ^testing.T) {
 	_ = animatable_of_rgba(RGBA{})
 	_ = animatable_of_rect(Rect{})
 
-	testing.expect(t, approx_eq_f32(1, 1.00005))
-	testing.expect(t, approx_eq_vec2(Vec2{1, 2}, Vec2{1, 2}))
-	testing.expect(t, approx_eq_vec3(Vec3{1, 2, 3}, Vec3{1, 2, 3}))
-	testing.expect(t, approx_eq_vec4(Vec4{1, 2, 3, 4}, Vec4{1, 2, 3, 4}))
-	testing.expect(t, approx_eq_rgba(RGBA{1, 0, 0, 1}, RGBA{1, 0, 0, 1}))
-	testing.expect(t, approx_eq_rect(Rect{1, 2, 3, 4}, Rect{1, 2, 3, 4}))
+	testing.expect(t, approx_eq_f32(Approx_Eq_Params(f32){a = 1, b = 1.00005}))
+	testing.expect(t, approx_eq_vec2(Approx_Eq_Params(Vec2){a = Vec2{1, 2}, b = Vec2{1, 2}}))
+	testing.expect(t, approx_eq_vec3(Approx_Eq_Params(Vec3){a = Vec3{1, 2, 3}, b = Vec3{1, 2, 3}}))
+	testing.expect(
+		t,
+		approx_eq_vec4(Approx_Eq_Params(Vec4){a = Vec4{1, 2, 3, 4}, b = Vec4{1, 2, 3, 4}}),
+	)
+	testing.expect(
+		t,
+		approx_eq_rgba(Approx_Eq_Params(RGBA){a = RGBA{1, 0, 0, 1}, b = RGBA{1, 0, 0, 1}}),
+	)
+	testing.expect(
+		t,
+		approx_eq_rect(Approx_Eq_Params(Rect){a = Rect{1, 2, 3, 4}, b = Rect{1, 2, 3, 4}}),
+	)
 
-	testing.expect(t, approx_eq(1.0, 1.0))
-	testing.expect(t, approx_eq(Vec2{1, 1}, Vec2{1, 1}))
-	testing.expect(t, mix(0.0, 10.0, 0.5) == 5.0)
-	expect_vec2_close(t, mix(Vec2{0, 0}, Vec2{10, 10}, 0.5), Vec2{5, 5})
+	testing.expect(t, approx_eq_f32({a = 1.0, b = 1.0}))
+	testing.expect(t, approx_eq_vec2({a = Vec2{1, 1}, b = Vec2{1, 1}}))
+	testing.expect(t, F32_Animatable().mix(Mix_Params(f32){a = 0.0, b = 10.0, t = 0.5}) == 5.0)
+	expect_vec2_close(
+		t,
+		Vec2_Animatable().mix(Mix_Params(Vec2){a = Vec2{0, 0}, b = Vec2{10, 10}, t = 0.5}),
+		Vec2{5, 5},
+	)
 	expect_close(t, distance(3.0, 7.0), 4.0)
 	expect_close(t, distance(Vec2{0, 0}, Vec2{3, 4}), 5)
 }
 
 @(test)
 tween_helper_procs :: proc(t: ^testing.T) {
-	curve := Bezier{x1 = 0.25, y1 = 0.1, x2 = 0.75, y2 = 0.9}
+	curve := Bezier {
+		x1 = 0.25,
+		y1 = 0.1,
+		x2 = 0.75,
+		y2 = 0.9,
+	}
 	expect_close(t, tween_easing_apply(Ease.LINEAR, 0.5), 0.5)
 	expect_close(t, tween_easing_apply(curve, 0.5), bezier_ease(curve, 0.5), 1e-3)
 
@@ -3059,16 +5065,34 @@ tween_helper_procs :: proc(t: ^testing.T) {
 	expect_close(t, tween_active_elapsed(0.5, 0.2), 0.3)
 	expect_close(t, tween_active_elapsed(0.1, 0.2), 0)
 
-	testing.expect_value(t, tween_cycle_index(1.5, 1.0, 2), 1)
-	expect_close(t, tween_cycle_local_t(0.5, 1.0, 1), 0.5)
+	testing.expect_value(
+		t,
+		tween_cycle_index(
+			Tween_Cycle_Position_Params{active = 1.5, duration = 1.0, repeat_count = 2},
+		),
+		1,
+	)
+	expect_close(
+		t,
+		tween_cycle_local_t(
+			Tween_Cycle_Position_Params{active = 0.5, duration = 1.0, repeat_count = 1},
+		),
+		0.5,
+	)
 
-	cycle_index, local_t := tween_cycle_position(2.0, 1.0, 2)
+	cycle_index, local_t := tween_cycle_position(
+		Tween_Cycle_Position_Params{active = 2.0, duration = 1.0, repeat_count = 2},
+	)
 	testing.expect_value(t, cycle_index, 1)
 	expect_close(t, local_t, 1)
 
 	testing.expect(t, tween_is_reverse_cycle(.REVERSE, 1))
 	testing.expect(t, !tween_is_reverse_cycle(.REVERSE, 0))
-	expect_close(t, tween_mix_t(Ease.LINEAR, 0.25, true), 0.75)
+	expect_close(
+		t,
+		tween_mix_t(Tween_Mix_T_Params{easing = Ease.LINEAR, local_t = 0.25, reverse = true}),
+		0.75,
+	)
 
 	config := tween_f32_config(0, 10, 1.0, 0, Ease.LINEAR, 2, .REVERSE)
 	expect_close(t, tween_terminal_value(config), 0)
@@ -3085,7 +5109,7 @@ keyframes_helper_procs :: proc(t: ^testing.T) {
 	stop := keyframes_stop_default(f32(5))
 	expect_close(t, stop.value, 5)
 
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 0.5)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 0.5}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
@@ -3094,27 +5118,54 @@ keyframes_helper_procs :: proc(t: ^testing.T) {
 	testing.expect(t, !keyframes_is_finished_at(config, 0.1))
 	testing.expect(t, keyframes_is_finished_at(config, 1.0))
 
-	expect_close(t, keyframes_sample_cycle_at(config, 0.25, F32_Animatable()), 5)
+	expect_close(
+		t,
+		keyframes_sample_cycle_at(
+			Keyframes_Sample_Cycle_At_Params(f32) {
+				config = config,
+				cycle_time = 0.25,
+				anim = F32_Animatable(),
+			},
+		),
+		5,
+	)
 }
 
 @(test)
 spring_helper_procs :: proc(t: ^testing.T) {
-	config := spring_config_from_frequency_with_velocity(f32(10), f32(5), 2.0, 0.8)
+	config := Spring_Config(f32) {
+		target           = f32(10),
+		initial_velocity = f32(5),
+		stiffness        = math.max(
+			1,
+			MIN_SPRING_MASS,
+		) * (f32(2 * math.PI) * 2.0) * (f32(2 * math.PI) * 2.0),
+		damping          = 2 * math.max(1, MIN_SPRING_MASS) * 0.8 * (f32(2 * math.PI) * 2.0),
+		mass             = math.max(1, MIN_SPRING_MASS),
+	}
 	expect_close(t, config.initial_velocity, 5)
 
 	anim := F32_Animatable()
 	expect_close(t, spring_velocity_speed(f32(3), anim), 3)
-	expect_close(t, spring_displacement(f32(2), f32(10), anim), 8)
+	expect_close(
+		t,
+		spring_displacement(
+			Spring_Displacement_Params(f32){value = f32(2), target = f32(10), anim = anim},
+		),
+		8,
+	)
 
 	value, velocity := spring_integrate_substep(
-		f32(0),
-		f32(0),
-		f32(10),
-		180,
-		26,
-		1,
-		1.0 / 60.0,
-		anim,
+		Spring_Integrate_Substep_Params(f32) {
+			value = f32(0),
+			velocity = f32(0),
+			target = f32(10),
+			stiffness = 180,
+			damping = 26,
+			mass = 1,
+			dt = 1.0 / 60.0,
+			anim = anim,
+		},
 	)
 	testing.expect(t, value > 0)
 	testing.expect(t, velocity > 0)
@@ -3127,36 +5178,75 @@ decay_helper_procs :: proc(t: ^testing.T) {
 	expect_close(t, decay_safe_time_constant(0), MIN_DECAY_TIME_CONSTANT)
 	expect_close(t, decay_safe_time_constant(0.5), 0.5)
 
-	config := decay_config_bounded(f32(0), 0, 100, 0.25, .CLAMP)
-	expect_close(t, decay_snap_bounded_at_rest(f32(99.9999), config), 100)
+	config := Decay_Config(f32) {
+		initial_velocity = f32(0),
+		bounds_min       = f32(0),
+		bounds_max       = f32(100),
+		time_constant    = 0.25,
+		bounds_mode      = .CLAMP,
+	}
+	expect_close(t, decay_snap_bounded_at_rest(Decay_Snap_Bounded_At_Rest_Params(f32){value = f32(99.9999), config = config, epsilon = DEFAULT_DISTANCE_EPSILON}), 100)
 
-	value, velocity := decay_integrate_exponential(f32(0), f32(100), 0.5, 0.1, anim)
+	value, velocity := decay_integrate_exponential(
+		Decay_Integrate_Exponential_Params(f32) {
+			value = f32(0),
+			velocity = f32(100),
+			time_constant = 0.5,
+			dt = 0.1,
+			anim = anim,
+		},
+	)
 	testing.expect(t, value > 0)
 	testing.expect(t, velocity < 100)
 
 	expect_close(t, decay_bounce_scalar(f32(-10), 0.5), -5)
 
-	bv, bvel := decay_apply_bounds_f32(-1, f32(-20), 0, 10, .BOUNCE, 0.5)
+	bv, bvel := decay_apply_bounds_f32(
+		Decay_Apply_Bounds_Axis_Params {
+			value = -1,
+			velocity = f32(-20),
+			bounds_min = 0,
+			bounds_max = 10,
+			mode = .BOUNCE,
+			bounce = 0.5,
+		},
+	)
 	expect_close(t, bv, 0)
 	testing.expect(t, bvel > 0)
 
 	bv2, bvel2 := decay_apply_bounds_vec2(
-		Vec2{-1, 11},
-		Vec2{-5, 20},
-		Vec2{0, 0},
-		Vec2{10, 10},
-		.CLAMP,
-		0.5,
+		Decay_Apply_Bounds_Vector_Params(Vec2) {
+			value = Vec2{-1, 11},
+			velocity = Vec2{-5, 20},
+			bounds_min = Vec2{0, 0},
+			bounds_max = Vec2{10, 10},
+			mode = .CLAMP,
+			bounce = 0.5,
+		},
 	)
 	expect_close(t, bv2.x, 0)
 	expect_close(t, bv2.y, 10)
 	testing.expect_value(t, bvel2.y, 0)
 
-	gv, gvel := decay_apply_bounds(f32(5), f32(10), decay_config(f32(10)))
+	gv, gvel := decay_apply_bounds(
+		Decay_Apply_Bounds_Params(f32) {
+			value = f32(5),
+			velocity = f32(10),
+			config = decay_config(f32(10)),
+		},
+	)
 	expect_close(t, gv, 5)
 	expect_close(t, gvel, 10)
 
-	sv, svel := decay_integrate_substep(f32(0), f32(50), decay_config(f32(50)), 0.1, anim)
+	sv, svel := decay_integrate_substep(
+		Decay_Integrate_Substep_Params(f32) {
+			value = f32(0),
+			velocity = f32(50),
+			config = decay_config(f32(50)),
+			dt = 0.1,
+			anim = anim,
+		},
+	)
 	testing.expect(t, sv > 0)
 	testing.expect(t, svel < 50)
 }
@@ -3167,18 +5257,50 @@ slot_helper_procs :: proc(t: ^testing.T) {
 	testing.expect(t, tween_easing_eq(Ease.LINEAR, Ease.LINEAR))
 	testing.expect(t, !tween_easing_eq(Ease.LINEAR, Ease.OUT_QUAD))
 
-	opts_a := tween_slot_options(f32(0), 1.0)
-	opts_b := tween_slot_options(f32(0), 1.0)
+	opts_a := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
+	opts_b := Tween_Slot_Options(f32) {
+		start        = f32(0),
+		duration     = 1.0,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+		easing       = Ease.LINEAR,
+	}
 	testing.expect(t, tween_slot_options_eq(opts_a, opts_b, anim))
 
-	spring_opts := spring_slot_options(f32(0))
+	spring_opts := Spring_Slot_Options(f32) {
+		start     = f32(0),
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
 	testing.expect(t, spring_slot_options_eq(spring_opts, spring_opts, anim))
 	testing.expect(t, slot_target_eq(f32(10), f32(10), anim))
 
-	vel_opts := spring_slot_options_with_velocity(f32(0), f32(3))
+	vel_opts := Spring_Slot_Options(f32) {
+		start            = f32(0),
+		initial_velocity = f32(3),
+		stiffness        = DEFAULT_SPRING_STIFFNESS,
+		damping          = DEFAULT_SPRING_DAMPING,
+		mass             = DEFAULT_SPRING_MASS,
+	}
 	expect_close(t, vel_opts.initial_velocity, 3)
 
-	freq_opts := spring_slot_options_from_frequency_with_velocity(f32(0), f32(2), 3.0, 0.7)
+	freq_opts := Spring_Slot_Options(f32) {
+		start            = f32(0),
+		initial_velocity = f32(2),
+		stiffness        = math.max(
+			0.7,
+			MIN_SPRING_MASS,
+		) * (f32(2 * math.PI) * 3.0) * (f32(2 * math.PI) * 3.0),
+		damping          = 2 * math.max(0.7, MIN_SPRING_MASS) * 0.7 * (f32(2 * math.PI) * 3.0),
+		mass             = math.max(0.7, MIN_SPRING_MASS),
+	}
 	expect_close(t, freq_opts.initial_velocity, 2)
 	testing.expect(t, freq_opts.stiffness > 0)
 
@@ -3189,31 +5311,49 @@ slot_helper_procs :: proc(t: ^testing.T) {
 	expect_close(t, spring_cfg.target, 10)
 
 	slot: Slot(f32)
-	slot_init(&slot, 0, .TWEEN)
-	slot_begin_tween(&slot, 10, opts_a, 0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+	slot_begin_tween(
+		Slot_Begin_Tween_Params(f32){slot = &slot, target = 10, options = opts_a, start = 0},
+	)
 	testing.expect(t, slot.active)
 	expect_close(t, slot_tween_start_for_change(&slot, opts_a), slot.value)
 
-	slot_init(&slot, 0, .SPRING)
-	slot_begin_spring(&slot, 10, spring_opts, 0)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	slot_begin_spring(
+		Slot_Begin_Spring_Params(f32){slot = &slot, target = 10, options = spring_opts, start = 0},
+	)
 	testing.expect(t, slot.active)
 	expect_close(t, slot.value, 0)
 
-	slot_init(&slot, 0, .SPRING)
-	slot_sync_spring(&slot, 10, spring_opts, anim)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+	slot_sync_spring(
+		Slot_Sync_Spring_Params(f32) {
+			slot = &slot,
+			target = 10,
+			options = spring_opts,
+			anim = anim,
+		},
+	)
 	testing.expect(t, slot.active)
 	expect_close(t, slot.target, 10)
 
-	slot_init(&slot, 5, .TWEEN)
-	slot_sync_tween(&slot, 10, opts_a, anim)
+	slot_init(Slot_Init_Params(f32){slot = &slot, value = 5, kind = .TWEEN})
+	slot_sync_tween(
+		Slot_Sync_Tween_Params(f32){slot = &slot, target = 10, options = opts_a, anim = anim},
+	)
 	testing.expect(t, slot.active)
 	expect_close(t, slot.value, 5)
 }
 
 @(test)
 math_bezier_remaining_helpers :: proc(t: ^testing.T) {
-	curve := Bezier{x1 = 0.42, y1 = 0, x2 = 0.58, y2 = 1}
-	expect_close(t, bezier_slope_1d(curve.x1, curve.x2, 0.5), 0.87, 1e-2)
+	curve := Bezier {
+		x1 = 0.42,
+		y1 = 0,
+		x2 = 0.58,
+		y2 = 1,
+	}
+	expect_close(t, bezier_slope_1d({p1 = curve.x1, p2 = curve.x2, t = 0.5}), 0.87, 1e-2)
 	solved_t := bezier_solve_t_for_x(curve, 0.5)
 	expect_close(t, solved_t, 0.5, 1e-2)
 }
@@ -3240,18 +5380,64 @@ compose_remaining_procs :: proc(t: ^testing.T) {
 	child := compose_tween(0, 10, 1.0)
 	stepper := tween_stepper(&child)
 
-	_ = stepper_step(stepper, 0.5, anim)
-	testing.expect(t, !stepper_is_done(stepper, anim))
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		!stepper_is_done(
+			Stepper_Is_Done_Params(f32) {
+				stepper = stepper,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 	stepper_restart(stepper)
 	expect_close(t, child.elapsed, 0)
 
 	stepper_reset_to(stepper, 3)
-	_ = stepper_step(stepper, 0.25, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.2, 0)
-	_ = delay_step(&delay_state, 0.1, anim)
-	testing.expect(t, !delay_is_finished(delay_state, anim))
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.2,
+			hold_value = 0,
+		},
+	)
+	_ = delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.1,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		!delay_is_finished(
+			Delay_Is_Finished_Params(f32) {
+				state = delay_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 	delay_restart(&delay_state)
 	expect_close(t, delay_state.elapsed, 0)
 
@@ -3260,7 +5446,14 @@ compose_remaining_procs :: proc(t: ^testing.T) {
 	seq_steppers := [2]Stepper(f32){tween_stepper(&first), tween_stepper(&second)}
 	sequence_state: Sequence_State(f32)
 	sequence_init(&sequence_state, seq_steppers[:])
-	_ = sequence_step(&sequence_state, 0.25, anim)
+	_ = sequence_step(
+		Sequence_Step_Params(f32) {
+			state = &sequence_state,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	sequence_restart(&sequence_state)
 	testing.expect_value(t, sequence_state.index, 0)
 
@@ -3268,35 +5461,110 @@ compose_remaining_procs :: proc(t: ^testing.T) {
 	par_child_b := compose_tween(0, 20, 1.0)
 	par_steppers := [2]Stepper(f32){tween_stepper(&par_child_a), tween_stepper(&par_child_b)}
 	parallel_state: Parallel_State(f32)
-	parallel_init(&parallel_state, par_steppers[:], 0)
-	_ = parallel_step(&parallel_state, 0.25, anim)
-	testing.expect(t, !parallel_is_finished(parallel_state, anim))
+	parallel_init(
+		Parallel_Init_Params(f32) {
+			state = &parallel_state,
+			children = par_steppers[:],
+			primary_index = 0,
+		},
+	)
+	_ = parallel_step(
+		Parallel_Step_Params(f32) {
+			state = &parallel_state,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		!parallel_is_finished(
+			Parallel_Is_Finished_Params(f32) {
+				state = parallel_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 	parallel_restart(&parallel_state)
 	par_stepper := parallel_stepper(&parallel_state)
-	_ = stepper_step(par_stepper, 0.25, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = par_stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	repeat_child := compose_tween(0, 10, 0.5)
 	repeat_state: Repeat_State(f32)
-	repeat_init(&repeat_state, tween_stepper(&repeat_child), 2, 0)
+	repeat_init(
+		Repeat_Init_Params(f32) {
+			state = &repeat_state,
+			child = tween_stepper(&repeat_child),
+			repeat_count = 2,
+			cycle_start = 0,
+		},
+	)
 	testing.expect(t, !repeat_is_infinite(2))
 	testing.expect(t, repeat_is_infinite(0))
 	repeat_restart(&repeat_state)
 	rep_stepper := repeat_stepper(&repeat_state)
-	_ = stepper_step(rep_stepper, 0.25, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = rep_stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	stag_a := compose_tween(0, 10, 0.5)
 	stag_b := compose_tween(0, 20, 0.5)
 	stag_children := [2]Stepper(f32){tween_stepper(&stag_a), tween_stepper(&stag_b)}
 	stag_holds := [2]f32{0, 0}
 	stagger_state: Stagger_State(f32)
-	_ = stagger_init(&stagger_state, stag_children[:], stag_holds[:], 0.1)
+	_ = stagger_init(
+		Stagger_Init_Params(f32) {
+			state = &stagger_state,
+			children = stag_children[:],
+			hold_values = stag_holds[:],
+			interval = 0.1,
+			primary_index = 0,
+			allocator = context.allocator,
+		},
+	)
 	defer stagger_destroy(stagger_state)
-	_ = stagger_step(&stagger_state, 0.9, anim)
-	testing.expect(t, stagger_is_finished(stagger_state, anim))
+	_ = stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.9,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		stagger_is_finished(
+			Stagger_Is_Finished_Params(f32) {
+				state = stagger_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 	stagger_restart(&stagger_state)
 	expect_close(t, stagger_state.delays[0].elapsed, 0)
 	stag_stepper := stagger_stepper(&stagger_state)
-	_ = stepper_step(stag_stepper, 0.1, anim)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stag_stepper,
+			dt = 0.1,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	expect_close(t, stepper_estimated_duration(tween_stepper(&child), anim), 1.0)
 }
@@ -3311,12 +5579,26 @@ timeline_remaining_procs :: proc(t: ^testing.T) {
 	expect_close(t, f32(cloned.time), 0.5)
 
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 	timeline_state: Timeline_State(f32)
 	config := init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 
-	timeline_sync(&timeline_state, 0.5, anim)
+	timeline_sync(
+		Timeline_Sync_Params(f32) {
+			state = &timeline_state,
+			elapsed = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, timeline_state.elapsed, 0.5)
 	testing.expect(t, timeline_is_finished_at(config, 1.0))
 	testing.expect(t, !timeline_is_finished_at(config, 0.5))
@@ -3325,13 +5607,20 @@ timeline_remaining_procs :: proc(t: ^testing.T) {
 @(test)
 keyframes_and_timeline_observability :: proc(t: ^testing.T) {
 	anim := F32_Animatable()
-	stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+	stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 	config := compile_keyframes_f32(stops)
 	defer keyframes_config_destroy(config)
 
 	kf_state: Keyframes_State(f32)
 	keyframes_init(&kf_state, config)
-	_ = keyframes_step(&kf_state, 0.5, anim)
+	_ = keyframes_step(
+		Step_Params(f32) {
+			state = &kf_state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 
 	expect_close(t, keyframes_elapsed(kf_state), 0.5)
 	expect_close(t, keyframes_target(kf_state), 10)
@@ -3340,16 +5629,51 @@ keyframes_and_timeline_observability :: proc(t: ^testing.T) {
 	testing.expect_value(t, keyframes_status(kf_state), Animator_Status.ACTIVE)
 
 	tween_state := compose_tween(0, 10, 1.0)
-	tracks := [1]Timeline_Track_Spec(f32){timeline_track_spec("main", 0, tween_stepper(&tween_state), 0)}
+	tracks := [1]Timeline_Track_Spec(f32) {
+		Timeline_Track_Spec(f32) {
+			name = "main",
+			offset = 0,
+			stepper = tween_stepper(&tween_state),
+			hold_value = 0,
+		},
+	}
 	timeline_state: Timeline_State(f32)
 	_ = init_timeline_f32(&timeline_state, tracks[:])
 	defer timeline_destroy(timeline_state)
 	_ = step_timeline(&timeline_state, 0.25)
 
 	expect_close(t, timeline_elapsed(timeline_state), 0.25)
-	testing.expect(t, timeline_is_active(timeline_state, anim))
-	testing.expect(t, !timeline_is_idle(timeline_state, anim))
-	testing.expect_value(t, timeline_status(timeline_state, anim), Animator_Status.ACTIVE)
+	testing.expect(
+		t,
+		timeline_is_active(
+			Timeline_Is_Finished_Params(f32) {
+				state = timeline_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	testing.expect(
+		t,
+		!timeline_is_idle(
+			Timeline_Is_Finished_Params(f32) {
+				state = timeline_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	testing.expect_value(
+		t,
+		timeline_status(
+			Timeline_Is_Finished_Params(f32) {
+				state = timeline_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		Animator_Status.ACTIVE,
+	)
 }
 
 @(test)
@@ -3357,30 +5681,111 @@ delay_and_compose_observability :: proc(t: ^testing.T) {
 	anim := F32_Animatable()
 	child := compose_tween(0, 10, 1.0)
 	delay_state: Delay_State(f32)
-	delay_init(&delay_state, tween_stepper(&child), 0.4, 0)
+	delay_init(
+		Delay_Init_Params(f32) {
+			state = &delay_state,
+			child = tween_stepper(&child),
+			delay = 0.4,
+			hold_value = 0,
+		},
+	)
 
-	_ = delay_step(&delay_state, 0.2, anim)
+	_ = delay_step(
+		Delay_Step_Params(f32) {
+			state = &delay_state,
+			dt = 0.2,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, delay_elapsed(delay_state), 0.2)
 	expect_close(t, delay_progress(delay_state), 0.5)
-	testing.expect(t, delay_is_active(delay_state, anim))
-	testing.expect(t, !delay_is_idle(delay_state, anim))
+	testing.expect(
+		t,
+		delay_is_active(
+			Delay_Is_Finished_Params(f32) {
+				state = delay_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
+	testing.expect(
+		t,
+		!delay_is_idle(
+			Delay_Is_Finished_Params(f32) {
+				state = delay_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+	)
 
 	par_a := compose_tween(0, 10, 1.0)
 	par_b := compose_tween(0, 20, 2.0)
 	par_steppers := [2]Stepper(f32){tween_stepper(&par_a), tween_stepper(&par_b)}
 	parallel_state: Parallel_State(f32)
-	parallel_init(&parallel_state, par_steppers[:], 0)
-	_ = parallel_step(&parallel_state, 0.25, anim)
-	expect_close(t, parallel_progress(parallel_state, anim), 0.25)
+	parallel_init(
+		Parallel_Init_Params(f32) {
+			state = &parallel_state,
+			children = par_steppers[:],
+			primary_index = 0,
+		},
+	)
+	_ = parallel_step(
+		Parallel_Step_Params(f32) {
+			state = &parallel_state,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		parallel_progress(
+			Parallel_Is_Finished_Params(f32) {
+				state = parallel_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.25,
+	)
 
 	stag_a := compose_tween(0, 10, 0.5)
 	stag_children := [1]Stepper(f32){tween_stepper(&stag_a)}
 	stag_holds := [1]f32{0}
 	stagger_state: Stagger_State(f32)
-	_ = stagger_init(&stagger_state, stag_children[:], stag_holds[:], 0.2)
+	_ = stagger_init(
+		Stagger_Init_Params(f32) {
+			state = &stagger_state,
+			children = stag_children[:],
+			hold_values = stag_holds[:],
+			interval = 0.2,
+			primary_index = 0,
+			allocator = context.allocator,
+		},
+	)
 	defer stagger_destroy(stagger_state)
-	_ = stagger_step(&stagger_state, 0.1, anim)
-	expect_close(t, stagger_progress(stagger_state, anim), 0.2)
+	_ = stagger_step(
+		Stagger_Step_Params(f32) {
+			state = &stagger_state,
+			dt = 0.1,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	expect_close(
+		t,
+		stagger_progress(
+			Stagger_Is_Finished_Params(f32) {
+				state = stagger_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.2,
+	)
 }
 
 @(test)
@@ -3388,16 +5793,68 @@ spring_and_decay_status_helpers :: proc(t: ^testing.T) {
 	anim := F32_Animatable()
 
 	spring_state: Spring_State(f32)
-	spring_init(&spring_state, spring_config(f32(10)), 0)
-	testing.expect_value(t, spring_status(spring_state, anim), Animator_Status.ACTIVE)
+	spring_init(
+		Spring_Init_Params(f32) {
+			state = &spring_state,
+			config = Spring_Config(f32){target = f32(10), stiffness = 200, damping = 26, mass = 1},
+			start_value = 0,
+		},
+	)
+	testing.expect_value(
+		t,
+		spring_status(
+			Animatable_Query_Params(f32) {
+				state = &spring_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		Animator_Status.ACTIVE,
+	)
 	_ = run_spring_until_done(&spring_state, 1.0 / 60.0, anim, SPRING_TEST_COMPLETION)
-	testing.expect_value(t, spring_status(spring_state, anim), Animator_Status.IDLE)
+	testing.expect_value(
+		t,
+		spring_status(
+			Animatable_Query_Params(f32) {
+				state = &spring_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		Animator_Status.IDLE,
+	)
 
 	decay_state: Decay_State(f32)
-	decay_init(&decay_state, decay_config(f32(80)), 0)
-	testing.expect_value(t, decay_status(decay_state, anim), Animator_Status.ACTIVE)
+	decay_init(
+		Decay_Init_Params(f32) {
+			state = &decay_state,
+			config = decay_config(f32(80)),
+			start_value = 0,
+		},
+	)
+	testing.expect_value(
+		t,
+		decay_status(
+			Animatable_Query_Params(f32) {
+				state = &decay_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		Animator_Status.ACTIVE,
+	)
 	_ = run_decay_until_done(&decay_state, 1.0 / 60.0, anim, DECAY_TEST_COMPLETION)
-	testing.expect_value(t, decay_status(decay_state, anim), Animator_Status.IDLE)
+	testing.expect_value(
+		t,
+		decay_status(
+			Animatable_Query_Params(f32) {
+				state = &decay_state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		Animator_Status.IDLE,
+	)
 }
 
 @(test)
@@ -3406,23 +5863,54 @@ stepper_query_helpers :: proc(t: ^testing.T) {
 	state := compose_tween(0, 10, 1.0)
 	stepper := tween_stepper(&state)
 
-	_ = stepper_step(stepper, 0.25, anim)
-	testing.expect(t, stepper_has_target(stepper, anim))
-	expect_close(t, stepper_value(stepper, anim), 2.5)
-	testing.expect(t, stepper_is_active(stepper, anim))
-	testing.expect(t, !stepper_is_idle(stepper, anim))
-	testing.expect_value(t, stepper_status(stepper, anim), Animator_Status.ACTIVE)
-	expect_close(t, stepper_progress_from_state(.Tween, &state, anim, DEFAULT_COMPLETION_POLICY), 0.25)
+	_ = stepper_step(
+		Stepper_Step_Params(f32) {
+			stepper = stepper,
+			dt = 0.25,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
+	testing.expect(
+		t,
+		stepper_has_target(Stepper_Query_Params(f32){stepper = stepper, anim = anim}),
+	)
+	expect_close(t, stepper_value(Stepper_Query_Params(f32){stepper = stepper, anim = anim}), 2.5)
+	testing.expect(t, stepper_is_active(Stepper_Query_Params(f32){stepper = stepper, anim = anim}))
+	testing.expect(t, !stepper_is_idle(Stepper_Query_Params(f32){stepper = stepper, anim = anim}))
+	testing.expect_value(
+		t,
+		stepper_status(Stepper_Query_Params(f32){stepper = stepper, anim = anim}),
+		Animator_Status.ACTIVE,
+	)
+	expect_close(
+		t,
+		stepper_progress_from_state(
+			Stepper_Progress_From_State_Params(f32) {
+				tag = .Tween,
+				state = &state,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		),
+		0.25,
+	)
 
-	elapsed, has_elapsed := stepper_elapsed_impl(.Tween, &state, f32)
+	elapsed, has_elapsed := stepper_elapsed_impl(Stepper_Elapsed_Impl_Params(f32){tag = .Tween, state = &state})
 	testing.expect(t, has_elapsed)
 	expect_close(t, elapsed, 0.25)
 
-	target, has_target := stepper_target_impl(.Tween, &state, anim)
+	target, has_target := stepper_target_impl(Stepper_Target_Impl_Params(f32){tag = .Tween, state = &state, anim = anim})
 	testing.expect(t, has_target)
 	expect_close(t, target, 10)
 
-	expect_close(t, stepper_value_impl(.Tween, &state, f32, anim), 2.5)
+	expect_close(
+		t,
+		stepper_value_impl(
+			Stepper_Value_Impl_Params(f32){tag = .Tween, state = &state, anim = anim},
+		),
+		2.5,
+	)
 }
 
 @(test)
@@ -3430,7 +5918,7 @@ debug_assert_and_validate_helpers :: proc(t: ^testing.T) {
 	debug_assert(true, "should not fire")
 	debug_assert_time_policy(DEFAULT_TIME_POLICY)
 	debug_assert_tween_config(tween_f32_config(0, 10, 1.0))
-	debug_assert_spring_config(spring_config(f32(10)))
+	debug_assert_spring_config(spring_default_config(f32(10)))
 	debug_assert_decay_config(decay_config(f32(10)))
 	debug_assert_keyframes_config(Keyframes_Config(f32){})
 
@@ -3445,40 +5933,137 @@ traced_step_and_slot_helpers :: proc(t: ^testing.T) {
 		anim := F32_Animatable()
 
 		tween_state := compose_tween(0, 10, 1.0)
-		_ = tween_step_traced(&tween_state, 0.1, anim)
+		_ = tween_step_traced(
+			Tween_Step_Traced_Params(f32) {
+				state = &tween_state,
+				dt = 0.1,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 
 		spring_state: Spring_State(f32)
-		spring_init(&spring_state, spring_config(f32(10)), 0)
-		_ = spring_step_traced(&spring_state, 1.0 / 60.0, anim)
+		spring_init(
+			Spring_Init_Params(f32) {
+				state = &spring_state,
+				config = Spring_Config(f32) {
+					target = f32(10),
+					stiffness = 200,
+					damping = 26,
+					mass = 1,
+				},
+				start_value = 0,
+			},
+		)
+		_ = spring_step_traced(
+			Spring_Step_Traced_Params(f32) {
+				state = &spring_state,
+				dt = 1.0 / 60.0,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 
-		stops := []Keyframe_Stop(f32){keyframes_stop_duration(f32(10), 1.0)}
+		stops := []Keyframe_Stop(f32){Keyframe_Stop(f32){value = f32(10), duration = 1.0}}
 		kf_config := compile_keyframes_f32(stops)
 		defer keyframes_config_destroy(kf_config)
 		kf_state: Keyframes_State(f32)
 		keyframes_init(&kf_state, kf_config)
-		_ = keyframes_step_traced(&kf_state, 0.1, anim)
+		_ = keyframes_step_traced(
+			Keyframes_Step_Traced_Params(f32) {
+				state = &kf_state,
+				dt = 0.1,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 
 		decay_state: Decay_State(f32)
-		decay_init(&decay_state, decay_config(f32(50)), 0)
-		_ = decay_step_traced(&decay_state, 0.1, anim)
+		decay_init(
+			Decay_Init_Params(f32) {
+				state = &decay_state,
+				config = decay_config(f32(50)),
+				start_value = 0,
+			},
+		)
+		_ = decay_step_traced(
+			Decay_Step_Traced_Params(f32) {
+				state = &decay_state,
+				dt = 0.1,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 
 		stepper := tween_stepper(&tween_state)
-		_ = stepper_step_traced(stepper, 0.1, anim)
+		_ = stepper_step_traced(
+			Stepper_Step_Params(f32){stepper = stepper, dt = 0.1, anim = anim, completion = DEFAULT_COMPLETION_POLICY},
+		)
 
 		slot: Slot(f32)
-		slot_init(&slot, 0, .TWEEN)
-		opts := tween_slot_options(f32(0), 1.0)
-		_ = tween_to_traced(&slot, 10, 0.1, opts, anim)
+		slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+		opts := Tween_Slot_Options(f32) {
+			start        = f32(0),
+			duration     = 1.0,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+			easing       = Ease.LINEAR,
+		}
+		_ = tween_to_traced(
+			Tween_To_Traced_Params(f32) {
+				slot = &slot,
+				target = 10,
+				dt = 0.1,
+				options = opts,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 
-		slot_init(&slot, 0, .SPRING)
-		s_opts := spring_slot_options(f32(0))
-		_ = spring_to_traced(&slot, 10, 0.1, s_opts, anim)
+		slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .SPRING})
+		s_opts := Spring_Slot_Options(f32) {
+			start     = f32(0),
+			stiffness = DEFAULT_SPRING_STIFFNESS,
+			damping   = DEFAULT_SPRING_DAMPING,
+			mass      = DEFAULT_SPRING_MASS,
+		}
+		_ = spring_to_traced(
+			Spring_To_Traced_Params(f32) {
+				slot = &slot,
+				target = 10,
+				dt = 0.1,
+				options = s_opts,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 
-		slot_init(&slot, 0, .TWEEN)
-		_ = transition_to_traced(&slot, 10, 0.1, anim)
+		slot_init(Slot_Init_Params(f32){slot = &slot, value = 0, kind = .TWEEN})
+		_ = transition_to_traced(
+			Transition_To_Traced_Params(f32) {
+				slot = &slot,
+				target = 10,
+				dt = 0.1,
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 
 		trace_emit(Trace_Info(f32){kind = .STEP, tag = .Tween, value = 1})
-		trace_step_result(.Tween, &tween_state, 0.1, Step_Result(f32){value = 1}, anim, DEFAULT_COMPLETION_POLICY)
+		trace_step_result(
+			Trace_Step_Result_Params(f32) {
+				tag = .Tween,
+				state = &tween_state,
+				dt = 0.1,
+				result = Step_Result(f32){value = 1},
+				anim = anim,
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 	}
 }
 
@@ -3496,7 +6081,7 @@ compound_entry_f32_builds_typed_operations :: proc(t: ^testing.T) {
 	expect_close(t, a, 10)
 	entry.scale(&a, &a, 0.5)
 	expect_close(t, a, 5)
-	entry.mix(&a, &a, &b, 0.5)
+	entry.mix(Compound_Mix_Params{dst = &a, a = &a, b = &b, t = 0.5})
 	expect_close(t, a, 7.5)
 	expect_close(t, entry.distance(&a, &b), 2.5)
 	testing.expect(t, entry.has_velocity)
@@ -3514,7 +6099,11 @@ compound_entry_helpers_build_all_builtin_fields :: proc(t: ^testing.T) {
 
 @(test)
 compound_field_ptr_offsets_struct_field :: proc(t: ^testing.T) {
-	style := Panel_Style{opacity = 0.5, offset = {10, 20}, scale = 2}
+	style := Panel_Style {
+		opacity = 0.5,
+		offset  = {10, 20},
+		scale   = 2,
+	}
 	opacity_ptr := (^f32)(compound_field_ptr(&style, offset_of(Panel_Style, opacity)))
 	expect_close(t, opacity_ptr^, 0.5)
 }
@@ -3522,9 +6111,17 @@ compound_field_ptr_offsets_struct_field :: proc(t: ^testing.T) {
 @(test)
 compound_animatable_mixes_fields_independently :: proc(t: ^testing.T) {
 	anim := Panel_Style_Animatable()
-	start := Panel_Style{opacity = 0, offset = {0, 0}, scale = 1}
-	target := Panel_Style{opacity = 1, offset = {10, 20}, scale = 3}
-	mixed := anim.mix(start, target, 0.5)
+	start := Panel_Style {
+		opacity = 0,
+		offset  = {0, 0},
+		scale   = 1,
+	}
+	target := Panel_Style {
+		opacity = 1,
+		offset  = {10, 20},
+		scale   = 3,
+	}
+	mixed := anim.mix({a = start, b = target, t = 0.5})
 	expect_close(t, mixed.opacity, 0.5)
 	expect_vec2_close(t, mixed.offset, Vec2{5, 10})
 	expect_close(t, mixed.scale, 2)
@@ -3534,8 +6131,16 @@ compound_animatable_mixes_fields_independently :: proc(t: ^testing.T) {
 
 @(test)
 compound_ops_and_bind_cover_public_api :: proc(t: ^testing.T) {
-	start := Panel_Style{opacity = 1, offset = {1, 2}, scale = 3}
-	target := Panel_Style{opacity = 0.5, offset = {5, 10}, scale = 2}
+	start := Panel_Style {
+		opacity = 1,
+		offset  = {1, 2},
+		scale   = 3,
+	}
+	target := Panel_Style {
+		opacity = 0.5,
+		offset  = {5, 10},
+		scale   = 2,
+	}
 	entries := panel_style_entries()
 	testing.expect(t, compound_entries_have_velocity(entries[:]))
 
@@ -3543,73 +6148,155 @@ compound_ops_and_bind_cover_public_api :: proc(t: ^testing.T) {
 	expect_close(t, zeroed.opacity, 0)
 	expect_vec2_close(t, zeroed.offset, Vec2{})
 
-	added := compound_add(start, target, entries[:])
-	subbed := compound_sub(added, target, entries[:])
+	added := compound_add(
+		Compound_Add_Params(Panel_Style){a = start, b = target, entries = entries[:]},
+	)
+	subbed := compound_sub(
+		Compound_Sub_Params(Panel_Style){a = added, b = target, entries = entries[:]},
+	)
 	expect_close(t, subbed.opacity, start.opacity)
-	mixed := compound_mix(start, target, 0.5, entries[:])
+	mixed := compound_mix(
+		Compound_Mix_Ops_Params(Panel_Style){a = start, b = target, t = 0.5, entries = entries[:]},
+	)
 	expect_close(t, mixed.opacity, 0.75)
 
-	scaled := compound_scale(start, 2, entries[:])
+	scaled := compound_scale(
+		Compound_Scale_Params(Panel_Style){v = start, s = 2, entries = entries[:]},
+	)
 	expect_close(t, scaled.opacity, 2)
 	expect_vec2_close(t, scaled.offset, Vec2{2, 4})
 	expect_close(t, scaled.scale, 6)
 
 	anim := compound_bind(
-		panel_style_zero,
-		panel_style_add,
-		panel_style_sub,
-		panel_style_scale,
-		panel_style_mix,
-		panel_style_distance,
-		.VALUE_TYPE,
+		Compound_Bind_Params(Panel_Style) {
+			zero = panel_style_zero,
+			add = panel_style_add,
+			sub = panel_style_sub,
+			scale = panel_style_scale,
+			mix = panel_style_mix,
+			distance = panel_style_distance,
+			velocity_support = .VALUE_TYPE,
+		},
 	)
-	expect_close(t, anim.distance(start, Panel_Style{}), compound_distance(start, Panel_Style{}, entries[:]))
+	expect_close(
+		t,
+		anim.distance(start, Panel_Style{}),
+		compound_distance(
+			Compound_Distance_Params(Panel_Style) {
+				a = start,
+				b = Panel_Style{},
+				entries = entries[:],
+			},
+		),
+	)
 }
 
 @(test)
 compound_tween_spring_keyframes_decay_and_slot :: proc(t: ^testing.T) {
 	anim := Panel_Style_Animatable()
-	start := Panel_Style{opacity = 0, offset = {0, 0}, scale = 1}
-	target := Panel_Style{opacity = 1, offset = {10, 0}, scale = 2}
+	start := Panel_Style {
+		opacity = 0,
+		offset  = {0, 0},
+		scale   = 1,
+	}
+	target := Panel_Style {
+		opacity = 1,
+		offset  = {10, 0},
+		scale   = 2,
+	}
 
 	tween_state: Tween_State(Panel_Style)
 	tween_init(
 		&tween_state,
 		Tween_Config(Panel_Style){start = start, target = target, duration = 1.0},
 	)
-	tween_result := tween_step(&tween_state, 0.5, anim)
+	tween_result := tween_step(
+		Step_Params(Panel_Style) {
+			state = &tween_state,
+			dt = 0.5,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, tween_result.value.opacity, 0.5)
 	expect_vec2_close(t, tween_result.value.offset, Vec2{5, 0})
 	testing.expect_value(t, tween_result.done, false)
 
 	spring_state: Spring_State(Panel_Style)
-	spring_init(&spring_state, spring_config(target), start)
+	spring_init(
+		Spring_Init_Params(Panel_Style) {
+			state = &spring_state,
+			config = Spring_Config(Panel_Style) {
+				target = target,
+				stiffness = 200,
+				damping = 26,
+				mass = 1,
+			},
+			start_value = start,
+		},
+	)
 	spring_result := run_spring_until_done(&spring_state, 1.0 / 60.0, anim, SPRING_TEST_COMPLETION)
 	expect_close(t, spring_result.value.opacity, 1)
 	expect_vec2_close(t, spring_result.value.offset, Vec2{10, 0})
 	testing.expect_value(t, spring_result.done, true)
 
-	stops := []Keyframe_Stop(Panel_Style){keyframes_stop_duration(target, 1.0)}
-	spec := keyframes_spec_duration(start, stops)
+	stops := []Keyframe_Stop(Panel_Style) {
+		Keyframe_Stop(Panel_Style){value = target, duration = 1.0},
+	}
+	spec := Keyframes_Spec(Panel_Style) {
+		start        = start,
+		stops        = stops,
+		timing_mode  = .DURATION,
+		repeat_count = 1,
+		repeat_mode  = .RESTART,
+	}
 	config, err := keyframes_compile(spec)
 	defer keyframes_config_destroy(config)
 	testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
 	keyframe_state: Keyframes_State(Panel_Style)
 	keyframes_init(&keyframe_state, config)
-	keyframe_result := keyframes_step(&keyframe_state, 1.0, anim)
+	keyframe_result := keyframes_step(
+		Step_Params(Panel_Style) {
+			state = &keyframe_state,
+			dt = 1.0,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+		},
+	)
 	expect_close(t, keyframe_result.value.opacity, 1)
 	testing.expect_value(t, keyframe_result.done, true)
 
 	decay_state: Decay_State(Panel_Style)
-	decay_init(&decay_state, decay_config(Panel_Style{opacity = 0, offset = {40, -30}, scale = 0}), start)
+	decay_init(
+		Decay_Init_Params(Panel_Style) {
+			state = &decay_state,
+			config = decay_config(Panel_Style{opacity = 0, offset = {40, -30}, scale = 0}),
+			start_value = start,
+		},
+	)
 	decay_result := run_decay_until_done(&decay_state, 1.0 / 60.0, anim, DECAY_TEST_COMPLETION)
 	testing.expect_value(t, decay_result.done, true)
 	expect_close(t, decay_result.velocity.opacity, 0)
 
 	slot: Slot(Panel_Style)
-	slot_init(&slot, start, .SPRING)
-	spring_opts := spring_slot_options(start)
-	slot_result := spring_to(&slot, target, 1.0 / 60.0, spring_opts, anim)
+	slot_init(Slot_Init_Params(Panel_Style){slot = &slot, value = start, kind = .SPRING})
+	spring_opts := Spring_Slot_Options(Panel_Style) {
+		start     = start,
+		stiffness = DEFAULT_SPRING_STIFFNESS,
+		damping   = DEFAULT_SPRING_DAMPING,
+		mass      = DEFAULT_SPRING_MASS,
+	}
+	slot_result := spring_to(
+		Spring_To_Params(Panel_Style) {
+			slot = &slot,
+			target = target,
+			dt = 1.0 / 60.0,
+			options = spring_opts,
+			anim = anim,
+			completion = DEFAULT_COMPLETION_POLICY,
+			time = DEFAULT_TIME_POLICY,
+		},
+	)
 	testing.expect(t, slot_result.value.opacity > start.opacity)
 }
 
@@ -3627,9 +6314,23 @@ tween_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 				repeat_count = 1,
 			},
 		)
-		result := tween_step(&state, 0.5, Vec3_Animatable())
+		result := tween_step(
+			Step_Params(Vec3) {
+				state = &state,
+				dt = 0.5,
+				anim = Vec3_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec3_close(t, result.value, Vec3{5, 10, 15})
-		result = tween_step(&state, 0.5, Vec3_Animatable())
+		result = tween_step(
+			Step_Params(Vec3) {
+				state = &state,
+				dt = 0.5,
+				anim = Vec3_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec3_close(t, result.value, Vec3{10, 20, 30})
 		testing.expect_value(t, result.done, true)
 	}
@@ -3645,7 +6346,14 @@ tween_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 				repeat_count = 1,
 			},
 		)
-		result := tween_step(&state, 0.5, Vec4_Animatable())
+		result := tween_step(
+			Step_Params(Vec4) {
+				state = &state,
+				dt = 0.5,
+				anim = Vec4_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec4_close(t, result.value, Vec4{2, 4, 6, 8})
 	}
 	{
@@ -3660,7 +6368,14 @@ tween_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 				repeat_count = 1,
 			},
 		)
-		result := tween_step(&state, 0.5, Rect_Animatable())
+		result := tween_step(
+			Step_Params(Rect) {
+				state = &state,
+				dt = 0.5,
+				anim = Rect_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_rect_close(t, result.value, Rect{10, 20, 20, 30})
 	}
 }
@@ -3669,22 +6384,70 @@ tween_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 spring_vec3_vec4_and_rect_reach_target :: proc(t: ^testing.T) {
 	{
 		state: Spring_State(Vec3)
-		spring_init(&state, spring_config(Vec3{3, 6, 9}), Vec3{})
-		result := run_spring_until_done(&state, 1.0 / 60.0, Vec3_Animatable(), SPRING_TEST_COMPLETION)
+		spring_init(
+			Spring_Init_Params(Vec3) {
+				state = &state,
+				config = Spring_Config(Vec3) {
+					target = Vec3{3, 6, 9},
+					stiffness = 200,
+					damping = 26,
+					mass = 1,
+				},
+				start_value = Vec3{},
+			},
+		)
+		result := run_spring_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec3_Animatable(),
+			SPRING_TEST_COMPLETION,
+		)
 		expect_vec3_close(t, result.value, Vec3{3, 6, 9})
 		testing.expect_value(t, result.done, true)
 	}
 	{
 		state: Spring_State(Vec4)
-		spring_init(&state, spring_config(Vec4{1, 2, 3, 4}), Vec4{})
-		result := run_spring_until_done(&state, 1.0 / 60.0, Vec4_Animatable(), SPRING_TEST_COMPLETION)
+		spring_init(
+			Spring_Init_Params(Vec4) {
+				state = &state,
+				config = Spring_Config(Vec4) {
+					target = Vec4{1, 2, 3, 4},
+					stiffness = 200,
+					damping = 26,
+					mass = 1,
+				},
+				start_value = Vec4{},
+			},
+		)
+		result := run_spring_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec4_Animatable(),
+			SPRING_TEST_COMPLETION,
+		)
 		expect_vec4_close(t, result.value, Vec4{1, 2, 3, 4})
 		testing.expect_value(t, result.done, true)
 	}
 	{
 		state: Spring_State(Rect)
-		spring_init(&state, spring_config(Rect{5, 10, 15, 20}), Rect{})
-		result := run_spring_until_done(&state, 1.0 / 60.0, Rect_Animatable(), SPRING_TEST_COMPLETION)
+		spring_init(
+			Spring_Init_Params(Rect) {
+				state = &state,
+				config = Spring_Config(Rect) {
+					target = Rect{5, 10, 15, 20},
+					stiffness = 200,
+					damping = 26,
+					mass = 1,
+				},
+				start_value = Rect{},
+			},
+		)
+		result := run_spring_until_done(
+			&state,
+			1.0 / 60.0,
+			Rect_Animatable(),
+			SPRING_TEST_COMPLETION,
+		)
 		expect_rect_close(t, result.value, Rect{5, 10, 15, 20})
 		testing.expect_value(t, result.done, true)
 	}
@@ -3693,38 +6456,83 @@ spring_vec3_vec4_and_rect_reach_target :: proc(t: ^testing.T) {
 @(test)
 keyframes_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 	{
-		stops := []Keyframe_Stop(Vec3){keyframes_stop_duration(Vec3{9, 18, 27}, 1.0)}
-		spec := keyframes_spec_duration(Vec3{}, stops)
+		stops := []Keyframe_Stop(Vec3) {
+			Keyframe_Stop(Vec3){value = Vec3{9, 18, 27}, duration = 1.0},
+		}
+		spec := Keyframes_Spec(Vec3) {
+			start        = Vec3{},
+			stops        = stops,
+			timing_mode  = .DURATION,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+		}
 		config, err := keyframes_compile(spec)
 		defer keyframes_config_destroy(config)
 		testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
 		state: Keyframes_State(Vec3)
 		keyframes_init(&state, config)
-		result := keyframes_step(&state, 1.0, Vec3_Animatable())
+		result := keyframes_step(
+			Step_Params(Vec3) {
+				state = &state,
+				dt = 1.0,
+				anim = Vec3_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec3_close(t, result.value, Vec3{9, 18, 27})
 		testing.expect_value(t, result.done, true)
 	}
 	{
-		stops := []Keyframe_Stop(Vec4){keyframes_stop_duration(Vec4{4, 8, 12, 16}, 1.0)}
-		spec := keyframes_spec_duration(Vec4{}, stops)
+		stops := []Keyframe_Stop(Vec4) {
+			Keyframe_Stop(Vec4){value = Vec4{4, 8, 12, 16}, duration = 1.0},
+		}
+		spec := Keyframes_Spec(Vec4) {
+			start        = Vec4{},
+			stops        = stops,
+			timing_mode  = .DURATION,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+		}
 		config, err := keyframes_compile(spec)
 		defer keyframes_config_destroy(config)
 		testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
 		state: Keyframes_State(Vec4)
 		keyframes_init(&state, config)
-		result := keyframes_step(&state, 1.0, Vec4_Animatable())
+		result := keyframes_step(
+			Step_Params(Vec4) {
+				state = &state,
+				dt = 1.0,
+				anim = Vec4_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec4_close(t, result.value, Vec4{4, 8, 12, 16})
 		testing.expect_value(t, result.done, true)
 	}
 	{
-		stops := []Keyframe_Stop(Rect){keyframes_stop_duration(Rect{10, 20, 30, 40}, 1.0)}
-		spec := keyframes_spec_duration(Rect{}, stops)
+		stops := []Keyframe_Stop(Rect) {
+			Keyframe_Stop(Rect){value = Rect{10, 20, 30, 40}, duration = 1.0},
+		}
+		spec := Keyframes_Spec(Rect) {
+			start        = Rect{},
+			stops        = stops,
+			timing_mode  = .DURATION,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+		}
 		config, err := keyframes_compile(spec)
 		defer keyframes_config_destroy(config)
 		testing.expect_value(t, err, Keyframes_Compile_Error.NONE)
 		state: Keyframes_State(Rect)
 		keyframes_init(&state, config)
-		result := keyframes_step(&state, 1.0, Rect_Animatable())
+		result := keyframes_step(
+			Step_Params(Rect) {
+				state = &state,
+				dt = 1.0,
+				anim = Rect_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_rect_close(t, result.value, Rect{10, 20, 30, 40})
 		testing.expect_value(t, result.done, true)
 	}
@@ -3734,22 +6542,55 @@ keyframes_vec3_vec4_and_rect_complete :: proc(t: ^testing.T) {
 decay_vec3_vec4_and_rect_reach_rest :: proc(t: ^testing.T) {
 	{
 		state: Decay_State(Vec3)
-		decay_init(&state, decay_config(Vec3{30, -20, 10}, 0.4), Vec3{1, 2, 3})
-		result := run_decay_until_done(&state, 1.0 / 60.0, Vec3_Animatable(), DECAY_TEST_COMPLETION)
+		decay_init(
+			Decay_Init_Params(Vec3) {
+				state = &state,
+				config = decay_config(Vec3{30, -20, 10}, 0.4),
+				start_value = Vec3{1, 2, 3},
+			},
+		)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec3_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		testing.expect_value(t, result.done, true)
 		expect_vec3_close(t, result.velocity, Vec3{})
 	}
 	{
 		state: Decay_State(Vec4)
-		decay_init(&state, decay_config(Vec4{20, -10, 5, -5}, 0.35), Vec4{})
-		result := run_decay_until_done(&state, 1.0 / 60.0, Vec4_Animatable(), DECAY_TEST_COMPLETION)
+		decay_init(
+			Decay_Init_Params(Vec4) {
+				state = &state,
+				config = decay_config(Vec4{20, -10, 5, -5}, 0.35),
+				start_value = Vec4{},
+			},
+		)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec4_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		testing.expect_value(t, result.done, true)
 		expect_vec4_close(t, result.velocity, Vec4{})
 	}
 	{
 		state: Decay_State(Rect)
-		decay_init(&state, decay_config(Rect{50, -25, 10, -10}, 0.3), Rect{})
-		result := run_decay_until_done(&state, 1.0 / 60.0, Rect_Animatable(), DECAY_TEST_COMPLETION)
+		decay_init(
+			Decay_Init_Params(Rect) {
+				state = &state,
+				config = decay_config(Rect{50, -25, 10, -10}, 0.3),
+				start_value = Rect{},
+			},
+		)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Rect_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		testing.expect_value(t, result.done, true)
 		expect_rect_close(t, result.velocity, Rect{})
 	}
@@ -3760,51 +6601,72 @@ decay_vec3_vec4_and_rect_bounded_clamp :: proc(t: ^testing.T) {
 	{
 		state: Decay_State(Vec3)
 		decay_init(
-			&state,
-			decay_config_bounded(
-				Vec3{200, -200, 100},
-				Vec3{-5, -5, 0},
-				Vec3{5, 5, 10},
-				0.25,
-				.CLAMP,
-			),
-			Vec3{},
+			Decay_Init_Params(Vec3) {
+				state = &state,
+				config = Decay_Config(Vec3) {
+					initial_velocity = Vec3{200, -200, 100},
+					bounds_min = Vec3{-5, -5, 0},
+					bounds_max = Vec3{5, 5, 10},
+					time_constant = 0.25,
+					bounds_mode = .CLAMP,
+				},
+				start_value = Vec3{},
+			},
 		)
-		result := run_decay_until_done(&state, 1.0 / 60.0, Vec3_Animatable(), DECAY_TEST_COMPLETION)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec3_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		expect_vec3_close(t, result.value, Vec3{5, -5, 10})
 		testing.expect_value(t, result.done, true)
 	}
 	{
 		state: Decay_State(Vec4)
 		decay_init(
-			&state,
-			decay_config_bounded(
-				Vec4{300, -300, 50, -50},
-				Vec4{0, 0, 0, 0},
-				Vec4{10, 10, 10, 10},
-				0.25,
-				.CLAMP,
-			),
-			Vec4{},
+			Decay_Init_Params(Vec4) {
+				state = &state,
+				config = Decay_Config(Vec4) {
+					initial_velocity = Vec4{300, -300, 50, -50},
+					bounds_min = Vec4{0, 0, 0, 0},
+					bounds_max = Vec4{10, 10, 10, 10},
+					time_constant = 0.25,
+					bounds_mode = .CLAMP,
+				},
+				start_value = Vec4{},
+			},
 		)
-		result := run_decay_until_done(&state, 1.0 / 60.0, Vec4_Animatable(), DECAY_TEST_COMPLETION)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Vec4_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		expect_vec4_close(t, result.value, Vec4{10, 0, 10, 0})
 		testing.expect_value(t, result.done, true)
 	}
 	{
 		state: Decay_State(Rect)
 		decay_init(
-			&state,
-			decay_config_bounded(
-				Rect{0, 0, 500, 0},
-				Rect{0, 0, 0, 0},
-				Rect{20, 20, 40, 40},
-				0.25,
-				.CLAMP,
-			),
-			Rect{},
+			Decay_Init_Params(Rect) {
+				state = &state,
+				config = Decay_Config(Rect) {
+					initial_velocity = Rect{0, 0, 500, 0},
+					bounds_min = Rect{0, 0, 0, 0},
+					bounds_max = Rect{20, 20, 40, 40},
+					time_constant = 0.25,
+					bounds_mode = .CLAMP,
+				},
+				start_value = Rect{},
+			},
 		)
-		result := run_decay_until_done(&state, 1.0 / 60.0, Rect_Animatable(), DECAY_TEST_COMPLETION)
+		result := run_decay_until_done(
+			&state,
+			1.0 / 60.0,
+			Rect_Animatable(),
+			DECAY_TEST_COMPLETION,
+		)
 		expect_rect_close(t, result.value, Rect{0, 0, 40, 0})
 		testing.expect_value(t, result.done, true)
 	}
@@ -3813,70 +6675,151 @@ decay_vec3_vec4_and_rect_bounded_clamp :: proc(t: ^testing.T) {
 @(test)
 decay_bounds_helpers_cover_vec3_vec4_and_rect :: proc(t: ^testing.T) {
 	v3, vel3 := decay_apply_bounds_vec3(
-		Vec3{-1, 6, 0},
-		Vec3{-20, 30, 10},
-		Vec3{0, 0, 0},
-		Vec3{5, 5, 5},
-		.BOUNCE,
-		0.5,
+		Decay_Apply_Bounds_Vector_Params(Vec3) {
+			value = Vec3{-1, 6, 0},
+			velocity = Vec3{-20, 30, 10},
+			bounds_min = Vec3{0, 0, 0},
+			bounds_max = Vec3{5, 5, 5},
+			mode = .BOUNCE,
+			bounce = 0.5,
+		},
 	)
 	expect_close(t, v3.x, 0)
 	testing.expect(t, vel3.x > 0)
 
 	v4, vel4 := decay_apply_bounds_vec4(
-		Vec4{6, 0, 0, 0},
-		Vec4{10, 0, 0, 0},
-		Vec4{0, 0, 0, 0},
-		Vec4{5, 5, 5, 5},
-		.CLAMP,
-		0.5,
+		Decay_Apply_Bounds_Vector_Params(Vec4) {
+			value = Vec4{6, 0, 0, 0},
+			velocity = Vec4{10, 0, 0, 0},
+			bounds_min = Vec4{0, 0, 0, 0},
+			bounds_max = Vec4{5, 5, 5, 5},
+			mode = .CLAMP,
+			bounce = 0.5,
+		},
 	)
 	expect_close(t, v4.x, 5)
 	testing.expect_value(t, vel4.x, 0)
 
 	rect, vel_rect := decay_apply_bounds_rect(
-		Rect{0, 11, 0, 0},
-		Rect{0, 40, 0, 0},
-		Rect{0, 0, 0, 0},
-		Rect{10, 10, 10, 10},
-		.CLAMP,
-		0.5,
+		Decay_Apply_Bounds_Vector_Params(Rect) {
+			value = Rect{0, 11, 0, 0},
+			velocity = Rect{0, 40, 0, 0},
+			bounds_min = Rect{0, 0, 0, 0},
+			bounds_max = Rect{10, 10, 10, 10},
+			mode = .CLAMP,
+			bounce = 0.5,
+		},
 	)
 	expect_close(t, rect.y, 10)
 	testing.expect_value(t, vel_rect.y, 0)
 
-	config := decay_config_bounded(Vec3{0, 0, 0}, Vec3{0, 0, 0}, Vec3{5, 5, 5}, 0.25, .CLAMP)
-	expect_vec3_close(t, decay_snap_bounded_at_rest(Vec3{4.9999, 0, 0}, config), Vec3{5, 0, 0}, 1e-3)
+	config := Decay_Config(Vec3) {
+		initial_velocity = Vec3{},
+		bounds_min       = Vec3{},
+		bounds_max       = Vec3{5, 5, 5},
+		time_constant    = 0.25,
+		bounds_mode      = .CLAMP,
+	}
+	expect_vec3_close(
+		t,
+		decay_snap_bounded_at_rest(Decay_Snap_Bounded_At_Rest_Params(Vec3){value = Vec3{4.9999, 0, 0}, config = config, epsilon = DEFAULT_DISTANCE_EPSILON}),
+		Vec3{5, 0, 0},
+		1e-3,
+	)
 
-	value, velocity := decay_apply_bounds_axis(-2, -30, 0, 10, .BOUNCE, 0.5)
+	value, velocity := decay_apply_bounds_axis(
+		Decay_Apply_Bounds_Axis_Params {
+			value = -2,
+			velocity = -30,
+			bounds_min = 0,
+			bounds_max = 10,
+			mode = .BOUNCE,
+			bounce = 0.5,
+		},
+	)
 	expect_close(t, value, 0)
 	testing.expect(t, velocity > 0)
-	expect_close(t, decay_snap_axis_at_rest(9.9999, 0, 10, 1e-3), 10)
+	expect_close(
+		t,
+		decay_snap_axis_at_rest(
+			Decay_Snap_Axis_At_Rest_Params {
+				value = 9.9999,
+				bounds_min = 0,
+				bounds_max = 10,
+				epsilon = 1e-3,
+			},
+		),
+		10,
+	)
 }
 
 @(test)
 slot_vec3_vec4_and_rect_transitions :: proc(t: ^testing.T) {
 	{
 		slot: Slot(Vec3)
-		slot_init(&slot, Vec3{}, .TWEEN)
-		opts := tween_slot_options(Vec3{}, 1.0)
-		result := tween_to(&slot, Vec3{6, 9, 12}, 0.5, opts, Vec3_Animatable())
+		slot_init(Slot_Init_Params(Vec3){slot = &slot, value = Vec3{}, kind = .TWEEN})
+		opts := Tween_Slot_Options(Vec3) {
+			start        = Vec3{},
+			duration     = 1.0,
+			easing       = Ease.LINEAR,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+		}
+		result := tween_to(
+			Tween_To_Params(Vec3) {
+				slot = &slot,
+				target = Vec3{6, 9, 12},
+				dt = 0.5,
+				options = opts,
+				anim = Vec3_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_vec3_close(t, result.value, Vec3{3, 4.5, 6})
 	}
 	{
 		slot: Slot(Vec4)
-		slot_init(&slot, Vec4{}, .SPRING)
-		opts := spring_slot_options(Vec4{})
-		result := spring_to(&slot, Vec4{4, 8, 12, 16}, 1.0 / 60.0, opts, Vec4_Animatable())
+		slot_init(Slot_Init_Params(Vec4){slot = &slot, value = Vec4{}, kind = .SPRING})
+		opts := Spring_Slot_Options(Vec4) {
+			start     = Vec4{},
+			stiffness = DEFAULT_SPRING_STIFFNESS,
+			damping   = DEFAULT_SPRING_DAMPING,
+			mass      = DEFAULT_SPRING_MASS,
+		}
+		result := spring_to(
+			Spring_To_Params(Vec4) {
+				slot = &slot,
+				target = Vec4{4, 8, 12, 16},
+				dt = 1.0 / 60.0,
+				options = opts,
+				anim = Vec4_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+				time = DEFAULT_TIME_POLICY,
+			},
+		)
 		testing.expect(t, result.value.x > 0)
 	}
 	{
 		slot: Slot(Rect)
-		slot_init(&slot, Rect{}, .TWEEN)
-		opts := tween_slot_options(Rect{}, 1.0)
-		result := tween_to(&slot, Rect{20, 40, 60, 80}, 1.0, opts, Rect_Animatable())
+		slot_init(Slot_Init_Params(Rect){slot = &slot, value = Rect{}, kind = .TWEEN})
+		opts := Tween_Slot_Options(Rect) {
+			start        = Rect{},
+			duration     = 1.0,
+			easing       = Ease.LINEAR,
+			repeat_count = 1,
+			repeat_mode  = .RESTART,
+		}
+		result := tween_to(
+			Tween_To_Params(Rect) {
+				slot = &slot,
+				target = Rect{20, 40, 60, 80},
+				dt = 1.0,
+				options = opts,
+				anim = Rect_Animatable(),
+				completion = DEFAULT_COMPLETION_POLICY,
+			},
+		)
 		expect_rect_close(t, result.value, Rect{20, 40, 60, 80})
 		testing.expect_value(t, result.done, true)
 	}
 }
-

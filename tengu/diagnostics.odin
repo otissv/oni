@@ -43,6 +43,108 @@ Trace_Info :: struct($T: typeid) {
 	done:        bool,
 }
 
+Set_Animation_Trace_Hook_Params :: struct($T: typeid) {
+	callback:  proc(info: Trace_Info(T), user_data: rawptr),
+	user_data: rawptr,
+}
+
+Trace_Step_Result_Params :: struct($T: typeid) {
+	tag:        Stepper_Tag,
+	state:      rawptr,
+	dt:         f32,
+	result:     Step_Result(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Stepper_Query_Params :: struct($T: typeid) {
+	stepper:    Stepper(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Stepper_Value_Impl_Params :: struct($T: typeid) {
+	tag:   Stepper_Tag,
+	state: rawptr,
+	anim:  Animatable(T),
+}
+
+Stepper_Elapsed_Impl_Params :: struct($T: typeid) {
+	tag:   Stepper_Tag,
+	state: rawptr,
+}
+
+Stepper_Target_Impl_Params :: struct($T: typeid) {
+	tag:   Stepper_Tag,
+	state: rawptr,
+	anim:  Animatable(T),
+}
+
+Stepper_Progress_From_State_Params :: struct($T: typeid) {
+	tag:        Stepper_Tag,
+	state:      rawptr,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Tween_Step_Traced_Params :: struct($T: typeid) {
+	state:      ^Tween_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Spring_Step_Traced_Params :: struct($T: typeid) {
+	state:      ^Spring_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
+Keyframes_Step_Traced_Params :: struct($T: typeid) {
+	state:      ^Keyframes_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Decay_Step_Traced_Params :: struct($T: typeid) {
+	state:      ^Decay_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
+Tween_To_Traced_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	options:    Tween_Slot_Options(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Spring_To_Traced_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	options:    Spring_Slot_Options(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
+Transition_To_Traced_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
 @(private)
 trace_type_id: typeid
 
@@ -58,15 +160,11 @@ debug_assert :: proc(condition: bool, message: string) {
 	}
 }
 
-set_animation_trace_hook :: proc(
-	$T: typeid,
-	callback: proc(info: Trace_Info(T), user_data: rawptr),
-	user_data: rawptr = nil,
-) {
+set_animation_trace_hook :: proc($T: typeid, p: Set_Animation_Trace_Hook_Params(T)) {
 	when ODIN_DEBUG {
 		trace_type_id = T
-		trace_callback = rawptr(callback)
-		trace_user_data = user_data
+		trace_callback = rawptr(p.callback)
+		trace_user_data = p.user_data
 	}
 }
 
@@ -89,27 +187,20 @@ trace_emit :: proc(info: Trace_Info($T)) {
 }
 
 @(private)
-trace_step_result :: proc(
-	tag: Stepper_Tag,
-	state: rawptr,
-	dt: f32,
-	result: Step_Result($T),
-	anim: Animatable(T),
-	completion: Completion_Policy,
-) {
+trace_step_result :: proc(p: Trace_Step_Result_Params($T)) {
 	when ODIN_DEBUG {
 		if trace_callback == nil do return
 
 		info := Trace_Info(T) {
 			kind     = .STEP,
-			tag      = tag,
-			dt       = dt,
-			value    = result.value,
-			done     = result.done,
-			progress = stepper_progress_from_state(tag, state, anim, completion),
+			tag      = p.tag,
+			dt       = p.dt,
+			value    = p.result.value,
+			done     = p.result.done,
+			progress = stepper_progress_from_state(Stepper_Progress_From_State_Params(T){tag = p.tag, state = p.state, anim = p.anim, completion = p.completion}),
 		}
-		info.elapsed, info.has_elapsed = stepper_elapsed_impl(tag, state, T)
-		info.target, info.has_target = stepper_target_impl(tag, state, anim)
+		info.elapsed, info.has_elapsed = stepper_elapsed_impl(Stepper_Elapsed_Impl_Params(T){tag = p.tag, state = p.state})
+		info.target, info.has_target = stepper_target_impl(Stepper_Target_Impl_Params(T){tag = p.tag, state = p.state, anim = p.anim})
 		trace_emit(info)
 	}
 }
@@ -139,74 +230,42 @@ spring_target :: proc(state: Spring_State($T)) -> T {
 	return state.config.target
 }
 
-spring_is_idle :: proc(
-	state: Spring_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return spring_is_at_rest(state, anim, completion)
+spring_is_idle :: proc(p: Animatable_Query_Params($T)) -> bool {
+	return spring_is_at_rest(p)
 }
 
-spring_is_active :: proc(
-	state: Spring_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return !spring_is_idle(state, anim, completion)
+spring_is_active :: proc(p: Animatable_Query_Params($T)) -> bool {
+	return !spring_is_idle(p)
 }
 
-spring_status :: proc(
-	state: Spring_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Animator_Status {
-	if spring_is_idle(state, anim, completion) do return .IDLE
+spring_status :: proc(p: Animatable_Query_Params($T)) -> Animator_Status {
+	if spring_is_idle(p) do return .IDLE
 	return .ACTIVE
 }
 
 /*
 Motion primitives report `1` at rest and `0` while moving.
 */
-spring_progress :: proc(
-	state: Spring_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	if spring_is_idle(state, anim, completion) do return 1
+spring_progress :: proc(p: Animatable_Query_Params($T)) -> f32 {
+	if spring_is_idle(p) do return 1
 	return 0
 }
 
-decay_is_idle :: proc(
-	state: Decay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return decay_is_at_rest(state, anim, completion)
+decay_is_idle :: proc(p: Animatable_Query_Params($T)) -> bool {
+	return decay_is_at_rest(p)
 }
 
-decay_is_active :: proc(
-	state: Decay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return !decay_is_idle(state, anim, completion)
+decay_is_active :: proc(p: Animatable_Query_Params($T)) -> bool {
+	return !decay_is_idle(p)
 }
 
-decay_status :: proc(
-	state: Decay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Animator_Status {
-	if decay_is_idle(state, anim, completion) do return .IDLE
+decay_status :: proc(p: Animatable_Query_Params($T)) -> Animator_Status {
+	if decay_is_idle(p) do return .IDLE
 	return .ACTIVE
 }
 
-decay_progress :: proc(
-	state: Decay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	if decay_is_idle(state, anim, completion) do return 1
+decay_progress :: proc(p: Animatable_Query_Params($T)) -> f32 {
+	if decay_is_idle(p) do return 1
 	return 0
 }
 
@@ -235,28 +294,16 @@ timeline_elapsed :: proc(state: Timeline_State($T)) -> f32 {
 	return state.elapsed
 }
 
-timeline_is_idle :: proc(
-	state: Timeline_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return timeline_is_finished(state, anim, completion)
+timeline_is_idle :: proc(p: Timeline_Is_Finished_Params($T)) -> bool {
+	return timeline_is_finished(p)
 }
 
-timeline_is_active :: proc(
-	state: Timeline_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return !timeline_is_idle(state, anim, completion)
+timeline_is_active :: proc(p: Timeline_Is_Finished_Params($T)) -> bool {
+	return !timeline_is_idle(p)
 }
 
-timeline_status :: proc(
-	state: Timeline_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Animator_Status {
-	if timeline_is_idle(state, anim, completion) do return .IDLE
+timeline_status :: proc(p: Timeline_Is_Finished_Params($T)) -> Animator_Status {
+	if timeline_is_idle(p) do return .IDLE
 	return .ACTIVE
 }
 
@@ -269,77 +316,53 @@ delay_progress :: proc(state: Delay_State($T)) -> f32 {
 	return clamp01(state.elapsed / state.delay)
 }
 
-delay_is_idle :: proc(
-	state: Delay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return delay_is_finished(state, anim, completion)
+delay_is_idle :: proc(p: Delay_Is_Finished_Params($T)) -> bool {
+	return delay_is_finished(p)
 }
 
-delay_is_active :: proc(
-	state: Delay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return !delay_is_idle(state, anim, completion)
+delay_is_active :: proc(p: Delay_Is_Finished_Params($T)) -> bool {
+	return !delay_is_idle(p)
 }
 
-repeat_progress :: proc(
-	state: Repeat_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	if repeat_is_infinite(state.repeat_count) do return 0
+repeat_progress :: proc(p: Repeat_Is_Finished_Params($T)) -> f32 {
+	if repeat_is_infinite(p.state.repeat_count) do return 0
 
-	total := f32(state.repeat_count)
+	total := f32(p.state.repeat_count)
 	if total <= 0 do return 1
 
-	child_progress := stepper_progress(state.child, anim, completion)
-	return clamp01((f32(state.cycles_done) + child_progress) / total)
+	child_progress := stepper_progress(Stepper_Query_Params(T){stepper = p.state.child, anim = p.anim, completion = p.completion})
+	return clamp01((f32(p.state.cycles_done) + child_progress) / total)
 }
 
-sequence_progress :: proc(
-	state: Sequence_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	count := len(state.children)
+sequence_progress :: proc(p: Sequence_Is_Finished_Params($T)) -> f32 {
+	count := len(p.state.children)
 	if count == 0 do return 1
-	if state.index >= count do return 1
+	if p.state.index >= count do return 1
 
-	completed := f32(state.index)
-	child_progress := stepper_progress(state.children[state.index], anim, completion)
+	completed := f32(p.state.index)
+	child_progress := stepper_progress(Stepper_Query_Params(T){stepper = p.state.children[p.state.index], anim = p.anim, completion = p.completion})
 	return clamp01((completed + child_progress) / f32(count))
 }
 
-parallel_progress :: proc(
-	state: Parallel_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	if len(state.children) == 0 do return 1
+parallel_progress :: proc(p: Parallel_Is_Finished_Params($T)) -> f32 {
+	if len(p.state.children) == 0 do return 1
 
-	primary := state.primary_index
-	if primary < 0 || primary >= len(state.children) do primary = 0
-	return stepper_progress(state.children[primary], anim, completion)
+	primary := p.state.primary_index
+	if primary < 0 || primary >= len(p.state.children) do primary = 0
+	return stepper_progress(Stepper_Query_Params(T){stepper = p.state.children[primary], anim = p.anim, completion = p.completion})
 }
 
-stagger_progress :: proc(
-	state: Stagger_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	if len(state.delays) == 0 do return 1
+stagger_progress :: proc(p: Stagger_Is_Finished_Params($T)) -> f32 {
+	if len(p.state.delays) == 0 do return 1
 
-	primary := state.primary_index
-	if primary < 0 || primary >= len(state.delays) do primary = 0
+	primary := p.state.primary_index
+	if primary < 0 || primary >= len(p.state.delays) do primary = 0
 
-	delay := state.delays[primary]
+	delay := p.state.delays[primary]
 	if delay.elapsed < delay.delay {
-		return delay_progress(delay) / f32(len(state.delays))
+		return delay_progress(delay) / f32(len(p.state.delays))
 	}
-	return stepper_progress(delay.child, anim, completion)
+	return stepper_progress(Stepper_Query_Params(T){stepper = delay.child, anim = p.anim, completion = p.completion})
 }
 
 slot_elapsed :: proc(slot: Slot($T)) -> f32 {
@@ -353,17 +376,14 @@ slot_elapsed :: proc(slot: Slot($T)) -> f32 {
 	unreachable()
 }
 
-slot_progress :: proc(
-	slot: Slot($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
+slot_progress :: proc(p: Animatable_Query_Params($T)) -> f32 {
+	slot := (^Slot(T))(p.state)
 	if !slot.active do return 1
 	switch slot.kind {
 	case .TWEEN:
 		return tween_progress(slot.tween)
 	case .SPRING:
-		return spring_progress(slot.spring, anim, completion)
+		return spring_progress(p)
 	}
 	unreachable()
 }
@@ -390,16 +410,16 @@ Animator_Snapshot :: struct($T: typeid) {
 }
 
 @(private)
-stepper_elapsed_impl :: proc(tag: Stepper_Tag, state: rawptr, $T: typeid) -> (elapsed: f32, has_elapsed: bool) {
-	switch tag {
+stepper_elapsed_impl :: proc(p: Stepper_Elapsed_Impl_Params($T)) -> (elapsed: f32, has_elapsed: bool) {
+	switch p.tag {
 	case .Tween:
-		return (^Tween_State(T))(state).elapsed, true
+		return (^Tween_State(T))(p.state).elapsed, true
 	case .Keyframes:
-		return (^Keyframes_State(T))(state).elapsed, true
+		return (^Keyframes_State(T))(p.state).elapsed, true
 	case .Timeline:
-		return (^Timeline_State(T))(state).elapsed, true
+		return (^Timeline_State(T))(p.state).elapsed, true
 	case .Delay:
-		return (^Delay_State(T))(state).elapsed, true
+		return (^Delay_State(T))(p.state).elapsed, true
 	case .Spring, .Decay, .Sequence, .Parallel, .Repeat, .Stagger:
 		return 0, false
 	}
@@ -407,15 +427,13 @@ stepper_elapsed_impl :: proc(tag: Stepper_Tag, state: rawptr, $T: typeid) -> (el
 }
 
 @(private)
-stepper_target_impl :: proc(
-	tag: Stepper_Tag,
-	state: rawptr,
-	anim: Animatable($T),
-) -> (
+stepper_target_impl :: proc(p: Stepper_Target_Impl_Params($T)) -> (
 	target: T,
 	has_target: bool,
 ) {
-	switch tag {
+	anim := p.anim
+	state := p.state
+	switch p.tag {
 	case .Tween:
 		return (^Tween_State(T))(state).config.target, true
 	case .Spring:
@@ -429,21 +447,21 @@ stepper_target_impl :: proc(
 		if delay.elapsed < delay.delay {
 			return delay.hold_value, true
 		}
-		return stepper_target(delay.child, anim)
+		return stepper_target(Stepper_Query_Params(T){stepper = delay.child, anim = anim})
 	case .Sequence:
 		sequence := (^Sequence_State(T))(state)
 		if len(sequence.children) == 0 do return anim.zero(), false
 		index := sequence.index
 		if index >= len(sequence.children) do index = len(sequence.children) - 1
-		return stepper_target(sequence.children[index], anim)
+		return stepper_target(Stepper_Query_Params(T){stepper = sequence.children[index], anim = anim})
 	case .Parallel:
 		parallel := (^Parallel_State(T))(state)
 		if len(parallel.children) == 0 do return anim.zero(), false
 		primary := parallel.primary_index
 		if primary < 0 || primary >= len(parallel.children) do primary = 0
-		return stepper_target(parallel.children[primary], anim)
+		return stepper_target(Stepper_Query_Params(T){stepper = parallel.children[primary], anim = anim})
 	case .Repeat:
-		return stepper_target((^Repeat_State(T))(state).child, anim)
+		return stepper_target(Stepper_Query_Params(T){stepper = (^Repeat_State(T))(state).child, anim = anim})
 	case .Stagger:
 		stagger := (^Stagger_State(T))(state)
 		if len(stagger.delays) == 0 do return anim.zero(), false
@@ -453,7 +471,7 @@ stepper_target_impl :: proc(
 		if delay.elapsed < delay.delay {
 			return delay.hold_value, true
 		}
-		return stepper_target(delay.child, anim)
+		return stepper_target(Stepper_Query_Params(T){stepper = delay.child, anim = anim})
 	case .Timeline:
 		return anim.zero(), false
 	}
@@ -461,150 +479,125 @@ stepper_target_impl :: proc(
 }
 
 @(private)
-stepper_value_impl :: proc(tag: Stepper_Tag, state: rawptr, $T: typeid, anim: Animatable(T)) -> T {
-	switch tag {
+stepper_value_impl :: proc(p: Stepper_Value_Impl_Params($T)) -> T {
+	switch p.tag {
 	case .Tween:
-		tween := (^Tween_State(T))(state)
-		return tween_sample_at(tween^, tween.elapsed, anim).value
+		tween := (^Tween_State(T))(p.state)
+		return tween_sample_at(tween^, Sample_At_Params(T){elapsed = tween.elapsed, anim = p.anim, completion = DEFAULT_COMPLETION_POLICY}).value
 	case .Spring:
-		return (^Spring_State(T))(state).value
+		return (^Spring_State(T))(p.state).value
 	case .Keyframes:
-		keyframes := (^Keyframes_State(T))(state)
-		return keyframes_sample_at(keyframes^, keyframes.elapsed, anim).value
+		keyframes := (^Keyframes_State(T))(p.state)
+		return keyframes_sample_at(keyframes^, Sample_At_Params(T){elapsed = keyframes.elapsed, anim = p.anim, completion = DEFAULT_COMPLETION_POLICY}).value
 	case .Decay:
-		return (^Decay_State(T))(state).value
+		return (^Decay_State(T))(p.state).value
 	case .Delay:
-		delay := (^Delay_State(T))(state)
+		delay := (^Delay_State(T))(p.state)
 		if delay.elapsed < delay.delay do return delay.hold_value
-		return stepper_value(delay.child, anim)
+		return stepper_value(Stepper_Query_Params(T){stepper = delay.child, anim = p.anim})
 	case .Sequence:
-		sequence := (^Sequence_State(T))(state)
-		if len(sequence.children) == 0 do return anim.zero()
+		sequence := (^Sequence_State(T))(p.state)
+		if len(sequence.children) == 0 do return p.anim.zero()
 		index := sequence.index
 		if index >= len(sequence.children) do index = len(sequence.children) - 1
-		return stepper_value(sequence.children[index], anim)
+		return stepper_value(Stepper_Query_Params(T){stepper = sequence.children[index], anim = p.anim})
 	case .Parallel:
-		parallel := (^Parallel_State(T))(state)
-		if len(parallel.children) == 0 do return anim.zero()
+		parallel := (^Parallel_State(T))(p.state)
+		if len(parallel.children) == 0 do return p.anim.zero()
 		primary := parallel.primary_index
 		if primary < 0 || primary >= len(parallel.children) do primary = 0
-		return stepper_value(parallel.children[primary], anim)
+		return stepper_value(Stepper_Query_Params(T){stepper = parallel.children[primary], anim = p.anim})
 	case .Repeat:
-		return stepper_value((^Repeat_State(T))(state).child, anim)
+		return stepper_value(Stepper_Query_Params(T){stepper = (^Repeat_State(T))(p.state).child, anim = p.anim})
 	case .Stagger:
-		stagger := (^Stagger_State(T))(state)
-		if len(stagger.delays) == 0 do return anim.zero()
+		stagger := (^Stagger_State(T))(p.state)
+		if len(stagger.delays) == 0 do return p.anim.zero()
 		primary := stagger.primary_index
 		if primary < 0 || primary >= len(stagger.delays) do primary = 0
 		delay := &stagger.delays[primary]
 		if delay.elapsed < delay.delay do return delay.hold_value
-		return stepper_value(delay.child, anim)
+		return stepper_value(Stepper_Query_Params(T){stepper = delay.child, anim = p.anim})
 	case .Timeline:
-		timeline := (^Timeline_State(T))(state)
-		return timeline_sample_at(timeline, timeline.elapsed, anim).value
+		timeline := (^Timeline_State(T))(p.state)
+		return timeline_sample_at(Timeline_Sample_At_Params(T){state = timeline, elapsed = timeline.elapsed, anim = p.anim, completion = DEFAULT_COMPLETION_POLICY}).value
 	}
 	unreachable()
 }
 
 stepper_elapsed :: proc(stepper: Stepper($T)) -> (elapsed: f32, has_elapsed: bool) {
-	return stepper_elapsed_impl(stepper.tag, stepper.state, T)
+	return stepper_elapsed_impl(Stepper_Elapsed_Impl_Params(T){tag = stepper.tag, state = stepper.state})
 }
 
-stepper_has_target :: proc(stepper: Stepper($T), anim: Animatable(T)) -> bool {
-	_, has_target := stepper_target_impl(stepper.tag, stepper.state, anim)
+stepper_has_target :: proc(p: Stepper_Query_Params($T)) -> bool {
+	_, has_target := stepper_target_impl(Stepper_Target_Impl_Params(T){tag = p.stepper.tag, state = p.stepper.state, anim = p.anim})
 	return has_target
 }
 
-stepper_target :: proc(stepper: Stepper($T), anim: Animatable(T)) -> (target: T, has_target: bool) {
-	return stepper_target_impl(stepper.tag, stepper.state, anim)
+stepper_target :: proc(p: Stepper_Query_Params($T)) -> (target: T, has_target: bool) {
+	return stepper_target_impl(Stepper_Target_Impl_Params(T){tag = p.stepper.tag, state = p.stepper.state, anim = p.anim})
 }
 
-stepper_value :: proc(stepper: Stepper($T), anim: Animatable(T)) -> T {
-	return stepper_value_impl(stepper.tag, stepper.state, T, anim)
+stepper_value :: proc(p: Stepper_Query_Params($T)) -> T {
+	return stepper_value_impl(Stepper_Value_Impl_Params(T){tag = p.stepper.tag, state = p.stepper.state, anim = p.anim})
 }
 
-stepper_is_idle :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return stepper_is_done(stepper, anim, completion)
+stepper_is_idle :: proc(p: Stepper_Query_Params($T)) -> bool {
+	return stepper_is_done(Stepper_Is_Done_Params(T){stepper = p.stepper, anim = p.anim, completion = p.completion})
 }
 
-stepper_is_active :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	return !stepper_is_idle(stepper, anim, completion)
+stepper_is_active :: proc(p: Stepper_Query_Params($T)) -> bool {
+	return !stepper_is_idle(p)
 }
 
-stepper_status :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Animator_Status {
-	if stepper_is_idle(stepper, anim, completion) do return .IDLE
+stepper_status :: proc(p: Stepper_Query_Params($T)) -> Animator_Status {
+	if stepper_is_idle(p) do return .IDLE
 	return .ACTIVE
 }
 
-stepper_progress :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> f32 {
-	return stepper_progress_from_state(stepper.tag, stepper.state, anim, completion)
+stepper_progress :: proc(p: Stepper_Query_Params($T)) -> f32 {
+	return stepper_progress_from_state(Stepper_Progress_From_State_Params(T){tag = p.stepper.tag, state = p.stepper.state, anim = p.anim, completion = p.completion})
 }
 
 @(private)
-stepper_progress_from_state :: proc(
-	tag: Stepper_Tag,
-	state: rawptr,
-	anim: Animatable($T),
-	completion: Completion_Policy,
-) -> f32 {
-	switch tag {
+stepper_progress_from_state :: proc(p: Stepper_Progress_From_State_Params($T)) -> f32 {
+	switch p.tag {
 	case .Tween:
-		return tween_progress((^Tween_State(T))(state)^)
+		return tween_progress((^Tween_State(T))(p.state)^)
 	case .Spring:
-		return spring_progress((^Spring_State(T))(state)^, anim, completion)
+		return spring_progress(Animatable_Query_Params(T){state = p.state, anim = p.anim, completion = p.completion})
 	case .Keyframes:
-		return keyframes_progress((^Keyframes_State(T))(state)^)
+		return keyframes_progress((^Keyframes_State(T))(p.state)^)
 	case .Decay:
-		return decay_progress((^Decay_State(T))(state)^, anim, completion)
+		return decay_progress(Animatable_Query_Params(T){state = p.state, anim = p.anim, completion = p.completion})
 	case .Delay:
-		return delay_progress((^Delay_State(T))(state)^)
+		return delay_progress((^Delay_State(T))(p.state)^)
 	case .Sequence:
-		return sequence_progress((^Sequence_State(T))(state)^, anim, completion)
+		return sequence_progress(Sequence_Is_Finished_Params(T){state = (^Sequence_State(T))(p.state)^, anim = p.anim, completion = p.completion})
 	case .Parallel:
-		return parallel_progress((^Parallel_State(T))(state)^, anim, completion)
+		return parallel_progress(Parallel_Is_Finished_Params(T){state = (^Parallel_State(T))(p.state)^, anim = p.anim, completion = p.completion})
 	case .Repeat:
-		return repeat_progress((^Repeat_State(T))(state)^, anim, completion)
+		return repeat_progress(Repeat_Is_Finished_Params(T){state = (^Repeat_State(T))(p.state)^, anim = p.anim, completion = p.completion})
 	case .Stagger:
-		return stagger_progress((^Stagger_State(T))(state)^, anim, completion)
+		return stagger_progress(Stagger_Is_Finished_Params(T){state = (^Stagger_State(T))(p.state)^, anim = p.anim, completion = p.completion})
 	case .Timeline:
-		return timeline_progress((^Timeline_State(T))(state)^)
+		return timeline_progress((^Timeline_State(T))(p.state)^)
 	}
 	unreachable()
 }
 
-stepper_snapshot :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Animator_Snapshot(T) {
-	target, has_target := stepper_target(stepper, anim)
-	elapsed, has_elapsed := stepper_elapsed(stepper)
+stepper_snapshot :: proc(p: Stepper_Query_Params($T)) -> Animator_Snapshot(T) {
+	target, has_target := stepper_target(p)
+	elapsed, has_elapsed := stepper_elapsed(p.stepper)
 	return Animator_Snapshot(T) {
-		tag         = stepper.tag,
-		status      = stepper_status(stepper, anim, completion),
-		progress    = stepper_progress(stepper, anim, completion),
+		tag         = p.stepper.tag,
+		status      = stepper_status(p),
+		progress    = stepper_progress(p),
 		elapsed     = elapsed,
 		has_elapsed = has_elapsed,
-		value       = stepper_value(stepper, anim),
+		value       = stepper_value(p),
 		target      = target,
 		has_target  = has_target,
-		done        = stepper_is_idle(stepper, anim, completion),
+		done        = stepper_is_idle(p),
 	}
 }
 
@@ -664,103 +657,54 @@ debug_assert_stepper :: proc(stepper: Stepper($T)) {
 	debug_assert(stepper.state != nil, "stepper state is nil")
 }
 
-tween_step_traced :: proc(
-	state: ^Tween_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	result := tween_step(state, dt, anim, completion)
-	trace_step_result(.Tween, state, dt, result, anim, completion)
+tween_step_traced :: proc(p: Tween_Step_Traced_Params($T)) -> Step_Result(T) {
+	result := tween_step(Step_Params(T){state = p.state, dt = p.dt, anim = p.anim, completion = p.completion})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Tween, state = p.state, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-spring_step_traced :: proc(
-	state: ^Spring_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	result := spring_step(state, dt, anim, completion, time)
-	trace_step_result(.Spring, state, dt, result, anim, completion)
+spring_step_traced :: proc(p: Spring_Step_Traced_Params($T)) -> Step_Result(T) {
+	result := spring_step(Motion_Step_Params(T){state = p.state, dt = p.dt, anim = p.anim, completion = p.completion, time = p.time})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Spring, state = p.state, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-keyframes_step_traced :: proc(
-	state: ^Keyframes_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	result := keyframes_step(state, dt, anim, completion)
-	trace_step_result(.Keyframes, state, dt, result, anim, completion)
+keyframes_step_traced :: proc(p: Keyframes_Step_Traced_Params($T)) -> Step_Result(T) {
+	result := keyframes_step(Step_Params(T){state = p.state, dt = p.dt, anim = p.anim, completion = p.completion})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Keyframes, state = p.state, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-decay_step_traced :: proc(
-	state: ^Decay_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	result := decay_step(state, dt, anim, completion, time)
-	trace_step_result(.Decay, state, dt, result, anim, completion)
+decay_step_traced :: proc(p: Decay_Step_Traced_Params($T)) -> Step_Result(T) {
+	result := decay_step(Motion_Step_Params(T){state = p.state, dt = p.dt, anim = p.anim, completion = p.completion, time = p.time})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Decay, state = p.state, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-stepper_step_traced :: proc(
-	stepper: Stepper($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	result := stepper_step(stepper, dt, anim, completion)
-	trace_step_result(stepper.tag, stepper.state, dt, result, anim, completion)
+stepper_step_traced :: proc(p: Stepper_Step_Params($T)) -> Step_Result(T) {
+	result := stepper_step(p)
+	trace_step_result(Trace_Step_Result_Params(T){tag = p.stepper.tag, state = p.stepper.state, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-tween_to_traced :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	options: Tween_Slot_Options(T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	result := tween_to(slot, target, dt, options, anim, completion)
-	trace_step_result(.Tween, &slot.tween, dt, result, anim, completion)
+tween_to_traced :: proc(p: Tween_To_Traced_Params($T)) -> Step_Result(T) {
+	result := tween_to(Tween_To_Params(T){slot = p.slot, target = p.target, dt = p.dt, options = p.options, anim = p.anim, completion = p.completion})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Tween, state = &p.slot.tween, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-spring_to_traced :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	options: Spring_Slot_Options(T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	result := spring_to(slot, target, dt, options, anim, completion, time)
-	trace_step_result(.Spring, &slot.spring, dt, result, anim, completion)
+spring_to_traced :: proc(p: Spring_To_Traced_Params($T)) -> Step_Result(T) {
+	result := spring_to(Spring_To_Params(T){slot = p.slot, target = p.target, dt = p.dt, options = p.options, anim = p.anim, completion = p.completion, time = p.time})
+	trace_step_result(Trace_Step_Result_Params(T){tag = .Spring, state = &p.slot.spring, dt = p.dt, result = result, anim = p.anim, completion = p.completion})
 	return result
 }
 
-transition_to_traced :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	switch slot.kind {
+transition_to_traced :: proc(p: Transition_To_Traced_Params($T)) -> Step_Result(T) {
+	switch p.slot.kind {
 	case .TWEEN:
-		return tween_to_traced(slot, target, dt, slot.tween_opts, anim, completion)
+		return tween_to_traced(Tween_To_Traced_Params(T){slot = p.slot, target = p.target, dt = p.dt, options = p.slot.tween_opts, anim = p.anim, completion = p.completion})
 	case .SPRING:
-		return spring_to_traced(slot, target, dt, slot.spring_opts, anim, completion, time)
+		return spring_to_traced(Spring_To_Traced_Params(T){slot = p.slot, target = p.target, dt = p.dt, options = p.slot.spring_opts, anim = p.anim, completion = p.completion, time = p.time})
 	}
 	unreachable()
 }

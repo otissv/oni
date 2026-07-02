@@ -4,7 +4,7 @@ import "core:math"
 
 clamp01 :: proc(v: f32) -> f32 {
 	if !is_finite_f32(v) do return 0
-	return clamp(v, 0, 1)
+	return clamp({v = v, lo = 0, hi = 1})
 }
 
 f32_zero :: proc() -> f32 {
@@ -43,8 +43,8 @@ scale_f32 :: proc(v: f32, s: f32) -> f32 {
 	return v * s
 }
 
-mix_f32 :: proc(a, b: f32, t: f32) -> f32 {
-	return lerp(a, b, t)
+mix_f32 :: proc(p: Mix_Params(f32)) -> f32 {
+	return lerp(Lerp_Params{a = p.a, b = p.b, t = p.t})
 }
 
 distance_f32 :: proc(a, b: f32) -> f32 {
@@ -63,10 +63,10 @@ scale_vec2 :: proc(v: Vec2, s: f32) -> Vec2 {
 	return {v.x * s, v.y * s}
 }
 
-mix_vec2 :: proc(a, b: Vec2, t: f32) -> Vec2 {
+mix_vec2 :: proc(p: Mix_Params(Vec2)) -> Vec2 {
 	return {
-		lerp(a.x, b.x, t),
-		lerp(a.y, b.y, t),
+		lerp(Lerp_Params{a = p.a.x, b = p.b.x, t = p.t}),
+		lerp(Lerp_Params{a = p.a.y, b = p.b.y, t = p.t}),
 	}
 }
 
@@ -88,11 +88,11 @@ scale_vec3 :: proc(v: Vec3, s: f32) -> Vec3 {
 	return {v.x * s, v.y * s, v.z * s}
 }
 
-mix_vec3 :: proc(a, b: Vec3, t: f32) -> Vec3 {
+mix_vec3 :: proc(p: Mix_Params(Vec3)) -> Vec3 {
 	return {
-		lerp(a.x, b.x, t),
-		lerp(a.y, b.y, t),
-		lerp(a.z, b.z, t),
+		lerp(Lerp_Params{a = p.a.x, b = p.b.x, t = p.t}),
+		lerp(Lerp_Params{a = p.a.y, b = p.b.y, t = p.t}),
+		lerp({a = p.a.z, b = p.b.z, t = p.t}),
 	}
 }
 
@@ -115,12 +115,12 @@ scale_vec4 :: proc(v: Vec4, s: f32) -> Vec4 {
 	return {v.x * s, v.y * s, v.z * s, v.w * s}
 }
 
-mix_vec4 :: proc(a, b: Vec4, t: f32) -> Vec4 {
+mix_vec4 :: proc(p: Mix_Params(Vec4)) -> Vec4 {
 	return {
-		lerp(a.x, b.x, t),
-		lerp(a.y, b.y, t),
-		lerp(a.z, b.z, t),
-		lerp(a.w, b.w, t),
+		lerp(Lerp_Params{a = p.a.x, b = p.b.x, t = p.t}),
+		lerp(Lerp_Params{a = p.a.y, b = p.b.y, t = p.t}),
+		lerp({a = p.a.z, b = p.b.z, t = p.t}),
+		lerp({a = p.a.w, b = p.b.w, t = p.t}),
 	}
 }
 
@@ -183,8 +183,8 @@ scale_rgba :: proc(v: RGBA, s: f32) -> RGBA {
 	}
 }
 
-mix_rgba :: proc(a, b: RGBA, t: f32) -> RGBA {
-	return mix_rgba_with_policy(a, b, t, .PREMULTIPLIED_ALPHA)
+mix_rgba :: proc(p: Mix_Params(RGBA)) -> RGBA {
+	return mix_rgba_with_policy({a = p.a, b = p.b, t = p.t, policy = .PREMULTIPLIED_ALPHA})
 }
 
 distance_rgba :: proc(a, b: RGBA) -> f32 {
@@ -207,12 +207,12 @@ scale_rect :: proc(v: Rect, s: f32) -> Rect {
 	return {v.x * s, v.y * s, v.w * s, v.h * s}
 }
 
-mix_rect :: proc(a, b: Rect, t: f32) -> Rect {
+mix_rect :: proc(p: Mix_Params(Rect)) -> Rect {
 	return {
-		lerp(a.x, b.x, t),
-		lerp(a.y, b.y, t),
-		lerp(a.w, b.w, t),
-		lerp(a.h, b.h, t),
+		lerp(Lerp_Params{a = p.a.x, b = p.b.x, t = p.t}),
+		lerp(Lerp_Params{a = p.a.y, b = p.b.y, t = p.t}),
+		lerp({a = p.a.w, b = p.b.w, t = p.t}),
+		lerp({a = p.a.h, b = p.b.h, t = p.t}),
 	}
 }
 
@@ -356,26 +356,38 @@ approx_eq :: proc {
 	approx_eq_rect,
 }
 
-approx_eq_f32 :: proc(a, b: f32, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_f32(a, b) <= epsilon
+approx_eq_f32 :: proc(p: Approx_Eq_Params(f32)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_f32(p.a, p.b) <= epsilon
 }
 
-approx_eq_vec2 :: proc(a, b: Vec2, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_vec2(a, b) <= epsilon
+approx_eq_vec2 :: proc(p: Approx_Eq_Params(Vec2)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_vec2(p.a, p.b) <= epsilon
 }
 
-approx_eq_vec3 :: proc(a, b: Vec3, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_vec3(a, b) <= epsilon
+approx_eq_vec3 :: proc(p: Approx_Eq_Params(Vec3)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_vec3(p.a, p.b) <= epsilon
 }
 
-approx_eq_vec4 :: proc(a, b: Vec4, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_vec4(a, b) <= epsilon
+approx_eq_vec4 :: proc(p: Approx_Eq_Params(Vec4)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_vec4(p.a, p.b) <= epsilon
 }
 
-approx_eq_rgba :: proc(a, b: RGBA, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_rgba(a, b) <= epsilon
+approx_eq_rgba :: proc(p: Approx_Eq_Params(RGBA)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_rgba(p.a, p.b) <= epsilon
 }
 
-approx_eq_rect :: proc(a, b: Rect, epsilon: f32 = DEFAULT_DISTANCE_EPSILON) -> bool {
-	return distance_rect(a, b) <= epsilon
+approx_eq_rect :: proc(p: Approx_Eq_Params(Rect)) -> bool {
+	epsilon := p.epsilon
+	if epsilon == 0 do epsilon = DEFAULT_DISTANCE_EPSILON
+	return distance_rect(p.a, p.b) <= epsilon
 }

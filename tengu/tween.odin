@@ -40,6 +40,17 @@ Tween_State :: struct($T: typeid) {
 	elapsed: f32,
 }
 
+Tween_Cycle_Position_Params :: struct {
+	active, duration: f32,
+	repeat_count:     int,
+}
+
+Tween_Mix_T_Params :: struct {
+	easing:           Tween_Easing,
+	local_t:          f32,
+	reverse:          bool,
+}
+
 tween_easing_apply :: proc(e: Tween_Easing, t: f32) -> f32 {
 	switch v in e {
 	case Ease:
@@ -64,27 +75,24 @@ tween_active_elapsed :: proc(elapsed, delay: f32) -> f32 {
 	return elapsed - delay
 }
 
-tween_cycle_index :: proc(active, duration: f32, repeat_count: int) -> int {
-	cycle_index, _ := tween_cycle_position(active, duration, repeat_count)
+tween_cycle_index :: proc(p: Tween_Cycle_Position_Params) -> int {
+	cycle_index, _ := tween_cycle_position(p)
 	return cycle_index
 }
 
-tween_cycle_local_t :: proc(active, duration: f32, repeat_count: int) -> f32 {
-	_, local_t := tween_cycle_position(active, duration, repeat_count)
+tween_cycle_local_t :: proc(p: Tween_Cycle_Position_Params) -> f32 {
+	_, local_t := tween_cycle_position(p)
 	return local_t
 }
 
 @(private)
-tween_cycle_position :: proc(
-	active, duration: f32,
-	repeat_count: int,
-) -> (
+tween_cycle_position :: proc(p: Tween_Cycle_Position_Params) -> (
 	cycle_index: int,
 	local_t: f32,
 ) {
-	if duration <= 0 do return 0, 1
+	if p.duration <= 0 do return 0, 1
 
-	progress_cycles := active / duration
+	progress_cycles := p.active / p.duration
 	cycle_index = int(math.floor(progress_cycles))
 	local_t = progress_cycles - f32(cycle_index)
 
@@ -93,8 +101,8 @@ tween_cycle_position :: proc(
 		local_t = 1
 	}
 
-	if !tween_is_infinite(repeat_count) {
-		max_index := tween_cycle_count(repeat_count) - 1
+	if !tween_is_infinite(p.repeat_count) {
+		max_index := tween_cycle_count(p.repeat_count) - 1
 		if cycle_index > max_index {
 			cycle_index = max_index
 			local_t = 1
@@ -108,10 +116,10 @@ tween_is_reverse_cycle :: proc(mode: Tween_Repeat_Mode, cycle_index: int) -> boo
 	return mode == .REVERSE && (cycle_index % 2) == 1
 }
 
-tween_mix_t :: proc(e: Tween_Easing, local_t: f32, reverse: bool) -> f32 {
-	t := local_t
-	if reverse do t = 1 - t
-	return tween_easing_apply(e, t)
+tween_mix_t :: proc(p: Tween_Mix_T_Params) -> f32 {
+	t := p.local_t
+	if p.reverse do t = 1 - t
+	return tween_easing_apply(p.easing, t)
 }
 
 /*
@@ -171,19 +179,14 @@ tween_progress :: proc(state: Tween_State($T)) -> f32 {
 /*
 Samples the tween at an arbitrary elapsed time without mutating state.
 */
-tween_sample_at :: proc(
-	state: Tween_State($T),
-	elapsed: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
+tween_sample_at :: proc(state: Tween_State($T), p: Sample_At_Params(T)) -> Step_Result(T) {
 	config := state.config
 
-	if elapsed < f32(config.delay) {
+	if p.elapsed < f32(config.delay) {
 		return value_result(config.start, false)
 	}
 
-	active := elapsed - f32(config.delay)
+	active := p.elapsed - f32(config.delay)
 	duration := f32(config.duration)
 
 	if duration <= 0 {
@@ -191,21 +194,22 @@ tween_sample_at :: proc(
 		done := !tween_is_infinite(config.repeat_count)
 		value := terminal
 		if done {
-			value = snap_if_done(terminal, terminal, true, completion)
+			value = snap_if_done(Snap_If_Done_Params(T){value = terminal, target = terminal, done = true, policy = p.completion})
 		}
 		return value_result(value, done)
 	}
 
-	cycle_index := tween_cycle_index(active, duration, config.repeat_count)
-	local_t := tween_cycle_local_t(active, duration, config.repeat_count)
+	cycle_params := Tween_Cycle_Position_Params{active = active, duration = duration, repeat_count = config.repeat_count}
+	cycle_index := tween_cycle_index(cycle_params)
+	local_t := tween_cycle_local_t(cycle_params)
 	reverse := tween_is_reverse_cycle(config.repeat_mode, cycle_index)
-	mix_t := tween_mix_t(config.easing, local_t, reverse)
-	value := anim.mix(config.start, config.target, mix_t)
+	mix_t := tween_mix_t(Tween_Mix_T_Params{easing = config.easing, local_t = local_t, reverse = reverse})
+	value := p.anim.mix(Mix_Params(T){a = config.start, b = config.target, t = mix_t})
 
-	finished := tween_is_finished_at(config, elapsed)
+	finished := tween_is_finished_at(config, p.elapsed)
 	if finished {
 		terminal := tween_terminal_value(config)
-		value = snap_if_done(value, terminal, true, completion)
+		value = snap_if_done(Snap_If_Done_Params(T){value = value, target = terminal, done = true, policy = p.completion})
 		return value_result(value, true)
 	}
 
@@ -248,15 +252,11 @@ tween_seek :: proc(state: ^Tween_State($T), elapsed: f32) {
 Advances elapsed time by `dt` seconds and returns the sampled value. Negative
 `dt` is ignored.
 */
-tween_step :: proc(
-	state: ^Tween_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	safe_dt := sanitize_dt(dt)
+tween_step :: proc(p: Step_Params($T)) -> Step_Result(T) {
+	state := (^Tween_State(T))(p.state)
+	safe_dt := sanitize_dt(p.dt)
 	if safe_dt > 0 {
 		state.elapsed += safe_dt
 	}
-	return tween_sample_at(state^, state.elapsed, anim, completion)
+	return tween_sample_at(state^, Sample_At_Params(T){state = p.state, elapsed = state.elapsed, anim = p.anim, completion = p.completion})
 }

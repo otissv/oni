@@ -1,9 +1,5 @@
 package tengu
 
-/*
-Semantic version for the standalone tengu animation package.
-*/
-
 VERSION_MAJOR :: 1
 VERSION_MINOR :: 0
 VERSION_PATCH :: 0
@@ -32,16 +28,16 @@ version_string :: proc() -> string {
 	return VERSION_STRING
 }
 
-version_matches :: proc(major, minor, patch: int) -> bool {
+version_matches :: proc(p: Version_Compare_Params) -> bool {
 	return (
-		PACKAGE_VERSION.major == major &&
-		PACKAGE_VERSION.minor == minor &&
-		PACKAGE_VERSION.patch == patch
+		PACKAGE_VERSION.major == p.major &&
+		PACKAGE_VERSION.minor == p.minor &&
+		PACKAGE_VERSION.patch == p.patch
 	)
 }
 
-version_at_least :: proc(major, minor, patch: int) -> bool {
-	if PACKAGE_VERSION.major != major do return PACKAGE_VERSION.major > major
-	if PACKAGE_VERSION.minor != minor do return PACKAGE_VERSION.minor > minor
-	return PACKAGE_VERSION.patch >= patch
+version_at_least :: proc(p: Version_Compare_Params) -> bool {
+	if PACKAGE_VERSION.major != p.major do return PACKAGE_VERSION.major > p.major
+	if PACKAGE_VERSION.minor != p.minor do return PACKAGE_VERSION.minor > p.minor
+	return PACKAGE_VERSION.patch >= p.patch
 }

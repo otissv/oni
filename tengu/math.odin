@@ -10,10 +10,10 @@ Bezier :: struct {
 	x1, y1, x2, y2: f32,
 }
 
-CSS_EASE :: Bezier {0.25, 0.1, 0.25, 1.0}
-CSS_EASE_IN :: Bezier {0.42, 0.0, 1.0, 1.0}
-CSS_EASE_OUT :: Bezier {0.0, 0.0, 0.58, 1.0}
-CSS_EASE_IN_OUT :: Bezier {0.42, 0.0, 0.58, 1.0}
+EASE :: Bezier{0.25, 0.1, 0.25, 1.0}
+EASE_IN :: Bezier{0.42, 0.0, 1.0, 1.0}
+EASE_OUT :: Bezier{0.0, 0.0, 0.58, 1.0}
+EASE_IN_OUT :: Bezier{0.42, 0.0, 0.58, 1.0}
 
 Ease :: enum {
 	LINEAR,
@@ -47,14 +47,28 @@ Ease :: enum {
 	IN_ELASTIC,
 	OUT_ELASTIC,
 	IN_OUT_ELASTIC,
-	CSS_EASE,
-	CSS_EASE_IN,
-	CSS_EASE_OUT,
-	CSS_EASE_IN_OUT,
+	EASE,
+	EASE_IN,
+	EASE_OUT,
+	EASE_IN_OUT,
 }
 
-clamp :: proc(v, lo, hi: f32) -> f32 {
-	return math.clamp(v, lo, hi)
+Mix_RGBA_With_Policy_Params :: struct {
+	a, b:   RGBA,
+	t:      f32,
+	policy: Color_Interpolation_Policy,
+}
+
+Bezier_Sample_1D_Params :: struct {
+	p1, p2, t: f32,
+}
+
+Bezier_Slope_1D_Params :: struct {
+	p1, p2, t: f32,
+}
+
+clamp :: proc(p: Clamp_Params) -> f32 {
+	return math.clamp(p.v, p.lo, p.hi)
 }
 
 wrap :: proc(v, upper: f32) -> f32 {
@@ -64,28 +78,28 @@ wrap :: proc(v, upper: f32) -> f32 {
 	return result
 }
 
-wrap_range :: proc(v, lo, hi: f32) -> f32 {
-	span := hi - lo
-	if span == 0 do return lo
-	return lo + wrap(v - lo, span)
+wrap_range :: proc(p: Wrap_Range_Params) -> f32 {
+	span := p.hi - p.lo
+	if span == 0 do return p.lo
+	return p.lo + wrap(p.v - p.lo, span)
 }
 
-inverse_lerp :: proc(a, b, value: f32) -> f32 {
-	denom := b - a
+inverse_lerp :: proc(p: Inverse_Lerp_Params) -> f32 {
+	denom := p.b - p.a
 	if denom == 0 do return 0
-	return (value - a) / denom
+	return (p.value - p.a) / denom
 }
 
-progress :: proc(a, b, value: f32) -> f32 {
-	return clamp(inverse_lerp(a, b, value), 0, 1)
+progress :: proc(p: Progress_Params) -> f32 {
+	return clamp({v = inverse_lerp({a = p.a, b = p.b, value = p.value}), lo = 0, hi = 1})
 }
 
-lerp :: proc(a, b, t: f32) -> f32 {
-	return a + (b - a) * clamp01(t)
+lerp :: proc(p: Lerp_Params) -> f32 {
+	return p.a + (p.b - p.a) * clamp01(p.t)
 }
 
 shortest_angle_delta_deg :: proc(a, b: f32) -> f32 {
-	delta := wrap_range(b - a, -180, 180)
+	delta := wrap_range({v = b - a, lo = -180, hi = 180})
 	if delta == -180 && b - a > 0 {
 		return 180
 	}
@@ -94,37 +108,33 @@ shortest_angle_delta_deg :: proc(a, b: f32) -> f32 {
 
 shortest_angle_delta_rad :: proc(a, b: f32) -> f32 {
 	pi := f32(math.PI)
-	delta := wrap_range(b - a, -pi, pi)
+	delta := wrap_range({v = b - a, lo = -pi, hi = pi})
 	if delta == -pi && b - a > 0 {
 		return pi
 	}
 	return delta
 }
 
-mix_angle_deg :: proc(a, b, t: f32) -> f32 {
-	return a + shortest_angle_delta_deg(a, b) * clamp01(t)
+mix_angle_deg :: proc(p: Mix_Angle_Params) -> f32 {
+	return p.a + shortest_angle_delta_deg(p.a, p.b) * clamp01(p.t)
 }
 
-mix_angle_rad :: proc(a, b, t: f32) -> f32 {
-	return a + shortest_angle_delta_rad(a, b) * clamp01(t)
+mix_angle_rad :: proc(p: Mix_Angle_Params) -> f32 {
+	return p.a + shortest_angle_delta_rad(p.a, p.b) * clamp01(p.t)
 }
 
-mix_rgba_with_policy :: proc(
-	a, b: RGBA,
-	t: f32,
-	policy: Color_Interpolation_Policy,
-) -> RGBA {
-	alpha := clamp01(t)
+mix_rgba_with_policy :: proc(p: Mix_RGBA_With_Policy_Params) -> RGBA {
+	alpha := clamp01(p.t)
 
-	#partial switch policy {
+	#partial switch p.policy {
 	case .PREMULTIPLIED_ALPHA:
-		a_premul := premultiply_rgba(a)
-		b_premul := premultiply_rgba(b)
+		a_premul := premultiply_rgba(p.a)
+		b_premul := premultiply_rgba(p.b)
 		mixed := RGBA {
-			r = lerp(a_premul.r, b_premul.r, alpha),
-			g = lerp(a_premul.g, b_premul.g, alpha),
-			b = lerp(a_premul.b, b_premul.b, alpha),
-			a = lerp(a_premul.a, b_premul.a, alpha),
+			r = lerp({a = a_premul.r, b = b_premul.r, t = alpha}),
+			g = lerp({a = a_premul.g, b = b_premul.g, t = alpha}),
+			b = lerp({a = a_premul.b, b = b_premul.b, t = alpha}),
+			a = lerp({a = a_premul.a, b = b_premul.a, t = alpha}),
 		}
 		return unpremultiply_rgba(mixed)
 	}
@@ -132,14 +142,14 @@ mix_rgba_with_policy :: proc(
 	unreachable()
 }
 
-bezier_sample_1d :: proc(p1, p2, t: f32) -> f32 {
-	u := 1 - t
-	return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t
+bezier_sample_1d :: proc(p: Bezier_Sample_1D_Params) -> f32 {
+	u := 1 - p.t
+	return 3 * u * u * p.t * p.p1 + 3 * u * p.t * p.t * p.p2 + p.t * p.t * p.t
 }
 
-bezier_slope_1d :: proc(p1, p2, t: f32) -> f32 {
-	u := 1 - t
-	return 3 * u * u * p1 + 6 * u * t * (p2 - p1) + 3 * t * t * (1 - p2)
+bezier_slope_1d :: proc(p: Bezier_Slope_1D_Params) -> f32 {
+	u := 1 - p.t
+	return 3 * u * u * p.p1 + 6 * u * p.t * (p.p2 - p.p1) + 3 * p.t * p.t * (1 - p.p2)
 }
 
 bezier_solve_t_for_x :: proc(curve: Bezier, x: f32) -> f32 {
@@ -147,8 +157,8 @@ bezier_solve_t_for_x :: proc(curve: Bezier, x: f32) -> f32 {
 	t := target
 
 	for _ in 0 ..< 6 {
-		value := bezier_sample_1d(curve.x1, curve.x2, t) - target
-		slope := bezier_slope_1d(curve.x1, curve.x2, t)
+		value := bezier_sample_1d({p1 = curve.x1, p2 = curve.x2, t = t}) - target
+		slope := bezier_slope_1d({p1 = curve.x1, p2 = curve.x2, t = t})
 		if math.abs(slope) < 1e-6 do break
 		next_t := t - value / slope
 		if next_t < 0 || next_t > 1 do break
@@ -158,7 +168,7 @@ bezier_solve_t_for_x :: proc(curve: Bezier, x: f32) -> f32 {
 	lo := f32(0)
 	hi := f32(1)
 	for _ in 0 ..< 16 {
-		value := bezier_sample_1d(curve.x1, curve.x2, t)
+		value := bezier_sample_1d({p1 = curve.x1, p2 = curve.x2, t = t})
 		if math.abs(value - target) <= 1e-5 {
 			return t
 		}
@@ -177,7 +187,7 @@ bezier_ease :: proc(curve: Bezier, x: f32) -> f32 {
 	if x <= 0 do return 0
 	if x >= 1 do return 1
 	t := bezier_solve_t_for_x(curve, x)
-	return bezier_sample_1d(curve.y1, curve.y2, t)
+	return bezier_sample_1d({p1 = curve.y1, p2 = curve.y2, t = t})
 }
 
 ease_out_bounce :: proc(t: f32) -> f32 {
@@ -316,14 +326,14 @@ ease :: proc(kind: Ease, t: f32) -> f32 {
 			return -(math.pow(2, 20 * x - 10) * math.sin((20 * x - 11.125) * c5)) * 0.5
 		}
 		return math.pow(2, -20 * x + 10) * math.sin((20 * x - 11.125) * c5) * 0.5 + 1
-	case .CSS_EASE:
-		return bezier_ease(CSS_EASE, x)
-	case .CSS_EASE_IN:
-		return bezier_ease(CSS_EASE_IN, x)
-	case .CSS_EASE_OUT:
-		return bezier_ease(CSS_EASE_OUT, x)
-	case .CSS_EASE_IN_OUT:
-		return bezier_ease(CSS_EASE_IN_OUT, x)
+	case .EASE:
+		return bezier_ease(EASE, x)
+	case .EASE_IN:
+		return bezier_ease(EASE_IN, x)
+	case .EASE_OUT:
+		return bezier_ease(EASE_OUT, x)
+	case .EASE_IN_OUT:
+		return bezier_ease(EASE_IN_OUT, x)
 	}
 
 	unreachable()

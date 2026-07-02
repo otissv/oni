@@ -65,52 +65,14 @@ Keyframes_State :: struct($T: typeid) {
 	elapsed: f32,
 }
 
+Keyframes_Sample_Cycle_At_Params :: struct($T: typeid) {
+	config:     Keyframes_Config(T),
+	cycle_time: f32,
+	anim:       Animatable(T),
+}
+
 keyframes_stop_default :: proc(value: $T) -> Keyframe_Stop(T) {
 	return Keyframe_Stop(T){value = value, easing = Ease.LINEAR}
-}
-
-keyframes_stop_duration :: proc(value: $T, duration: Seconds, easing: Tween_Easing = Ease.LINEAR) -> Keyframe_Stop(T) {
-	return Keyframe_Stop(T){value = value, duration = duration, easing = easing}
-}
-
-keyframes_stop_offset :: proc(value: $T, offset: f32, easing: Tween_Easing = Ease.LINEAR) -> Keyframe_Stop(T) {
-	return Keyframe_Stop(T){value = value, offset = offset, easing = easing}
-}
-
-keyframes_spec_duration :: proc(
-	start: $T,
-	stops: []Keyframe_Stop(T),
-	delay: Seconds = 0,
-	repeat_count: int = 1,
-	repeat_mode: Tween_Repeat_Mode = .RESTART,
-) -> Keyframes_Spec(T) {
-	return Keyframes_Spec(T) {
-		start = start,
-		stops = stops,
-		timing_mode = .DURATION,
-		delay = delay,
-		repeat_count = repeat_count,
-		repeat_mode = repeat_mode,
-	}
-}
-
-keyframes_spec_offset :: proc(
-	start: $T,
-	stops: []Keyframe_Stop(T),
-	total_duration: Seconds,
-	delay: Seconds = 0,
-	repeat_count: int = 1,
-	repeat_mode: Tween_Repeat_Mode = .RESTART,
-) -> Keyframes_Spec(T) {
-	return Keyframes_Spec(T) {
-		start = start,
-		stops = stops,
-		timing_mode = .OFFSET,
-		total_duration = total_duration,
-		delay = delay,
-		repeat_count = repeat_count,
-		repeat_mode = repeat_mode,
-	}
 }
 
 keyframes_config_destroy :: proc(config: Keyframes_Config($T), allocator := context.allocator) {
@@ -163,12 +125,18 @@ keyframes_compile :: proc(
 	case .DURATION:
 		for stop in spec.stops {
 			duration := f32(stop.duration)
+			easing := stop.easing
+			switch _ in easing {
+			case Ease, Bezier:
+			case:
+				easing = Ease.LINEAR
+			}
 			segment := Keyframe_Segment(T) {
 				start    = current_value,
 				stop     = stop.value,
 				duration = duration,
 				begin    = current_time,
-				easing   = stop.easing,
+				easing   = easing,
 			}
 			append(&segments, segment)
 			current_value = stop.value
@@ -178,12 +146,18 @@ keyframes_compile :: proc(
 		total_duration := f32(spec.total_duration)
 		for stop in spec.stops {
 			duration := (stop.offset - prev_offset) * total_duration
+			easing := stop.easing
+			switch _ in easing {
+			case Ease, Bezier:
+			case:
+				easing = Ease.LINEAR
+			}
 			segment := Keyframe_Segment(T) {
 				start    = current_value,
 				stop     = stop.value,
 				duration = duration,
 				begin    = current_time,
-				easing   = stop.easing,
+				easing   = easing,
 			}
 			append(&segments, segment)
 			current_value = stop.value
@@ -246,50 +220,41 @@ keyframes_progress :: proc(state: Keyframes_State($T)) -> f32 {
 }
 
 @(private)
-keyframes_sample_cycle_at :: proc(
-	config: Keyframes_Config($T),
-	cycle_time: f32,
-	anim: Animatable(T),
-) -> T {
-	if len(config.segments) == 0 do return config.start
+keyframes_sample_cycle_at :: proc(p: Keyframes_Sample_Cycle_At_Params($T)) -> T {
+	if len(p.config.segments) == 0 do return p.config.start
 
-	total_duration := config.total_duration
-	if total_duration <= 0 do return keyframes_last_value(config)
+	total_duration := p.config.total_duration
+	if total_duration <= 0 do return keyframes_last_value(p.config)
 
-	if cycle_time <= 0 do return config.segments[0].start
-	if cycle_time >= total_duration do return keyframes_last_value(config)
+	if p.cycle_time <= 0 do return p.config.segments[0].start
+	if p.cycle_time >= total_duration do return keyframes_last_value(p.config)
 
-	last_index := len(config.segments) - 1
-	for segment, index in config.segments {
+	last_index := len(p.config.segments) - 1
+	for segment, index in p.config.segments {
 		segment_end := segment.begin + segment.duration
 		is_last := index == last_index
-		if cycle_time < segment_end || is_last {
+		if p.cycle_time < segment_end || is_last {
 			if segment.duration <= 0 do return segment.stop
 
-			local_t := (cycle_time - segment.begin) / segment.duration
+			local_t := (p.cycle_time - segment.begin) / segment.duration
 			if local_t < 0 do local_t = 0
 			if local_t > 1 do local_t = 1
 			mix_t := tween_easing_apply(segment.easing, local_t)
-			return anim.mix(segment.start, segment.stop, mix_t)
+			return p.anim.mix(Mix_Params(T){a = segment.start, b = segment.stop, t = mix_t})
 		}
 	}
 
-	return keyframes_last_value(config)
+	return keyframes_last_value(p.config)
 }
 
-keyframes_sample_at :: proc(
-	state: Keyframes_State($T),
-	elapsed: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
+keyframes_sample_at :: proc(state: Keyframes_State($T), p: Sample_At_Params(T)) -> Step_Result(T) {
 	config := state.config
 
-	if elapsed < f32(config.delay) {
+	if p.elapsed < f32(config.delay) {
 		return value_result(config.start, false)
 	}
 
-	active := elapsed - f32(config.delay)
+	active := p.elapsed - f32(config.delay)
 	total_duration := config.total_duration
 
 	if total_duration <= 0 {
@@ -297,13 +262,14 @@ keyframes_sample_at :: proc(
 		done := !tween_is_infinite(config.repeat_count)
 		value := terminal
 		if done {
-			value = snap_if_done(terminal, terminal, true, completion)
+			value = snap_if_done(Snap_If_Done_Params(T){value = terminal, target = terminal, done = true, policy = p.completion})
 		}
 		return value_result(value, done)
 	}
 
-	cycle_index := tween_cycle_index(active, total_duration, config.repeat_count)
-	local_t := tween_cycle_local_t(active, total_duration, config.repeat_count)
+	cycle_params := Tween_Cycle_Position_Params{active = active, duration = total_duration, repeat_count = config.repeat_count}
+	cycle_index := tween_cycle_index(cycle_params)
+	local_t := tween_cycle_local_t(cycle_params)
 	reverse := tween_is_reverse_cycle(config.repeat_mode, cycle_index)
 
 	cycle_time := local_t * total_duration
@@ -311,12 +277,12 @@ keyframes_sample_at :: proc(
 		cycle_time = total_duration - cycle_time
 	}
 
-	value := keyframes_sample_cycle_at(config, cycle_time, anim)
+	value := keyframes_sample_cycle_at(Keyframes_Sample_Cycle_At_Params(T){config = config, cycle_time = cycle_time, anim = p.anim})
 
-	finished := keyframes_is_finished_at(config, elapsed)
+	finished := keyframes_is_finished_at(config, p.elapsed)
 	if finished {
 		terminal := keyframes_terminal_value(config)
-		value = snap_if_done(value, terminal, true, completion)
+		value = snap_if_done(Snap_If_Done_Params(T){value = value, target = terminal, done = true, policy = p.completion})
 		return value_result(value, true)
 	}
 
@@ -345,15 +311,11 @@ keyframes_seek :: proc(state: ^Keyframes_State($T), elapsed: f32) {
 	state.elapsed = elapsed
 }
 
-keyframes_step :: proc(
-	state: ^Keyframes_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	safe_dt := sanitize_dt(dt)
+keyframes_step :: proc(p: Step_Params($T)) -> Step_Result(T) {
+	state := (^Keyframes_State(T))(p.state)
+	safe_dt := sanitize_dt(p.dt)
 	if safe_dt > 0 {
 		state.elapsed += safe_dt
 	}
-	return keyframes_sample_at(state^, state.elapsed, anim, completion)
+	return keyframes_sample_at(state^, Sample_At_Params(T){state = p.state, elapsed = state.elapsed, anim = p.anim, completion = p.completion})
 }

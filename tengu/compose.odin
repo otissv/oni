@@ -1,6 +1,7 @@
 package tengu
 
 import "core:math"
+import "core:mem"
 
 Stepper_Tag :: enum u8 {
 	Tween,
@@ -24,64 +25,132 @@ Stepper :: struct($T: typeid) {
 	tag:   Stepper_Tag,
 }
 
-stepper_step :: proc(
-	stepper: Stepper($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	safe_dt := sanitize_dt(dt)
-	switch stepper.tag {
+Stepper_Step_Params :: struct($T: typeid) {
+	stepper:    Stepper(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Stepper_Is_Done_Params :: struct($T: typeid) {
+	stepper:    Stepper(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Delay_Init_Params :: struct($T: typeid) {
+	state:      ^Delay_State(T),
+	child:      Stepper(T),
+	delay:      f32,
+	hold_value: T,
+}
+
+Delay_Step_Params :: struct($T: typeid) {
+	state:      ^Delay_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Sequence_Step_Params :: struct($T: typeid) {
+	state:      ^Sequence_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Parallel_Init_Params :: struct($T: typeid) {
+	state:         ^Parallel_State(T),
+	children:      []Stepper(T),
+	primary_index: int,
+}
+
+Parallel_Step_Params :: struct($T: typeid) {
+	state:      ^Parallel_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Repeat_Init_Params :: struct($T: typeid) {
+	state:        ^Repeat_State(T),
+	child:        Stepper(T),
+	repeat_count: int,
+	cycle_start:  T,
+}
+
+Repeat_Step_Params :: struct($T: typeid) {
+	state:      ^Repeat_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Stagger_Init_Params :: struct($T: typeid) {
+	state:         ^Stagger_State(T),
+	children:      []Stepper(T),
+	hold_values:   []T,
+	interval:      f32,
+	primary_index: int,
+	allocator:     mem.Allocator,
+}
+
+Stagger_Step_Params :: struct($T: typeid) {
+	state:      ^Stagger_State(T),
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+stepper_step :: proc(p: Stepper_Step_Params($T)) -> Step_Result(T) {
+	safe_dt := sanitize_dt(p.dt)
+	switch p.stepper.tag {
 	case .Tween:
-		return tween_step((^Tween_State(T))(stepper.state), safe_dt, anim, completion)
+		return tween_step(Step_Params(T){state = p.stepper.state, dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Spring:
-		return spring_step((^Spring_State(T))(stepper.state), safe_dt, anim, completion)
+		return spring_step(Motion_Step_Params(T){state = p.stepper.state, dt = safe_dt, anim = p.anim, completion = p.completion, time = DEFAULT_TIME_POLICY})
 	case .Keyframes:
-		return keyframes_step((^Keyframes_State(T))(stepper.state), safe_dt, anim, completion)
+		return keyframes_step(Step_Params(T){state = p.stepper.state, dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Decay:
-		return decay_step((^Decay_State(T))(stepper.state), safe_dt, anim, completion)
+		return decay_step(Motion_Step_Params(T){state = p.stepper.state, dt = safe_dt, anim = p.anim, completion = p.completion, time = DEFAULT_TIME_POLICY})
 	case .Delay:
-		return delay_step((^Delay_State(T))(stepper.state), safe_dt, anim, completion)
+		return delay_step(Delay_Step_Params(T){state = (^Delay_State(T))(p.stepper.state), dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Sequence:
-		return sequence_step((^Sequence_State(T))(stepper.state), safe_dt, anim, completion)
+		return sequence_step(Sequence_Step_Params(T){state = (^Sequence_State(T))(p.stepper.state), dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Parallel:
-		return parallel_step((^Parallel_State(T))(stepper.state), safe_dt, anim, completion)
+		return parallel_step(Parallel_Step_Params(T){state = (^Parallel_State(T))(p.stepper.state), dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Repeat:
-		return repeat_step((^Repeat_State(T))(stepper.state), safe_dt, anim, completion)
+		return repeat_step(Repeat_Step_Params(T){state = (^Repeat_State(T))(p.stepper.state), dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Stagger:
-		return stagger_step((^Stagger_State(T))(stepper.state), safe_dt, anim, completion)
+		return stagger_step(Stagger_Step_Params(T){state = (^Stagger_State(T))(p.stepper.state), dt = safe_dt, anim = p.anim, completion = p.completion})
 	case .Timeline:
-		return timeline_step((^Timeline_State(T))(stepper.state), safe_dt, anim, completion)
+		return timeline_step(Step_Params(T){state = p.stepper.state, dt = safe_dt, anim = p.anim, completion = p.completion})
 	}
 	unreachable()
 }
 
-stepper_is_done :: proc(
-	stepper: Stepper($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	switch stepper.tag {
+stepper_is_done :: proc(p: Stepper_Is_Done_Params($T)) -> bool {
+	switch p.stepper.tag {
 	case .Tween:
-		return tween_is_finished((^Tween_State(T))(stepper.state)^)
+		return tween_is_finished((^Tween_State(T))(p.stepper.state)^)
 	case .Spring:
-		return spring_is_at_rest((^Spring_State(T))(stepper.state)^, anim, completion)
+		return spring_is_at_rest(Animatable_Query_Params(T){state = p.stepper.state, anim = p.anim, completion = p.completion})
 	case .Keyframes:
-		return keyframes_is_finished((^Keyframes_State(T))(stepper.state)^)
+		return keyframes_is_finished((^Keyframes_State(T))(p.stepper.state)^)
 	case .Decay:
-		return decay_is_at_rest((^Decay_State(T))(stepper.state)^, anim, completion)
+		return decay_is_at_rest(Animatable_Query_Params(T){state = p.stepper.state, anim = p.anim, completion = p.completion})
 	case .Delay:
-		return delay_is_finished((^Delay_State(T))(stepper.state)^, anim, completion)
+		return delay_is_finished(Delay_Is_Finished_Params(T){state = (^Delay_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	case .Sequence:
-		return sequence_is_finished((^Sequence_State(T))(stepper.state)^, anim, completion)
+		return sequence_is_finished(Sequence_Is_Finished_Params(T){state = (^Sequence_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	case .Parallel:
-		return parallel_is_finished((^Parallel_State(T))(stepper.state)^, anim, completion)
+		return parallel_is_finished(Parallel_Is_Finished_Params(T){state = (^Parallel_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	case .Repeat:
-		return repeat_is_finished((^Repeat_State(T))(stepper.state)^, anim, completion)
+		return repeat_is_finished(Repeat_Is_Finished_Params(T){state = (^Repeat_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	case .Stagger:
-		return stagger_is_finished((^Stagger_State(T))(stepper.state)^, anim, completion)
+		return stagger_is_finished(Stagger_Is_Finished_Params(T){state = (^Stagger_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	case .Timeline:
-		return timeline_is_finished((^Timeline_State(T))(stepper.state)^, anim, completion)
+		return timeline_is_finished(Timeline_Is_Finished_Params(T){state = (^Timeline_State(T))(p.stepper.state)^, anim = p.anim, completion = p.completion})
 	}
 	unreachable()
 }
@@ -169,20 +238,22 @@ Delay_State :: struct($T: typeid) {
 	hold_value: T,
 }
 
-delay_init :: proc(state: ^Delay_State($T), child: Stepper(T), delay: f32, hold_value: T) {
-	state.child = child
-	state.delay = delay
-	state.elapsed = 0
-	state.hold_value = hold_value
+Delay_Is_Finished_Params :: struct($T: typeid) {
+	state:      Delay_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
 }
 
-delay_is_finished :: proc(
-	state: Delay_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	if state.elapsed < state.delay do return false
-	return stepper_is_done(state.child, anim, completion)
+delay_init :: proc(p: Delay_Init_Params($T)) {
+	p.state.child = p.child
+	p.state.delay = p.delay
+	p.state.elapsed = 0
+	p.state.hold_value = p.hold_value
+}
+
+delay_is_finished :: proc(p: Delay_Is_Finished_Params($T)) -> bool {
+	if p.state.elapsed < p.state.delay do return false
+	return stepper_is_done(Stepper_Is_Done_Params(T){stepper = p.state.child, anim = p.anim, completion = p.completion})
 }
 
 delay_restart :: proc(state: ^Delay_State($T)) {
@@ -190,32 +261,27 @@ delay_restart :: proc(state: ^Delay_State($T)) {
 	stepper_restart(state.child)
 }
 
-delay_step :: proc(
-	state: ^Delay_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if state.elapsed < state.delay {
-		if dt <= 0 {
-			return value_result(state.hold_value, false)
+delay_step :: proc(p: Delay_Step_Params($T)) -> Step_Result(T) {
+	if p.state.elapsed < p.state.delay {
+		if p.dt <= 0 {
+			return value_result(p.state.hold_value, false)
 		}
 
-		remaining := state.delay - state.elapsed
-		if dt < remaining {
-			state.elapsed += dt
-			return value_result(state.hold_value, false)
+		remaining := p.state.delay - p.state.elapsed
+		if p.dt < remaining {
+			p.state.elapsed += p.dt
+			return value_result(p.state.hold_value, false)
 		}
 
-		state.elapsed = state.delay
-		overflow := dt - remaining
+		p.state.elapsed = p.state.delay
+		overflow := p.dt - remaining
 		if overflow <= 0 {
-			return value_result(state.hold_value, false)
+			return value_result(p.state.hold_value, false)
 		}
-		return stepper_step(state.child, overflow, anim, completion)
+		return stepper_step(Stepper_Step_Params(T){stepper = p.state.child, dt = overflow, anim = p.anim, completion = p.completion})
 	}
 
-	return stepper_step(state.child, dt, anim, completion)
+	return stepper_step(Stepper_Step_Params(T){stepper = p.state.child, dt = p.dt, anim = p.anim, completion = p.completion})
 }
 
 delay_stepper :: proc(state: ^Delay_State($T)) -> Stepper(T) {
@@ -231,20 +297,22 @@ Sequence_State :: struct($T: typeid) {
 	index:    int,
 }
 
+Sequence_Is_Finished_Params :: struct($T: typeid) {
+	state:      Sequence_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
 sequence_init :: proc(state: ^Sequence_State($T), children: []Stepper(T)) {
 	state.children = children
 	state.index = 0
 }
 
-sequence_is_finished :: proc(
-	state: Sequence_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	if len(state.children) == 0 do return true
-	if state.index >= len(state.children) do return true
-	if state.index < len(state.children) - 1 do return false
-	return stepper_is_done(state.children[state.index], anim, completion)
+sequence_is_finished :: proc(p: Sequence_Is_Finished_Params($T)) -> bool {
+	if len(p.state.children) == 0 do return true
+	if p.state.index >= len(p.state.children) do return true
+	if p.state.index < len(p.state.children) - 1 do return false
+	return stepper_is_done(Stepper_Is_Done_Params(T){stepper = p.state.children[p.state.index], anim = p.anim, completion = p.completion})
 }
 
 sequence_restart :: proc(state: ^Sequence_State($T)) {
@@ -254,35 +322,30 @@ sequence_restart :: proc(state: ^Sequence_State($T)) {
 	}
 }
 
-sequence_step :: proc(
-	state: ^Sequence_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if len(state.children) == 0 {
-		return value_result(anim.zero(), true)
+sequence_step :: proc(p: Sequence_Step_Params($T)) -> Step_Result(T) {
+	if len(p.state.children) == 0 {
+		return value_result(p.anim.zero(), true)
 	}
 
-	if state.index >= len(state.children) {
-		last := state.children[len(state.children) - 1]
-		result := stepper_step(last, 0, anim, completion)
+	if p.state.index >= len(p.state.children) {
+		last := p.state.children[len(p.state.children) - 1]
+		result := stepper_step(Stepper_Step_Params(T){stepper = last, dt = 0, anim = p.anim, completion = p.completion})
 		result.done = true
 		return result
 	}
 
-	remaining_dt := dt
-	for state.index < len(state.children) {
-		result := stepper_step(state.children[state.index], remaining_dt, anim, completion)
-		if !result.done || state.index >= len(state.children) - 1 {
+	remaining_dt := p.dt
+	for p.state.index < len(p.state.children) {
+		result := stepper_step(Stepper_Step_Params(T){stepper = p.state.children[p.state.index], dt = remaining_dt, anim = p.anim, completion = p.completion})
+		if !result.done || p.state.index >= len(p.state.children) - 1 {
 			return result
 		}
-		state.index += 1
+		p.state.index += 1
 		remaining_dt = 0
 	}
 
-	last := state.children[len(state.children) - 1]
-	result := stepper_step(last, 0, anim, completion)
+	last := p.state.children[len(p.state.children) - 1]
+	result := stepper_step(Stepper_Step_Params(T){stepper = last, dt = 0, anim = p.anim, completion = p.completion})
 	result.done = true
 	return result
 }
@@ -300,23 +363,25 @@ Parallel_State :: struct($T: typeid) {
 	primary_index: int,
 }
 
-parallel_init :: proc(state: ^Parallel_State($T), children: []Stepper(T), primary_index: int = 0) {
-	state.children = children
-	if primary_index < 0 || primary_index >= len(children) {
-		state.primary_index = 0
+Parallel_Is_Finished_Params :: struct($T: typeid) {
+	state:      Parallel_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+parallel_init :: proc(p: Parallel_Init_Params($T)) {
+	p.state.children = p.children
+	if p.primary_index < 0 || p.primary_index >= len(p.children) {
+		p.state.primary_index = 0
 	} else {
-		state.primary_index = primary_index
+		p.state.primary_index = p.primary_index
 	}
 }
 
-parallel_is_finished :: proc(
-	state: Parallel_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	if len(state.children) == 0 do return true
-	for child in state.children {
-		if !stepper_is_done(child, anim, completion) do return false
+parallel_is_finished :: proc(p: Parallel_Is_Finished_Params($T)) -> bool {
+	if len(p.state.children) == 0 do return true
+	for child in p.state.children {
+		if !stepper_is_done(Stepper_Is_Done_Params(T){stepper = child, anim = p.anim, completion = p.completion}) do return false
 	}
 	return true
 }
@@ -327,24 +392,19 @@ parallel_restart :: proc(state: ^Parallel_State($T)) {
 	}
 }
 
-parallel_step :: proc(
-	state: ^Parallel_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if len(state.children) == 0 {
-		return value_result(anim.zero(), true)
+parallel_step :: proc(p: Parallel_Step_Params($T)) -> Step_Result(T) {
+	if len(p.state.children) == 0 {
+		return value_result(p.anim.zero(), true)
 	}
 
-	primary := state.primary_index
-	if primary < 0 || primary >= len(state.children) do primary = 0
+	primary := p.state.primary_index
+	if primary < 0 || primary >= len(p.state.children) do primary = 0
 
 	result: Step_Result(T)
 	all_done := true
 
-	for child, index in state.children {
-		child_result := stepper_step(child, dt, anim, completion)
+	for child, index in p.state.children {
+		child_result := stepper_step(Stepper_Step_Params(T){stepper = child, dt = p.dt, anim = p.anim, completion = p.completion})
 		if index == primary {
 			result = child_result
 		}
@@ -370,31 +430,28 @@ Repeat_State :: struct($T: typeid) {
 	cycle_start:  T,
 }
 
+Repeat_Is_Finished_Params :: struct($T: typeid) {
+	state:      Repeat_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
 repeat_is_infinite :: proc(repeat_count: int) -> bool {
 	return repeat_count <= 0
 }
 
-repeat_init :: proc(
-	state: ^Repeat_State($T),
-	child: Stepper(T),
-	repeat_count: int,
-	cycle_start: T,
-) {
-	state.child = child
-	state.repeat_count = repeat_count
-	state.cycles_done = 0
-	state.cycle_start = cycle_start
+repeat_init :: proc(p: Repeat_Init_Params($T)) {
+	p.state.child = p.child
+	p.state.repeat_count = p.repeat_count
+	p.state.cycles_done = 0
+	p.state.cycle_start = p.cycle_start
 }
 
-repeat_is_finished :: proc(
-	state: Repeat_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	if repeat_is_infinite(state.repeat_count) do return false
-	if state.cycles_done < state.repeat_count {
-		if state.cycles_done == state.repeat_count - 1 {
-			return stepper_is_done(state.child, anim, completion)
+repeat_is_finished :: proc(p: Repeat_Is_Finished_Params($T)) -> bool {
+	if repeat_is_infinite(p.state.repeat_count) do return false
+	if p.state.cycles_done < p.state.repeat_count {
+		if p.state.cycles_done == p.state.repeat_count - 1 {
+			return stepper_is_done(Stepper_Is_Done_Params(T){stepper = p.state.child, anim = p.anim, completion = p.completion})
 		}
 		return false
 	}
@@ -406,27 +463,22 @@ repeat_restart :: proc(state: ^Repeat_State($T)) {
 	stepper_reset_to(state.child, state.cycle_start)
 }
 
-repeat_step :: proc(
-	state: ^Repeat_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	result := stepper_step(state.child, dt, anim, completion)
+repeat_step :: proc(p: Repeat_Step_Params($T)) -> Step_Result(T) {
+	result := stepper_step(Stepper_Step_Params(T){stepper = p.state.child, dt = p.dt, anim = p.anim, completion = p.completion})
 	if !result.done do return result
 
-	if repeat_is_infinite(state.repeat_count) {
-		stepper_reset_to(state.child, state.cycle_start)
+	if repeat_is_infinite(p.state.repeat_count) {
+		stepper_reset_to(p.state.child, p.state.cycle_start)
 		result.done = false
 		return result
 	}
 
-	state.cycles_done += 1
-	if state.cycles_done >= state.repeat_count {
+	p.state.cycles_done += 1
+	if p.state.cycles_done >= p.state.repeat_count {
 		return result
 	}
 
-	stepper_reset_to(state.child, state.cycle_start)
+	stepper_reset_to(p.state.child, p.state.cycle_start)
 	result.done = false
 	return result
 }
@@ -451,28 +503,27 @@ Stagger_State :: struct($T: typeid) {
 	primary_index: int,
 }
 
-stagger_init :: proc(
-	state: ^Stagger_State($T),
-	children: []Stepper(T),
-	hold_values: []T,
-	interval: f32,
-	primary_index: int = 0,
-	allocator := context.allocator,
-) -> Stagger_Init_Error {
-	if len(children) != len(hold_values) do return .CHILD_COUNT_MISMATCH
+Stagger_Is_Finished_Params :: struct($T: typeid) {
+	state:      Stagger_State(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
 
-	delays := make([]Delay_State(T), len(children), allocator)
-	if len(children) > 0 && delays == nil do return .OUT_OF_MEMORY
+stagger_init :: proc(p: Stagger_Init_Params($T)) -> Stagger_Init_Error {
+	if len(p.children) != len(p.hold_values) do return .CHILD_COUNT_MISMATCH
 
-	for child, index in children {
-		delay_init(&delays[index], child, interval * f32(index), hold_values[index])
+	delays := make([]Delay_State(T), len(p.children), p.allocator)
+	if len(p.children) > 0 && delays == nil do return .OUT_OF_MEMORY
+
+	for child, index in p.children {
+		delay_init(Delay_Init_Params(T){state = &delays[index], child = child, delay = p.interval * f32(index), hold_value = p.hold_values[index]})
 	}
 
-	state.delays = delays
-	if primary_index < 0 || primary_index >= len(delays) {
-		state.primary_index = 0
+	p.state.delays = delays
+	if p.primary_index < 0 || p.primary_index >= len(delays) {
+		p.state.primary_index = 0
 	} else {
-		state.primary_index = primary_index
+		p.state.primary_index = p.primary_index
 	}
 
 	return .NONE
@@ -482,14 +533,10 @@ stagger_destroy :: proc(state: Stagger_State($T), allocator := context.allocator
 	delete(state.delays, allocator)
 }
 
-stagger_is_finished :: proc(
-	state: Stagger_State($T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> bool {
-	if len(state.delays) == 0 do return true
-	for delay in state.delays {
-		if !delay_is_finished(delay, anim, completion) do return false
+stagger_is_finished :: proc(p: Stagger_Is_Finished_Params($T)) -> bool {
+	if len(p.state.delays) == 0 do return true
+	for delay in p.state.delays {
+		if !delay_is_finished(Delay_Is_Finished_Params(T){state = delay, anim = p.anim, completion = p.completion}) do return false
 	}
 	return true
 }
@@ -500,24 +547,19 @@ stagger_restart :: proc(state: ^Stagger_State($T)) {
 	}
 }
 
-stagger_step :: proc(
-	state: ^Stagger_State($T),
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	if len(state.delays) == 0 {
-		return value_result(anim.zero(), true)
+stagger_step :: proc(p: Stagger_Step_Params($T)) -> Step_Result(T) {
+	if len(p.state.delays) == 0 {
+		return value_result(p.anim.zero(), true)
 	}
 
-	primary := state.primary_index
-	if primary < 0 || primary >= len(state.delays) do primary = 0
+	primary := p.state.primary_index
+	if primary < 0 || primary >= len(p.state.delays) do primary = 0
 
 	result: Step_Result(T)
 	all_done := true
 
-	for &delay, index in state.delays {
-		delay_result := delay_step(&delay, dt, anim, completion)
+	for &delay, index in p.state.delays {
+		delay_result := delay_step(Delay_Step_Params(T){state = &delay, dt = p.dt, anim = p.anim, completion = p.completion})
 		if index == primary {
 			result = delay_result
 		}

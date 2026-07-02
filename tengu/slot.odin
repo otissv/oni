@@ -1,7 +1,5 @@
 package tengu
 
-import "core:math"
-
 /*
 Immediate-mode transition slots wrap finalized tween and spring primitives. Callers
 declare a desired value each frame; the slot owns persistent animator state and
@@ -58,6 +56,69 @@ Slot :: struct($T: typeid) {
 	spring_opts:  Spring_Slot_Options(T),
 }
 
+Slot_Init_Params :: struct($T: typeid) {
+	slot:         ^Slot(T),
+	value:        T,
+	kind:         Transition_Kind,
+	start_policy: Start_Policy,
+}
+
+Tween_To_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	options:    Tween_Slot_Options(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+}
+
+Spring_To_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	options:    Spring_Slot_Options(T),
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
+Transition_To_Params :: struct($T: typeid) {
+	slot:       ^Slot(T),
+	target:     T,
+	dt:         f32,
+	anim:       Animatable(T),
+	completion: Completion_Policy,
+	time:       Time_Policy,
+}
+
+Slot_Sync_Spring_Params :: struct($T: typeid) {
+	slot:    ^Slot(T),
+	target:  T,
+	options: Spring_Slot_Options(T),
+	anim:    Animatable(T),
+}
+
+Slot_Sync_Tween_Params :: struct($T: typeid) {
+	slot:    ^Slot(T),
+	target:  T,
+	options: Tween_Slot_Options(T),
+	anim:    Animatable(T),
+}
+
+Slot_Begin_Tween_Params :: struct($T: typeid) {
+	slot:    ^Slot(T),
+	target:  T,
+	options: Tween_Slot_Options(T),
+	start:   T,
+}
+
+Slot_Begin_Spring_Params :: struct($T: typeid) {
+	slot:    ^Slot(T),
+	target:  T,
+	options: Spring_Slot_Options(T),
+	start:   T,
+}
+
 tween_easing_eq :: proc(a, b: Tween_Easing) -> bool {
 	switch va in a {
 	case Ease:
@@ -95,104 +156,13 @@ slot_target_eq :: proc(a, b: $T, anim: Animatable(T)) -> bool {
 	return anim.distance(a, b) <= DEFAULT_DISTANCE_EPSILON
 }
 
-tween_slot_options :: proc(
-	start: $T,
-	duration: Seconds,
-	delay: Seconds = 0,
-	easing: Tween_Easing = Ease.LINEAR,
-	repeat_count: int = 1,
-	repeat_mode: Tween_Repeat_Mode = .RESTART,
-) -> Tween_Slot_Options(T) {
-	return Tween_Slot_Options(T) {
-		duration = duration,
-		delay = delay,
-		easing = easing,
-		repeat_count = repeat_count,
-		repeat_mode = repeat_mode,
-		start = start,
-	}
-}
-
-spring_slot_options :: proc(
-	start: $T,
-	stiffness: f32 = DEFAULT_SPRING_STIFFNESS,
-	damping: f32 = DEFAULT_SPRING_DAMPING,
-	mass: f32 = DEFAULT_SPRING_MASS,
-) -> Spring_Slot_Options(T) {
-	zero: T
-	return Spring_Slot_Options(T) {
-		stiffness = stiffness,
-		damping = damping,
-		mass = mass,
-		initial_velocity = zero,
-		start = start,
-	}
-}
-
-spring_slot_options_with_velocity :: proc(
-	start: $T,
-	initial_velocity: T,
-	stiffness: f32 = DEFAULT_SPRING_STIFFNESS,
-	damping: f32 = DEFAULT_SPRING_DAMPING,
-	mass: f32 = DEFAULT_SPRING_MASS,
-) -> Spring_Slot_Options(T) {
-	return Spring_Slot_Options(T) {
-		stiffness = stiffness,
-		damping = damping,
-		mass = mass,
-		initial_velocity = initial_velocity,
-		start = start,
-	}
-}
-
-spring_slot_options_from_frequency :: proc(
-	start: $T,
-	frequency: f32,
-	damping_ratio: f32,
-	mass: f32 = DEFAULT_SPRING_MASS,
-) -> Spring_Slot_Options(T) {
-	zero: T
-	return spring_slot_options_from_frequency_with_velocity(
-		start,
-		zero,
-		frequency,
-		damping_ratio,
-		mass,
-	)
-}
-
-spring_slot_options_from_frequency_with_velocity :: proc(
-	start: $T,
-	initial_velocity: T,
-	frequency: f32,
-	damping_ratio: f32,
-	mass: f32 = DEFAULT_SPRING_MASS,
-) -> Spring_Slot_Options(T) {
-	safe_mass := math.max(mass, MIN_SPRING_MASS)
-	omega := f32(2 * math.PI) * frequency
-	stiffness := safe_mass * omega * omega
-	damping := 2 * safe_mass * damping_ratio * omega
-	return spring_slot_options_with_velocity(
-		start,
-		initial_velocity,
-		stiffness,
-		damping,
-		safe_mass,
-	)
-}
-
-slot_init :: proc(
-	slot: ^Slot($T),
-	value: T,
-	kind: Transition_Kind,
-	start_policy: Start_Policy = .FROM_CURRENT,
-) {
-	slot.kind = kind
-	slot.start_policy = start_policy
-	slot.active = false
-	slot.target = value
-	slot.value = value
-	slot.done = true
+slot_init :: proc(p: Slot_Init_Params($T)) {
+	p.slot.kind = p.kind
+	p.slot.start_policy = p.start_policy
+	p.slot.active = false
+	p.slot.target = p.value
+	p.slot.value = p.value
+	p.slot.done = true
 }
 
 slot_set_start_policy :: proc(slot: ^Slot($T), policy: Start_Policy) {
@@ -247,25 +217,31 @@ slot_spring_config :: proc(target: $T, options: Spring_Slot_Options(T)) -> Sprin
 }
 
 @(private)
-slot_begin_tween :: proc(slot: ^Slot($T), target: T, options: Tween_Slot_Options(T), start: T) {
-	tween_init(&slot.tween, slot_tween_config(start, target, options))
-	slot.tween_opts = options
-	slot.kind = .TWEEN
-	slot.active = true
-	slot.target = target
-	slot.value = start
-	slot.done = false
+slot_begin_tween :: proc(p: Slot_Begin_Tween_Params($T)) {
+	tween_init(&p.slot.tween, slot_tween_config(p.start, p.target, p.options))
+	p.slot.tween_opts = p.options
+	p.slot.kind = .TWEEN
+	p.slot.active = true
+	p.slot.target = p.target
+	p.slot.value = p.start
+	p.slot.done = false
 }
 
 @(private)
-slot_begin_spring :: proc(slot: ^Slot($T), target: T, options: Spring_Slot_Options(T), start: T) {
-	spring_init(&slot.spring, slot_spring_config(target, options), start)
-	slot.spring_opts = options
-	slot.kind = .SPRING
-	slot.active = true
-	slot.target = target
-	slot.value = start
-	slot.done = false
+slot_begin_spring :: proc(p: Slot_Begin_Spring_Params($T)) {
+	spring_init(
+		Spring_Init_Params(T) {
+			state = &p.slot.spring,
+			config = slot_spring_config(p.target, p.options),
+			start_value = p.start,
+		},
+	)
+	p.slot.spring_opts = p.options
+	p.slot.kind = .SPRING
+	p.slot.active = true
+	p.slot.target = p.target
+	p.slot.value = p.start
+	p.slot.done = false
 }
 
 @(private)
@@ -277,56 +253,69 @@ slot_tween_start_for_change :: proc(slot: ^Slot($T), options: Tween_Slot_Options
 }
 
 @(private)
-slot_sync_spring :: proc(
-	slot: ^Slot($T),
-	target: T,
-	options: Spring_Slot_Options(T),
-	anim: Animatable(T),
-) {
-	target_changed := !slot.active || !slot_target_eq(slot.target, target, anim)
-	config_changed := !slot.active || !spring_slot_options_eq(slot.spring_opts, options, anim)
+slot_sync_spring :: proc(p: Slot_Sync_Spring_Params($T)) {
+	target_changed := !p.slot.active || !slot_target_eq(p.slot.target, p.target, p.anim)
+	config_changed :=
+		!p.slot.active || !spring_slot_options_eq(p.slot.spring_opts, p.options, p.anim)
 
-	if !slot.active || slot.kind != .SPRING {
-		start := slot.value
-		if slot.start_policy == .FROM_START {
-			start = options.start
+	if !p.slot.active || p.slot.kind != .SPRING {
+		start := p.slot.value
+		if p.slot.start_policy == .FROM_START {
+			start = p.options.start
 		}
-		slot_begin_spring(slot, target, options, start)
+		slot_begin_spring(
+			Slot_Begin_Spring_Params(T) {
+				slot = p.slot,
+				target = p.target,
+				options = p.options,
+				start = start,
+			},
+		)
 		return
 	}
 
-	if target_changed && slot.start_policy == .FROM_START {
-		slot_begin_spring(slot, target, options, options.start)
+	if target_changed && p.slot.start_policy == .FROM_START {
+		slot_begin_spring(
+			Slot_Begin_Spring_Params(T) {
+				slot = p.slot,
+				target = p.target,
+				options = p.options,
+				start = p.options.start,
+			},
+		)
 		return
 	}
 
 	if config_changed {
-		spring_reconfigure(&slot.spring, slot_spring_config(target, options))
-		slot.spring_opts = options
+		spring_reconfigure(&p.slot.spring, slot_spring_config(p.target, p.options))
+		p.slot.spring_opts = p.options
 	}
 
 	if target_changed {
-		spring_set_target(&slot.spring, target)
-		slot.target = target
+		spring_set_target(&p.slot.spring, p.target)
+		p.slot.target = p.target
 	}
 }
 
 @(private)
-slot_sync_tween :: proc(
-	slot: ^Slot($T),
-	target: T,
-	options: Tween_Slot_Options(T),
-	anim: Animatable(T),
-) {
-	target_changed := !slot.active || !slot_target_eq(slot.target, target, anim)
-	config_changed := !slot.active || !tween_slot_options_eq(slot.tween_opts, options, anim)
+slot_sync_tween :: proc(p: Slot_Sync_Tween_Params($T)) {
+	target_changed := !p.slot.active || !slot_target_eq(p.slot.target, p.target, p.anim)
+	config_changed :=
+		!p.slot.active || !tween_slot_options_eq(p.slot.tween_opts, p.options, p.anim)
 
-	if !slot.active || slot.kind != .TWEEN {
-		start := slot.value
-		if slot.start_policy == .FROM_START {
-			start = options.start
+	if !p.slot.active || p.slot.kind != .TWEEN {
+		start := p.slot.value
+		if p.slot.start_policy == .FROM_START {
+			start = p.options.start
 		}
-		slot_begin_tween(slot, target, options, start)
+		slot_begin_tween(
+			Slot_Begin_Tween_Params(T) {
+				slot = p.slot,
+				target = p.target,
+				options = p.options,
+				start = start,
+			},
+		)
 		return
 	}
 
@@ -334,59 +323,87 @@ slot_sync_tween :: proc(
 		return
 	}
 
-	start := slot_tween_start_for_change(slot, options)
-	slot_begin_tween(slot, target, options, start)
+	start := slot_tween_start_for_change(p.slot, p.options)
+	slot_begin_tween(
+		Slot_Begin_Tween_Params(T) {
+			slot = p.slot,
+			target = p.target,
+			options = p.options,
+			start = start,
+		},
+	)
 }
 
-tween_to :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	options: Tween_Slot_Options(T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-) -> Step_Result(T) {
-	slot_sync_tween(slot, target, options, anim)
-	result := tween_step(&slot.tween, dt, anim, completion)
-	slot.value = result.value
-	slot.done = result.done
-	slot.target = target
+tween_to :: proc(p: Tween_To_Params($T)) -> Step_Result(T) {
+	slot_sync_tween(
+		Slot_Sync_Tween_Params(T) {
+			slot = p.slot,
+			target = p.target,
+			options = p.options,
+			anim = p.anim,
+		},
+	)
+	result := tween_step(
+		Step_Params(T){state = &p.slot.tween, dt = p.dt, anim = p.anim, completion = p.completion},
+	)
+	p.slot.value = result.value
+	p.slot.done = result.done
+	p.slot.target = p.target
 	return result
 }
 
-spring_to :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	options: Spring_Slot_Options(T),
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	slot_sync_spring(slot, target, options, anim)
-	result := spring_step(&slot.spring, dt, anim, completion, time)
-	slot.value = result.value
-	slot.done = result.done
-	slot.target = target
+spring_to :: proc(p: Spring_To_Params($T)) -> Step_Result(T) {
+	slot_sync_spring(
+		Slot_Sync_Spring_Params(T) {
+			slot = p.slot,
+			target = p.target,
+			options = p.options,
+			anim = p.anim,
+		},
+	)
+	result := spring_step(
+		Motion_Step_Params(T) {
+			state = &p.slot.spring,
+			dt = p.dt,
+			anim = p.anim,
+			completion = p.completion,
+			time = p.time,
+		},
+	)
+	p.slot.value = result.value
+	p.slot.done = result.done
+	p.slot.target = p.target
 	return result
 }
 
 /*
 Steps the slot using its stored transition kind and options.
 */
-transition_to :: proc(
-	slot: ^Slot($T),
-	target: T,
-	dt: f32,
-	anim: Animatable(T),
-	completion: Completion_Policy = DEFAULT_COMPLETION_POLICY,
-	time: Time_Policy = DEFAULT_TIME_POLICY,
-) -> Step_Result(T) {
-	switch slot.kind {
+transition_to :: proc(p: Transition_To_Params($T)) -> Step_Result(T) {
+	switch p.slot.kind {
 	case .TWEEN:
-		return tween_to(slot, target, dt, slot.tween_opts, anim, completion)
+		return tween_to(
+			Tween_To_Params(T) {
+				slot = p.slot,
+				target = p.target,
+				dt = p.dt,
+				options = p.slot.tween_opts,
+				anim = p.anim,
+				completion = p.completion,
+			},
+		)
 	case .SPRING:
-		return spring_to(slot, target, dt, slot.spring_opts, anim, completion, time)
+		return spring_to(
+			Spring_To_Params(T) {
+				slot = p.slot,
+				target = p.target,
+				dt = p.dt,
+				options = p.slot.spring_opts,
+				anim = p.anim,
+				completion = p.completion,
+				time = p.time,
+			},
+		)
 	}
 	unreachable()
 }
@@ -404,12 +421,26 @@ slot_restart :: proc(slot: ^Slot($T)) {
 		if slot.start_policy == .FROM_CURRENT {
 			start = slot.value
 		}
-		slot_begin_tween(slot, slot.target, slot.tween_opts, start)
+		slot_begin_tween(
+			Slot_Begin_Tween_Params(T) {
+				slot = slot,
+				target = slot.target,
+				options = slot.tween_opts,
+				start = start,
+			},
+		)
 	case .SPRING:
 		start := slot.spring_opts.start
 		if slot.start_policy == .FROM_CURRENT {
 			start = slot.value
 		}
-		slot_begin_spring(slot, slot.target, slot.spring_opts, start)
+		slot_begin_spring(
+			Slot_Begin_Spring_Params(T) {
+				slot = slot,
+				target = slot.target,
+				options = slot.spring_opts,
+				start = start,
+			},
+		)
 	}
 }
