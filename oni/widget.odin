@@ -5,6 +5,101 @@ import "core:hash"
 
 
 /*
+Appends an element to this frame's tab order in declaration order.
+
+Call during the layout pass for widgets with tabbable set.
+*/
+register_tabbable :: proc(element_id: Widget_ID) {
+	if w_ctx.tab_order == nil {
+		w_ctx.tab_order = make([dynamic]Widget_ID)
+	}
+	append(&w_ctx.tab_order, element_id)
+}
+
+/*
+Clears focus when the focused element is no longer in the tab order.
+*/
+widget_prune_focus :: proc() {
+	if w_ctx.focused_id == "" do return
+
+	for id in w_ctx.tab_order {
+		if id == w_ctx.focused_id do return
+	}
+
+	w_ctx.focused_id = {}
+}
+
+/*
+Moves focus to the next or previous tabbable element in declaration order.
+
+Returns false when the tab order is empty.
+*/
+widget_focus_tab :: proc(reverse: bool) -> bool {
+	n := len(w_ctx.tab_order)
+	if n == 0 do return false
+
+	previous_id := w_ctx.focused_id
+
+	current_idx := -1
+	for id, i in w_ctx.tab_order {
+		if id == w_ctx.focused_id {
+			current_idx = i
+			break
+		}
+	}
+
+	next_idx: int
+	if current_idx == -1 {
+		next_idx = reverse ? n - 1 : 0
+	} else if reverse {
+		next_idx = current_idx - 1
+		if next_idx < 0 do next_idx = n - 1
+	} else {
+		next_idx = current_idx + 1
+		if next_idx >= n do next_idx = 0
+	}
+
+	next_id := w_ctx.tab_order[next_idx]
+	if next_id == previous_id do return false
+
+	w_ctx.focused_id = next_id
+	w_ctx.tab_focus_previous_id = previous_id
+	w_ctx.tab_focus_changed = true
+	return true
+}
+
+/*
+Advances focus to the next tabbable element when Tab is pressed.
+
+Shift+Tab moves focus backward.
+*/
+widget_process_tab_navigation :: proc() {
+	tab_key := w_ctx.keys[int(Scancode.TAB)]
+	if !tab_key.pressed do return
+
+	reverse := false
+	if state != nil {
+		reverse = state.input.modifiers.shift
+	}
+
+	widget_focus_tab(reverse)
+}
+
+/*
+Moves keyboard focus to the next tabbable element in declaration order.
+*/
+focus_next :: proc() -> bool {
+	return widget_focus_tab(false)
+}
+
+/*
+Moves keyboard focus to the previous tabbable element in declaration order.
+*/
+focus_prev :: proc() -> bool {
+	return widget_focus_tab(true)
+}
+
+/*
 Returns the next auto-generated element id for this frame.
 
 Ids are unique within a frame and reset at ui_begin_frame.

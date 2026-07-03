@@ -179,27 +179,22 @@ Image :: proc(props: Image_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := oni.ui_id(layout_label)
 
-	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus :=
-		cfg.auto_focus.mode == .Value && cfg.auto_focus.value && oni.w_ctx.auto_focused_id != key
-
-	if should_auto_focus {
-		oni.w_ctx.focused_id = key
-		oni.w_ctx.auto_focused_id = key
-	}
+	was_focused := widget_is_focused(key)
 
 	frame_state := Image_State {
 		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
-		is_focused  = oni.w_ctx.focused_id == key,
+		is_focused  = was_focused,
 	}
 
 	event := image_refresh_merged(props, &frame_state)
 	config := frame_state.config
 	child := props.child
+	handlers := image_lifecycle_handlers(props)
+	should_auto_focus := widget_should_auto_focus(config, key)
 
 	if oni.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
-			image_lifecycle_handlers(props),
+			handlers,
 			layout_id,
 			cfg.id != "",
 			&frame_state,
@@ -207,8 +202,16 @@ Image :: proc(props: Image_Props) {
 		if ran_unmount {
 			event = image_refresh_merged(props, &frame_state)
 			config = frame_state.config
+			should_auto_focus = widget_should_auto_focus(config, key)
 		}
 		if skip_layout do return
+
+		can_interact := widget_can_interact(handlers, &frame_state)
+		if can_interact && should_auto_focus {
+			widget_apply_auto_focus(key, true)
+			frame_state.is_focused = true
+		}
+		widget_register_tab_order(key, config.tabbable, can_interact)
 
 		oni.ui_push_scope(layout_id)
 		node := oni.layout_push_node(layout_id, config)
@@ -224,7 +227,9 @@ Image :: proc(props: Image_Props) {
 		return
 	}
 
-	if !widget_prepare_draw(image_lifecycle_handlers(props), layout_id, &frame_state) do return
+	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return
+
+	frame_state.is_focused = widget_is_focused(key)
 
 	layout_rect := oni.ui_layout_rect(layout_id)
 	rect := layout_rect
@@ -243,26 +248,25 @@ Image :: proc(props: Image_Props) {
 	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
 
-	got_focus := false
-	lost_focus := false
+	if widget_can_interact(handlers, &frame_state) {
+		got_focus, lost_focus := widget_handle_pointer_focus(
+			key,
+			config.tabbable,
+			was_focused,
+			frame_state.is_hovered,
+			&frame_state.is_focused,
+		)
 
-	if widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
-		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
-			oni.w_ctx.focused_id = key
-			frame_state.is_focused = true
-			got_focus = true
+		event = image_refresh_merged(props, &frame_state)
+		config = frame_state.config
+
+		if widget_got_tab_focus(key) && props.on_focus != nil {
+			props.on_focus(image_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
+		}
+		if widget_lost_tab_focus(key) && props.on_blur != nil {
+			props.on_blur(image_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
 		}
 
-		if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
-			oni.w_ctx.focused_id = {}
-			frame_state.is_focused = false
-			lost_focus = true
-		}
-	}
-
-	event = image_refresh_merged(props, &frame_state)
-
-	if widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
 		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
@@ -370,7 +374,7 @@ Image :: proc(props: Image_Props) {
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
-	   widget_can_interact(image_lifecycle_handlers(props), &frame_state) {
+	   widget_can_interact(handlers, &frame_state) {
 		props.on_focus(event)
 	}
 

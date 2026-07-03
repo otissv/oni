@@ -152,8 +152,9 @@ Button :: proc(props: Button_props) {
 	defer button_active_variant = prev_variant
 
 	base := wg.Rectangle_Config {
-		width   = set.Width(.AUTO),
-		justify = set.Justify(oni.Justify_Pos{x = .CENTER, y = .CENTER}),
+		width    = set.Width(.AUTO),
+		justify  = set.Justify(oni.Justify_Pos{x = .CENTER, y = .CENTER}),
+		tabbable = set.Bool(true),
 	}
 
 	button_apply_variant(&base, props.variant)

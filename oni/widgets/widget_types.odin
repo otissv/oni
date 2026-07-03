@@ -80,6 +80,20 @@ FocusElement :: proc(id: string) -> bool {
 }
 
 /*
+Moves keyboard focus to the next tabbable element in declaration order.
+*/
+FocusNext :: proc() -> bool {
+	return oni.focus_next()
+}
+
+/*
+Moves keyboard focus to the previous tabbable element in declaration order.
+*/
+FocusPrev :: proc() -> bool {
+	return oni.focus_prev()
+}
+
+/*
 Clears one-frame pressed and released flags on a mouse button state.
 */
 clear_button_transients :: proc(button: ^oni.Widget_Mouse_Button_State) {
@@ -137,6 +151,9 @@ Shutdown :: proc() {
 	}
 	if oni.w_ctx.element_pointer_down != nil {
 		delete(oni.w_ctx.element_pointer_down)
+	}
+	if oni.w_ctx.tab_order != nil {
+		delete(oni.w_ctx.tab_order)
 	}
 }
 

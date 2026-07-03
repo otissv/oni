@@ -132,7 +132,7 @@ rect_handle_interaction :: proc(
 	frame_state: ^Rectangle_State,
 	key: string,
 	was_focused: bool,
-	should_auto_focus: bool,
+	tabbable: bool,
 	rect: oni.Rect,
 ) -> (
 	got_focus: bool,
@@ -150,19 +150,13 @@ rect_handle_interaction :: proc(
 
 	if !widget_can_interact(rect_lifecycle_handlers(props), frame_state) do return
 
-	if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
-		oni.w_ctx.focused_id = key
-		frame_state.is_focused = true
-		got_focus = true
-	}
-
-	if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
-		oni.w_ctx.focused_id = {}
-		frame_state.is_focused = false
-		lost_focus = true
-	}
-
-	return
+	return widget_handle_pointer_focus(
+		key,
+		tabbable,
+		was_focused,
+		frame_state.is_hovered,
+		&frame_state.is_focused,
+	)
 }
 
 @(private)
@@ -291,23 +285,18 @@ Rectangle :: proc(props: Rectangle_Props) {
 	cfg := props.config
 	key := oni.element_key(cfg.id)
 
-	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus :=
-		cfg.auto_focus.mode == .Value && cfg.auto_focus.value && oni.w_ctx.auto_focused_id != key
-
-	if should_auto_focus {
-		oni.w_ctx.focused_id = key
-		oni.w_ctx.auto_focused_id = key
-	}
+	was_focused := widget_is_focused(key)
 
 	frame_state := Rectangle_State {
 		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
-		is_focused  = oni.w_ctx.focused_id == key,
+		is_focused  = was_focused,
 	}
 
 	event := rect_refresh_merged(props, &frame_state)
 	config := frame_state.config
 	child := props.child
+	handlers := rect_lifecycle_handlers(props)
+	should_auto_focus := widget_should_auto_focus(config, key)
 
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := oni.ui_id(layout_label)
@@ -316,7 +305,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 	if oni.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
-			rect_lifecycle_handlers(props),
+			handlers,
 			layout_id,
 			cfg.id != "",
 			&frame_state,
@@ -325,15 +314,24 @@ Rectangle :: proc(props: Rectangle_Props) {
 		if ran_unmount {
 			event = rect_refresh_merged(props, &frame_state)
 			config = frame_state.config
+			should_auto_focus = widget_should_auto_focus(config, key)
 		}
 
 		if !skip_layout {
+			can_interact := widget_can_interact(handlers, &frame_state)
+			if can_interact && should_auto_focus {
+				widget_apply_auto_focus(key, true)
+				frame_state.is_focused = true
+			}
+			widget_register_tab_order(key, config.tabbable, can_interact)
 			oni.Children(child, layout_id, config, frame_state)
 		}
 		return
 	}
 
-	if !widget_prepare_draw(rect_lifecycle_handlers(props), layout_id, &frame_state) do return
+	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return
+
+	frame_state.is_focused = widget_is_focused(key)
 
 	rect = rect_resolve_hit_rect(rect, config)
 
@@ -342,19 +340,28 @@ Rectangle :: proc(props: Rectangle_Props) {
 		&frame_state,
 		key,
 		was_focused,
-		should_auto_focus,
+		config.tabbable,
 		rect,
 	)
 
 	event = rect_refresh_merged(props, &frame_state)
 	config = frame_state.config
 
+	if widget_can_interact(handlers, &frame_state) {
+		if widget_got_tab_focus(key) && props.on_focus != nil {
+			props.on_focus(event)
+		}
+		if widget_lost_tab_focus(key) && props.on_blur != nil {
+			props.on_blur(event)
+		}
+	}
+
 	rect_dispatch_events(props, &frame_state, event, key, got_focus, lost_focus)
 
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
-	   widget_can_interact(rect_lifecycle_handlers(props), &frame_state) {
+	   widget_can_interact(handlers, &frame_state) {
 		props.on_focus(event)
 	}
 

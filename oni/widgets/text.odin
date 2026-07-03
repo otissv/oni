@@ -117,6 +117,7 @@ text_props_override :: proc(props: Text_Props) -> Text_Config {
 		align = props.align,
 		justify = props.justify,
 		auto_focus = props.auto_focus,
+		tabbable = props.tabbable,
 		border = props.border,
 		border_color = props.border_color,
 		background = props.background,
@@ -185,29 +186,21 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	layout_label := props.id != "" ? props.id : key
 	layout_id := oni.ui_id(layout_label)
 
-	was_focused := oni.w_ctx.focused_id == key
-	should_auto_focus :=
-		props.auto_focus.mode == .Value &&
-		props.auto_focus.value &&
-		oni.w_ctx.auto_focused_id != key
-
-	if should_auto_focus {
-		oni.w_ctx.focused_id = key
-		oni.w_ctx.auto_focused_id = key
-	}
-
+	was_focused := widget_is_focused(key)
 
 	frame_state := Text_Merged_State {
 		is_disabled = props.disabled.mode == .Value && props.disabled.value,
-		is_focused  = oni.w_ctx.focused_id == key,
+		is_focused  = was_focused,
 	}
 
 	event := text_refresh_merged(props, &frame_state)
 	style := frame_state.style
+	handlers := text_lifecycle_handlers(props)
+	should_auto_focus := widget_should_auto_focus(style, key)
 
 	if oni.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
-			text_lifecycle_handlers(props),
+			handlers,
 			layout_id,
 			props.id != "",
 			&frame_state,
@@ -215,8 +208,16 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		if ran_unmount {
 			event = text_refresh_merged(props, &frame_state)
 			style = frame_state.style
+			should_auto_focus = widget_should_auto_focus(style, key)
 		}
 		if skip_layout do return {}
+
+		can_interact := widget_can_interact(handlers, &frame_state)
+		if can_interact && should_auto_focus {
+			widget_apply_auto_focus(key, true)
+			frame_state.is_focused = true
+		}
+		widget_register_tab_order(key, style.tabbable, can_interact)
 
 		node := oni.layout_push_node(layout_id, style)
 		max_w: f32
@@ -227,7 +228,9 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		return {}
 	}
 
-	if !widget_prepare_draw(text_lifecycle_handlers(props), layout_id, &frame_state) do return {}
+	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return {}
+
+	frame_state.is_focused = widget_is_focused(key)
 
 	rect := oni.widget_hit_rect(layout_id, style)
 
@@ -239,7 +242,42 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	frame_state.is_right_released = frame_state.is_hovered && oni.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && oni.w_ctx.left_mouse.down
 
-	if widget_can_interact(text_lifecycle_handlers(props), &frame_state) {
+	if widget_can_interact(handlers, &frame_state) {
+		got_focus, lost_focus := widget_handle_pointer_focus(
+			key,
+			style.tabbable,
+			was_focused,
+			frame_state.is_hovered,
+			&frame_state.is_focused,
+		)
+
+		if got_focus {
+			event = text_refresh_merged(props, &frame_state)
+			style = frame_state.style
+			if props.on_focus != nil {
+				props.on_focus(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
+			}
+		}
+
+		if lost_focus {
+			event = text_refresh_merged(props, &frame_state)
+			style = frame_state.style
+			if props.on_blur != nil {
+				props.on_blur(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
+			}
+		}
+
+		frame_state.is_focused = widget_is_focused(key)
+		event = text_refresh_merged(props, &frame_state)
+		style = frame_state.style
+
+		if widget_got_tab_focus(key) && props.on_focus != nil {
+			props.on_focus(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
+		}
+		if widget_lost_tab_focus(key) && props.on_blur != nil {
+			props.on_blur(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
+		}
+
 		entered, left := oni.consume_hover_transition(key, frame_state.is_hovered)
 
 		if entered && props.on_mouse_enter != nil {
@@ -256,30 +294,6 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		if frame_state.is_hovered && oni.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
 			props.on_contextmenu(text_event(frame_state, mouse_button = sdl.BUTTON_RIGHT))
 		}
-
-		if frame_state.is_hovered && oni.w_ctx.left_mouse.pressed && !frame_state.is_focused {
-			oni.w_ctx.focused_id = key
-			frame_state.is_focused = true
-			event = text_refresh_merged(props, &frame_state)
-
-			if props.on_focus != nil {
-				props.on_focus(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-			}
-		}
-
-		if was_focused && !frame_state.is_hovered && oni.w_ctx.left_mouse.pressed {
-			oni.w_ctx.focused_id = {}
-			frame_state.is_focused = false
-			event = text_refresh_merged(props, &frame_state)
-
-			if props.on_blur != nil {
-				props.on_blur(text_event(frame_state, mouse_button = sdl.BUTTON_LEFT))
-			}
-		}
-
-		frame_state.is_focused = oni.w_ctx.focused_id == key
-		event = text_refresh_merged(props, &frame_state)
-		style = frame_state.style
 
 		if frame_state.is_hovered && props.on_mouse_pressed != nil {
 			if oni.w_ctx.left_mouse.pressed {
@@ -366,7 +380,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
-	   widget_can_interact(text_lifecycle_handlers(props), &frame_state) {
+	   widget_can_interact(handlers, &frame_state) {
 		props.on_focus(event)
 	}
 

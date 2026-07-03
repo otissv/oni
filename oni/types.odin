@@ -64,6 +64,9 @@ Global per-frame widget input context: focus, mouse, keys, and hover tracking.
 Widget_Context :: struct {
 	auto_focused_id:      Widget_ID,
 	focused_id:           Widget_ID,
+	tab_order:            [dynamic]Widget_ID,
+	tab_focus_previous_id: Widget_ID,
+	tab_focus_changed:    bool,
 	auto_element_index:   u32,
 	static_ids:           map[string]Widget_ID,
 	mouse_x:              f32,
@@ -198,6 +201,7 @@ Widget_Config :: struct {
 	self:           Cfg(Justify),
 	texture_fit:    Cfg(Style_Image_Fit),
 	texture_pos:    Cfg(Style_Image_Pos),
+	tabbable:       Cfg(bool),
 }
 
 Widget_Text_Flag :: enum {
@@ -247,6 +251,7 @@ Resolved_Widget_Style :: struct {
 	self:           Justify_Pos,
 	texture_fit:    Style_Image_Fit,
 	texture_pos:    Style_Image_Pos,
+	tabbable:       bool,
 }
 
 /*

@@ -316,6 +316,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	if override.id != "" do result.id = override.id
 	merge_cfg(Text_Align, &result.align, override.align)
 	merge_cfg(bool, &result.auto_focus, override.auto_focus)
+	merge_cfg(bool, &result.tabbable, override.tabbable)
 	merge_cfg(Colors, &result.background, override.background)
 	merge_cfg(Border, &result.border, override.border)
 	merge_cfg(Colors, &result.border_color, override.border_color)
@@ -638,6 +639,7 @@ resolve_widget_config :: proc(
 			parent.texture_pos,
 			theme.texture_pos,
 		),
+		tabbable       = resolve_cfg(bool, decl.tabbable, parent.tabbable, theme.tabbable),
 	}
 
 	resolved := Resolved_Widget_Config {

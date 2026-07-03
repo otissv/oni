@@ -83,11 +83,17 @@ ui_begin_frame :: proc() {
 
 	w_ctx.auto_element_index = 0
 
+	if w_ctx.tab_order != nil {
+		clear(&w_ctx.tab_order)
+	}
+
 	if w_ctx.static_ids != nil {
 		clear(&w_ctx.static_ids)
 	}
 
 	w_ctx.mouse_moved = false
+	w_ctx.tab_focus_changed = false
+	w_ctx.tab_focus_previous_id = {}
 
 	clear_button_transients(&w_ctx.left_mouse)
 	clear_button_transients(&w_ctx.right_mouse)
@@ -108,6 +114,15 @@ ui_end_layout_pass :: proc() {
 	for id in state.ui.layout.id_to_node {
 		state.ui.layout_ids_snapshot[id] = true
 	}
+
+	widget_prune_focus()
+	widget_process_tab_navigation()
+
+	w_ctx.auto_element_index = 0
+	if w_ctx.static_ids != nil {
+		clear(&w_ctx.static_ids)
+	}
+
 	state.ui.pass = .Draw
 }
 

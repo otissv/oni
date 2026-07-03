@@ -11,6 +11,7 @@ Route_Fade :: struct {
 	tween:   tengu.Tween_State(f32),
 }
 
+@(private)
 active_route_fade :: proc() -> ^Route_Fade {
 	switch Route {
 	case .Home:

@@ -6,6 +6,7 @@ import set "../oni/set"
 import wg "../oni/widgets"
 import "core:fmt"
 
+
 Nav :: proc() {
 	wg.Rectangle({
 		config = {id = "nav", x = set.F32(16), y = set.F32(16)},
@@ -22,10 +23,10 @@ Nav :: proc() {
 				},
 			})
 			ui.Button({
-				id = "nav-animate-button",
+				id = "nav-about-button",
 				variant = .OUTLINE,
 				child = proc(_: ui.Button_state) {
-					wg.Text({id = "animate-nav-button", text = "Animate"})
+					wg.Text({id = "about-nav-button", text = "About"})
 				},
 				on_click = proc(_: ui.Button_Event) {
 					Route = .About
