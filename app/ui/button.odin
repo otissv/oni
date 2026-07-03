@@ -4,7 +4,6 @@ import oni "../../oni"
 import set "../../oni/set"
 import wg "../../oni/widgets"
 
-
 Button_Variant :: enum {
 	DEFAULT,
 	SECONDARY,
@@ -12,6 +11,7 @@ Button_Variant :: enum {
 	GHOST,
 	DESTRUCTIVE,
 	LINK,
+	ACTIVE,
 }
 
 Button_Size :: enum {
@@ -28,6 +28,7 @@ Button_props :: struct {
 	using _:           wg.Rectangle_Config,
 	variant:           Button_Variant,
 	size:              Button_Size,
+	active:            bool,
 	child:             proc(state: Button_state),
 	on_focus:          proc(event: Button_Event),
 	on_blur:           proc(event: Button_Event),
@@ -82,7 +83,14 @@ button_background :: proc(
 		if state.is_Pressed do return oni.RGBA{235, 235, 235, 255}
 		if state.is_hovered do return oni.RGBA{245, 245, 245, 255}
 		return oni.RGBA{0, 0, 0, 0}
+
+	case .ACTIVE:
+		if state.is_Pressed do return oni.Color.ACCENT_PRESSED
+		if state.is_hovered do return oni.Color.ACCENT_HOVER
+		return oni.Color.ACCENT
 	}
+
+
 	return oni.Color.PRIMARY
 }
 
@@ -97,6 +105,7 @@ button_apply_variant :: proc(config: ^wg.Rectangle_Config, variant: Button_Varia
 	switch variant {
 	case .DEFAULT:
 	case .SECONDARY:
+	case .ACTIVE:
 	case .OUTLINE:
 		config.border = set.Border(f32(1))
 		config.border_color = set.Colors(oni.RGBA{80, 80, 80, 255})
@@ -148,7 +157,7 @@ button_apply_size :: proc(config: ^wg.Rectangle_Config, size: Button_Size) {
 
 Button :: proc(props: Button_props) {
 	prev_variant := button_active_variant
-	button_active_variant = props.variant
+	button_active_variant = props.active ? .ACTIVE : props.variant
 	defer button_active_variant = prev_variant
 
 	base := wg.Rectangle_Config {
