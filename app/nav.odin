@@ -1,10 +1,8 @@
 package app
 
 import ui "../app/ui"
-import oni "../oni"
 import set "../oni/set"
 import wg "../oni/widgets"
-import "core:fmt"
 
 Nav :: proc() {
 	wg.Rectangle({
@@ -18,10 +16,10 @@ Nav :: proc() {
 				},
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Home
-					oni.Log_Debug("Home")
 				},
 				active = .Home == Route,
 			})
+
 			ui.Button({
 				id = "nav-about-button",
 				variant = .OUTLINE,
@@ -33,8 +31,30 @@ Nav :: proc() {
 				},
 				active = .About == Route,
 			})
-			wg.Text({id = "route-fade-elapsed-text", text = route_fade_elapsed_text()})
-			wg.Text({id = "opacity-text", text = fmt.tprintf("Opacity: %.2f", about_fade.opacity)})
+
+			ui.Button({
+				id = "nav-artboard-button",
+				variant = .OUTLINE,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "artboard-nav-button", text = "Artboard"})
+				},
+				on_click = proc(_: ui.Button_Event) {
+					Route = .Artboard
+				},
+				active = .Artboard == Route,
+			})
+
+			ui.Button({
+				id = "nav-layout-button",
+				variant = .OUTLINE,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "layout-nav-button", text = "Layout"})
+				},
+				on_click = proc(_: ui.Button_Event) {
+					Route = .Layout
+				},
+				active = .Layout == Route,
+			})
 		},
 	})
 }

@@ -6,7 +6,7 @@ import sdl "vendor:sdl3"
 Per-widget cache entry keyed by UI_Id for shaped text and frame tracking.
 */
 UI_Widget_Entry :: struct {
-	shaped:     Shaped_Text,
+	shaped:     ^Shaped_Text,
 	last_frame: u64,
 	mounting:   Mount,
 	unmounting: Mount,

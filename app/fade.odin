@@ -13,7 +13,7 @@ Route_Fade :: struct {
 
 @(private)
 active_route_fade :: proc() -> ^Route_Fade {
-	switch Route {
+	#partial switch Route {
 	case .Home:
 		return &home_fade
 	case .About:

@@ -2,57 +2,39 @@ package app
 
 import oni "../oni"
 import set "../oni/set"
-import ui "./ui"
 
 
-// ONI_IMAGE_PATH :: "assets/oni-2.avif"
-// LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
-// LIFECYCLE_UNMOUNT_DURATION :: tengu.Seconds(0.3)
+ONI_IMAGE_PATH :: "assets/oni-2.avif"
+LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
+
+@(private)
+panel_state: Panel_State
+Panel_State :: struct {
+	background: oni.Cfg(oni.Colors),
+	x:          oni.Cfg(f32),
+}
+
+@(private)
+image_texture: oni.Texture_Handle
 
 
-// @(private)
-// panel_state: Panel_State
-// Panel_State :: struct {
-// 	background: oni.Cfg(oni.Colors),
-// 	x:          oni.Cfg(f32),
-// }
+@(init)
+register_init :: proc "contextless" () {
+	init = run_init
+}
 
-// @(private)
-// lifecycle_demo_state: Lifecycle_Demo_State
-// Lifecycle_Demo_State :: struct {
-// 	show:                bool,
-// 	opacity:             f32,
-// 	mount_spring:        tengu.Spring_State(f32),
-// 	mount_spring_ready:  bool,
-// 	unmount_tween:       tengu.Tween_State(f32),
-// 	unmount_tween_ready: bool,
-// }
-
-// @(private)
-// image_texture: oni.Texture_Handle
+@(private)
+run_init :: proc() {
+	panel := Panel_State {
+		background = set.Colors(oni.theme.palette[.SECONDARY]),
+		x          = set.F32(60),
+	}
+	panel_state = panel
 
 
-// @(init)
-// register_init :: proc "contextless" () {
-// 	init = run_init
-// }
-
-// @(private)
-// run_init :: proc() {
-// 	panel := Panel_State {
-// 		background = set.Colors(oni.theme.palette[.SECONDARY]),
-// 		x          = set.F32(80),
-// 	}
-// 	panel_state = panel
-
-// 	lifecycle_demo_state = Lifecycle_Demo_State {
-// 		show    = true,
-// 		opacity = 1,
-// 	}
-
-// 	tex, ok := oni.Load_Texture(ONI_IMAGE_PATH)
-// 	if ok do image_texture = tex
-// }
+	tex, ok := oni.Load_Texture(ONI_IMAGE_PATH)
+	if ok do image_texture = tex
+}
 
 
 // Panel :: proc() {
@@ -449,15 +431,14 @@ import ui "./ui"
 // 		},
 // 	)
 
-
 // 	oni.End_Artboard()
 
 // 	oni.Begin_Screen()
-// 	Hud()
-// 	Lifecycle_Demo()
+// Hud()
+// Lifecycle_Demo()
 
-// 	// Layout_Horizontal("layout-demo-1", x = 16, y = 480)
-// 	// Layout_Vertical("layout-demo-2", x = 16, y = 850)
+// Layout_Horizontal("layout-demo-1", x = 16, y = 480)
+// Layout_Vertical("layout-demo-2", x = 16, y = 850)
 
 
 // 	oni.End_Screen()
@@ -467,31 +448,25 @@ import ui "./ui"
 Routes :: enum {
 	Home,
 	About,
+	Layout,
+	Artboard,
 }
 
-Route: Routes = .Home
+Route: Routes = .Layout
 
 draw_ui :: proc() {
 	oni.Begin_Screen()
 
 	Nav()
 
-	ui.Paragraph(
-		{
-			id = "opacity-text",
-			text = "HELLO",
-			x = set.F32(480),
-			y = set.F32(480),
-			theme = &persistent.app.theme,
-		},
-	)
-
 	switch Route {
-	case .Home:
-		home_route()
+	case .Artboard:
+		artboard_route()
 	case .About:
 		about_route()
-	case:
+	case .Layout:
+		layout_route()
+	case .Home:
 		home_route()
 	}
 

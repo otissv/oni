@@ -39,7 +39,7 @@ Releases shaped text for every cached widget entry.
 ui_shutdown :: proc() {
 	if state.ui.widgets != nil {
 		for _, &entry in state.ui.widgets {
-			shaped_text_release(&entry.shaped)
+			widget_entry_release_shaped(&entry)
 		}
 		clear(&state.ui.widgets)
 		delete(state.ui.widgets)
@@ -143,7 +143,7 @@ ui_end_frame :: proc() {
 
 	for id in remove_ids {
 		if entry, ok := &state.ui.widgets[id]; ok {
-			shaped_text_release(&entry.shaped)
+			widget_entry_release_shaped(entry)
 			delete_key(&state.ui.widgets, id)
 		}
 	}

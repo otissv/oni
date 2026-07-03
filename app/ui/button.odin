@@ -157,7 +157,7 @@ button_apply_size :: proc(config: ^wg.Rectangle_Config, size: Button_Size) {
 
 Button :: proc(props: Button_props) {
 	prev_variant := button_active_variant
-	button_active_variant = props.active ? .ACTIVE : props.variant
+	button_active_variant = props.variant
 	defer button_active_variant = prev_variant
 
 	base := wg.Rectangle_Config {

@@ -846,15 +846,33 @@ widget_shaped :: proc(id: Widget_ID) -> ^Shaped_Text {
 	ui_id := UI_Id(hash.crc32(transmute([]u8)id))
 
 	if _, ok := state.ui.widgets[ui_id]; !ok {
-		state.ui.widgets[ui_id] = UI_Widget_Entry {
-			shaped = {pool_slot = INVALID_SHAPE_POOL_SLOT},
-		}
+		state.ui.widgets[ui_id] = UI_Widget_Entry{}
 	}
 
 	entry := &state.ui.widgets[ui_id]
 	entry.last_frame = state.ui.frame
 
-	return &entry.shaped
+	// Shaped_Text is heap-allocated so its address stays stable while it is
+	// registered in the shape pool; the widgets map relocates its values on
+	// rehash, which would otherwise dangle the pool's cached pointers.
+	if entry.shaped == nil {
+		entry.shaped = new(Shaped_Text)
+		entry.shaped.pool_slot = INVALID_SHAPE_POOL_SLOT
+	}
+
+	return entry.shaped
+}
+
+/*
+Releases and frees the heap-allocated shaped text held by a widget entry.
+
+Safe to call when the entry has no shaped text allocated yet.
+*/
+widget_entry_release_shaped :: proc(entry: ^UI_Widget_Entry) {
+	if entry == nil || entry.shaped == nil do return
+	shaped_text_release(entry.shaped)
+	free(entry.shaped)
+	entry.shaped = nil
 }
 
 /*
@@ -866,9 +884,7 @@ widget_lifecycle_entry :: proc(layout_id: UI_Id) -> ^UI_Widget_Entry {
 	ui_init()
 
 	if _, ok := state.ui.widgets[layout_id]; !ok {
-		state.ui.widgets[layout_id] = UI_Widget_Entry {
-			shaped = {pool_slot = INVALID_SHAPE_POOL_SLOT},
-		}
+		state.ui.widgets[layout_id] = UI_Widget_Entry{}
 	}
 
 	entry := &state.ui.widgets[layout_id]
@@ -885,7 +901,7 @@ Call when a widget leaves the layout tree so mount/unmount state resets on remou
 widget_lifecycle_remove :: proc(layout_id: UI_Id) {
 	if state.ui.widgets == nil do return
 	if entry, ok := &state.ui.widgets[layout_id]; ok {
-		shaped_text_release(&entry.shaped)
+		widget_entry_release_shaped(entry)
 		delete_key(&state.ui.widgets, layout_id)
 	}
 }

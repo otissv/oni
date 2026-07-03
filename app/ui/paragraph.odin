@@ -29,7 +29,7 @@ Paragraph :: proc(props: Paragraph_Props) {
 			height = set.Height(200),
 			text = props.text,
 			font = set.Font(props.theme.font_body),
-			font_size = set.F32(100),
+			font_size = set.F32(props.theme.font_body.size_px),
 			line_height = set.F32(1.5),
 			color = set.Colors(paragraph_color),
 			x = props.x,
