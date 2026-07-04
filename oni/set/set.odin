@@ -22,6 +22,9 @@ cfg_inherit :: proc($T: typeid) -> oni.Cfg(T) {
 	return oni.Cfg(T){mode = .Inherit}
 }
 
+Align :: proc(value: oni.Text_Align) -> oni.Cfg(oni.Text_Align) {return cfg_value(value)}
+
+
 /*
 Sets a bool widget config field to an explicit value.
 */

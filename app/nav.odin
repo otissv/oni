@@ -11,49 +11,73 @@ Nav :: proc() {
 			ui.Button({
 				id = "nav-home-button",
 				variant = .OUTLINE,
-				child = proc(_: ui.Button_state) {
-					wg.Text({id = "home-nav-button", text = "Home"})
-				},
+				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Home
 				},
-				active = .Home == Route,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "home-nav-button", text = "Home"})
+				},
 			})
 
 			ui.Button({
 				id = "nav-about-button",
 				variant = .OUTLINE,
-				child = proc(_: ui.Button_state) {
-					wg.Text({id = "about-nav-button", text = "About"})
-				},
+				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .About
 				},
-				active = .About == Route,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "about-nav-button", text = "About"})
+				},
 			})
 
 			ui.Button({
 				id = "nav-artboard-button",
 				variant = .OUTLINE,
-				child = proc(_: ui.Button_state) {
-					wg.Text({id = "artboard-nav-button", text = "Artboard"})
-				},
+				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Artboard
 				},
-				active = .Artboard == Route,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "artboard-nav-button", text = "Artboard"})
+				},
 			})
 
 			ui.Button({
 				id = "nav-layout-button",
 				variant = .OUTLINE,
-				child = proc(_: ui.Button_state) {
-					wg.Text({id = "layout-nav-button", text = "Layout"})
-				},
+				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Layout
 				},
-				active = .Layout == Route,
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "layout-nav-button", text = "Layout"})
+				},
+			})
+
+			ui.Button({
+				id = "nav-widgets-button",
+				variant = .OUTLINE,
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					Route = .Widgets
+				},
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "widgets-nav-button", text = "Widgets"})
+				},
+			})
+
+			ui.Button({
+				id = "nav-Components-button",
+				variant = .OUTLINE,
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					Route = .Components
+				},
+				child = proc(_: ui.Button_state) {
+					wg.Text({id = "Components-nav-button", text = "Components"})
+				},
 			})
 		},
 	})

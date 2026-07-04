@@ -450,6 +450,8 @@ Routes :: enum {
 	About,
 	Layout,
 	Artboard,
+	Widgets,
+	Components,
 }
 
 Route: Routes = .Layout
@@ -459,7 +461,7 @@ draw_ui :: proc() {
 
 	Nav()
 
-	switch Route {
+	#partial switch Route {
 	case .Artboard:
 		artboard_route()
 	case .About:
