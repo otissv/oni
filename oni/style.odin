@@ -560,6 +560,7 @@ resolve_widget_config :: proc(
 	parent_ctx := ui_style_current()
 	parent := parent_ctx.style
 	theme := theme_widget_style()
+
 	decl := merge_widget_config(base, override)
 
 	style := Resolved_Widget_Style {
@@ -732,6 +733,7 @@ end_children :: proc() {
 	}
 	ui_pop_scope()
 }
+
 
 /*
 Runs a child builder inside a scoped layout node and style context.

@@ -1,7 +1,8 @@
 package app
 
-import oni "../oni"
+import o "../oni"
 import set "../oni/set"
+import wg "../oni/widgets"
 
 
 ONI_IMAGE_PATH :: "assets/oni-2.avif"
@@ -10,12 +11,12 @@ LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
 @(private)
 panel_state: Panel_State
 Panel_State :: struct {
-	background: oni.Cfg(oni.Colors),
-	x:          oni.Cfg(f32),
+	background: o.Cfg(o.Colors),
+	x:          o.Cfg(f32),
 }
 
 @(private)
-image_texture: oni.Texture_Handle
+image_texture: o.Texture_Handle
 
 
 @(init)
@@ -26,424 +27,15 @@ register_init :: proc "contextless" () {
 @(private)
 run_init :: proc() {
 	panel := Panel_State {
-		background = set.Colors(oni.theme.palette[.SECONDARY]),
+		background = set.Colors(o.theme.palette[.SECONDARY]),
 		x          = set.F32(60),
 	}
 	panel_state = panel
 
 
-	tex, ok := oni.Load_Texture(ONI_IMAGE_PATH)
+	tex, ok := o.Load_Texture(ONI_IMAGE_PATH)
 	if ok do image_texture = tex
 }
-
-
-// Panel :: proc() {
-// 	wg.Rectangle({
-// 		config = {
-// 			id = "artboard-panel",
-// 			x = panel_state.x,
-// 			y = set.F32(80),
-// 			width = 520,
-// 			height = 340,
-// 			background = panel_state.background,
-// 			radius = set.Radius(f32(10)),
-// 			space = set.Space(.ARTBOARD),
-// 			direction = set.Direction(.VERTICAL),
-// 			padding = set.Padding(oni.PADDING_MD),
-// 			gap = set.Gap(u16(12)),
-// 			justify = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .START}),
-// 		},
-// 		child = proc(state: wg.Rectangle_State) {
-// 			ui.Heading({id = "heading", text = "Artboard heading", theme = &persistent.app.theme})
-
-// 			ui.Paragraph(
-// 				{
-// 					id = "paragraph",
-// 					text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
-// 					theme = &persistent.app.theme,
-// 				},
-// 			)
-
-// 			ui.Button({
-// 				id = "button",
-// 				radius = set.Radius(20),
-// 				child = proc(_: ui.Button_state) {
-// 					wg.Text(
-// 						{
-// 							id = "button",
-// 							width = .AUTO,
-// 							height = set.Height(28),
-// 							text = "Click me",
-// 							font = set.Font(oni.theme.font_heading),
-// 							color = set.Colors(oni.theme.palette[.FOREGROUND]),
-// 							font_size = set.F32(20),
-// 							line_height = set.F32(0),
-// 						},
-// 					)
-// 				},
-// 			})
-// 		},
-// 	})
-// }
-
-// Hud :: proc() {
-// 	theme := &persistent.app.theme
-// 	zoom := oni.View_Effective_Zoom()
-
-// 	hud := fmt.tprintf(
-// 		"Screen HUD  zoom: %.1fx  (scroll / Ctrl+=/- zoom, Ctrl+0 reset, Alt+LMB pan)",
-// 		zoom,
-// 	)
-// 	wg.Text(
-// 		{
-// 			id = "hud-zoom",
-// 			x = set.F32(16),
-// 			y = set.F32(6),
-// 			width = set.Width(600),
-// 			height = set.Height(24),
-// 			text = hud,
-// 			font = set.Font(theme.font_body),
-// 			color = set.Colors(oni.theme.palette[.WHITE]),
-// 			text_direction = set.Text_Direction(.LTR),
-// 			font_size = set.F32(16),
-// 			line_height = set.F32(1),
-// 			space = set.Space(.SCREEN),
-// 		},
-// 	)
-// }
-
-// Layout_Horizontal :: proc(id: string, x: f32, y: f32) {
-// 	wg.Rectangle({
-// 		config = {
-// 			id = id,
-// 			x = set.F32(x),
-// 			y = set.F32(y),
-// 			space = set.Space(.SCREEN),
-// 			direction = set.Direction(.HORIZONTAL),
-// 			gap = set.Gap(u16(8)),
-// 			padding = set.Padding(f32(20)),
-// 			justify = set.Justify(oni.Justify_Pos{x = .SPACE_AROUND}),
-// 			background = set.Colors(oni.theme.palette[.BACKGROUND]),
-// 			radius = set.Radius(oni.Radius_corners{tl = 10, tr = 10}),
-// 			border = set.Border(f32(10)),
-// 			border_color = set.Colors(oni.Color.YELLOW_500),
-// 		},
-// 		child = proc(state: wg.Rectangle_State) {
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "left",
-// 						width = 100,
-// 						height = 30,
-// 						background = set.Colors(oni.theme.palette[.DESTRUCTIVE]),
-// 					},
-// 				},
-// 			)
-// 			wg.Rectangle({
-// 				config = {
-// 					id = "center",
-// 					background = set.Colors(oni.theme.palette[.ACCENT]),
-// 					height = 100,
-// 				},
-// 				child = proc(state: wg.Rectangle_State) {
-// 					ui.Label(
-// 						{
-// 							id = "label",
-// 							theme = &persistent.app.theme,
-// 							text = "label",
-// 							size = .Large,
-// 						},
-// 					)
-// 				},
-// 			})
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "right",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.SUCCESS]),
-// 					},
-// 				},
-// 			)
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "end",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.INFO]),
-// 					},
-// 				},
-// 			)
-// 		},
-// 	})
-// }
-
-// Layout_Vertical :: proc(id: string, x: f32, y: f32) {
-// 	wg.Rectangle({
-// 		config = {
-// 			id = id,
-// 			x = set.F32(x),
-// 			y = set.F32(y),
-// 			width = 400,
-// 			height = 400,
-// 			space = set.Space(.SCREEN),
-// 			direction = set.Direction(.VERTICAL_WRAP),
-// 			gap = set.Gap(u16(8)),
-// 			padding = set.Padding(oni.Pd{t = 10, b = 10}),
-// 			justify = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .SPACE_BETWEEN}),
-// 			background = set.Colors(oni.theme.palette[.BACKGROUND]),
-// 			radius = set.Radius(10),
-// 			border = set.Border(10),
-// 			border_color = set.Colors(oni.Color.YELLOW_500),
-// 		},
-// 		child = proc(state: wg.Rectangle_State) {
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "top-1",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.DESTRUCTIVE]),
-// 					},
-// 				},
-// 			)
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "center",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.ACCENT]),
-// 					},
-// 				},
-// 			)
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "bottom",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.SUCCESS]),
-// 					},
-// 				},
-// 			)
-// 			wg.Rectangle(
-// 				{
-// 					config = {
-// 						id = "bottom-1",
-// 						width = 100,
-// 						height = 100,
-// 						background = set.Colors(oni.theme.palette[.INFO]),
-// 					},
-// 				},
-// 			)
-// 		},
-// 	})
-// }
-
-
-// @(private)
-// lifecycle_demo_background :: proc(
-// 	_: oni.Widget_Frame_State,
-// 	_: oni.Widget_Event(oni.Widget_Frame_State),
-// ) -> oni.Colors {
-// 	base := oni.theme.palette[.ACCENT]
-// 	alpha := u8(min(max(lifecycle_demo_state.opacity, 0), 1) * 255)
-// 	return oni.RGBA{base.r, base.g, base.b, alpha}
-// }
-
-// @(private)
-// lifecycle_demo_on_mount :: proc(_: wg.Rectangle_State) -> oni.Mount {
-// 	dt := f32(oni.Frame_Time())
-
-// 	if !lifecycle_demo_state.mount_spring_ready {
-// 		tengu.spring_init(
-// 			tengu.Spring_Init_Params(f32) {
-// 				state = &lifecycle_demo_state.mount_spring,
-// 				config = tengu.spring_default_config(f32(1)),
-// 				start_value = lifecycle_demo_state.opacity,
-// 			},
-// 		)
-// 		lifecycle_demo_state.mount_spring_ready = true
-// 	}
-
-// 	result := tengu.spring_step(
-// 		tengu.Motion_Step_Params(f32) {
-// 			state = &lifecycle_demo_state.mount_spring,
-// 			dt = dt,
-// 			anim = tengu.F32_Animatable(),
-// 			completion = tengu.DEFAULT_COMPLETION_POLICY,
-// 			time = tengu.DEFAULT_TIME_POLICY,
-// 		},
-// 	)
-// 	lifecycle_demo_state.opacity = result.value
-// 	return result.done ? .COMPLETED : .RUNNING
-// }
-
-// @(private)
-// lifecycle_demo_on_unmount :: proc(_: wg.Rectangle_State) -> oni.Mount {
-// 	dt := f32(oni.Frame_Time())
-
-// 	if !lifecycle_demo_state.unmount_tween_ready {
-// 		tengu.tween_init(
-// 			&lifecycle_demo_state.unmount_tween,
-// 			tengu.Tween_Config(f32) {
-// 				start = lifecycle_demo_state.opacity,
-// 				target = 0,
-// 				duration = LIFECYCLE_UNMOUNT_DURATION,
-// 				easing = tengu.Ease.OUT_CUBIC,
-// 			},
-// 		)
-// 		lifecycle_demo_state.unmount_tween_ready = true
-// 	}
-
-// 	result := tengu.tween_step(
-// 		tengu.Step_Params(f32) {
-// 			state = &lifecycle_demo_state.unmount_tween,
-// 			dt = dt,
-// 			anim = tengu.F32_Animatable(),
-// 			completion = tengu.DEFAULT_COMPLETION_POLICY,
-// 		},
-// 	)
-// 	lifecycle_demo_state.opacity = result.value
-// 	return result.done ? .COMPLETED : .RUNNING
-// }
-
-
-// @(private)
-// lifecycle_demo_panel_child :: proc(_: wg.Rectangle_State) {
-// 	wg.Text(
-// 		{
-// 			id = "lifecycle-demo-title",
-// 			text = "Mount / unmount demo",
-// 			font = set.Font(oni.theme.font_heading),
-// 			color = set.Colors(oni.theme.palette[.FOREGROUND]),
-// 			font_size = set.F32(18),
-// 		},
-// 	)
-// 	wg.Text(
-// 		{
-// 			id = "lifecycle-demo-body",
-// 			text = "Springs in on mount, tweens out on unmount. Use the toggle above to hide.",
-// 			font = set.Font(oni.theme.font_body),
-// 			color = set.Colors(oni.theme.palette[.MUTED]),
-// 			font_size = set.F32(14),
-// 			line_height = set.F32(1.3),
-// 		},
-// 	)
-// }
-
-
-// @(private)
-// Lifecycle_Demo :: proc() {
-// 	panel_config := wg.Rectangle_Config {
-// 		id           = LIFECYCLE_PANEL_ID,
-// 		x            = set.F32(900),
-// 		y            = set.F32(120),
-// 		width        = 320,
-// 		height       = 180,
-// 		background   = set.Colors(lifecycle_demo_background),
-// 		radius       = set.Radius(10),
-// 		border       = set.Border(2),
-// 		border_color = set.Colors(oni.theme.palette[.FOREGROUND]),
-// 		space        = set.Space(.SCREEN),
-// 		direction    = set.Direction(.VERTICAL),
-// 		padding      = set.Padding(oni.PADDING_MD),
-// 		gap          = set.Gap(u16(8)),
-// 		justify      = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .START}),
-// 	}
-
-// 	ui.Button({
-// 		id = "lifecycle-toggle",
-// 		variant = .OUTLINE,
-// 		x = set.F32(900),
-// 		y = set.F32(80),
-// 		space = set.Space(.SCREEN),
-// 		child = proc(_: ui.Button_state) {
-// 			label := lifecycle_demo_state.show ? "Hide panel" : "Show panel"
-// 			wg.Text(
-// 				{
-// 					id = "lifecycle-toggle-label",
-// 					text = label,
-// 					font = set.Font(oni.theme.font_body),
-// 					color = set.Colors(oni.theme.palette[.FOREGROUND]),
-// 					font_size = set.F32(14),
-// 				},
-// 			)
-// 		},
-// 		on_click = proc(_: ui.Button_Event) {
-// 			if lifecycle_demo_state.show {
-// 				lifecycle_demo_state.show = false
-// 				lifecycle_demo_state.unmount_tween_ready = false
-// 			} else {
-// 				lifecycle_demo_state.opacity = 0
-// 				lifecycle_demo_state.show = true
-// 				lifecycle_demo_state.mount_spring_ready = false
-// 			}
-// 		},
-// 	})
-
-// 	if lifecycle_demo_state.show {
-// 		wg.Rectangle(
-// 			{
-// 				config = panel_config,
-// 				on_mount = lifecycle_demo_on_mount,
-// 				child = lifecycle_demo_panel_child,
-// 			},
-// 		)
-// 	} else {
-// 		wg.Rectangle(
-// 			{
-// 				config = panel_config,
-// 				unmount = true,
-// 				on_unmount = lifecycle_demo_on_unmount,
-// 				child = lifecycle_demo_panel_child,
-// 			},
-// 		)
-// 	}
-// }
-
-
-// @(private)
-// panel_view :: proc() {
-// 	oni.Begin_Artboard()
-// 	Panel()
-
-
-// 	wg.Image(
-// 		{
-// 			texture = image_texture,
-// 			config = {
-// 				id           = "bottom-1",
-// 				x            = set.F32(16),
-// 				y            = set.F32(480),
-// 				width        = 464,
-// 				height       = 464,
-// 				background   = set.Colors(oni.theme.palette[.INFO]),
-// 				radius       = set.Radius(10),
-// 				border       = set.Border(10),
-// 				border_color = set.Colors(oni.Color.YELLOW_500),
-// 				texture_fit  = set.Image_Fit(.NONE),
-// 				texture_pos  = set.Image_Pos({x = 50, y = 50}), // center
-// 			},
-// 		},
-// 	)
-
-// 	oni.End_Artboard()
-
-// 	oni.Begin_Screen()
-// Hud()
-// Lifecycle_Demo()
-
-// Layout_Horizontal("layout-demo-1", x = 16, y = 480)
-// Layout_Vertical("layout-demo-2", x = 16, y = 850)
-
-
-// 	oni.End_Screen()
-// }
-
 
 Routes :: enum {
 	Home,
@@ -454,27 +46,35 @@ Routes :: enum {
 	Components,
 }
 
-Route: Routes = .Layout
+Route: Routes = .Widgets
 
-draw_ui :: proc() {
-	oni.Begin_Screen()
+main_ui :: proc() {
+	o.Begin_Screen()
 
 	Nav()
 
-	#partial switch Route {
-	case .Artboard:
-		artboard_route()
-	case .About:
-		about_route()
-	case .Layout:
-		layout_route()
-	case .Home:
-		home_route()
-	}
 
-	oni.End_Screen()
+	wg.Rectangle({
+		config = {id = "main", y = set.F32(60), padding = set.Padding(o.Pd_pos{x = 10, y = 20})},
+		child = proc(state: wg.Rectangle_State) {
+			#partial switch Route {
+			case .Artboard:
+				artboard_route()
+			case .About:
+				about_route()
+			case .Layout:
+				layout_route()
+			case .Home:
+				home_route()
+			case .Widgets:
+				widgets_route()
+			}
+		},
+	})
+
+	o.End_Screen()
 }
 
 app_draw :: proc() {
-	oni.Render(draw_ui)
+	o.Render(main_ui)
 }

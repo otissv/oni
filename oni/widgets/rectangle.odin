@@ -117,7 +117,9 @@ rect_resolve_hit_rect :: proc(rect: oni.Rect, config: oni.Resolved_Widget_Config
 }
 
 @(private)
-rect_lifecycle_handlers :: proc(props: Rectangle_Props) -> Widget_Lifecycle_Handlers(Rectangle_State) {
+rect_lifecycle_handlers :: proc(
+	props: Rectangle_Props,
+) -> Widget_Lifecycle_Handlers(Rectangle_State) {
 	return {
 		unmount = props.unmount,
 		can_interactive_during_mount = props.can_interactive_during_mount,

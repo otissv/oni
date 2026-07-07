@@ -1,46 +1,39 @@
 package app
 
-import oni "../oni"
+import o "../oni"
 import set "../oni/set"
-import wg "../oni/widgets"
+import w "../oni/widgets"
 import ui "./ui"
 
 artboard_route :: proc() {
-	wg.Rectangle({
-		config = {
-			id = "screen_rect",
-			x = set.F32(0),
-			y = set.F32(60),
-			background = set.Colors(oni.theme.palette[.BACKGROUND]),
-		},
-		child = proc(state: wg.Rectangle_State) {
-			oni.Begin_Artboard()
+	w.Rectangle({
+		config = {id = "screen_rect", background = set.Colors(o.theme.palette[.BACKGROUND])},
+		child = proc(state: w.Rectangle_State) {
+			o.Begin_Artboard()
 			Panel()
-			oni.End_Artboard()
+			o.End_Artboard()
 		},
 	})
 }
 
 
 Panel :: proc() {
-	wg.Rectangle({
+	w.Rectangle({
 		config = {
 			id = "artboard-panel",
-			x = panel_state.x,
-			y = set.F32(80),
 			width = 520,
 			height = 340,
-			background = panel_state.background,
+			background = set.Colors(o.theme.palette[.SECONDARY]),
 			radius = set.Radius(f32(10)),
 			space = set.Space(.ARTBOARD),
 			direction = set.Direction(.VERTICAL),
-			padding = set.Padding(oni.PADDING_MD),
+			padding = set.Padding(o.PADDING_MD),
 			gap = set.Gap(u16(12)),
-			justify = set.Justify(oni.Justify_Pos{x = .STRETCH, y = .START}),
+			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .START}),
 			border = set.Border(10),
-			border_color = set.Colors(oni.theme.palette[.FOREGROUND]),
+			border_color = set.Colors(o.theme.palette[.FOREGROUND]),
 		},
-		child = proc(state: wg.Rectangle_State) {
+		child = proc(state: w.Rectangle_State) {
 			ui.Heading({id = "heading", text = "Artboard heading", theme = &persistent.app.theme})
 
 			ui.Paragraph(
@@ -55,14 +48,14 @@ Panel :: proc() {
 				id = "button",
 				radius = set.Radius(20),
 				child = proc(_: ui.Button_state) {
-					wg.Text(
+					w.Text(
 						{
 							id = "button",
 							width = .AUTO,
 							height = set.Height(28),
 							text = "Click me",
-							font = set.Font(oni.theme.font_heading),
-							color = set.Colors(oni.theme.palette[.FOREGROUND]),
+							font = set.Font(o.theme.font_heading),
+							color = set.Colors(o.theme.palette[.FOREGROUND]),
 							font_size = set.F32(20),
 							line_height = set.F32(0),
 						},
