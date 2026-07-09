@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import set "../set"
 
 /*
 Rectangle widget configuration extending Widget_Config.
@@ -53,7 +52,7 @@ rect_theme_base :: proc(frame_state: ^Rectangle_State) -> Rectangle_Config {
 		color = o.Color.MUTED
 	}
 
-	return Rectangle_Config{kind = .RECT, gap = set.Gap(0)}
+	return Rectangle_Config{kind = .RECT}
 }
 
 /*

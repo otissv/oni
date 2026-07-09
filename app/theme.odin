@@ -34,7 +34,6 @@ build_theme :: proc() -> oni.Theme {
 		palette = oni.palette,
 		font_body = body,
 		font_heading = heading,
-		gap = 20,
 		justify = oni.Justify_Pos{x = .START, y = .START},
 		direction = .HORIZONTAL,
 		border_color = .BLACK,

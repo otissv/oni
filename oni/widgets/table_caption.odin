@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import set "../set"
 
 /*
 Table widget configuration extending Widget_Config.
@@ -55,7 +54,7 @@ table_caption_theme_base :: proc(frame_state: ^Table_Caption_State) -> Table_Cap
 		color = o.Color.MUTED
 	}
 
-	return Table_Caption_Config{kind = .TABLE_CAPTION, gap = set.Gap(0)}
+	return Table_Caption_Config{kind = .TABLE_CAPTION}
 }
 
 /*

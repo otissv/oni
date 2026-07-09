@@ -55,7 +55,7 @@ table_theme_base :: proc(frame_state: ^Table_State) -> Table_Config {
 		color = o.Color.MUTED
 	}
 
-	return Table_Config{kind = .TABLE, gap = set.Gap(0), direction = set.Direction(.VERTICAL)}
+	return Table_Config{kind = .TABLE, direction = set.Direction(.VERTICAL)}
 }
 
 @(private)

@@ -45,7 +45,6 @@ Layout_sidebar :: proc() {
 			border_color = set.Border_color(.GRAY_500),
 			direction = set.Direction(.VERTICAL),
 			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-			gap = set.Gap(0),
 		},
 		child = proc(state: w.Rectangle_State) {
 			ui.Button({
@@ -261,7 +260,8 @@ Layout_1 :: proc(id: string, direction: o.Direction_Layout) {
 			id = id,
 			space = set.Space(.SCREEN),
 			direction = set.Direction(direction),
-			gap = set.Gap(u16(8)),
+			gap_x = set.Gap_X(u16(8)),
+			gap_y = set.Gap_Y(u16(8)),
 			width = set.Width(layout_width),
 			height = set.Height(layout_height),
 			padding = set.Padding(f32(20)),
@@ -327,7 +327,8 @@ Layout_Content :: proc(id: string) {
 			id = id,
 			space = set.Space(.SCREEN),
 			direction = set.Direction(direction),
-			gap = set.Gap(u16(8)),
+			gap_x = set.Gap_X(u16(8)),
+			gap_y = set.Gap_Y(u16(8)),
 			width = set.Width(layout_width),
 			height = set.Height(layout_height),
 			padding = set.Padding(f32(20)),

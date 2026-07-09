@@ -73,9 +73,14 @@ Font :: proc(font: oni.Font_Handle) -> oni.Cfg(oni.Font_Handle) {return cfg_valu
 Font_size :: F32
 
 /*
-Sets a gap widget config field to an explicit value.
+Sets a horizontal gap widget config field to an explicit value.
 */
-Gap :: proc(value: oni.Gap) -> oni.Cfg(oni.Gap) {return cfg_value(value)}
+Gap_X :: proc(value: oni.Gap_X) -> oni.Cfg(oni.Gap_X) {return cfg_value(value)}
+
+/*
+Sets a vertical gap widget config field to an explicit value.
+*/
+Gap_Y :: proc(value: oni.Gap_Y) -> oni.Cfg(oni.Gap_Y) {return cfg_value(value)}
 
 /*
 Sets a height widget config field to an explicit value.

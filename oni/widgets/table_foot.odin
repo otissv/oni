@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import set "../set"
 
 /*
 Table widget configuration extending Widget_Config.
@@ -55,7 +54,7 @@ table_foot_theme_base :: proc(frame_state: ^Table_Foot_State) -> Table_Foot_Conf
 		color = o.Color.MUTED
 	}
 
-	return Table_Foot_Config{kind = .TABLE_FOOT, gap = set.Gap(0)}
+	return Table_Foot_Config{kind = .TABLE_FOOT}
 }
 
 /*

@@ -147,19 +147,37 @@ resolve_length_from_height :: proc(
 }
 
 /*
-Resolves a Cfg(Gap) field from theme, parent, or explicit value.
+Resolves a Cfg(Gap_X) field from theme, parent, or explicit value.
 */
 @(private)
-resolve_cfg_gap :: proc(gap: Cfg(Gap), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
+resolve_cfg_gap_x :: proc(gap: Cfg(Gap_X), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
 	switch gap.mode {
 	case .UNSET:
-		if resolved, ok := resolve_gap_value(theme.gap); ok do return resolved
+		if resolved, ok := resolve_gap_x_value(theme.gap_x); ok do return resolved
 		return parent
 	case .Inherit:
 		return parent
 	case .Value:
-		if resolved, ok := resolve_child_gap(gap.value, state, event); ok do return resolved
-		if resolved, ok := resolve_gap_value(gap.value); ok do return resolved
+		if resolved, ok := resolve_child_gap_x(gap.value, state, event); ok do return resolved
+		if resolved, ok := resolve_gap_x_value(gap.value); ok do return resolved
+	}
+	return parent
+}
+
+/*
+Resolves a Cfg(Gap_Y) field from theme, parent, or explicit value.
+*/
+@(private)
+resolve_cfg_gap_y :: proc(gap: Cfg(Gap_Y), parent: u16, state: ^$S, event: Widget_Event(S)) -> u16 {
+	switch gap.mode {
+	case .UNSET:
+		if resolved, ok := resolve_gap_y_value(theme.gap_y); ok do return resolved
+		return parent
+	case .Inherit:
+		return parent
+	case .Value:
+		if resolved, ok := resolve_child_gap_y(gap.value, state, event); ok do return resolved
+		if resolved, ok := resolve_gap_y_value(gap.value); ok do return resolved
 	}
 	return parent
 }
@@ -267,9 +285,14 @@ Builds default resolved widget style values from the active theme.
 */
 @(private)
 theme_widget_style :: proc() -> Resolved_Widget_Style {
-	gap: u16
-	if resolved_gap, ok := resolve_gap_value(theme.gap); ok {
-		gap = resolved_gap
+	gap_x: u16
+	if resolved_gap_x, ok := resolve_gap_x_value(theme.gap_x); ok {
+		gap_x = resolved_gap_x
+	}
+
+	gap_y: u16
+	if resolved_gap_y, ok := resolve_gap_y_value(theme.gap_y); ok {
+		gap_y = resolved_gap_y
 	}
 
 	justify := Justify_Pos {
@@ -294,7 +317,8 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		border_color = theme.border_color,
 		padding = theme.padding,
 		radius = theme.radius,
-		gap = gap,
+		gap_x = gap_x,
+		gap_y = gap_y,
 		direction = direction,
 		justify = justify,
 		line_height = 1,
@@ -326,7 +350,8 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(f32, &result.flex, override.flex)
 	merge_cfg(Font_Handle, &result.font, override.font)
 	merge_cfg(f32, &result.font_size, override.font_size)
-	merge_cfg(Gap, &result.gap, override.gap)
+	merge_cfg(Gap_X, &result.gap_x, override.gap_x)
+	merge_cfg(Gap_Y, &result.gap_y, override.gap_y)
 	if cfg_height_is_set(override.height) do result.height = override.height
 	merge_cfg(Justify, &result.justify, override.justify)
 	merge_cfg(f32, &result.letter_spacing, override.letter_spacing)
@@ -575,7 +600,8 @@ resolve_widget_config :: proc(
 		flex           = resolve_cfg(f32, decl.flex, parent.flex, theme.flex),
 		font           = resolve_cfg(Font_Handle, decl.font, parent.font, theme.font),
 		font_size      = resolve_cfg(f32, decl.font_size, parent.font_size, theme.font_size),
-		gap            = resolve_cfg_gap(decl.gap, parent.gap, state, event),
+		gap_x          = resolve_cfg_gap_x(decl.gap_x, parent.gap_x, state, event),
+		gap_y          = resolve_cfg_gap_y(decl.gap_y, parent.gap_y, state, event),
 		height         = resolve_length_from_height(
 			decl.height,
 			parent_ctx.content_h,

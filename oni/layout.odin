@@ -246,7 +246,7 @@ layout_wrap_build_lines :: proc(
 /*
 Measures a wrap container's natural size from child desired sizes.
 */
-layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -> Vec2 {
+layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, gap_cross: f32) -> Vec2 {
 	sizes: [dynamic]Vec2
 	defer delete(sizes)
 	resize(&sizes, len(node.child_indices))
@@ -257,7 +257,7 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -
 	}
 
 	main_limit := layout_wrap_main_limit_from_config(node, is_horizontal)
-	lines := layout_wrap_build_lines(sizes[:], is_horizontal, gap, main_limit)
+	lines := layout_wrap_build_lines(sizes[:], is_horizontal, gap_main, main_limit)
 	defer delete(lines)
 
 	main_natural: f32
@@ -265,7 +265,7 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -
 	for line, i in lines {
 		main_natural = max(main_natural, line.main_sum)
 		cross_sum += line.cross_max
-		if i + 1 < len(lines) do cross_sum += gap
+		if i + 1 < len(lines) do cross_sum += gap_cross
 	}
 
 	inset_w := node.padding.l + node.padding.r + node.border.l + node.border.r
@@ -289,10 +289,19 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap: f32) -
 }
 
 /*
-Returns the inter-child gap from a resolved widget style.
+Returns the main-axis inter-child gap from a resolved widget style.
 */
-layout_config_gap :: proc(config: Resolved_Widget_Style) -> f32 {
-	return f32(config.gap)
+layout_config_gap_main :: proc(config: Resolved_Widget_Style, is_horizontal: bool) -> f32 {
+	if is_horizontal do return f32(config.gap_x)
+	return f32(config.gap_y)
+}
+
+/*
+Returns the cross-axis inter-child gap from a resolved widget style.
+*/
+layout_config_gap_cross :: proc(config: Resolved_Widget_Style, is_horizontal: bool) -> f32 {
+	if is_horizontal do return f32(config.gap_y)
+	return f32(config.gap_x)
 }
 
 /*
@@ -415,14 +424,15 @@ Measures a node's desired size from children or leaf content.
 layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	padding := node.padding
 	border := node.border
-	gap := layout_config_gap(node.config)
 	direction := layout_config_direction(node.config)
+	info := layout_direction_info(direction)
+	gap_main := layout_config_gap_main(node.config, info.is_horizontal)
+	gap_cross := layout_config_gap_cross(node.config, info.is_horizontal)
 
 	if len(node.child_indices) > 0 {
-		info := layout_direction_info(direction)
 
 		if info.is_wrap {
-			return layout_wrap_measure(node, info.is_horizontal, gap)
+			return layout_wrap_measure(node, info.is_horizontal, gap_main, gap_cross)
 		}
 
 		child_sizes: [dynamic]Vec2
@@ -455,7 +465,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 		}
 
 		if len(node.child_indices) > 1 {
-			main_sum += gap * f32(len(node.child_indices) - 1)
+			main_sum += gap_main * f32(len(node.child_indices) - 1)
 		}
 
 		inset_w := padding.l + padding.r + border.l + border.r
@@ -1221,9 +1231,10 @@ layout_position_children_wrap :: proc(
 	content: Rect,
 	info: Layout_Direction_Info,
 ) {
-	gap := layout_config_gap(node.config)
-	justify := layout_config_justify(node.config)
 	is_horizontal := info.is_horizontal
+	gap_main := layout_config_gap_main(node.config, is_horizontal)
+	gap_cross := layout_config_gap_cross(node.config, is_horizontal)
+	justify := layout_config_justify(node.config)
 
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
@@ -1242,7 +1253,7 @@ layout_position_children_wrap :: proc(
 		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
 
-	lines := layout_wrap_build_lines(child_sizes[:], is_horizontal, gap, main_limit)
+	lines := layout_wrap_build_lines(child_sizes[:], is_horizontal, gap_main, main_limit)
 	defer delete(lines)
 
 	line_cross_sizes: [dynamic]f32
@@ -1263,7 +1274,7 @@ layout_position_children_wrap :: proc(
 				fixed_total += layout_wrap_child_main(child_sizes[line.start + i], is_horizontal)
 			}
 		}
-		if line.count > 1 do fixed_total += gap * f32(line.count - 1)
+		if line.count > 1 do fixed_total += gap_main * f32(line.count - 1)
 
 		remaining := max(0, line_main_available - fixed_total)
 		flex_unit := flex_total > 0 ? remaining / flex_total : 0
@@ -1325,7 +1336,7 @@ layout_position_children_wrap :: proc(
 	total_cross: f32
 	for line_cross, i in line_cross_sizes {
 		total_cross += line_cross
-		if i + 1 < len(line_cross_sizes) do total_cross += gap
+		if i + 1 < len(line_cross_sizes) do total_cross += gap_cross
 	}
 
 	cross_align, cross_align_ok := layout_cross_justify_align(justify, is_horizontal)
@@ -1363,7 +1374,7 @@ layout_position_children_wrap :: proc(
 				main_align,
 				line_main_available,
 				main_sizes[:],
-				gap,
+				gap_main,
 			)
 		}
 
@@ -1373,7 +1384,7 @@ layout_position_children_wrap :: proc(
 			for idx in in_flow {
 				total_main += layout_wrap_child_main(child_sizes[idx], is_horizontal)
 			}
-			if len(in_flow) > 1 do total_main += gap * f32(len(in_flow) - 1)
+			if len(in_flow) > 1 do total_main += gap_main * f32(len(in_flow) - 1)
 			if main_align_ok {
 				main_start = justify_align_position_offset(
 					line_main_available,
@@ -1447,7 +1458,7 @@ layout_position_children_wrap :: proc(
 					if i + 1 < line.count {
 						next_child := &state.ui.layout.nodes[node.child_indices[line.start + i + 1]]
 						if layout_child_in_main_flow(next_child, is_horizontal) {
-							main_cursor += gap
+							main_cursor += gap_main
 						}
 					}
 				}
@@ -1456,7 +1467,7 @@ layout_position_children_wrap :: proc(
 		}
 
 		line_cross_cursor += line_cross
-		if line_index + 1 < len(lines) do line_cross_cursor += gap
+		if line_index + 1 < len(lines) do line_cross_cursor += gap_cross
 	}
 }
 
@@ -1503,9 +1514,9 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		return
 	}
 
-	gap := layout_config_gap(node.config)
-	justify := layout_config_justify(node.config)
 	is_horizontal := info.is_horizontal
+	gap_main := layout_config_gap_main(node.config, is_horizontal)
+	justify := layout_config_justify(node.config)
 
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
@@ -1530,7 +1541,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	}
 
 	if len(node.child_indices) > 1 {
-		fixed_total += gap * f32(len(node.child_indices) - 1)
+		fixed_total += gap_main * f32(len(node.child_indices) - 1)
 	}
 
 	remaining := max(0, main_available - fixed_total)
@@ -1603,7 +1614,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			size := child_sizes[idx]
 			append(&main_sizes, is_horizontal ? size.x : size.y)
 		}
-		main_positions = layout_space_positions(main_align, main_available, main_sizes[:], gap)
+		main_positions = layout_space_positions(main_align, main_available, main_sizes[:], gap_main)
 	}
 
 	cross_positions: [dynamic]f32
@@ -1627,7 +1638,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 				total_main += is_horizontal ? size.x : size.y
 			}
 			if len(in_flow) > 1 {
-				total_main += gap * f32(len(in_flow) - 1)
+				total_main += gap_main * f32(len(in_flow) - 1)
 			}
 		}
 
@@ -1717,7 +1728,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 						break
 					}
 				}
-				if next_in_flow do main_cursor += gap
+				if next_in_flow do main_cursor += gap_main
 			}
 			flow_index += 1
 		}

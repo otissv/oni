@@ -17,72 +17,48 @@ Sidebar_Widgets_options :: enum {
 @(private)
 active_widget_option: Sidebar_Widgets_options = .TABLE
 
-widgets_route :: proc() {
-	w.Rectangle({
-		config = {id = "home_rect", padding = set.Padding(4), gap = set.Gap(o.theme.gap)},
-		child = proc(state: w.Rectangle_State) {
-			Widget_sidebar()
 
-			w.Rectangle({
-				config = {id = "container"},
-				child = proc(state: w.Rectangle_State) {
-					#partial switch active_widget_option {
-					case .RECTANGLE:
-						Widget_Rectangle()
-					case .TABLE:
-						Widget_Table()
+@(private)
+container := proc(state: w.Rectangle_State) {
+	#partial switch active_widget_option {
+	case .RECTANGLE:
+		Widget_Rectangle()
+	case .TABLE:
+		Widget_Table()
 
-					}
-				},
-			})
-
-		},
-	})
+	}
 }
 
 @(private)
-Widget_sidebar :: proc() {
-	w.Rectangle({
-		config = {
-			id = "widget_sidebar",
-			x = set.F32(0),
-			y = set.F32(0),
-			width = set.Width(300),
-			border = set.Border(o.Bd{r = 1}),
-			border_color = set.Border_color(.GRAY_500),
-			direction = set.Direction(.VERTICAL),
-			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
+sidebar := proc(state: w.Rectangle_State) {
+	ui.Button({
+		id = "widget_sidebar_button_rect",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			active_widget_option = .RECTANGLE
 		},
-		child = proc(state: w.Rectangle_State) {
-			ui.Button({
-				id = "widget_sidebar_button_rect",
-				variant = .GHOST,
-				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
-				radius = set.Radius(5),
-				on_click = proc(_: ui.Button_Event) {
-					active_widget_option = .RECTANGLE
-				},
-				child = proc(_: ui.Button_state) {
-					w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
-				},
-			})
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
+		},
+	})
 
-			ui.Button({
-				id = "widget_sidebar_button_table",
-				variant = .GHOST,
-				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
-				radius = set.Radius(5),
-				on_click = proc(_: ui.Button_Event) {
-					active_widget_option = .TABLE
+	ui.Button({
+		id = "widget_sidebar_button_table",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			active_widget_option = .TABLE
 
-				},
-				child = proc(_: ui.Button_state) {
-					w.Text({config = {id = "widget_sidebar_button_table_text", text = "Table"}})
-				},
-			})
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "widget_sidebar_button_table_text", text = "Table"}})
 		},
 	})
 }
+
 
 Widget_Rectangle :: proc() {
 	w.Rectangle(
@@ -93,7 +69,6 @@ Widget_Rectangle :: proc() {
 				width = set.Width(400),
 				direction = set.Direction(.VERTICAL),
 				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-				gap = set.Gap(0),
 				background = set.Background(.SKY_500),
 			},
 		},
@@ -194,4 +169,9 @@ Widget_Table :: proc() {
 			})
 		},
 	})
+}
+
+
+widgets_route :: proc() {
+	ui.View(sidebar, container)
 }

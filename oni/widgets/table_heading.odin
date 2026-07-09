@@ -57,7 +57,6 @@ table_heading_theme_base :: proc(frame_state: ^Table_Heading_State) -> Table_Hea
 
 	return Table_Heading_Config {
 		kind = .TABLE_HEADING,
-		gap = set.Gap(0),
 		padding = set.Padding(o.Pd_pos{x = 6, y = 6}),
 		justify = set.Justify(.CENTER),
 		min_h = set.Min_H(40),

@@ -57,7 +57,6 @@ table_body_theme_base :: proc(frame_state: ^Table_Body_State) -> Table_Body_Conf
 
 	return Table_Body_Config {
 		kind = .TABLE_BODY,
-		gap = set.Gap(0),
 		direction = set.Direction(.VERTICAL),
 	}
 }

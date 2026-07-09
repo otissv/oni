@@ -57,7 +57,6 @@ table_row_theme_base :: proc(frame_state: ^Table_Row_State) -> Table_Row_Config 
 
 	return Table_Row_Config {
 		kind = .TABLE_ROW,
-		gap = set.Gap(0),
 		direction = set.Direction(.HORIZONTAL),
 		justify = set.Justify(o.Justify_Pos{x = .TABLE_CELL, y = .TABLE_CELL}),
 	}

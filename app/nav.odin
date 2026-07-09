@@ -6,11 +6,11 @@ import w "../oni/widgets"
 
 Nav :: proc() {
 	w.Rectangle({
-		config = {id = "nav", x = set.F32(16), y = set.F32(16)},
+		config = {id = "nav", x = set.F32(16), y = set.F32(16), gap_x = set.Gap_X(10)},
 		child = proc(state: w.Rectangle_State) {
 			ui.Button({
 				id = "nav-home-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Home
@@ -22,7 +22,7 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-about-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .About
@@ -34,7 +34,7 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-artboard-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Artboard
@@ -46,7 +46,7 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-layout-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Layout
@@ -58,7 +58,7 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-widgets-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Widgets
@@ -70,7 +70,7 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-Components-button",
-				variant = .OUTLINE,
+				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
 					Route = .Components

@@ -184,7 +184,8 @@ Widget_Config :: struct {
 	flex:           Cfg(f32),
 	font:           Cfg(Font_Handle),
 	font_size:      Cfg(f32),
-	gap:            Cfg(Gap),
+	gap_x:          Cfg(Gap_X),
+	gap_y:          Cfg(Gap_Y),
 	height:         Height,
 	justify:        Cfg(Justify),
 	letter_spacing: Cfg(f32),
@@ -233,7 +234,8 @@ Resolved_Widget_Style :: struct {
 	flex:           f32,
 	font:           Font_Handle,
 	font_size:      f32,
-	gap:            u16,
+	gap_x:          u16,
+	gap_y:          u16,
 	height:         Length,
 	justify:        Justify_Pos,
 	letter_spacing: f32,
@@ -482,10 +484,16 @@ Height :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Height,
 }
 
-Gap :: union {
+Gap_X :: union {
 	struct{},
 	u16,
-	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_X,
+}
+
+Gap_Y :: union {
+	struct{},
+	u16,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_Y,
 }
 
 Text_Warp :: union {
@@ -739,7 +747,8 @@ Theme :: struct {
 	border:       Border,
 	border_color: Colors,
 	background:   Colors,
-	gap:          Gap,
+	gap_x:        Gap_X,
+	gap_y:        Gap_Y,
 	color:        Colors,
 	direction:    Widget_Direction,
 	font_body:    Font_Handle,

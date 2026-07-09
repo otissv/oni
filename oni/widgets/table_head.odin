@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import set "../set"
 
 /*
 Table widget configuration extending Widget_Config.
@@ -55,7 +54,7 @@ table_head_theme_base :: proc(frame_state: ^Table_Head_State) -> Table_Head_Conf
 		color = o.Color.MUTED
 	}
 
-	return Table_Head_Config{kind = .TABLE_HEAD, gap = set.Gap(0)}
+	return Table_Head_Config{kind = .TABLE_HEAD}
 }
 
 /*

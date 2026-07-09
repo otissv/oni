@@ -589,17 +589,17 @@ resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border
 }
 
 /*
-Resolves a static Gap union value to a pixel gap.
+Resolves a static Gap_X union value to a pixel gap.
 
-Does not evaluate proc-valued gaps; use resolve_child_gap for that.
+Does not evaluate proc-valued gaps; use resolve_child_gap_x for that.
 */
-resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
+resolve_gap_x_value :: proc(g: Gap_X) -> (gap: u16, ok: bool) {
 	switch v in g {
 	case struct{}:
 		return 0, false
 	case u16:
 		return v, true
-	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_X:
 		return 0, false
 	}
 
@@ -607,17 +607,49 @@ resolve_gap_value :: proc(g: Gap) -> (gap: u16, ok: bool) {
 }
 
 /*
-Resolves child gap from a union value, evaluating proc callbacks when present.
+Resolves child gap_x from a union value, evaluating proc callbacks when present.
 */
-resolve_child_gap :: proc(g: Gap, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
+resolve_child_gap_x :: proc(g: Gap_X, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
 	#partial switch v in g {
-	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap:
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_X:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
-		return resolve_child_gap(v(ui_state, ui_event), state, event)
+		return resolve_child_gap_x(v(ui_state, ui_event), state, event)
 	}
 
-	return resolve_gap_value(g)
+	return resolve_gap_x_value(g)
+}
+
+/*
+Resolves a static Gap_Y union value to a pixel gap.
+
+Does not evaluate proc-valued gaps; use resolve_child_gap_y for that.
+*/
+resolve_gap_y_value :: proc(g: Gap_Y) -> (gap: u16, ok: bool) {
+	switch v in g {
+	case struct{}:
+		return 0, false
+	case u16:
+		return v, true
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_Y:
+		return 0, false
+	}
+
+	return 0, false
+}
+
+/*
+Resolves child gap_y from a union value, evaluating proc callbacks when present.
+*/
+resolve_child_gap_y :: proc(g: Gap_Y, state: ^$S, event: Widget_Event(S)) -> (gap: u16, ok: bool) {
+	#partial switch v in g {
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_Y:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_child_gap_y(v(ui_state, ui_event), state, event)
+	}
+
+	return resolve_gap_y_value(g)
 }
 
 /*

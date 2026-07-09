@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import set "../set"
 
 
 Image_Config :: o.Widget_Config
@@ -49,7 +48,7 @@ image_theme_base :: proc(frame_state: ^Image_State) -> Image_Config {
 		color = o.Color.MUTED
 	}
 
-	return Image_Config{kind = .RECT, gap = set.Gap(0)}
+	return Image_Config{kind = .RECT}
 }
 
 /*

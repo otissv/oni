@@ -55,7 +55,7 @@ button_theme_base :: proc(frame_state: ^Button_State) -> Button_Config {
 		color = o.Color.MUTED
 	}
 
-	return Button_Config{kind = .BUTTON, line_height = set.F32(1), gap = set.Gap(0)}
+	return Button_Config{kind = .BUTTON, line_height = set.F32(1)}
 }
 
 /*
