@@ -7,14 +7,15 @@ import w "../oni/widgets"
 
 @(private)
 Sidebar_Widgets_options :: enum {
-	Button,
-	Image,
-	Rectangle,
-	Text,
+	BUTTON,
+	IMAGE,
+	RECTANGLE,
+	TEXT,
+	TABLE,
 }
 
 @(private)
-active_widget_option: Sidebar_Widgets_options = .Rectangle
+active_widget_option: Sidebar_Widgets_options = .TABLE
 
 widgets_route :: proc() {
 	w.Rectangle({
@@ -27,8 +28,11 @@ widgets_route :: proc() {
 				child = proc(state: w.Rectangle_State) {
 
 					#partial switch active_widget_option {
-					case .Rectangle:
+					case .RECTANGLE:
 						Widget_Rectangle()
+					case .TABLE:
+						Widget_Table()
+
 					}
 				},
 			})
@@ -58,10 +62,24 @@ Widget_sidebar :: proc() {
 				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					active_widget_option = .Rectangle
+					active_widget_option = .RECTANGLE
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
+				},
+			})
+
+			ui.Button({
+				id = "widget_sidebar_button_table",
+				variant = .GHOST,
+				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					active_widget_option = .TABLE
+
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "widget_sidebar_button_table_text", text = "Table"}})
 				},
 			})
 		},
@@ -73,13 +91,31 @@ Widget_Rectangle :: proc() {
 	w.Rectangle(
 		{
 			config = {
-				id = "horizontal",
+				id = "rectalgel_widget",
 				height = set.Height(400),
 				width = set.Width(400),
 				direction = set.Direction(.VERTICAL),
 				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
 				gap = set.Gap(0),
-				background = set.Colors(.SKY_500),
+				background = set.Background(.SKY_500),
+			},
+		},
+	)
+}
+
+Widget_Table :: proc() {
+	w.Table(
+		{
+			config = {
+				id = "table_widget",
+				height = set.Height(1080),
+				width = set.Width(1920),
+				direction = set.Direction(.VERTICAL),
+				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
+				gap = set.Gap(0),
+				border = set.Border(1),
+				border_color = set.Border_color(.WHITE),
+				radius = set.Radius(20),
 			},
 		},
 	)
