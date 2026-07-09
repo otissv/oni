@@ -747,11 +747,18 @@ justify_align_is_space :: proc(align: Justify_Align) -> bool {
 }
 
 /*
+Returns whether a justify align equalizes children to sibling content size.
+*/
+justify_align_is_content :: proc(align: Justify_Align) -> bool {
+	return align == .MAX_CONTENT || align == .MIN_CONTENT
+}
+
+/*
 Computes the leading offset for an item given free space and a justify align.
 */
 justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
 	switch align {
-	case .START, .STRETCH:
+	case .START, .STRETCH, .MAX_CONTENT, .MIN_CONTENT:
 		return 0
 	case .CENTER:
 		return max(0, (free_space - size) * 0.5)

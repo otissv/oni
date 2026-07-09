@@ -373,36 +373,47 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	direction := layout_config_direction(node.config)
 
 	if len(node.child_indices) > 0 {
-		main_sum: f32
-		cross_max: f32
 		info := layout_direction_info(direction)
+
+		if info.is_wrap {
+			return layout_wrap_measure(node, info.is_horizontal, gap)
+		}
+
+		child_sizes: [dynamic]Vec2
+		child_nodes: [dynamic]^Layout_Node
+		defer delete(child_sizes)
+		defer delete(child_nodes)
 
 		for child_index in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
-			child_size := child.desired
-			child_main := info.is_horizontal ? child.config.width : child.config.height
+			append(&child_nodes, child)
+			append(&child_sizes, child.desired)
+		}
 
+		justify := layout_config_justify(node.config)
+		layout_apply_content_align_sizes(justify, child_nodes[:], child_sizes[:])
+
+		main_sum: f32
+		cross_max: f32
+		for child, i in child_nodes {
+			child_main := info.is_horizontal ? child.config.width : child.config.height
 			if child.config.flex > 0 && !length_is_definite(child_main) do continue
 
 			if info.is_horizontal {
-				main_sum += child_size.x
-				cross_max = max(cross_max, child_size.y)
+				main_sum += child_sizes[i].x
+				cross_max = max(cross_max, child_sizes[i].y)
 			} else {
-				main_sum += child_size.y
-				cross_max = max(cross_max, child_size.x)
+				main_sum += child_sizes[i].y
+				cross_max = max(cross_max, child_sizes[i].x)
 			}
 		}
 
-		if len(node.child_indices) > 1 && !info.is_wrap {
+		if len(node.child_indices) > 1 {
 			main_sum += gap * f32(len(node.child_indices) - 1)
 		}
 
 		inset_w := padding.l + padding.r + border.l + border.r
 		inset_h := padding.t + padding.b + border.t + border.b
-
-		if info.is_wrap {
-			return layout_wrap_measure(node, info.is_horizontal, gap)
-		}
 
 		if info.is_horizontal {
 			width := length_resolve(node.config.width, 0)
@@ -638,6 +649,123 @@ layout_space_leading :: proc(align: Justify_Align, free: f32, count: int) -> f32
 /*
 Computes gap between items for space-distribution justify modes.
 */
+/*
+Returns the target size for a content-align mode from sibling extrema.
+*/
+layout_content_align_target :: proc(align: Justify_Align, max_v, min_v: f32) -> (f32, bool) {
+	#partial switch align {
+	case .MAX_CONTENT:
+		return max_v, true
+	case .MIN_CONTENT:
+		return min_v, true
+	}
+	return 0, false
+}
+
+/*
+Computes max and min values from a list of sibling axis sizes.
+*/
+layout_sibling_axis_extrema :: proc(sizes: []f32) -> (max_v, min_v: f32, ok: bool) {
+	if len(sizes) == 0 do return 0, 0, false
+
+	max_v = sizes[0]
+	min_v = sizes[0]
+	for size in sizes[1:] {
+		max_v = max(max_v, size)
+		min_v = min(min_v, size)
+	}
+	return max_v, min_v, true
+}
+
+/*
+Applies a content-align mode to one axis size using sibling extrema.
+*/
+layout_apply_content_align_axis :: proc(
+	align: Justify_Align,
+	current, max_v, min_v: f32,
+) -> f32 {
+	if target, ok := layout_content_align_target(align, max_v, min_v); ok {
+		return target
+	}
+	return current
+}
+
+/*
+Equalizes one axis of child sizes to sibling max/min when parent justify requests it.
+
+Children with definite width or height keep their provided size but still
+participate in sibling extrema.
+*/
+layout_apply_content_align_sizes_indices :: proc(
+	justify: Justify_Pos,
+	children: []^Layout_Node,
+	child_sizes: []Vec2,
+	indices: []int,
+) {
+	if len(indices) == 0 do return
+
+	if align, ok := justify_align_from_x(justify.x); ok && justify_align_is_content(align) {
+		sizes: [dynamic]f32
+		defer delete(sizes)
+		for idx in indices {
+			append(&sizes, child_sizes[idx].x)
+		}
+
+		max_v, min_v, extrema_ok := layout_sibling_axis_extrema(sizes[:])
+		if extrema_ok {
+			for idx in indices {
+				child := children[idx]
+				if length_is_definite(child.config.width) do continue
+				child_sizes[idx].x = layout_apply_content_align_axis(
+					align,
+					child_sizes[idx].x,
+					max_v,
+					min_v,
+				)
+			}
+		}
+	}
+
+	if align, ok := justify_align_from_y(justify.y); ok && justify_align_is_content(align) {
+		sizes: [dynamic]f32
+		defer delete(sizes)
+		for idx in indices {
+			append(&sizes, child_sizes[idx].y)
+		}
+
+		max_v, min_v, extrema_ok := layout_sibling_axis_extrema(sizes[:])
+		if extrema_ok {
+			for idx in indices {
+				child := children[idx]
+				if length_is_definite(child.config.height) do continue
+				child_sizes[idx].y = layout_apply_content_align_axis(
+					align,
+					child_sizes[idx].y,
+					max_v,
+					min_v,
+				)
+			}
+		}
+	}
+}
+
+/*
+Equalizes child sizes for all children in a container.
+*/
+layout_apply_content_align_sizes :: proc(
+	justify: Justify_Pos,
+	children: []^Layout_Node,
+	child_sizes: []Vec2,
+) {
+	indices: [dynamic]int
+	defer delete(indices)
+	resize(&indices, len(children))
+	for i in 0 ..< len(children) {
+		indices[i] = i
+	}
+	layout_apply_content_align_sizes_indices(justify, children, child_sizes, indices[:])
+}
+
 layout_space_between_items :: proc(align: Justify_Align, free: f32, count: int) -> f32 {
 	if count <= 1 do return 0
 
@@ -832,7 +960,31 @@ layout_position_children_wrap :: proc(
 			child_sizes[size_index] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 			layout_apply_definite_size(child, content, &child_sizes[size_index])
 		}
-		line_cross_sizes[line_index] = line_cross_natural
+
+		line_indices: [dynamic]int
+		defer delete(line_indices)
+		line_children: [dynamic]^Layout_Node
+		defer delete(line_children)
+		for i in 0 ..< line.count {
+			size_index := line.start + i
+			append(&line_indices, size_index)
+			append(&line_children, &state.ui.layout.nodes[node.child_indices[size_index]])
+		}
+		layout_apply_content_align_sizes_indices(
+			justify,
+			line_children[:],
+			child_sizes[:],
+			line_indices[:],
+		)
+
+		line_cross := line_cross_natural
+		for idx in line_indices {
+			line_cross = max(
+				line_cross,
+				layout_wrap_child_cross(child_sizes[idx], is_horizontal),
+			)
+		}
+		line_cross_sizes[line_index] = line_cross
 	}
 
 	total_cross: f32
@@ -1053,6 +1205,14 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
+
+	child_nodes: [dynamic]^Layout_Node
+	defer delete(child_nodes)
+	resize(&child_nodes, len(node.child_indices))
+	for child_index, i in node.child_indices {
+		child_nodes[i] = &state.ui.layout.nodes[child_index]
+	}
+	layout_apply_content_align_sizes(justify, child_nodes[:], child_sizes[:])
 
 	in_flow: [dynamic]int
 	defer delete(in_flow)

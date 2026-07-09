@@ -108,8 +108,8 @@ Widget_Table :: proc() {
 		{
 			config = {
 				id = "table_widget",
-				height = set.Height(1080),
-				width = set.Width(1920),
+				height = set.Height(480),
+				width = set.Width(640),
 				direction = set.Direction(.VERTICAL),
 				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
 				gap = set.Gap(0),

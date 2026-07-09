@@ -9,6 +9,9 @@ import ui "./ui"
 direction: o.Direction_Layout = .HORIZONTAL
 layout_width: o.Width = .AUTO
 layout_height: o.Height = .AUTO
+content_align_demo: bool
+content_align_x: o.Justify_Align = .MAX_CONTENT
+content_align_y: o.Justify_Align = .START
 
 layout_route :: proc() {
 	w.Rectangle({
@@ -19,7 +22,11 @@ layout_route :: proc() {
 			w.Rectangle({
 				config = {id = "container"},
 				child = proc(state: w.Rectangle_State) {
-					Layout_1("layout-1", direction)
+					if content_align_demo {
+						Layout_Content("layout-content")
+					} else {
+						Layout_1("layout-1", direction)
+					}
 				},
 			})
 		},
@@ -50,6 +57,7 @@ Layout_sidebar :: proc() {
 					direction = .HORIZONTAL
 					layout_width = .AUTO
 					layout_height = .AUTO
+					content_align_demo = false
 
 				},
 				child = proc(_: ui.Button_state) {
@@ -66,6 +74,7 @@ Layout_sidebar :: proc() {
 					direction = .HORIZONTAL_REVERSE
 					layout_width = .AUTO
 					layout_height = .AUTO
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Horizontal Reverse"}})
@@ -81,6 +90,7 @@ Layout_sidebar :: proc() {
 					direction = .HORIZONTAL_WRAP
 					layout_width = 400
 					layout_height = .AUTO
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap"}})
@@ -96,6 +106,7 @@ Layout_sidebar :: proc() {
 					direction = .HORIZONTAL_WRAP_REVERSE
 					layout_width = 400
 					layout_height = .AUTO
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text(
@@ -113,6 +124,7 @@ Layout_sidebar :: proc() {
 					direction = .VERTICAL
 					layout_width = .AUTO
 					layout_height = .AUTO
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Vertical"}})
@@ -128,6 +140,7 @@ Layout_sidebar :: proc() {
 					direction = .VERTICAL_REVERSE
 					layout_width = .AUTO
 					layout_height = .AUTO
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Vertical Reverse"}})
@@ -143,6 +156,7 @@ Layout_sidebar :: proc() {
 					direction = .VERTICAL_WRAP
 					layout_width = 280
 					layout_height = 400
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap"}})
@@ -158,9 +172,82 @@ Layout_sidebar :: proc() {
 					direction = .VERTICAL_WRAP_REVERSE
 					layout_width = 280
 					layout_height = 400
+					content_align_demo = false
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap Reverse"}})
+				},
+			})
+
+			ui.Button({
+				id = "max-content-x",
+				variant = .GHOST,
+				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					content_align_demo = true
+					content_align_x = .MAX_CONTENT
+					content_align_y = .START
+					direction = .HORIZONTAL
+					layout_width = .AUTO
+					layout_height = .AUTO
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "artboard-nav-button", text = "Max Content X"}})
+				},
+			})
+
+			ui.Button({
+				id = "min-content-x",
+				variant = .GHOST,
+				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					content_align_demo = true
+					content_align_x = .MIN_CONTENT
+					content_align_y = .START
+					direction = .HORIZONTAL
+					layout_width = .AUTO
+					layout_height = .AUTO
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "artboard-nav-button", text = "Min Content X"}})
+				},
+			})
+
+			ui.Button({
+				id = "max-content-y",
+				variant = .GHOST,
+				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					content_align_demo = true
+					content_align_x = .START
+					content_align_y = .MAX_CONTENT
+					direction = .VERTICAL
+					layout_width = .AUTO
+					layout_height = .AUTO
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "artboard-nav-button", text = "Max Content Y"}})
+				},
+			})
+
+			ui.Button({
+				id = "min-content-y",
+				variant = .GHOST,
+				justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					content_align_demo = true
+					content_align_x = .START
+					content_align_y = .MIN_CONTENT
+					direction = .VERTICAL
+					layout_width = .AUTO
+					layout_height = .AUTO
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "artboard-nav-button", text = "Min Content Y"}})
 				},
 			})
 		},
@@ -229,6 +316,77 @@ Layout_1 :: proc(id: string, direction: o.Direction_Layout) {
 					},
 				},
 			)
+		},
+	})
+}
+
+@(private)
+Layout_Content :: proc(id: string) {
+	w.Rectangle({
+		config = {
+			id = id,
+			space = set.Space(.SCREEN),
+			direction = set.Direction(direction),
+			gap = set.Gap(u16(8)),
+			width = set.Width(layout_width),
+			height = set.Height(layout_height),
+			padding = set.Padding(f32(20)),
+			justify = set.Justify(o.Justify_Pos{x = content_align_x, y = content_align_y}),
+			background = set.Colors(o.theme.palette[.BACKGROUND]),
+			radius = set.Radius(10),
+			border = set.Border(f32(1)),
+			border_color = set.Colors(o.Color.YELLOW_500),
+		},
+		child = proc(state: w.Rectangle_State) {
+			w.Rectangle({
+				config = {
+					id = "short",
+					height = 60,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.DESTRUCTIVE]),
+					radius = set.Radius(8),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "short-label", text = "sm"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "medium",
+					height = 80,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.ACCENT]),
+					radius = set.Radius(8),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "medium-label", text = "md"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "long",
+					height = 90,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.SUCCESS]),
+					radius = set.Radius(8),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "long-label", text = "lg"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "fixed",
+					width = 140,
+					height = 100,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.INFO]),
+					radius = set.Radius(8),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "fixed-label", text = "fixed"}})
+				},
+			})
 		},
 	})
 }

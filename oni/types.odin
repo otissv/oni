@@ -469,6 +469,8 @@ Justify_Align :: enum {
 	SPACE_BETWEEN,
 	SPACE_AROUND,
 	SPACE_EVENLY,
+	MAX_CONTENT,
+	MIN_CONTENT,
 }
 
 Justify_X :: union {
