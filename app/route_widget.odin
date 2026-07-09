@@ -61,7 +61,7 @@ Widget_sidebar :: proc() {
 					active_widget_option = .Rectangle
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "widget_sidebar_button_rect_text", text = "Rectangle"})
+					w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
 				},
 			})
 		},

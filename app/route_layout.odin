@@ -53,7 +53,7 @@ Layout_sidebar :: proc() {
 
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Horizontal"})
+					w.Text({config = {id = "artboard-nav-button", text = "Horizontal"}})
 				},
 			})
 
@@ -68,7 +68,7 @@ Layout_sidebar :: proc() {
 					layout_height = .AUTO
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Horizontal Reverse"})
+					w.Text({config = {id = "artboard-nav-button", text = "Horizontal Reverse"}})
 				},
 			})
 
@@ -83,7 +83,7 @@ Layout_sidebar :: proc() {
 					layout_height = .AUTO
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Horizontal Wrap"})
+					w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap"}})
 				},
 			})
 
@@ -98,7 +98,9 @@ Layout_sidebar :: proc() {
 					layout_height = .AUTO
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Horizontal Wrap Reverse"})
+					w.Text(
+						{config = {id = "artboard-nav-button", text = "Horizontal Wrap Reverse"}},
+					)
 				},
 			})
 
@@ -113,7 +115,7 @@ Layout_sidebar :: proc() {
 					layout_height = .AUTO
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Vertical"})
+					w.Text({config = {id = "artboard-nav-button", text = "Vertical"}})
 				},
 			})
 
@@ -128,7 +130,7 @@ Layout_sidebar :: proc() {
 					layout_height = .AUTO
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Vertical Reverse"})
+					w.Text({config = {id = "artboard-nav-button", text = "Vertical Reverse"}})
 				},
 			})
 
@@ -143,7 +145,7 @@ Layout_sidebar :: proc() {
 					layout_height = 400
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Vertical Wrap"})
+					w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap"}})
 				},
 			})
 
@@ -158,7 +160,7 @@ Layout_sidebar :: proc() {
 					layout_height = 400
 				},
 				child = proc(_: ui.Button_state) {
-					w.Text({id = "artboard-nav-button", text = "Vertical Wrap Reverse"})
+					w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap Reverse"}})
 				},
 			})
 		},

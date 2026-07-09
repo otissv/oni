@@ -2,7 +2,7 @@ package app
 
 import o "../oni"
 import set "../oni/set"
-import wg "../oni/widgets"
+import w "../oni/widgets"
 
 
 ONI_IMAGE_PATH :: "assets/oni-2.avif"
@@ -54,9 +54,9 @@ main_ui :: proc() {
 	Nav()
 
 
-	wg.Rectangle({
+	w.Rectangle({
 		config = {id = "main", y = set.F32(60), padding = set.Padding(o.Pd_pos{x = 10, y = 20})},
-		child = proc(state: wg.Rectangle_State) {
+		child = proc(state: w.Rectangle_State) {
 			#partial switch Route {
 			case .Artboard:
 				artboard_route()

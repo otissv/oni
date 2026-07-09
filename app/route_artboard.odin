@@ -50,14 +50,16 @@ Panel :: proc() {
 				child = proc(_: ui.Button_state) {
 					w.Text(
 						{
-							id = "button",
-							width = .AUTO,
-							height = set.Height(28),
-							text = "Click me",
-							font = set.Font(o.theme.font_heading),
-							color = set.Colors(o.theme.palette[.FOREGROUND]),
-							font_size = set.F32(20),
-							line_height = set.F32(0),
+							config = {
+								id = "button",
+								width = .AUTO,
+								height = set.Height(28),
+								text = "Click me",
+								font = set.Font(o.theme.font_heading),
+								color = set.Colors(o.theme.palette[.FOREGROUND]),
+								font_size = set.F32(20),
+								line_height = set.F32(0),
+							},
 						},
 					)
 				},

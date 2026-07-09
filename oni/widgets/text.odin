@@ -40,24 +40,24 @@ Text_Event :: oni.Widget_Event(Text_Merged_State)
 Text widget props: config fields inlined plus input event handlers.
 */
 Text_Props :: struct {
-	using _:                       Text_Config,
-	unmount:                       bool,
-	can_interactive_during_mount:  bool,
-	on_mount:                      proc(frame_state: Text_Merged_State) -> oni.Mount,
-	on_unmount:                    proc(frame_state: Text_Merged_State) -> oni.Mount,
-	on_focus:                      proc(event: Text_Event),
-	on_blur:           proc(event: Text_Event),
-	on_mouse_enter:    proc(event: Text_Event),
-	on_mouse_leave:    proc(event: Text_Event),
-	on_mouse_pressed:  proc(event: Text_Event),
-	on_mouse_down:     proc(event: Text_Event),
-	on_mouse_released: proc(event: Text_Event),
-	on_mouse_move:     proc(event: Text_Event),
-	on_click:          proc(event: Text_Event),
-	on_contextmenu:    proc(event: Text_Event),
-	on_key_pressed:    proc(event: Text_Event),
-	on_key_down:       proc(event: Text_Event),
-	on_key_released:   proc(event: Text_Event),
+	config:                       Text_Config,
+	unmount:                      bool,
+	can_interactive_during_mount: bool,
+	on_mount:                     proc(frame_state: Text_Merged_State) -> oni.Mount,
+	on_unmount:                   proc(frame_state: Text_Merged_State) -> oni.Mount,
+	on_focus:                     proc(event: Text_Event),
+	on_blur:                      proc(event: Text_Event),
+	on_mouse_enter:               proc(event: Text_Event),
+	on_mouse_leave:               proc(event: Text_Event),
+	on_mouse_pressed:             proc(event: Text_Event),
+	on_mouse_down:                proc(event: Text_Event),
+	on_mouse_released:            proc(event: Text_Event),
+	on_mouse_move:                proc(event: Text_Event),
+	on_click:                     proc(event: Text_Event),
+	on_contextmenu:               proc(event: Text_Event),
+	on_key_pressed:               proc(event: Text_Event),
+	on_key_down:                  proc(event: Text_Event),
+	on_key_released:              proc(event: Text_Event),
 }
 
 /*
@@ -73,7 +73,9 @@ text_event :: proc(
 }
 
 @(private)
-text_lifecycle_handlers :: proc(props: Text_Props) -> Widget_Lifecycle_Handlers(Text_Merged_State) {
+text_lifecycle_handlers :: proc(
+	props: Text_Props,
+) -> Widget_Lifecycle_Handlers(Text_Merged_State) {
 	return {
 		unmount = props.unmount,
 		can_interactive_during_mount = props.can_interactive_during_mount,
@@ -97,44 +99,6 @@ Writes an explicit font-size value into a config field.
 @(private)
 text_set_font_size :: proc(field: ^oni.Cfg(f32), size: f32) {
 	field^ = set.F32(size)
-}
-
-
-/*
-Extracts a Text_Config override from flattened text props for style resolution.
-*/
-@(private)
-text_props_override :: proc(props: Text_Props) -> Text_Config {
-	return Text_Config {
-		id = props.id,
-		x = props.x,
-		y = props.y,
-		width = props.width,
-		height = props.height,
-		text = props.text,
-		flags = props.flags,
-		max_w = props.max_w,
-		align = props.align,
-		justify = props.justify,
-		auto_focus = props.auto_focus,
-		tabbable = props.tabbable,
-		border = props.border,
-		border_color = props.border_color,
-		background = props.background,
-		gap = props.gap,
-		color = props.color,
-		text_direction = props.text_direction,
-		direction = props.direction,
-		disabled = props.disabled,
-		font = props.font,
-		font_size = props.font_size,
-		letter_spacing = props.letter_spacing,
-		line_height = props.line_height,
-		padding = props.padding,
-		radius = props.radius,
-		space = props.space,
-		wrap = props.wrap,
-	}
 }
 
 /*
@@ -168,7 +132,7 @@ Refreshes merged style, flags, and text on frame_state and returns a fresh event
 text_refresh_merged :: proc(props: Text_Props, frame_state: ^Text_Merged_State) -> Text_Event {
 	event := text_event(frame_state^)
 	base := text_widget_decl(frame_state)
-	override := text_props_override(props)
+	override := props.config
 	frame_state.style = oni.resolve_widget_config(base, override, frame_state, event)
 	frame_state.flags = override.flags
 	frame_state.text = override.text
@@ -182,14 +146,15 @@ Renders shaped text with layout measurement and optional pointer interaction.
 Returns the drawn text size; uses a shaped-text cache unless Uncached is set.
 */
 Text :: proc(props: Text_Props) -> oni.Vec2 {
-	key := oni.element_key(props.id)
-	layout_label := props.id != "" ? props.id : key
+	config := props.config
+	key := oni.element_key(config.id)
+	layout_label := config.id != "" ? config.id : key
 	layout_id := oni.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
 
 	frame_state := Text_Merged_State {
-		is_disabled = props.disabled.mode == .Value && props.disabled.value,
+		is_disabled = config.disabled.mode == .Value && config.disabled.value,
 		is_focused  = was_focused,
 	}
 
@@ -202,7 +167,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
-			props.id != "",
+			config.id != "",
 			&frame_state,
 		)
 		if ran_unmount {
@@ -221,7 +186,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 		node := oni.layout_push_node(layout_id, style)
 		max_w: f32
-		if props.max_w.mode == .Value do max_w = props.max_w.value
+		if config.max_w.mode == .Value do max_w = config.max_w.value
 		if max_w <= 0 && style.width.kind == .FIXED do max_w = style.width.value
 		oni.layout_set_measure_text(node, frame_state.text, max_w)
 		oni.layout_pop_node()
@@ -418,7 +383,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		)
 	}
 
-	cache_id := props.id != "" ? props.id : key
+	cache_id := config.id != "" ? config.id : key
 	cache := oni.widget_shaped(cache_id)
 	lines := oni.shaped_text_ensure(
 		cache,

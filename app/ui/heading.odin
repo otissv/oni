@@ -2,7 +2,7 @@ package ui
 
 import oni "../../oni"
 import set "../../oni/set"
-import wg "../../oni/widgets"
+import w "../../oni/widgets"
 
 
 Heading_Variant :: enum {
@@ -40,16 +40,18 @@ Heading :: proc(props: Heading_Props) {
 		font_size = set.F32(16)
 	}
 
-	wg.Text(
+	w.Text(
 		{
-			id = props.id,
-			width = set.Width(480),
-			height = set.Height(28),
-			text = props.text,
-			font = set.Font(props.theme.font_heading),
-			color = set.Colors(oni.theme.palette[.FOREGROUND]),
-			font_size = font_size,
-			line_height = set.F32(0),
+			config = {
+				id = props.id,
+				width = set.Width(480),
+				height = set.Height(28),
+				text = props.text,
+				font = set.Font(props.theme.font_heading),
+				color = set.Colors(oni.theme.palette[.FOREGROUND]),
+				font_size = font_size,
+				line_height = set.F32(0),
+			},
 		},
 	)
 }

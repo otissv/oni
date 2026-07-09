@@ -58,14 +58,6 @@ button_event :: proc(
 }
 
 /*
-Extracts the config override from button props for style resolution.
-*/
-@(private)
-button_props_override :: proc(props: Button_Props) -> Button_Config {
-	return props.config
-}
-
-/*
 Returns the default button theme config, muted when the widget is disabled.
 */
 @(private)
@@ -99,7 +91,7 @@ button_config :: proc(
 ) -> oni.Resolved_Widget_Config {
 	event := button_event(frame_state^)
 	base := button_theme_base(frame_state)
-	override := button_props_override(props)
+	override := props.config
 
 	return oni.resolve_widget_config(base, override, frame_state, event)
 }

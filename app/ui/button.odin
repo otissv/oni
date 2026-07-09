@@ -2,7 +2,7 @@ package ui
 
 import oni "../../oni"
 import set "../../oni/set"
-import wg "../../oni/widgets"
+import w "../../oni/widgets"
 
 Button_Variant :: enum {
 	DEFAULT,
@@ -21,11 +21,11 @@ Button_Size :: enum {
 	ICON,
 }
 
-Button_state :: wg.Rectangle_State
-Button_Event :: wg.Rectangle_Event
+Button_state :: w.Rectangle_State
+Button_Event :: w.Rectangle_Event
 
 Button_props :: struct {
-	using _:           wg.Rectangle_Config,
+	using _:           w.Rectangle_Config,
 	variant:           Button_Variant,
 	size:              Button_Size,
 	active:            bool,
@@ -95,7 +95,7 @@ button_background :: proc(
 }
 
 @(private)
-button_apply_variant :: proc(config: ^wg.Rectangle_Config, variant: Button_Variant) {
+button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Variant) {
 	config.font = set.Font(oni.theme.font_heading)
 	config.background = set.Colors(button_background)
 
@@ -123,7 +123,7 @@ button_apply_variant :: proc(config: ^wg.Rectangle_Config, variant: Button_Varia
 
 
 @(private)
-button_apply_size :: proc(config: ^wg.Rectangle_Config, size: Button_Size) {
+button_apply_size :: proc(config: ^w.Rectangle_Config, size: Button_Size) {
 	current := config.font_size.mode == .Value ? config.font_size.value : 0
 	padding_x: f32 = 12
 	padding_y: f32 = 8
@@ -160,7 +160,7 @@ Button :: proc(props: Button_props) {
 	button_active_variant = props.variant
 	defer button_active_variant = prev_variant
 
-	base := wg.Rectangle_Config {
+	base := w.Rectangle_Config {
 		width    = set.Width(.AUTO),
 		justify  = set.Justify(oni.Justify_Pos{x = .CENTER, y = .CENTER}),
 		tabbable = set.Bool(true),
@@ -169,7 +169,7 @@ Button :: proc(props: Button_props) {
 	button_apply_variant(&base, props.variant)
 	button_apply_size(&base, props.size)
 
-	wg.Rectangle(
+	w.Rectangle(
 		{
 			config = oni.merge_widget_config(base, props),
 			child = props.child,

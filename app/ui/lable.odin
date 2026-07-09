@@ -2,7 +2,7 @@ package ui
 
 import oni "../../oni"
 import set "../../oni/set"
-import wg "../../oni/widgets"
+import w "../../oni/widgets"
 
 
 Label_Size :: enum {
@@ -34,14 +34,16 @@ Label :: proc(props: Label_Props) {
 		font_size = set.F32(14)
 	}
 
-	wg.Text(
+	w.Text(
 		{
-			id = props.id,
-			text = props.text,
-			font = set.Font(props.theme.font_heading),
-			color = set.Colors(oni.theme.palette[.FOREGROUND]),
-			font_size = font_size,
-			line_height = set.F32(0),
+			config = {
+				id = props.id,
+				text = props.text,
+				font = set.Font(props.theme.font_heading),
+				color = set.Colors(oni.theme.palette[.FOREGROUND]),
+				font_size = font_size,
+				line_height = set.F32(0),
+			},
 		},
 	)
 }
