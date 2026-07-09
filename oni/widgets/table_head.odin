@@ -149,33 +149,7 @@ Table_Head :: proc(props: Table_Head_Props) {
 		props.on_focus(event)
 	}
 
-	background: o.RGBA
-	if resolved_background, background_ok := o.to_rgba(config.background, &frame_state, event);
-	   background_ok {
-		background = resolved_background
-	}
-
-	border: o.Bd
-	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
-	   border_ok {
-		border = resolved_border
-	}
-
-	border_color: o.RGBA
-	if resolved_border_color, border_color_ok := o.to_rgba(
-		config.border_color,
-		&frame_state,
-		event,
-	); border_color_ok {
-		border_color = resolved_border_color
-	}
-
-	radius: o.Radius_corners
-	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
-		radius = resolved_radius
-	}
-
-	o.Draw_Rectangle(rect, background, radius, border, border_color)
+	table_widget_draw_chrome(layout_id, .TABLE_HEAD, rect, config, &frame_state, event)
 
 	o.Children(child, layout_id, config, frame_state)
 }

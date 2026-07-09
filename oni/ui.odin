@@ -26,6 +26,10 @@ ui_init :: proc() {
 		state.ui.layout.table_tracks = make(map[int]Layout_Table_Tracks)
 	}
 
+	if state.ui.layout.table_border_collapse == nil {
+		state.ui.layout.table_border_collapse = make(map[UI_Id]Border_Collapse)
+	}
+
 	if state.ui.layout_ids_prev == nil {
 		state.ui.layout_ids_prev = make(map[UI_Id]bool)
 	}
@@ -61,6 +65,8 @@ ui_shutdown :: proc() {
 	state.ui.layout.id_to_node = nil
 	delete(state.ui.layout.table_tracks)
 	state.ui.layout.table_tracks = nil
+	delete(state.ui.layout.table_border_collapse)
+	state.ui.layout.table_border_collapse = nil
 	layout_shutdown()
 	delete(state.ui.layout_ids_prev)
 	state.ui.layout_ids_prev = nil

@@ -19,14 +19,13 @@ active_widget_option: Sidebar_Widgets_options = .TABLE
 
 widgets_route :: proc() {
 	w.Rectangle({
-		config = {id = "home_rect", padding = set.Padding(4)},
+		config = {id = "home_rect", padding = set.Padding(4), gap = set.Gap(o.theme.gap)},
 		child = proc(state: w.Rectangle_State) {
 			Widget_sidebar()
 
 			w.Rectangle({
 				config = {id = "container"},
 				child = proc(state: w.Rectangle_State) {
-
 					#partial switch active_widget_option {
 					case .RECTANGLE:
 						Widget_Rectangle()
@@ -53,7 +52,6 @@ Widget_sidebar :: proc() {
 			border_color = set.Border_color(.GRAY_500),
 			direction = set.Direction(.VERTICAL),
 			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-			gap = set.Gap(0),
 		},
 		child = proc(state: w.Rectangle_State) {
 			ui.Button({
@@ -108,19 +106,16 @@ Widget_Table :: proc() {
 			id = "table1",
 			direction = set.Direction(.VERTICAL),
 			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-			gap = set.Gap(0),
-			border = set.Border(1),
-			border_color = set.Border_color(.WHITE),
 		},
 		child = proc(_: w.Table_State) {
 			w.Table_Head({
-				config = {id = "table1_head", background = set.Background(.PRIMARY)},
+				config = {id = "table1_head"},
 				child = proc(_: w.Table_Head_State) {
 					w.Table_Row({
 						config = {id = "table1_head_r1"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Heading({
-								config = {id = "table1_r1_heading1", border = set.Border(1)},
+								config = {id = "table1_r1_heading1"},
 								child = proc(_: w.Table_Heading_State) {
 									w.Text(
 										{
@@ -134,7 +129,7 @@ Widget_Table :: proc() {
 							})
 
 							w.Table_Heading({
-								config = {id = "table1_heading2", border = set.Border(1)},
+								config = {id = "table1_heading2"},
 								child = proc(_: w.Table_Heading_State) {
 									w.Text(
 										{config = {id = "table1_r1_heading_text", text = "Score"}},
@@ -153,16 +148,21 @@ Widget_Table :: proc() {
 						config = {id = "table1_r1"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Cell({
-								config = {id = "tabel1_r1_c1", border = set.Border(1)},
+								config = {id = "tabel1_r1_c1"},
 								child = proc(_: w.Table_Cell_State) {
 									w.Text(
-										{config = {id = "tabel1_r1_c1_text", text = "Player 1"}},
+										{
+											config = {
+												id = "tabel1_r1_c1_text",
+												text = "Player 1 \nhey heyhey",
+											},
+										},
 									)
 								},
 							})
 
 							w.Table_Cell({
-								config = {id = "tabel1_r1_c2", border = set.Border(1)},
+								config = {id = "tabel1_r1_c2"},
 								child = proc(_: w.Table_Cell_State) {
 									w.Text({config = {id = "tabel1_r1_c2_text", text = "1"}})
 								},
@@ -174,7 +174,7 @@ Widget_Table :: proc() {
 						config = {id = "table1_r2"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Cell({
-								config = {id = "tabel1_r2_c1", border = set.Border(1)},
+								config = {id = "tabel1_r2_c1"},
 								child = proc(_: w.Table_Cell_State) {
 									w.Text(
 										{config = {id = "tabel1_r2_c1_text", text = "Player 1"}},
@@ -183,7 +183,7 @@ Widget_Table :: proc() {
 							})
 
 							w.Table_Cell({
-								config = {id = "tabel1_r2_c2", border = set.Border(1)},
+								config = {id = "tabel1_r2_c2"},
 								child = proc(_: w.Table_Cell_State) {
 									w.Text({config = {id = "tabel1_r2_c2_text", text = "2"}})
 								},

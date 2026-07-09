@@ -31,6 +31,7 @@ with_test_global_state :: proc(test_state: ^State, body: proc(test_state: ^State
 layout_test_begin :: proc() -> Layout_State {
 	return Layout_State {
 		table_tracks = make(map[int]Layout_Table_Tracks),
+		table_border_collapse = make(map[UI_Id]Border_Collapse),
 	}
 }
 
@@ -68,9 +69,12 @@ layout_test_end :: proc(layout: ^Layout_State) {
 		delete(tracks.rows)
 		delete(tracks.col_widths)
 		delete(tracks.row_heights)
+		delete(tracks.cell_positions)
 	}
 	delete(layout.table_tracks)
 	layout.table_tracks = nil
+	delete(layout.table_border_collapse)
+	layout.table_border_collapse = nil
 
 	layout_release_node_children(layout)
 	delete(layout.nodes)
@@ -295,6 +299,47 @@ layout_nested_table_solve_equalizes_heading_and_cell_widths :: proc(t: ^testing.
 		},
 		t,
 	)
+}
+
+@(test)
+table_border_compare_prefers_thicker_width :: proc(t: ^testing.T) {
+	a := Table_Border_Side{width = 2, source = .CELL, order = 1}
+	b := Table_Border_Side{width = 1, source = .TABLE, order = 0}
+	testing.expect(t, table_border_compare(a, b) > 0)
+}
+
+@(test)
+table_border_compare_prefers_cell_source_on_equal_width :: proc(t: ^testing.T) {
+	a := Table_Border_Side{width = 1, source = .CELL, order = 0}
+	b := Table_Border_Side{width = 1, source = .ROW, order = 1}
+	testing.expect(t, table_border_compare(a, b) > 0)
+}
+
+@(test)
+layout_table_finalize_assigns_cell_positions :: proc(t: ^testing.T) {
+	layout := layout_test_begin()
+	defer layout_test_end(&layout)
+
+	table := layout_test_append_node(&layout, -1, .TABLE)
+	body := layout_test_append_node(&layout, table, .TABLE_BODY)
+	row1 := layout_test_append_node(&layout, body, .TABLE_ROW, {x = .TABLE_CELL, y = .TABLE_CELL})
+	row2 := layout_test_append_node(&layout, body, .TABLE_ROW, {x = .TABLE_CELL, y = .TABLE_CELL})
+	cell11 := layout_test_append_node(&layout, row1, .TABLE_CELL, {}, {80, 20})
+	cell12 := layout_test_append_node(&layout, row1, .TABLE_CELL, {}, {80, 20})
+	_ = layout_test_append_node(&layout, row2, .TABLE_CELL, {}, {80, 20})
+
+	layout.nodes[table].ui_id = UI_Id(1)
+	layout.table_border_collapse[UI_Id(1)] = .COLLAPSE
+	layout_table_prepare_in(&layout, table)
+	layout_table_finalize_in(&layout, table)
+
+	tracks := layout.table_tracks[table]
+	pos11, ok11 := tracks.cell_positions[cell11]
+	testing.expect(t, ok11)
+	testing.expect(t, pos11.row == 0 && pos11.col == 0)
+	pos12, ok12 := tracks.cell_positions[cell12]
+	testing.expect(t, ok12)
+	testing.expect(t, pos12.row == 0 && pos12.col == 1)
 }
 
 @(test)

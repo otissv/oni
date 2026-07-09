@@ -29,21 +29,24 @@ Layout_Node :: struct {
 Column widths and row heights computed for a table with TABLE_CELL alignment.
 */
 Layout_Table_Tracks :: struct {
-	rows:        [dynamic]int,
-	col_widths:  [dynamic]f32,
-	row_heights: [dynamic]f32,
+	rows:           [dynamic]int,
+	col_widths:     [dynamic]f32,
+	row_heights:    [dynamic]f32,
+	border_collapse: Border_Collapse,
+	cell_positions: map[int]Table_Grid_Pos,
 }
 
 /*
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
-	nodes:         [dynamic]Layout_Node,
-	node_stack:    [dynamic]int,
-	bounds_stack:  [dynamic]Rect,
-	space_markers: [dynamic]int,
-	id_to_node:    map[UI_Id]int,
-	table_tracks:  map[int]Layout_Table_Tracks,
+	nodes:                 [dynamic]Layout_Node,
+	node_stack:            [dynamic]int,
+	bounds_stack:          [dynamic]Rect,
+	space_markers:         [dynamic]int,
+	id_to_node:            map[UI_Id]int,
+	table_tracks:          map[int]Layout_Table_Tracks,
+	table_border_collapse: map[UI_Id]Border_Collapse,
 }
 
 @(private)
@@ -63,8 +66,10 @@ layout_reset :: proc() {
 		delete(tracks.rows)
 		delete(tracks.col_widths)
 		delete(tracks.row_heights)
+		delete(tracks.cell_positions)
 	}
 	clear(&state.ui.layout.table_tracks)
+	clear(&state.ui.layout.table_border_collapse)
 	layout_release_node_children(&state.ui.layout)
 	clear(&state.ui.layout.nodes)
 	clear(&state.ui.layout.node_stack)
@@ -503,6 +508,17 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	append(&state.ui.layout.nodes, node)
 	node_index := len(state.ui.layout.nodes) - 1
 
+	if layout_node_is_table_cell(config.kind) {
+		table_index := layout_find_table_ancestor_in(&state.ui.layout, node_index)
+		if table_index >= 0 {
+			table := &state.ui.layout.nodes[table_index]
+			if mode, ok := state.ui.layout.table_border_collapse[table.ui_id]; ok &&
+			   mode == .COLLAPSE {
+				node.border = {}
+			}
+		}
+	}
+
 	if parent_index >= 0 {
 		append(&state.ui.layout.nodes[parent_index].child_indices, node_index)
 	}
@@ -824,12 +840,18 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 		delete(existing.rows)
 		delete(existing.col_widths)
 		delete(existing.row_heights)
+		delete(existing.cell_positions)
 	}
 
+	border_collapse := layout.table_border_collapse[table.ui_id]
+	if border_collapse == {} do border_collapse = .SEPERATE
+
 	layout.table_tracks[table_index] = Layout_Table_Tracks {
-		rows        = rows,
-		col_widths  = col_widths,
-		row_heights = row_heights,
+		rows            = rows,
+		col_widths      = col_widths,
+		row_heights     = row_heights,
+		border_collapse = border_collapse,
+		cell_positions  = make(map[int]Table_Grid_Pos),
 	}
 }
 
@@ -864,6 +886,56 @@ layout_table_apply_cell_size :: proc(
 
 	layout_apply_definite_size(child, content, &size)
 	return size
+}
+
+/*
+Registers a table's border-collapse mode for the current layout pass.
+*/
+layout_table_register_border_collapse :: proc(ui_id: UI_Id, mode: Border_Collapse) {
+	state.ui.layout.table_border_collapse[ui_id] = mode
+}
+
+/*
+Builds the table cell grid after rows and cells have been positioned.
+*/
+layout_table_finalize_in :: proc(layout: ^Layout_State, table_index: int) {
+	table := &layout.nodes[table_index]
+	if table.kind != .TABLE do return
+
+	tracks, tracks_ok := layout.table_tracks[table_index]
+	if !tracks_ok do return
+
+	for track_i in 0 ..< len(tracks.rows) {
+		row_node_index := tracks.rows[track_i]
+		row := &layout.nodes[row_node_index]
+		col := 0
+		for child_index in row.child_indices {
+			child := &layout.nodes[child_index]
+			if !layout_node_is_table_cell(child.kind) do continue
+			tracks.cell_positions[child_index] = Table_Grid_Pos {
+				row = track_i,
+				col = col,
+			}
+			col += 1
+		}
+	}
+
+	if tracks.border_collapse == .COLLAPSE {
+		for row_node_index in tracks.rows {
+			row := &layout.nodes[row_node_index]
+			for child_index in row.child_indices {
+				child := &layout.nodes[child_index]
+				if !layout_node_is_table_cell(child.kind) do continue
+				child.border = {}
+			}
+		}
+	}
+
+	layout.table_tracks[table_index] = tracks
+}
+
+layout_table_finalize :: proc(table_index: int) {
+	layout_table_finalize_in(&state.ui.layout, table_index)
 }
 
 /*
@@ -1649,6 +1721,10 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			}
 			flow_index += 1
 		}
+	}
+
+	if node.kind == .TABLE {
+		layout_table_finalize(layout_node_index(node))
 	}
 }
 

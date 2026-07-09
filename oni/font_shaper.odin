@@ -563,18 +563,6 @@ font_shape_line_build :: proc(
 	if len(shaped) == 0 do return nil
 	defer delete(shaped)
 
-	if max_w <= 0 {
-		line_glyphs := make([]Shaped_Glyph, len(shaped))
-		copy(line_glyphs, shaped)
-		lines := make([]Shaped_Line, 1)
-		lines[0] = Shaped_Line {
-			glyphs    = line_glyphs,
-			width     = shaped_line_width(line_glyphs),
-			direction = direction,
-		}
-		return lines
-	}
-
 	lines := make([dynamic]Shaped_Line)
 	line_start := 0
 	line_width: f32 = 0
@@ -606,7 +594,7 @@ font_shape_line_build :: proc(
 
 		next_width := line_width + glyph.x_advance
 
-		if i > line_start && next_width > max_w {
+		if max_w > 0 && i > line_start && next_width > max_w {
 			break_at := last_break > line_start ? last_break : i
 			if break_at <= line_start {
 				break_at = i
@@ -630,9 +618,11 @@ font_shape_line_build :: proc(
 			continue
 		}
 
-		line_width = next_width
-		if font_is_break_cluster(text, glyph.cluster) {
-			last_break = i + 1
+		if max_w > 0 {
+			line_width = next_width
+			if font_is_break_cluster(text, glyph.cluster) {
+				last_break = i + 1
+			}
 		}
 		i += 1
 	}

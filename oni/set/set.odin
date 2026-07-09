@@ -172,3 +172,7 @@ Sets a width widget config field to an explicit value.
 Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 
 Wrap :: proc(value: oni.Text_Warp) -> oni.Cfg(oni.Text_Warp) {return cfg_value(value)}
+
+Border_Collapse :: proc(value: oni.Border_Collapse) -> oni.Cfg(oni.Border_Collapse) {
+	return cfg_value(value)
+}

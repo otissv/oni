@@ -399,6 +399,53 @@ Border :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border,
 }
 
+Border_Collapse :: enum {
+	SEPERATE,
+	COLLAPSE,
+}
+
+/*
+Source priority for collapsed table border conflict resolution.
+*/
+Table_Border_Source :: enum {
+	TABLE,
+	ROW_GROUP,
+	ROW,
+	CELL,
+}
+
+/*
+One resolved border segment used during collapsed table painting.
+*/
+Table_Border_Side :: struct {
+	width:  f32,
+	color:  RGBA,
+	source: Table_Border_Source,
+	order:  int,
+}
+
+/*
+Per-side collapsed borders resolved for one table cell.
+*/
+Table_Cell_Borders :: struct {
+	t, b, l, r: Table_Border_Side,
+}
+
+/*
+Grid coordinates for a table cell inside its owning table.
+*/
+Table_Grid_Pos :: struct {
+	row, col: int,
+}
+
+/*
+Fully resolved table widget config including border-collapse mode.
+*/
+Resolved_Table_Config :: struct {
+	using widget:    Resolved_Widget_Config,
+	border_collapse: Border_Collapse,
+}
+
 /*
 Width/height dimension with min/max, percent, grow, and preset flags.
 */
@@ -535,6 +582,7 @@ Style_Image_Fit :: union {
 	Image_Fit,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Fit,
 }
+
 
 /*
 Image inset positioning using top/bottom/left/right offsets.
