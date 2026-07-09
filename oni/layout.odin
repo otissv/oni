@@ -14,6 +14,7 @@ One node in the flex layout tree with resolved style, geometry, and children.
 */
 Layout_Node :: struct {
 	ui_id:         UI_Id,
+	kind:          Widget_Kind,
 	config:        Resolved_Widget_Style,
 	padding:       Pd,
 	border:        Bd,
@@ -25,6 +26,15 @@ Layout_Node :: struct {
 }
 
 /*
+Column widths and row heights computed for a table with TABLE_CELL alignment.
+*/
+Layout_Table_Tracks :: struct {
+	rows:        [dynamic]int,
+	col_widths:  [dynamic]f32,
+	row_heights: [dynamic]f32,
+}
+
+/*
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
@@ -33,6 +43,7 @@ Layout_State :: struct {
 	bounds_stack:  [dynamic]Rect,
 	space_markers: [dynamic]int,
 	id_to_node:    map[UI_Id]int,
+	table_tracks:  map[int]Layout_Table_Tracks,
 }
 
 /*
@@ -41,6 +52,12 @@ Clears all layout nodes, stacks, and id-to-node mappings.
 Called at the start of each UI frame.
 */
 layout_reset :: proc() {
+	for _, tracks in state.ui.layout.table_tracks {
+		delete(tracks.rows)
+		delete(tracks.col_widths)
+		delete(tracks.row_heights)
+	}
+	clear(&state.ui.layout.table_tracks)
 	clear(&state.ui.layout.nodes)
 	clear(&state.ui.layout.node_stack)
 	clear(&state.ui.layout.bounds_stack)
@@ -442,7 +459,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 /*
 Creates a layout node, links it to the parent, and pushes it on the stack.
 */
-layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Style) -> ^Layout_Node {
+layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layout_Node {
 	parent_index := -1
 	if len(state.ui.layout.node_stack) > 0 {
 		parent_index = state.ui.layout.node_stack[len(state.ui.layout.node_stack) - 1]
@@ -453,7 +470,8 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Style) -> ^Layout
 
 	node := Layout_Node {
 		ui_id   = ui_id,
-		config  = config,
+		kind    = config.kind,
+		config  = config.style,
 		padding = padding,
 		border  = border,
 		parent  = parent_index,
@@ -598,6 +616,233 @@ layout_child_cross_size :: proc(
 }
 
 /*
+Returns the layout node index for a node pointer in a layout tree.
+*/
+layout_node_index_in :: proc(layout: ^Layout_State, node: ^Layout_Node) -> int {
+	for &n, i in layout.nodes {
+		if &n == node do return i
+	}
+	return -1
+}
+
+/*
+Returns the layout node index for a node pointer in the current layout tree.
+*/
+layout_node_index :: proc(node: ^Layout_Node) -> int {
+	return layout_node_index_in(&state.ui.layout, node)
+}
+
+/*
+Walks ancestors to find the nearest TABLE layout node index.
+*/
+layout_find_table_ancestor_in :: proc(layout: ^Layout_State, node_index: int) -> int {
+	parent := node_index
+	for parent >= 0 {
+		node := &layout.nodes[parent]
+		if node.kind == .TABLE do return parent
+		parent = node.parent
+	}
+	return -1
+}
+
+/*
+Walks ancestors to find the nearest TABLE layout node index.
+*/
+layout_find_table_ancestor :: proc(node_index: int) -> int {
+	return layout_find_table_ancestor_in(&state.ui.layout, node_index)
+}
+
+/*
+Returns whether a widget kind represents a table data cell.
+*/
+layout_node_is_table_cell :: proc(kind: Widget_Kind) -> bool {
+	return kind == .TABLE_CELL || kind == .TABLE_HEADING
+}
+
+/*
+Returns whether a justify position uses TABLE_CELL on the x axis.
+*/
+layout_justify_uses_TABLE_CELL_x :: proc(justify: Justify_Pos) -> bool {
+	align, ok := justify_align_from_x(justify.x)
+	return ok && align == .TABLE_CELL
+}
+
+/*
+Returns whether a justify position uses TABLE_CELL on the y axis.
+*/
+layout_justify_uses_TABLE_CELL_y :: proc(justify: Justify_Pos) -> bool {
+	align, ok := justify_align_from_y(justify.y)
+	return ok && align == .TABLE_CELL
+}
+
+/*
+Returns a cell's intrinsic size along one axis for table track sizing.
+*/
+layout_table_cell_intrinsic_axis :: proc(cell: ^Layout_Node, horizontal: bool) -> f32 {
+	if horizontal {
+		if length_is_definite(cell.config.width) {
+			return length_resolve(cell.config.width, 0)
+		}
+		return cell.desired.x
+	}
+	if length_is_definite(cell.config.height) {
+		return length_resolve(cell.config.height, 0)
+	}
+	return cell.desired.y
+}
+
+/*
+Collects TABLE_ROW node indices under a table in document order.
+*/
+layout_table_collect_rows_in :: proc(layout: ^Layout_State, table_index: int) -> [dynamic]int {
+	rows: [dynamic]int
+	stack: [dynamic]int
+	defer delete(stack)
+
+	table := &layout.nodes[table_index]
+	for i := len(table.child_indices) - 1; i >= 0; i -= 1 {
+		append(&stack, table.child_indices[i])
+	}
+
+	for len(stack) > 0 {
+		idx := stack[len(stack) - 1]
+		ordered_remove(&stack, len(stack) - 1)
+		node := &layout.nodes[idx]
+
+		if node.kind == .TABLE_ROW {
+			append(&rows, idx)
+		}
+
+		for i := len(node.child_indices) - 1; i >= 0; i -= 1 {
+			append(&stack, node.child_indices[i])
+		}
+	}
+
+	return rows
+}
+
+/*
+Finds a row's index inside prepared table track data.
+*/
+layout_table_row_track_index :: proc(tracks: ^Layout_Table_Tracks, row_index: int) -> (int, bool) {
+	for row_node_index, track_i in tracks.rows {
+		if row_node_index == row_index do return track_i, true
+	}
+	return 0, false
+}
+
+/*
+Computes shared column widths and row heights for a table with TABLE_CELL rows.
+*/
+layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
+	table := &layout.nodes[table_index]
+	if table.kind != .TABLE do return
+
+	rows := layout_table_collect_rows_in(layout, table_index)
+	if len(rows) == 0 {
+		delete(rows)
+		return
+	}
+
+	uses_x := false
+	uses_y := false
+	for row_index in rows {
+		row := &layout.nodes[row_index]
+		uses_x ||= layout_justify_uses_TABLE_CELL_x(row.config.justify)
+		uses_y ||= layout_justify_uses_TABLE_CELL_y(row.config.justify)
+	}
+	if !uses_x && !uses_y {
+		delete(rows)
+		return
+	}
+
+	col_count := 0
+	for row_index in rows {
+		row := &layout.nodes[row_index]
+		col_count = max(col_count, len(row.child_indices))
+	}
+
+	col_widths: [dynamic]f32
+	row_heights: [dynamic]f32
+	resize(&col_widths, col_count)
+	resize(&row_heights, len(rows))
+
+	if uses_x {
+		for col in 0 ..< col_count {
+			max_w: f32
+			for row_index in rows {
+				row := &layout.nodes[row_index]
+				if col >= len(row.child_indices) do continue
+				child := &layout.nodes[row.child_indices[col]]
+				if !layout_node_is_table_cell(child.kind) do continue
+				max_w = max(max_w, layout_table_cell_intrinsic_axis(child, true))
+			}
+			col_widths[col] = max_w
+		}
+	}
+
+	if uses_y {
+		for row_node_index, track_i in rows {
+			row := &layout.nodes[row_node_index]
+			if !layout_justify_uses_TABLE_CELL_y(row.config.justify) do continue
+
+			max_h: f32
+			for child_idx in row.child_indices {
+				child := &layout.nodes[child_idx]
+				if !layout_node_is_table_cell(child.kind) do continue
+				max_h = max(max_h, layout_table_cell_intrinsic_axis(child, false))
+			}
+			row_heights[track_i] = max_h
+		}
+	}
+
+	if existing, ok := &layout.table_tracks[table_index]; ok {
+		delete(existing.rows)
+		delete(existing.col_widths)
+		delete(existing.row_heights)
+	}
+
+	layout.table_tracks[table_index] = Layout_Table_Tracks {
+		rows        = rows,
+		col_widths  = col_widths,
+		row_heights = row_heights,
+	}
+}
+
+/*
+Computes shared column widths and row heights for a table with TABLE_CELL rows.
+*/
+layout_table_prepare :: proc(table_index: int) {
+	layout_table_prepare_in(&state.ui.layout, table_index)
+}
+
+/*
+Applies prepared table track sizes to a cell when its row uses TABLE_CELL.
+*/
+layout_table_apply_cell_size :: proc(
+	row: ^Layout_Node,
+	tracks: ^Layout_Table_Tracks,
+	row_track_index: int,
+	col_index: int,
+	child: ^Layout_Node,
+	content: Rect,
+) -> Vec2 {
+	size := child.desired
+	use_x := layout_justify_uses_TABLE_CELL_x(row.config.justify)
+	use_y := layout_justify_uses_TABLE_CELL_y(row.config.justify)
+
+	if use_x && col_index < len(tracks.col_widths) && !length_is_definite(child.config.width) {
+		size.x = tracks.col_widths[col_index]
+	}
+	if use_y && !length_is_definite(child.config.height) {
+		size.y = tracks.row_heights[row_track_index]
+	}
+
+	layout_apply_definite_size(child, content, &size)
+	return size
+}
+
+/*
 Extracts the main-axis justify align from a justify position.
 */
 layout_main_justify_align :: proc(
@@ -680,10 +925,7 @@ layout_sibling_axis_extrema :: proc(sizes: []f32) -> (max_v, min_v: f32, ok: boo
 /*
 Applies a content-align mode to one axis size using sibling extrema.
 */
-layout_apply_content_align_axis :: proc(
-	align: Justify_Align,
-	current, max_v, min_v: f32,
-) -> f32 {
+layout_apply_content_align_axis :: proc(align: Justify_Align, current, max_v, min_v: f32) -> f32 {
 	if target, ok := layout_content_align_target(align, max_v, min_v); ok {
 		return target
 	}
@@ -979,10 +1221,7 @@ layout_position_children_wrap :: proc(
 
 		line_cross := line_cross_natural
 		for idx in line_indices {
-			line_cross = max(
-				line_cross,
-				layout_wrap_child_cross(child_sizes[idx], is_horizontal),
-			)
+			line_cross = max(line_cross, layout_wrap_child_cross(child_sizes[idx], is_horizontal))
 		}
 		line_cross_sizes[line_index] = line_cross
 	}
@@ -1157,6 +1396,10 @@ Positions children in a non-wrap flex container.
 layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
 
+	if node.kind == .TABLE {
+		layout_table_prepare(layout_node_index(node))
+	}
+
 	direction := layout_config_direction(node.config)
 	info := layout_direction_info(direction)
 	if info.is_wrap {
@@ -1197,8 +1440,34 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	remaining := max(0, main_available - fixed_total)
 	flex_unit := flex_total > 0 ? remaining / flex_total : 0
 
+	table_index := -1
+	row_track_index := -1
+	tracks: ^Layout_Table_Tracks = nil
+	if node.kind == .TABLE_ROW {
+		node_index := layout_node_index(node)
+		table_index = layout_find_table_ancestor(node_index)
+		if table_index >= 0 {
+			if track_data, ok := &state.ui.layout.table_tracks[table_index]; ok {
+				tracks = track_data
+				row_track_index, _ = layout_table_row_track_index(tracks, node_index)
+			}
+		}
+	}
+
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		if tracks != nil && row_track_index >= 0 && layout_node_is_table_cell(child.kind) {
+			child_sizes[i] = layout_table_apply_cell_size(
+				node,
+				tracks,
+				row_track_index,
+				i,
+				child,
+				content,
+			)
+			continue
+		}
+
 		child_justify := layout_merge_justify(justify, child.config.self)
 		main := layout_child_main_size(child, is_horizontal, flex_unit, main_available)
 		cross := layout_child_cross_size(child, is_horizontal, cross_available, child_justify)

@@ -1,29 +1,29 @@
 package widgets
 
-import oni ".."
+import o ".."
 import set "../set"
 
 
-Image_Config :: oni.Widget_Config
-Image_State :: oni.Widget_Merged_State(oni.Widget_Frame_State, oni.Resolved_Widget_Config)
-Image_Event :: oni.Widget_Event(Image_State)
+Image_Config :: o.Widget_Config
+Image_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
+Image_Event :: o.Widget_Event(Image_State)
 
 /*
 Image widget props: source rect, tint, fit/pos overrides, and event handlers.
 */
 Image_Props :: struct {
 	config:                       Image_Config,
-	texture:                      oni.Texture_Handle,
-	src, dst:                     oni.Rect,
-	tint:                         oni.Colors,
+	texture:                      o.Texture_Handle,
+	src, dst:                     o.Rect,
+	tint:                         o.Colors,
 	alt:                          string,
-	texture_fit:                  oni.Cfg(oni.Style_Image_Fit),
-	texture_pos:                  oni.Cfg(oni.Style_Image_Pos),
+	texture_fit:                  o.Cfg(o.Style_Image_Fit),
+	texture_pos:                  o.Cfg(o.Style_Image_Pos),
 	child:                        proc(frame_state: Image_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: Image_State) -> oni.Mount,
-	on_unmount:                   proc(frame_state: Image_State) -> oni.Mount,
+	on_mount:                     proc(frame_state: Image_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Image_State) -> o.Mount,
 	on_focus:                     proc(event: Image_Event),
 	on_blur:                      proc(event: Image_Event),
 	on_mouse_enter:               proc(event: Image_Event),
@@ -43,23 +43,13 @@ Image_Props :: struct {
 Returns the default texture widget theme config, muted when the widget is disabled.
 */
 image_theme_base :: proc(frame_state: ^Image_State) -> Image_Config {
-	color := oni.Color.FOREGROUND
+	color := o.Color.FOREGROUND
 
 	if frame_state.is_disabled {
-		color = oni.Color.MUTED
+		color = o.Color.MUTED
 	}
 
-	return Image_Config {
-		kind = .RECT,
-		font = set.Font(oni.theme.font_body),
-		font_size = set.F32(oni.theme.font_body.size_px),
-		color = set.Colors(color),
-		line_height = set.F32(1),
-		text_direction = set.Text_Direction(.LTR),
-		space = set.Inherit_Space(),
-		justify = set.Justify(oni.theme.justify),
-		gap = set.Gap(oni.theme.gap),
-	}
+	return Image_Config{kind = .RECT, gap = set.Gap(0)}
 }
 
 /*
@@ -67,7 +57,7 @@ Merges theme defaults, prop overrides, and live frame_state into a resolved conf
 
 Applies explicit texture_fit and texture_pos props when they are set.
 */
-image_config :: proc(props: Image_Props, frame_state: ^Image_State) -> oni.Resolved_Widget_Config {
+image_config :: proc(props: Image_Props, frame_state: ^Image_State) -> o.Resolved_Widget_Config {
 	event := widget_event(frame_state^)
 
 	base := image_theme_base(frame_state)
@@ -76,7 +66,7 @@ image_config :: proc(props: Image_Props, frame_state: ^Image_State) -> oni.Resol
 	if props.texture_fit.mode != .UNSET do override.texture_fit = props.texture_fit
 	if props.texture_pos.mode != .UNSET do override.texture_pos = props.texture_pos
 
-	return oni.resolve_widget_config(base, override, frame_state, event)
+	return o.resolve_widget_config(base, override, frame_state, event)
 }
 
 /*
@@ -113,19 +103,19 @@ Accounts for fit mode, padding, and border when width or height is indefinite.
 @(private)
 texture_measure_size :: proc(
 	props: Image_Props,
-	config: oni.Resolved_Widget_Config,
+	config: o.Resolved_Widget_Config,
 	frame_state: ^Image_State,
 	event: Image_Event,
-) -> oni.Vec2 {
+) -> o.Vec2 {
 	src_w, src_h := texture_src_size(props)
 	if src_w <= 0 || src_h <= 0 do return {}
 
-	width_auto := !oni.length_is_definite(config.width)
-	height_auto := !oni.length_is_definite(config.height)
+	width_auto := !o.length_is_definite(config.width)
+	height_auto := !o.length_is_definite(config.height)
 	if !width_auto && !height_auto do return {}
 
-	fit := oni.Image_Fit.FILL
-	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, frame_state, event);
+	fit := o.Image_Fit.FILL
+	if resolved_fit, fit_ok := o.resolve_texture_fit(config.texture_fit, frame_state, event);
 	   fit_ok {
 		fit = resolved_fit
 	}
@@ -141,12 +131,12 @@ texture_measure_size :: proc(
 
 	if !needs_intrinsic do return {}
 
-	padding, _ := oni.resolve_padding_value(config.padding)
-	border, _ := oni.resolve_border_value(config.border)
+	padding, _ := o.resolve_padding_value(config.padding)
+	border, _ := o.resolve_border_value(config.border)
 	inset_w := padding.l + padding.r + border.l + border.r
 	inset_h := padding.t + padding.b + border.t + border.b
 
-	measure: oni.Vec2
+	measure: o.Vec2
 	if width_auto do measure.x = src_w + inset_w
 	if height_auto do measure.y = src_h + inset_h
 
@@ -160,9 +150,9 @@ Runs layout on the layout pass and draws background, border, and image on draw.
 */
 Image :: proc(props: Image_Props) {
 	cfg := props.config
-	key := oni.element_key(cfg.id)
+	key := o.element_key(cfg.id)
 	layout_label := cfg.id != "" ? cfg.id : key
-	layout_id := oni.ui_id(layout_label)
+	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
 
@@ -177,7 +167,7 @@ Image :: proc(props: Image_Props) {
 	handlers := widget_lifecycle_handlers(props, Image_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
 
-	if oni.ui_pass() == .Layout {
+	if o.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -201,21 +191,21 @@ Image :: proc(props: Image_Props) {
 
 		widget_register_tab_order(key, config.tabbable, can_interact)
 
-		oni.ui_push_scope(layout_id)
-		node := oni.layout_push_node(layout_id, config)
+		o.ui_push_scope(layout_id)
+		node := o.layout_push_node(layout_id, config)
 
 		if measure := texture_measure_size(props, config, &frame_state, event);
 		   measure.x > 0 || measure.y > 0 {
-			oni.layout_set_measure_size(node, measure)
+			o.layout_set_measure_size(node, measure)
 		}
 
-		oni.ui_push_style(oni.style_child_context(config))
+		o.ui_push_style(o.style_child_context(config))
 
 		if child != nil do child(frame_state)
 
-		oni.ui_pop_style()
-		oni.layout_pop_node()
-		oni.ui_pop_scope()
+		o.ui_pop_style()
+		o.layout_pop_node()
+		o.ui_pop_scope()
 
 		return
 	}
@@ -224,7 +214,7 @@ Image :: proc(props: Image_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	layout_rect := oni.ui_layout_rect(layout_id)
+	layout_rect := o.ui_layout_rect(layout_id)
 	rect := widget_resolve_hit_rect(layout_rect, config)
 
 	got_focus, lost_focus := widget_handle_interaction(
@@ -262,26 +252,26 @@ Image :: proc(props: Image_Props) {
 
 	config = frame_state.config
 
-	background: oni.RGBA
-	if resolved_background, background_ok := oni.to_rgba(config.background, &frame_state, event);
+	background: o.RGBA
+	if resolved_background, background_ok := o.to_rgba(config.background, &frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
-	border: oni.Bd
-	if resolved_border, border_ok := oni.resolve_border(config.border, &frame_state, event);
+	border: o.Bd
+	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
 	   border_ok {
 		border = resolved_border
 	}
 
-	padding: oni.Pd
-	if resolved_padding, padding_ok := oni.resolve_padding(config.padding, &frame_state, event);
+	padding: o.Pd
+	if resolved_padding, padding_ok := o.resolve_padding(config.padding, &frame_state, event);
 	   padding_ok {
 		padding = resolved_padding
 	}
 
-	border_color: oni.RGBA
-	if resolved_border_color, border_color_ok := oni.to_rgba(
+	border_color: o.RGBA
+	if resolved_border_color, border_color_ok := o.to_rgba(
 		config.border_color,
 		&frame_state,
 		event,
@@ -289,8 +279,8 @@ Image :: proc(props: Image_Props) {
 		border_color = resolved_border_color
 	}
 
-	radius: oni.Radius_corners
-	if resolved_radius, ok := oni.resolve_radius(config.radius, &frame_state, event); ok {
+	radius: o.Radius_corners
+	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
 
@@ -302,7 +292,7 @@ Image :: proc(props: Image_Props) {
 		}
 	}
 
-	content := oni.layout_inner_rect(rect, border, padding)
+	content := o.layout_inner_rect(rect, border, padding)
 	container := content
 
 	if props.dst.w > 0 || props.dst.h > 0 {
@@ -315,23 +305,23 @@ Image :: proc(props: Image_Props) {
 		}
 	}
 
-	fit := oni.Image_Fit.FILL
-	if resolved_fit, fit_ok := oni.resolve_texture_fit(config.texture_fit, &frame_state, event);
+	fit := o.Image_Fit.FILL
+	if resolved_fit, fit_ok := o.resolve_texture_fit(config.texture_fit, &frame_state, event);
 	   fit_ok {
 		fit = resolved_fit
 	}
 
-	pos := oni.Resolved_Image_Pos{0.5, 0.5, 0, 0}
-	if resolved_pos, pos_ok := oni.resolve_texture_pos(config.texture_pos, &frame_state, event);
+	pos := o.Resolved_Image_Pos{0.5, 0.5, 0, 0}
+	if resolved_pos, pos_ok := o.resolve_texture_pos(config.texture_pos, &frame_state, event);
 	   pos_ok {
 		pos = resolved_pos
 	}
 
 	dst := container
-	src, dst = oni.texture_fit_rects(src, container, fit, pos)
+	src, dst = o.texture_fit_rects(src, container, fit, pos)
 
-	tint := oni.RGBA{255, 255, 255, 255}
-	if resolved_tint, tint_ok := oni.to_rgba(props.tint, &frame_state, event); tint_ok {
+	tint := o.RGBA{255, 255, 255, 255}
+	if resolved_tint, tint_ok := o.to_rgba(props.tint, &frame_state, event); tint_ok {
 		tint = resolved_tint
 	}
 
@@ -344,10 +334,10 @@ Image :: proc(props: Image_Props) {
 		radius.br > 0
 
 	if has_chrome {
-		oni.Draw_Rectangle(rect, background, radius, border, border_color)
+		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	oni.draw_texture_fitted(props.texture, src, content, dst, tint, radius)
+	o.draw_texture_fitted(props.texture, src, content, dst, tint, radius)
 
-	oni.Children(child, layout_id, config, frame_state)
+	o.Children(child, layout_id, config, frame_state)
 }

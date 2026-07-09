@@ -1,22 +1,22 @@
 package widgets
 
-import oni ".."
+import o ".."
 import set "../set"
 
 /*
 Button widget configuration extending Widget_Config.
 */
-Button_Config :: oni.Widget_Config
+Button_Config :: o.Widget_Config
 
 /*
 Button widget per-frame frame_state merged with its fully resolved style config.
 */
-Button_State :: oni.Widget_Merged_State(oni.Widget_Frame_State, oni.Resolved_Widget_Config)
+Button_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 
 /*
 Button widget event snapshot with frame_state and optional input metadata.
 */
-Button_Event :: oni.Widget_Event(Button_State)
+Button_Event :: o.Widget_Event(Button_State)
 
 
 /*
@@ -27,8 +27,8 @@ Button_Props :: struct {
 	child:                        proc(frame_state: Button_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: Button_State) -> oni.Mount,
-	on_unmount:                   proc(frame_state: Button_State) -> oni.Mount,
+	on_mount:                     proc(frame_state: Button_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Button_State) -> o.Mount,
 	on_focus:                     proc(event: Button_Event),
 	on_blur:                      proc(event: Button_Event),
 	on_mouse_enter:               proc(event: Button_Event),
@@ -49,23 +49,13 @@ Returns the default button theme config, muted when the widget is disabled.
 */
 @(private)
 button_theme_base :: proc(frame_state: ^Button_State) -> Button_Config {
-	color := oni.Color.FOREGROUND
+	color := o.Color.FOREGROUND
 
 	if frame_state.is_disabled {
-		color = oni.Color.MUTED
+		color = o.Color.MUTED
 	}
 
-	return Button_Config {
-		kind = .BUTTON,
-		font = set.Font(oni.theme.font_body),
-		font_size = set.F32(oni.theme.font_body.size_px),
-		color = set.Colors(color),
-		line_height = set.F32(1),
-		text_direction = set.Text_Direction(.LTR),
-		space = set.Inherit_Space(),
-		justify = set.Justify(oni.theme.justify),
-		gap = set.Gap(oni.theme.gap),
-	}
+	return Button_Config{kind = .BUTTON, line_height = set.F32(1), gap = set.Gap(0)}
 }
 
 /*
@@ -75,9 +65,9 @@ Runs layout on the layout pass and draws chrome plus children on the draw pass.
 */
 Button :: proc(props: Button_Props) {
 	cfg := props.config
-	key := oni.element_key(cfg.id)
+	key := o.element_key(cfg.id)
 	layout_label := cfg.id != "" ? cfg.id : key
-	layout_id := oni.ui_id(layout_label)
+	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
 
@@ -92,7 +82,7 @@ Button :: proc(props: Button_Props) {
 	handlers := widget_lifecycle_handlers(props, Button_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
 
-	if oni.ui_pass() == .Layout {
+	if o.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -113,7 +103,7 @@ Button :: proc(props: Button_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			oni.Children(child, layout_id, config, frame_state)
+			o.Children(child, layout_id, config, frame_state)
 		}
 
 		return
@@ -123,7 +113,7 @@ Button :: proc(props: Button_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	layout_rect := oni.ui_layout_rect(layout_id)
+	layout_rect := o.ui_layout_rect(layout_id)
 	rect := widget_resolve_hit_rect(layout_rect, config)
 
 	got_focus, lost_focus := widget_handle_interaction(
@@ -159,20 +149,20 @@ Button :: proc(props: Button_Props) {
 		props.on_focus(event)
 	}
 
-	background: oni.RGBA
-	if resolved_background, background_ok := oni.to_rgba(config.background, &frame_state, event);
+	background: o.RGBA
+	if resolved_background, background_ok := o.to_rgba(config.background, &frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
-	border: oni.Bd
-	if resolved_border, border_ok := oni.resolve_border(config.border, &frame_state, event);
+	border: o.Bd
+	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
 	   border_ok {
 		border = resolved_border
 	}
 
-	border_color: oni.RGBA
-	if resolved_border_color, border_color_ok := oni.to_rgba(
+	border_color: o.RGBA
+	if resolved_border_color, border_color_ok := o.to_rgba(
 		config.border_color,
 		&frame_state,
 		event,
@@ -180,12 +170,12 @@ Button :: proc(props: Button_Props) {
 		border_color = resolved_border_color
 	}
 
-	radius: oni.Radius_corners
-	if resolved_radius, ok := oni.resolve_radius(config.radius, &frame_state, event); ok {
+	radius: o.Radius_corners
+	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
 
-	oni.Draw_Rectangle(rect, background, radius, border, border_color)
+	o.Draw_Rectangle(rect, background, radius, border, border_color)
 
-	oni.Children(child, layout_id, config, frame_state)
+	o.Children(child, layout_id, config, frame_state)
 }

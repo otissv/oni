@@ -1,22 +1,22 @@
 package widgets
 
-import oni ".."
+import o ".."
 import set "../set"
 
 /*
 Rectangle widget configuration extending Widget_Config.
 */
-Rectangle_Config :: oni.Widget_Config
+Rectangle_Config :: o.Widget_Config
 
 /*
 Rectangle widget per-frame interaction frame_state merged with its fully resolved style config.
 */
-Rectangle_State :: oni.Widget_Merged_State(oni.Widget_Frame_State, oni.Resolved_Widget_Config)
+Rectangle_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 
 /*
 Rectangle widget event snapshot with frame_state and optional input metadata.
 */
-Rectangle_Event :: oni.Widget_Event(Rectangle_State)
+Rectangle_Event :: o.Widget_Event(Rectangle_State)
 
 /*
 Rectangle widget props: config, child callback, and input event handlers.
@@ -26,8 +26,8 @@ Rectangle_Props :: struct {
 	child:                        proc(frame_state: Rectangle_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: Rectangle_State) -> oni.Mount,
-	on_unmount:                   proc(frame_state: Rectangle_State) -> oni.Mount,
+	on_mount:                     proc(frame_state: Rectangle_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Rectangle_State) -> o.Mount,
 	on_focus:                     proc(event: Rectangle_Event),
 	on_blur:                      proc(event: Rectangle_Event),
 	on_mouse_enter:               proc(event: Rectangle_Event),
@@ -47,23 +47,13 @@ Rectangle_Props :: struct {
 Returns the default rectangle theme config, muted when the widget is disabled.
 */
 rect_theme_base :: proc(frame_state: ^Rectangle_State) -> Rectangle_Config {
-	color := oni.Color.FOREGROUND
+	color := o.Color.FOREGROUND
 
 	if frame_state.is_disabled {
-		color = oni.Color.MUTED
+		color = o.Color.MUTED
 	}
 
-	return Rectangle_Config {
-		kind = .RECT,
-		font = set.Font(oni.theme.font_body),
-		font_size = set.F32(oni.theme.font_body.size_px),
-		color = set.Colors(color),
-		line_height = set.F32(1),
-		text_direction = set.Text_Direction(.LTR),
-		space = set.Inherit_Space(),
-		justify = set.Justify(oni.theme.justify),
-		gap = set.Gap(oni.theme.gap),
-	}
+	return Rectangle_Config{kind = .RECT, gap = set.Gap(0)}
 }
 
 /*
@@ -73,7 +63,7 @@ Runs layout on the layout pass and draws chrome plus children on the draw pass.
 */
 Rectangle :: proc(props: Rectangle_Props) {
 	cfg := props.config
-	key := oni.element_key(cfg.id)
+	key := o.element_key(cfg.id)
 
 	was_focused := widget_is_focused(key)
 
@@ -89,11 +79,11 @@ Rectangle :: proc(props: Rectangle_Props) {
 	should_auto_focus := widget_should_auto_focus(config, key)
 
 	layout_label := cfg.id != "" ? cfg.id : key
-	layout_id := oni.ui_id(layout_label)
-	layout_rect := oni.ui_layout_rect(layout_id)
+	layout_id := o.ui_id(layout_label)
+	layout_rect := o.ui_layout_rect(layout_id)
 	rect := layout_rect
 
-	if oni.ui_pass() == .Layout {
+	if o.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -114,7 +104,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			oni.Children(child, layout_id, config, frame_state)
+			o.Children(child, layout_id, config, frame_state)
 		}
 
 		return
@@ -175,9 +165,9 @@ Rectangle :: proc(props: Rectangle_Props) {
 Draw_Widget_Rectangle :: struct {
 	frame_state: ^Rectangle_State,
 	event:       Rectangle_Event,
-	rect:        oni.Rect,
+	rect:        o.Rect,
 	child:       proc(frame_state: Rectangle_State),
-	layout_id:   oni.UI_Id,
+	layout_id:   o.UI_Id,
 }
 
 @(private)
@@ -190,20 +180,20 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 
 	config := frame_state.config
 
-	background: oni.RGBA
-	if resolved_background, background_ok := oni.to_rgba(config.background, frame_state, event);
+	background: o.RGBA
+	if resolved_background, background_ok := o.to_rgba(config.background, frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
-	border: oni.Bd
-	if resolved_border, border_ok := oni.resolve_border(config.border, frame_state, event);
+	border: o.Bd
+	if resolved_border, border_ok := o.resolve_border(config.border, frame_state, event);
 	   border_ok {
 		border = resolved_border
 	}
 
-	border_color: oni.RGBA
-	if resolved_border_color, border_color_ok := oni.to_rgba(
+	border_color: o.RGBA
+	if resolved_border_color, border_color_ok := o.to_rgba(
 		config.border_color,
 		frame_state,
 		event,
@@ -211,12 +201,12 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		border_color = resolved_border_color
 	}
 
-	radius: oni.Radius_corners
-	if resolved_radius, ok := oni.resolve_radius(config.radius, frame_state, event); ok {
+	radius: o.Radius_corners
+	if resolved_radius, ok := o.resolve_radius(config.radius, frame_state, event); ok {
 		radius = resolved_radius
 	}
 
-	oni.Draw_Rectangle(rect, background, radius, border, border_color)
+	o.Draw_Rectangle(rect, background, radius, border, border_color)
 
-	oni.Children(child, layout_id, config, frame_state^)
+	o.Children(child, layout_id, config, frame_state^)
 }

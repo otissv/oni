@@ -1,6 +1,6 @@
 package widgets
 
-import oni ".."
+import o ".."
 
 /*
 Lifecycle callback props shared by mountable widgets.
@@ -8,13 +8,13 @@ Lifecycle callback props shared by mountable widgets.
 Widget_Lifecycle_Handlers :: struct($S: typeid) {
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: S) -> oni.Mount,
-	on_unmount:                   proc(frame_state: S) -> oni.Mount,
+	on_mount:                     proc(frame_state: S) -> o.Mount,
+	on_unmount:                   proc(frame_state: S) -> o.Mount,
 }
 
 @(private)
-lifecycle_frame_state :: proc(state: ^$S) -> ^oni.Widget_Frame_State {
-	return cast(^oni.Widget_Frame_State)state
+lifecycle_frame_state :: proc(state: ^$S) -> ^o.Widget_Frame_State {
+	return cast(^o.Widget_Frame_State)state
 }
 
 /*
@@ -36,14 +36,14 @@ when on_unmount was invoked so callers can refresh merged state before measuring
 */
 widget_run_layout_lifecycle :: proc(
 	handlers: Widget_Lifecycle_Handlers($S),
-	layout_id: oni.UI_Id,
+	layout_id: o.UI_Id,
 	stable_id: bool,
 	frame_state: ^S,
 ) -> (
 	skip_layout: bool,
 	ran_unmount: bool,
 ) {
-	entry := oni.widget_lifecycle_entry(layout_id)
+	entry := o.widget_lifecycle_entry(layout_id)
 	fs := lifecycle_frame_state(frame_state)
 
 	fs.mounting = entry.mounting
@@ -52,7 +52,7 @@ widget_run_layout_lifecycle :: proc(
 	if handlers.on_mount != nil && stable_id {
 		switch entry.mounting {
 		case .UNSET:
-			if !oni.ui_was_laid_out_prev(layout_id) {
+			if !o.ui_was_laid_out_prev(layout_id) {
 				entry.mounting = .RUNNING
 				fs.mounting = handlers.on_mount(frame_state^)
 				entry.mounting = fs.mounting
@@ -78,7 +78,7 @@ widget_run_layout_lifecycle :: proc(
 
 	if entry.unmounting == .COMPLETED || (handlers.unmount && entry.unmounting == .UNSET) {
 		skip_layout = true
-		oni.widget_lifecycle_remove(layout_id)
+		o.widget_lifecycle_remove(layout_id)
 	}
 
 	return
@@ -91,15 +91,15 @@ Returns false when the draw pass should skip this widget entirely.
 */
 widget_prepare_draw :: proc(
 	handlers: Widget_Lifecycle_Handlers($S),
-	layout_id: oni.UI_Id,
+	layout_id: o.UI_Id,
 	frame_state: ^S,
 ) -> bool {
-	if handlers.unmount && !oni.ui_has_layout_node(layout_id) do return false
+	if handlers.unmount && !o.ui_has_layout_node(layout_id) do return false
 
-	entry := oni.widget_lifecycle_entry(layout_id)
+	entry := o.widget_lifecycle_entry(layout_id)
 	fs := lifecycle_frame_state(frame_state)
 	fs.mounting = entry.mounting
 	fs.unmounting = entry.unmounting
 
-	return oni.ui_has_layout_node(layout_id)
+	return o.ui_has_layout_node(layout_id)
 }

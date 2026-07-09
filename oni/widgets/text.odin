@@ -1,6 +1,6 @@
 package widgets
 
-import oni ".."
+import o ".."
 import set "../set"
 
 
@@ -8,8 +8,8 @@ import set "../set"
 Text widget configuration extending Widget_Config with text and cache flags.
 */
 Text_Config :: struct {
-	using _: oni.Widget_Config,
-	flags:   oni.Widget_Text_Flags,
+	using _: o.Widget_Config,
+	flags:   o.Widget_Text_Flags,
 	text:    string,
 }
 
@@ -17,7 +17,7 @@ Text_Config :: struct {
 Text widget per-frame interaction frame_state for a text widget.
 */
 Text_State :: struct {
-	using _: oni.Widget_Frame_State,
+	using _: o.Widget_Frame_State,
 }
 
 /*
@@ -25,15 +25,15 @@ Text widget per-frame frame_state merged with resolved style, flags, and display
 */
 Text_Merged_State :: struct {
 	using frame_state: Text_State,
-	style:             oni.Resolved_Widget_Config,
-	flags:             oni.Widget_Text_Flags,
+	style:             o.Resolved_Widget_Config,
+	flags:             o.Widget_Text_Flags,
 	text:              string,
 }
 
 /*
 Text widget event snapshot with frame_state and optional input metadata.
 */
-Text_Event :: oni.Widget_Event(Text_Merged_State)
+Text_Event :: o.Widget_Event(Text_Merged_State)
 
 /*
 Text widget props: config fields inlined plus input event handlers.
@@ -42,8 +42,8 @@ Text_Props :: struct {
 	config:                       Text_Config,
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: Text_Merged_State) -> oni.Mount,
-	on_unmount:                   proc(frame_state: Text_Merged_State) -> oni.Mount,
+	on_mount:                     proc(frame_state: Text_Merged_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Text_Merged_State) -> o.Mount,
 	on_focus:                     proc(event: Text_Event),
 	on_blur:                      proc(event: Text_Event),
 	on_mouse_enter:               proc(event: Text_Event),
@@ -64,23 +64,13 @@ Returns the default text widget theme config, muted when the widget is disabled.
 */
 @(private)
 text_widget_decl :: proc(frame_state: ^Text_Merged_State) -> Text_Config {
-	color := oni.Color.FOREGROUND
+	color := o.Color.FOREGROUND
 
 	if frame_state.is_disabled {
-		color = oni.Color.MUTED
+		color = o.Color.MUTED
 	}
 
-	return Text_Config {
-		kind = .TEXT,
-		font = set.Font(oni.theme.font_body),
-		font_size = set.F32(oni.theme.font_body.size_px),
-		color = set.Colors(color),
-		line_height = set.F32(1),
-		text_direction = set.Text_Direction(.LTR),
-		space = set.Inherit_Space(),
-		justify = set.Justify(oni.theme.justify),
-		gap = set.Gap(oni.theme.gap),
-	}
+	return Text_Config{kind = .TEXT, gap = set.Gap(0), line_height = set.F32(1)}
 }
 
 /*
@@ -91,7 +81,7 @@ text_refresh_merged :: proc(props: Text_Props, frame_state: ^Text_Merged_State) 
 	event := widget_event(frame_state^)
 	base := text_widget_decl(frame_state)
 	override := props.config
-	frame_state.style = oni.resolve_widget_config(base, override, frame_state, event)
+	frame_state.style = o.resolve_widget_config(base, override, frame_state, event)
 	frame_state.flags = override.flags
 	frame_state.text = override.text
 
@@ -103,11 +93,11 @@ Renders shaped text with layout measurement and optional pointer interaction.
 
 Returns the drawn text size; uses a shaped-text cache unless Uncached is set.
 */
-Text :: proc(props: Text_Props) -> oni.Vec2 {
+Text :: proc(props: Text_Props) -> o.Vec2 {
 	config := props.config
-	key := oni.element_key(config.id)
+	key := o.element_key(config.id)
 	layout_label := config.id != "" ? config.id : key
-	layout_id := oni.ui_id(layout_label)
+	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
 
@@ -121,7 +111,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	handlers := widget_lifecycle_handlers(props, Text_Merged_State)
 	should_auto_focus := widget_should_auto_focus(style, key)
 
-	if oni.ui_pass() == .Layout {
+	if o.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -146,14 +136,14 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 		widget_register_tab_order(key, style.tabbable, can_interact)
 
-		node := oni.layout_push_node(layout_id, style)
+		node := o.layout_push_node(layout_id, style)
 		max_w: f32
 
 		if config.max_w.mode == .Value do max_w = config.max_w.value
 		if max_w <= 0 && style.width.kind == .FIXED do max_w = style.width.value
 
-		oni.layout_set_measure_text(node, frame_state.text, max_w)
-		oni.layout_pop_node()
+		o.layout_set_measure_text(node, frame_state.text, max_w)
+		o.layout_pop_node()
 
 		return {}
 	}
@@ -162,7 +152,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	rect := oni.widget_hit_rect(layout_id, style)
+	rect := o.widget_hit_rect(layout_id, style)
 
 	got_focus, lost_focus := widget_handle_interaction(
 		props,
@@ -197,29 +187,24 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 		props.on_focus(event)
 	}
 
-	rgbaColor, color_ok := oni.to_rgba(style.color, &frame_state, event)
+	rgbaColor, color_ok := o.to_rgba(style.color, &frame_state, event)
 	if !color_ok do return {}
 
-	resolved_font, layout_scale, ok := oni.font_resolve(style.font, style.font_size, style.space)
+	resolved_font, layout_scale, ok := o.font_resolve(style.font, style.font_size, style.space)
 	if !ok do return {}
 
-	face := oni.font_face_from_handle(resolved_font)
+	face := o.font_face_from_handle(resolved_font)
 	if face == nil || len(frame_state.text) == 0 do return {}
 
-	pos := oni.Vec2{rect.x, rect.y}
+	pos := o.Vec2{rect.x, rect.y}
 	max_w := style.max_w != 0 ? style.max_w : rect.w
 	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
 
 	if .UNCACHED in frame_state.flags {
-		lines := oni.font_shape_line_build(
-			face,
-			frame_state.text,
-			shape_max_w,
-			style.text_direction,
-		)
+		lines := o.font_shape_line_build(face, frame_state.text, shape_max_w, style.text_direction)
 		if len(lines) == 0 do return {}
-		defer oni.font_destroy_shaped_lines(lines)
-		return oni.font_draw_shaped_lines(
+		defer o.font_destroy_shaped_lines(lines)
+		return o.font_draw_shaped_lines(
 			resolved_font,
 			face,
 			lines,
@@ -232,8 +217,8 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	}
 
 	cache_id := config.id != "" ? config.id : key
-	cache := oni.widget_shaped(cache_id)
-	lines := oni.shaped_text_ensure(
+	cache := o.widget_shaped(cache_id)
+	lines := o.shaped_text_ensure(
 		cache,
 		resolved_font.id,
 		face,
@@ -243,7 +228,7 @@ Text :: proc(props: Text_Props) -> oni.Vec2 {
 	)
 	if len(lines) == 0 do return {}
 
-	return oni.font_draw_shaped_lines(
+	return o.font_draw_shaped_lines(
 		resolved_font,
 		face,
 		lines,

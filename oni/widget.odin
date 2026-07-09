@@ -641,6 +641,8 @@ resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
 		return {}, false
 	case Justify_Pos:
 		return resolve_align_pos(v)
+	case Justify_Align:
+		return resolve_align_pos({x = v, y = v})
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify:
 		return {}, false
 	}
@@ -758,7 +760,7 @@ Computes the leading offset for an item given free space and a justify align.
 */
 justify_align_position_offset :: proc(free_space, size: f32, align: Justify_Align) -> f32 {
 	switch align {
-	case .START, .STRETCH, .MAX_CONTENT, .MIN_CONTENT:
+	case .START, .STRETCH, .MAX_CONTENT, .MIN_CONTENT, .TABLE_CELL:
 		return 0
 	case .CENTER:
 		return max(0, (free_space - size) * 0.5)

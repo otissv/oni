@@ -471,6 +471,7 @@ Justify_Align :: enum {
 	SPACE_EVENLY,
 	MAX_CONTENT,
 	MIN_CONTENT,
+	TABLE_CELL,
 }
 
 Justify_X :: union {
@@ -496,6 +497,7 @@ Justify_Pos :: struct {
 Justify :: union {
 	struct{},
 	Justify_Pos,
+	Justify_Align,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify,
 }
 
