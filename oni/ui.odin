@@ -61,10 +61,12 @@ ui_shutdown :: proc() {
 	state.ui.layout.id_to_node = nil
 	delete(state.ui.layout.table_tracks)
 	state.ui.layout.table_tracks = nil
+	layout_shutdown()
 	delete(state.ui.layout_ids_prev)
 	state.ui.layout_ids_prev = nil
 	delete(state.ui.layout_ids_snapshot)
 	state.ui.layout_ids_snapshot = nil
+	widget_ctx_shutdown()
 
 	state.ui.frame = 0
 	state.ui.pass = .Layout
@@ -153,6 +155,8 @@ ui_end_frame :: proc() {
 			delete_key(&state.ui.widgets, id)
 		}
 	}
+
+	widget_prune_element_maps()
 }
 
 /*

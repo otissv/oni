@@ -46,6 +46,13 @@ Layout_State :: struct {
 	table_tracks:  map[int]Layout_Table_Tracks,
 }
 
+@(private)
+layout_release_node_children :: proc(layout: ^Layout_State) {
+	for &node in layout.nodes {
+		delete(node.child_indices)
+	}
+}
+
 /*
 Clears all layout nodes, stacks, and id-to-node mappings.
 
@@ -58,11 +65,28 @@ layout_reset :: proc() {
 		delete(tracks.row_heights)
 	}
 	clear(&state.ui.layout.table_tracks)
+	layout_release_node_children(&state.ui.layout)
 	clear(&state.ui.layout.nodes)
 	clear(&state.ui.layout.node_stack)
 	clear(&state.ui.layout.bounds_stack)
 	clear(&state.ui.layout.space_markers)
 	clear(&state.ui.layout.id_to_node)
+}
+
+/*
+Releases all heap-owned layout storage.
+
+Call during UI shutdown after the final layout_reset.
+*/
+layout_shutdown :: proc() {
+	delete(state.ui.layout.nodes)
+	state.ui.layout.nodes = nil
+	delete(state.ui.layout.node_stack)
+	state.ui.layout.node_stack = nil
+	delete(state.ui.layout.bounds_stack)
+	state.ui.layout.bounds_stack = nil
+	delete(state.ui.layout.space_markers)
+	state.ui.layout.space_markers = nil
 }
 
 /*

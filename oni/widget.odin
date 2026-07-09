@@ -16,6 +16,78 @@ register_tabbable :: proc(element_id: Widget_ID) {
 	append(&w_ctx.tab_order, element_id)
 }
 
+@(private)
+element_key_is_active :: proc(key: string) -> bool {
+	if key == string(w_ctx.focused_id) do return true
+
+	for id in w_ctx.tab_order {
+		if string(id) == key do return true
+	}
+
+	if w_ctx.static_ids != nil {
+		for _, static_id in w_ctx.static_ids {
+			if string(static_id) == key do return true
+		}
+	}
+
+	return false
+}
+
+/*
+Removes stale hover and pointer-down entries for elements no longer in the UI.
+*/
+widget_prune_element_maps :: proc() {
+	if w_ctx.element_was_hovered != nil {
+		remove_keys := make([dynamic]string, context.temp_allocator)
+		for key in w_ctx.element_was_hovered {
+			if !element_key_is_active(key) {
+				append(&remove_keys, key)
+			}
+		}
+		for key in remove_keys {
+			delete_key(&w_ctx.element_was_hovered, key)
+		}
+	}
+
+	if w_ctx.element_pointer_down != nil {
+		remove_keys := make([dynamic]string, context.temp_allocator)
+		for key in w_ctx.element_pointer_down {
+			if !element_key_is_active(key) {
+				append(&remove_keys, key)
+			}
+		}
+		for key in remove_keys {
+			delete_key(&w_ctx.element_pointer_down, key)
+		}
+	}
+}
+
+/*
+Releases heap-owned widget input maps.
+
+Call during UI shutdown.
+*/
+widget_ctx_shutdown :: proc() {
+	if w_ctx.tab_order != nil {
+		delete(w_ctx.tab_order)
+		w_ctx.tab_order = nil
+	}
+	if w_ctx.static_ids != nil {
+		delete(w_ctx.static_ids)
+		w_ctx.static_ids = nil
+	}
+	if w_ctx.element_was_hovered != nil {
+		delete(w_ctx.element_was_hovered)
+		w_ctx.element_was_hovered = nil
+	}
+	if w_ctx.element_pointer_down != nil {
+		delete(w_ctx.element_pointer_down)
+		w_ctx.element_pointer_down = nil
+	}
+
+	w_ctx = {}
+}
+
 /*
 Clears focus when the focused element is no longer in the tab order.
 */
@@ -206,31 +278,6 @@ sync_widget_input :: proc() {
 	for scancode in 0 ..< KEY_COUNT {
 		sync_widget_key(&w_ctx.keys[scancode], state.input.keys_down[scancode])
 	}
-}
-
-/*
-Resets per-frame widget input state without advancing the UI frame counter.
-
-Mirrors the input-reset portion of ui_begin_frame for standalone use.
-*/
-beginMouseFrame :: proc() {
-	w_ctx.auto_element_index = 0
-
-	if w_ctx.static_ids != nil {
-		clear(&w_ctx.static_ids)
-	}
-
-	w_ctx.mouse_moved = false
-
-	clear_button_transients(&w_ctx.left_mouse)
-	clear_button_transients(&w_ctx.right_mouse)
-	clear_button_transients(&w_ctx.middle_mouse)
-
-	for &key in w_ctx.keys {
-		clear_key_transients(&key)
-	}
-
-	sync_widget_input()
 }
 
 /*

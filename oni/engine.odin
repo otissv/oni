@@ -349,6 +349,7 @@ reset_input_state :: proc() {
 	gamepad := state.gamepad
 	gamepad_instance_id := state.gamepad_instance_id
 
+	delete(state.input.text_input)
 	state.input = {}
 	state.force_reload = false
 	state.force_restart = false
@@ -455,6 +456,8 @@ init :: proc() -> bool {
 	gpu_init()
 	if !font_init() {
 		log_error("font_init failed")
+		assets_shutdown()
+		gpu_destroy()
 		return false
 	}
 	ui_init()

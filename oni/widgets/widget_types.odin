@@ -143,18 +143,7 @@ Releases widget runtime maps allocated during the UI session.
 Call when tearing down the widget layer or shutting down the application.
 */
 Shutdown :: proc() {
-	if o.w_ctx.static_ids != nil {
-		delete(o.w_ctx.static_ids)
-	}
-	if o.w_ctx.element_was_hovered != nil {
-		delete(o.w_ctx.element_was_hovered)
-	}
-	if o.w_ctx.element_pointer_down != nil {
-		delete(o.w_ctx.element_pointer_down)
-	}
-	if o.w_ctx.tab_order != nil {
-		delete(o.w_ctx.tab_order)
-	}
+	o.widget_ctx_shutdown()
 }
 
 /*
