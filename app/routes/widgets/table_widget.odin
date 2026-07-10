@@ -7,24 +7,26 @@ import w "../../../oni/widgets"
 Widget_Table :: proc() {
 	w.Table({
 		config = {
-			id = "table1",
+			id = "table1_widget",
 			direction = set.Direction(.VERTICAL),
 			justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
+			border = set.Border(2),
+			radius = set.Radius(10),
 		},
 		child = proc(_: w.Table_State) {
 			w.Table_Head({
-				config = {id = "table1_head"},
+				config = {id = "table1_widget_head"},
 				child = proc(_: w.Table_Head_State) {
 					w.Table_Row({
-						config = {id = "table1_head_r1"},
+						config = {id = "table1_widget_head_r1"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Heading({
-								config = {id = "table1_r1_heading1"},
+								config = {id = "table1_widget_r1_heading1"},
 								child = proc(_: w.Table_Heading_State) {
 									w.Text(
 										{
 											config = {
-												id = "table1_r1_heading_text",
+												id = "table1_widget_r1_heading_text",
 												text = "Player Name",
 											},
 										},
@@ -33,10 +35,15 @@ Widget_Table :: proc() {
 							})
 
 							w.Table_Heading({
-								config = {id = "table1_heading2"},
+								config = {id = "table1_widget_heading2"},
 								child = proc(_: w.Table_Heading_State) {
 									w.Text(
-										{config = {id = "table1_r1_heading_text", text = "Score"}},
+										{
+											config = {
+												id = "table1_widget_r1_heading_text",
+												text = "Score",
+											},
+										},
 									)
 								},
 							})
@@ -46,10 +53,10 @@ Widget_Table :: proc() {
 			})
 
 			w.Table_Body({
-				config = {id = "table1_body"},
+				config = {id = "table1_widget_body"},
 				child = proc(_: w.Table_Body_State) {
 					w.Table_Row({
-						config = {id = "table1_r1"},
+						config = {id = "table1_widget_r1"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Cell({
 								config = {id = "tabel1_r1_c1"},
@@ -75,7 +82,7 @@ Widget_Table :: proc() {
 					})
 
 					w.Table_Row({
-						config = {id = "table1_r2"},
+						config = {id = "table1_widget_r2"},
 						child = proc(_: w.Table_Row_State) {
 							w.Table_Cell({
 								config = {id = "tabel1_r2_c1"},

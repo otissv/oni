@@ -57,8 +57,8 @@ table_cell_theme_base :: proc(frame_state: ^Table_Cell_State) -> Table_Cell_Conf
 
 	return Table_Cell_Config {
 		kind = .TABLE_CELL,
-		justify = set.Justify(o.Justify_Pos{x = .START, y = .CENTER}),
-		padding = set.Padding(o.Pd_pos{x = 8, y = 6}),
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		padding = set.Padding(o.Pd_pos{x = 12, y = 6}),
 	}
 }
 

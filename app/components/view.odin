@@ -31,5 +31,5 @@ View :: proc(
 ) {
 	view_children = {sidebar, container}
 
-	w.Rectangle({config = {id = id, padding = set.Padding(4)}, child = view_child})
+	w.Rectangle({config = {id = id}, child = view_child})
 }

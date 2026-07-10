@@ -8,10 +8,6 @@ import g "./globlas"
 import r "./routes"
 
 
-@(private)
-image_texture: o.Texture_Handle
-
-
 @(init)
 register_init :: proc "contextless" () {
 	init = run_init
@@ -19,7 +15,7 @@ register_init :: proc "contextless" () {
 
 @(private)
 run_init :: proc() {
-	r.widget_route_init()
+	r.routes_init()
 }
 
 

@@ -70,7 +70,7 @@ text_widget_decl :: proc(frame_state: ^Text_Merged_State) -> Text_Config {
 		color = o.Color.MUTED
 	}
 
-	return Text_Config{kind = .TEXT, line_height = set.F32(1)}
+	return Text_Config{kind = .TEXT, line_height = set.F32(1.5)}
 }
 
 /*

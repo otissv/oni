@@ -8,7 +8,7 @@ Widget_Rectangle :: proc() {
 	w.Rectangle(
 		{
 			config = {
-				id = "rectalgel_widget",
+				id = "rectalgel1_widget",
 				height = set.Height(400),
 				width = set.Width(400),
 				direction = set.Direction(.VERTICAL),
