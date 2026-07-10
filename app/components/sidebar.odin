@@ -1,14 +1,14 @@
-package ui
+package components
 
 import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
 
-Sidebar :: proc(children: proc(state: w.Rectangle_State)) {
+Sidebar :: proc(id: string, children: proc(state: w.Rectangle_State)) {
 	w.Rectangle(
 		{
 			config = {
-				id = "sidebar",
+				id = id,
 				x = set.F32(0),
 				y = set.F32(0),
 				width = set.Width(300),

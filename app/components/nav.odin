@@ -1,8 +1,10 @@
-package app
+package components
 
-import ui "../app/ui"
-import set "../oni/set"
-import w "../oni/widgets"
+import set "../../oni/set"
+import w "../../oni/widgets"
+import g "../globlas"
+import ui "../ui"
+
 
 Nav :: proc() {
 	w.Rectangle({
@@ -13,7 +15,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .Home
+					g.Route = .Home
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "home-nav-button", text = "Home"}})
@@ -25,7 +27,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .About
+					g.Route = .About
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "about-nav-button", text = "About"}})
@@ -37,7 +39,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .Artboard
+					g.Route = .Artboard
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Artboard"}})
@@ -49,7 +51,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .Layout
+					g.Route = .Layout
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "layout-nav-button", text = "Layout"}})
@@ -61,7 +63,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .Widgets
+					g.Route = .Widgets
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "widgets-nav-button", text = "Widgets"}})
@@ -73,7 +75,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					Route = .Components
+					g.Route = .Components
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "Components-nav-button", text = "Components"}})

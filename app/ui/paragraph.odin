@@ -1,24 +1,24 @@
 package ui
 
-import oni "../../oni"
+import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
 
 
 Paragraph_Props :: struct {
 	using _: w.Text_Config,
-	theme:   ^oni.Theme,
+	theme:   ^o.Theme,
 }
 
 Paragraph :: proc(props: Paragraph_Props) {
 
 	paragraph_color :: proc(
-		state: oni.Widget_Frame_State,
-		_: oni.Widget_Event(oni.Widget_Frame_State),
-	) -> oni.Colors {
-		if state.is_Pressed do return oni.RGBA{0, 0, 0, 255}
-		if state.is_hovered do return oni.RGBA{210, 60, 60, 255}
-		return oni.theme.palette[.FOREGROUND]
+		state: o.Widget_Frame_State,
+		_: o.Widget_Event(o.Widget_Frame_State),
+	) -> o.Colors {
+		if state.is_Pressed do return o.RGBA{0, 0, 0, 255}
+		if state.is_hovered do return o.RGBA{210, 60, 60, 255}
+		return o.theme.palette[.FOREGROUND]
 	}
 
 

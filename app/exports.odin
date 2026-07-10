@@ -1,14 +1,15 @@
 package app
 
-import oni "../oni"
+import o "../oni"
+import g "./globlas"
 import "core:fmt"
 import "core:mem"
 
 /*
-App-local state kept alongside the oni engine in persistent memory.
+App-local state kept alongside the o engine in persistent memory.
 */
 App_State :: struct {
-	theme: oni.Theme,
+	theme: o.Theme,
 }
 
 /*
@@ -17,7 +18,7 @@ Root heap allocation shared between the host and hot-reloaded app library.
 Holds engine state and app state; layout size is exported for reload detection.
 */
 Persistent :: struct {
-	engine: oni.State,
+	engine: o.State,
 	app:    App_State,
 }
 
@@ -27,17 +28,17 @@ persistent: ^Persistent
 init: proc()
 
 /*
-Re-binds oni engine and theme globals to the current persistent state.
+Re-binds o engine and theme globals to the current persistent state.
 
 Call after any operation that may change the persistent pointer, such as
 allocation, hot reload, or realloc.
 */
 bind :: proc() {
-	oni.Bind(&persistent.engine, &persistent.app.theme)
+	o.Bind(&persistent.engine, &persistent.app.theme)
 }
 
 /*
-Allocates persistent state on first use and binds oni globals.
+Allocates persistent state on first use and binds o globals.
 
 Safe to call from any exported entry point before touching engine state.
 */
@@ -49,27 +50,27 @@ ensure_persistent :: proc() {
 }
 
 /*
-Per-frame app update passed to oni.Run_Frame.
+Per-frame app update passed to o.Run_Frame.
 
 Handles mouse-wheel zoom around the cursor in screen space.
 */
 app_tick :: proc(dt: f32) {
-	frame_dt = dt
+	g.frame_dt = dt
 
 	if persistent.engine.input.mouse_wheel_y == 0 do return
 
-	mouse := oni.Input_Mouse_Screen()
+	mouse := o.Input_Mouse_Screen()
 	factor := ZOOM_WHEEL_STEP
 	if persistent.engine.input.mouse_wheel_y < 0 {
 		factor = 1 / ZOOM_WHEEL_STEP
 	}
-	oni.View_Zoom_By_Screen(mouse, factor)
+	o.View_Zoom_By_Screen(mouse, factor)
 }
 
 /*
 Returns the initial SDL window configuration for this app.
 */
-window_config :: proc() -> oni.Window_Config {
+window_config :: proc() -> o.Window_Config {
 	return {
 		title = WINDOW_TITLE,
 		width = WINDOW_WIDTH,
@@ -97,7 +98,7 @@ Exported hot-reload entry point called once by the host before app_init.
 @(export)
 app_init_window :: proc() {
 	ensure_persistent()
-	if !oni.Init_Window_Only(window_config()) {
+	if !o.Init_Window_Only(window_config()) {
 		persistent.engine.running = false
 		return
 	}
@@ -117,7 +118,7 @@ app_init :: proc() {
 		return
 	}
 
-	if !oni.Init_Runtime(proc() -> bool {
+	if !o.Init_Runtime(proc() -> bool {
 		persistent.app.theme = build_theme()
 		return true
 	}) {
@@ -135,7 +136,7 @@ app_update :: proc() {
 	if persistent == nil do return
 	bind()
 
-	oni.Run_Frame(app_tick, app_draw, init)
+	o.Run_Frame(app_tick, app_draw, init)
 }
 
 /*
@@ -147,7 +148,7 @@ Exported hot-reload entry point. Returns false after a failed init or quit.
 app_should_run :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return oni.Should_Run()
+	return o.Should_Run()
 }
 
 /*
@@ -159,7 +160,7 @@ Exported hot-reload entry point called when the host exits.
 app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
-	oni.Shutdown()
+	o.Shutdown()
 	free(persistent)
 	persistent = nil
 }
@@ -197,13 +198,13 @@ app_memory_size :: proc() -> int {
 Restores persistent state after the host reloads the app library.
 
 Exported hot-reload entry point. Receives the pointer from app_memory and
-notifies oni so engine resources survive the DLL swap.
+notifies o so engine resources survive the DLL swap.
 */
 @(export)
 app_hot_reloaded :: proc(mem: rawptr) {
 	persistent = cast(^Persistent)mem
 	bind()
-	oni.On_Reload()
+	o.On_Reload()
 }
 
 /*
@@ -216,7 +217,7 @@ layout is unchanged.
 app_reset :: proc() {
 	if persistent == nil do return
 	bind()
-	oni.Reset_Input_State()
+	o.Reset_Input_State()
 	reset_app_state()
 }
 
@@ -234,7 +235,7 @@ app_realloc :: proc(new_size: int) {
 	if err != nil {
 		fmt.eprintln("Failed to allocate Persistent:", err)
 		bind()
-		oni.Realloc_Failed()
+		o.Realloc_Failed()
 		reset_app_state()
 		return
 	}
@@ -243,11 +244,11 @@ app_realloc :: proc(new_size: int) {
 	persistent = cast(^Persistent)ptr
 	mem.zero(persistent, new_size)
 
-	oni.Migrate_State(&persistent.engine, &old.engine)
+	o.Migrate_State(&persistent.engine, &old.engine)
 	free(old)
 
 	bind()
-	oni.After_Realloc()
+	o.After_Realloc()
 	reset_app_state()
 }
 
@@ -261,7 +262,7 @@ coordinates reload timing.
 app_force_reload :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return oni.Take_Force_Reload()
+	return o.Take_Force_Reload()
 }
 
 /*
@@ -274,7 +275,7 @@ coordinates reload timing.
 app_force_restart :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return oni.Take_Force_Restart()
+	return o.Take_Force_Restart()
 }
 
 /*
@@ -286,7 +287,7 @@ Exported hot-reload entry point used by the host reloader each frame.
 app_peek_force_reload :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return oni.Peek_Force_Reload()
+	return o.Peek_Force_Reload()
 }
 
 /*
@@ -298,7 +299,7 @@ Exported hot-reload entry point used by the host reloader each frame.
 app_peek_force_restart :: proc() -> bool {
 	if persistent == nil do return false
 	bind()
-	return oni.Peek_Force_Restart()
+	return o.Peek_Force_Restart()
 }
 
 /*
@@ -310,7 +311,7 @@ Exported hot-reload entry point called by the host reloader.
 app_consume_force_reload :: proc() {
 	if persistent == nil do return
 	bind()
-	oni.Consume_Force_Reload()
+	o.Consume_Force_Reload()
 }
 
 /*
@@ -322,5 +323,5 @@ Exported hot-reload entry point called by the host reloader.
 app_consume_force_restart :: proc() {
 	if persistent == nil do return
 	bind()
-	oni.Consume_Force_Restart()
+	o.Consume_Force_Restart()
 }

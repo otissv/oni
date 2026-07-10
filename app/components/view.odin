@@ -1,8 +1,9 @@
-package ui
+package components
 
 import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
+import "core:fmt"
 
 @(private)
 view_children: struct {
@@ -12,7 +13,9 @@ view_children: struct {
 
 @(private)
 view_child :: proc(state: w.Rectangle_State) {
-	Sidebar(view_children.sidebar)
+	sidebar_id := fmt.tprintf("{}_sidebar", state.config.id)
+
+	Sidebar(sidebar_id, view_children.sidebar)
 	w.Rectangle(
 		{
 			config = {id = "container", padding = set.Padding(o.Pd_struct{l = 20})},
@@ -21,7 +24,12 @@ view_child :: proc(state: w.Rectangle_State) {
 	)
 }
 
-View :: proc(sidebar: proc(state: w.Rectangle_State), container: proc(state: w.Rectangle_State)) {
+View :: proc(
+	id: string,
+	sidebar: proc(state: w.Rectangle_State),
+	container: proc(state: w.Rectangle_State),
+) {
 	view_children = {sidebar, container}
-	w.Rectangle({config = {id = "view", padding = set.Padding(4)}, child = view_child})
+
+	w.Rectangle({config = {id = id, padding = set.Padding(4)}, child = view_child})
 }

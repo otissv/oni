@@ -1,6 +1,6 @@
 package ui
 
-import oni "../../oni"
+import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
 
@@ -19,11 +19,11 @@ Heading_Props :: struct {
 	id:      string,
 	text:    string,
 	variant: Heading_Variant,
-	theme:   ^oni.Theme,
+	theme:   ^o.Theme,
 }
 
 Heading :: proc(props: Heading_Props) {
-	font_size: oni.Cfg(f32)
+	font_size: o.Cfg(f32)
 
 	switch props.variant {
 	case .H1:
@@ -48,7 +48,7 @@ Heading :: proc(props: Heading_Props) {
 				height = set.Height(28),
 				text = props.text,
 				font = set.Font(props.theme.font_heading),
-				color = set.Colors(oni.theme.palette[.FOREGROUND]),
+				color = set.Colors(o.theme.palette[.FOREGROUND]),
 				font_size = font_size,
 				line_height = set.F32(0),
 			},

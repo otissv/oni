@@ -3,17 +3,10 @@ package app
 import o "../oni"
 import set "../oni/set"
 import w "../oni/widgets"
+import c "./components"
+import g "./globlas"
+import r "./routes"
 
-
-ONI_IMAGE_PATH :: "assets/oni-2.avif"
-LIFECYCLE_PANEL_ID :: "lifecycle-demo-panel"
-
-@(private)
-panel_state: Panel_State
-Panel_State :: struct {
-	background: o.Cfg(o.Colors),
-	x:          o.Cfg(f32),
-}
 
 @(private)
 image_texture: o.Texture_Handle
@@ -26,48 +19,29 @@ register_init :: proc "contextless" () {
 
 @(private)
 run_init :: proc() {
-	panel := Panel_State {
-		background = set.Colors(o.theme.palette[.SECONDARY]),
-		x          = set.F32(60),
-	}
-	panel_state = panel
-
-
-	tex, ok := o.Load_Texture(ONI_IMAGE_PATH)
-	if ok do image_texture = tex
+	r.widget_route_init()
 }
 
-Routes :: enum {
-	Home,
-	About,
-	Layout,
-	Artboard,
-	Widgets,
-	Components,
-}
-
-Route: Routes = .Widgets
 
 main_ui :: proc() {
 	o.Begin_Screen()
 
-	Nav()
-
+	c.Nav()
 
 	w.Rectangle({
 		config = {id = "main", y = set.F32(60), padding = set.Padding(o.Pd_struct{x = 10})},
 		child = proc(state: w.Rectangle_State) {
-			#partial switch Route {
+			#partial switch g.Route {
 			case .Artboard:
-				artboard_route()
+				r.artboard_route()
 			case .About:
-				about_route()
+				r.about_route()
 			case .Layout:
-				layout_route()
+				r.layout_route()
 			case .Home:
-				home_route()
+				r.home_route()
 			case .Widgets:
-				widgets_route()
+				r.widgets_route()
 			}
 		},
 	})

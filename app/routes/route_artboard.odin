@@ -1,9 +1,9 @@
-package app
+package routes
 
-import o "../oni"
-import set "../oni/set"
-import w "../oni/widgets"
-import ui "./ui"
+import ui "../../app/ui"
+import o "../../oni"
+import set "../../oni/set"
+import w "../../oni/widgets"
 
 artboard_route :: proc() {
 	w.Rectangle({
@@ -35,13 +35,13 @@ Panel :: proc() {
 			border_color = set.Colors(o.theme.palette[.FOREGROUND]),
 		},
 		child = proc(state: w.Rectangle_State) {
-			ui.Heading({id = "heading", text = "Artboard heading", theme = &persistent.app.theme})
+			ui.Heading({id = "heading", text = "Artboard heading", theme = o.theme})
 
 			ui.Paragraph(
 				{
 					id = "paragraph",
 					text = "ui_paragraph in artboard space. Scroll to zoom (quantized 0.1 steps). Pan with middle mouse or Alt+drag. Glyphs re-rasterize at the display size so text stays sharp.",
-					theme = &persistent.app.theme,
+					theme = o.theme,
 				},
 			)
 

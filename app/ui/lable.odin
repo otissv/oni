@@ -1,6 +1,6 @@
 package ui
 
-import oni "../../oni"
+import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
 
@@ -17,11 +17,11 @@ Label_Props :: struct {
 	id:    string,
 	text:  string,
 	size:  Label_Size,
-	theme: ^oni.Theme,
+	theme: ^o.Theme,
 }
 
 Label :: proc(props: Label_Props) {
-	font_size: oni.Cfg(f32)
+	font_size: o.Cfg(f32)
 
 	switch props.size {
 	case .Default:
@@ -40,7 +40,7 @@ Label :: proc(props: Label_Props) {
 				id = props.id,
 				text = props.text,
 				font = set.Font(props.theme.font_heading),
-				color = set.Colors(oni.theme.palette[.FOREGROUND]),
+				color = set.Colors(o.theme.palette[.FOREGROUND]),
 				font_size = font_size,
 				line_height = set.F32(0),
 			},

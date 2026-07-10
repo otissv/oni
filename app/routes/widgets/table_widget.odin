@@ -1,79 +1,8 @@
-package app
+package widgets_route
 
-import ui "../app/ui"
-import o "../oni"
-import "../oni/set"
-import w "../oni/widgets"
-
-@(private)
-Sidebar_Widgets_options :: enum {
-	BUTTON,
-	IMAGE,
-	RECTANGLE,
-	TEXT,
-	TABLE,
-}
-
-@(private)
-active_widget_option: Sidebar_Widgets_options = .TABLE
-
-
-@(private)
-container := proc(state: w.Rectangle_State) {
-	#partial switch active_widget_option {
-	case .RECTANGLE:
-		Widget_Rectangle()
-	case .TABLE:
-		Widget_Table()
-
-	}
-}
-
-@(private)
-sidebar := proc(state: w.Rectangle_State) {
-	ui.Button({
-		id = "widget_sidebar_button_rect",
-		variant = .GHOST,
-		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
-		radius = set.Radius(5),
-		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .RECTANGLE
-		},
-		child = proc(_: ui.Button_state) {
-			w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
-		},
-	})
-
-	ui.Button({
-		id = "widget_sidebar_button_table",
-		variant = .GHOST,
-		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
-		radius = set.Radius(5),
-		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .TABLE
-
-		},
-		child = proc(_: ui.Button_state) {
-			w.Text({config = {id = "widget_sidebar_button_table_text", text = "Table"}})
-		},
-	})
-}
-
-
-Widget_Rectangle :: proc() {
-	w.Rectangle(
-		{
-			config = {
-				id = "rectalgel_widget",
-				height = set.Height(400),
-				width = set.Width(400),
-				direction = set.Direction(.VERTICAL),
-				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-				background = set.Background(.SKY_500),
-			},
-		},
-	)
-}
+import o "../../../oni"
+import set "../../../oni/set"
+import w "../../../oni/widgets"
 
 Widget_Table :: proc() {
 	w.Table({
@@ -169,9 +98,4 @@ Widget_Table :: proc() {
 			})
 		},
 	})
-}
-
-
-widgets_route :: proc() {
-	ui.View(sidebar, container)
 }

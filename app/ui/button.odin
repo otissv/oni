@@ -1,6 +1,6 @@
 package ui
 
-import oni "../../oni"
+import o "../../oni"
 import set "../../oni/set"
 import w "../../oni/widgets"
 
@@ -50,53 +50,53 @@ button_active_variant: Button_Variant
 
 @(private)
 button_background :: proc(
-	state: oni.Widget_Frame_State,
-	_: oni.Widget_Event(oni.Widget_Frame_State),
-) -> oni.Colors {
+	state: o.Widget_Frame_State,
+	_: o.Widget_Event(o.Widget_Frame_State),
+) -> o.Colors {
 	switch button_active_variant {
 	case .DEFAULT:
-		if state.is_Pressed do return oni.Color.PRIMARY_PRESSED
-		if state.is_hovered do return oni.Color.PRIMARY_HOVER
-		return oni.Color.PRIMARY
+		if state.is_Pressed do return o.Color.PRIMARY_PRESSED
+		if state.is_hovered do return o.Color.PRIMARY_HOVER
+		return o.Color.PRIMARY
 
 	case .SECONDARY:
-		if state.is_Pressed do return oni.RGBA{180, 180, 180, 255}
-		if state.is_hovered do return oni.RGBA{210, 210, 210, 255}
-		return oni.RGBA{235, 235, 235, 255}
+		if state.is_Pressed do return o.RGBA{180, 180, 180, 255}
+		if state.is_hovered do return o.RGBA{210, 210, 210, 255}
+		return o.RGBA{235, 235, 235, 255}
 
 	case .OUTLINE:
-		if state.is_Pressed do return oni.RGBA{210, 210, 210, 255}
-		if state.is_hovered do return oni.RGBA{245, 245, 245, 255}
-		return oni.RGBA{0, 0, 0, 0}
+		if state.is_Pressed do return o.RGBA{210, 210, 210, 255}
+		if state.is_hovered do return o.RGBA{245, 245, 245, 255}
+		return o.RGBA{0, 0, 0, 0}
 
 	case .GHOST:
-		if state.is_Pressed do return oni.RGBA{210, 210, 210, 255}
-		if state.is_hovered do return oni.RGBA{235, 235, 235, 255}
-		return oni.RGBA{0, 0, 0, 0}
+		if state.is_Pressed do return o.RGBA{210, 210, 210, 255}
+		if state.is_hovered do return o.RGBA{235, 235, 235, 255}
+		return o.RGBA{0, 0, 0, 0}
 
 	case .DESTRUCTIVE:
-		if state.is_Pressed do return oni.RGBA{120, 0, 0, 255}
-		if state.is_hovered do return oni.RGBA{180, 20, 20, 255}
-		return oni.RGBA{230, 40, 40, 255}
+		if state.is_Pressed do return o.RGBA{120, 0, 0, 255}
+		if state.is_hovered do return o.RGBA{180, 20, 20, 255}
+		return o.RGBA{230, 40, 40, 255}
 
 	case .LINK:
-		if state.is_Pressed do return oni.RGBA{235, 235, 235, 255}
-		if state.is_hovered do return oni.RGBA{245, 245, 245, 255}
-		return oni.RGBA{0, 0, 0, 0}
+		if state.is_Pressed do return o.RGBA{235, 235, 235, 255}
+		if state.is_hovered do return o.RGBA{245, 245, 245, 255}
+		return o.RGBA{0, 0, 0, 0}
 
 	case .ACTIVE:
-		if state.is_Pressed do return oni.Color.ACCENT_PRESSED
-		if state.is_hovered do return oni.Color.ACCENT_HOVER
-		return oni.Color.ACCENT
+		if state.is_Pressed do return o.Color.ACCENT_PRESSED
+		if state.is_hovered do return o.Color.ACCENT_HOVER
+		return o.Color.ACCENT
 	}
 
 
-	return oni.Color.PRIMARY
+	return o.Color.PRIMARY
 }
 
 @(private)
 button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Variant) {
-	config.font = set.Font(oni.theme.font_heading)
+	config.font = set.Font(o.theme.font_heading)
 	config.background = set.Colors(button_background)
 
 	text_padding: f32 = 12
@@ -108,7 +108,7 @@ button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Varian
 	case .ACTIVE:
 	case .OUTLINE:
 		config.border = set.Border(f32(1))
-		config.border_color = set.Colors(oni.RGBA{80, 80, 80, 255})
+		config.border_color = set.Colors(o.RGBA{80, 80, 80, 255})
 	case .GHOST:
 	case .DESTRUCTIVE:
 	case .LINK:
@@ -117,7 +117,7 @@ button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Varian
 	}
 
 	if config.padding.mode != .Value {
-		config.padding = set.Padding(oni.Pd_pos{x = text_padding, y = text_padding * 0.67})
+		config.padding = set.Padding(o.Pd_pos{x = text_padding, y = text_padding * 0.67})
 	}
 }
 
@@ -132,15 +132,13 @@ button_apply_size :: proc(config: ^w.Rectangle_Config, size: Button_Size) {
 	case .DEFAULT:
 	case .SMALL:
 		config.font_size = set.F32(
-			current > 0 ? current * 0.875 : oni.theme.font_body.size_px * 0.875,
+			current > 0 ? current * 0.875 : o.theme.font_body.size_px * 0.875,
 		)
 		padding_x = 10
 		padding_y = 6
 
 	case .LARGE:
-		config.font_size = set.F32(
-			current > 0 ? current * 1.25 : oni.theme.font_body.size_px * 1.25,
-		)
+		config.font_size = set.F32(current > 0 ? current * 1.25 : o.theme.font_body.size_px * 1.25)
 		padding_x = 16
 		padding_y = 10
 
@@ -151,7 +149,7 @@ button_apply_size :: proc(config: ^w.Rectangle_Config, size: Button_Size) {
 	}
 
 	if size != .DEFAULT {
-		config.padding = set.Padding(oni.Pd_pos{x = padding_x, y = padding_y})
+		config.padding = set.Padding(o.Pd_pos{x = padding_x, y = padding_y})
 	}
 }
 
@@ -162,7 +160,7 @@ Button :: proc(props: Button_props) {
 
 	base := w.Rectangle_Config {
 		width    = set.Width(.AUTO),
-		justify  = set.Justify(oni.Justify_Pos{x = .CENTER, y = .CENTER}),
+		justify  = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
 		tabbable = set.Bool(true),
 	}
 
@@ -171,7 +169,7 @@ Button :: proc(props: Button_props) {
 
 	w.Rectangle(
 		{
-			config = oni.merge_widget_config(base, props),
+			config = o.merge_widget_config(base, props),
 			child = props.child,
 			on_focus = props.on_focus,
 			on_blur = props.on_blur,
