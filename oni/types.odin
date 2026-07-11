@@ -782,9 +782,17 @@ Atlas_Region :: struct {
 /*
 Font upright vs italic style selection.
 */
-Font_Style :: enum {
+Font_Styles :: enum {
 	NORMAL,
 	ITALIC,
+}
+
+/*
+Font style: named style, or a reactive proc.
+*/
+Font_Style :: union {
+	Font_Styles,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Style,
 }
 
 /*

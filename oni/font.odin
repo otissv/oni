@@ -49,6 +49,21 @@ font_weight_value :: proc(weight: Font_Weight) -> f32 {
 }
 
 /*
+Returns the concrete Font_Styles kind from a resolved Font_Style value.
+
+Nil style defaults to NORMAL. Unresolved procs panic.
+*/
+font_style_kind :: proc(style: Font_Style) -> Font_Styles {
+	switch v in style {
+	case Font_Styles:
+		return v
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Style:
+		panic("font_style_kind: unresolved Font_Style")
+	}
+	return .NORMAL
+}
+
+/*
 Resolves a family + weight/style + logical size to a raster face instance.
 
 On artboard space, scales by view zoom and returns a layout_scale to map back.
@@ -58,7 +73,7 @@ font_resolve :: proc(
 	logical_size: f32,
 	space: Draw_Space,
 	weight: Font_Weight = Font_Weights.Normal,
-	style: Font_Style = .NORMAL,
+	style: Font_Style = Font_Styles.NORMAL,
 ) -> (
 	resolved: Font_Face_Handle,
 	layout_scale: f32,
@@ -77,15 +92,16 @@ font_resolve :: proc(
 
 	raster_size := max(size * zoom, 1)
 	req_weight := font_weight_value(weight)
+	req_style := font_style_kind(style)
 
-	src, fake_bold, fake_italic, match_ok := font_match_source(family, req_weight, style)
+	src, fake_bold, fake_italic, match_ok := font_match_source(family, req_weight, req_style)
 	if !match_ok do return {}, 1, false
 
 	resolved, ok = font_find_or_create_instance(
 		src,
 		raster_size,
 		req_weight,
-		style,
+		req_style,
 		fake_bold,
 		fake_italic,
 	)

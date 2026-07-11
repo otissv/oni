@@ -33,7 +33,7 @@ Font_Face :: struct {
 	size_px:              f32,
 	pixel_size:           i32,
 	weight:               f32,
-	style:                Font_Style,
+	style:                Font_Styles,
 	fake_bold:            bool,
 	fake_italic:          bool,
 	ascent:               f32,
@@ -57,7 +57,7 @@ Probed source file belonging to a registered family.
 */
 Font_Family_Source :: struct {
 	path:      string,
-	style:     Font_Style,
+	style:     Font_Styles,
 	weight:    f32,
 	has_wght:  bool,
 	has_opsz:  bool,
@@ -263,7 +263,7 @@ font_probe_family_source :: proc(desc: Font_Face_Desc) -> (Font_Family_Source, b
 
 	src := Font_Family_Source {
 		path      = strings.clone(desc.path),
-		style     = desc.style,
+		style     = font_style_kind(desc.style),
 		weight    = font_weight_value(desc.weight),
 		wght_axis = -1,
 		opsz_axis = -1,
@@ -328,7 +328,7 @@ Selects the best family source for the requested style and weight.
 font_match_source :: proc(
 	family: ^Font_Family,
 	weight: f32,
-	style: Font_Style,
+	style: Font_Styles,
 ) -> (
 	src: ^Font_Family_Source,
 	fake_bold: bool,
@@ -392,7 +392,7 @@ font_find_or_create_instance :: proc(
 	src: ^Font_Family_Source,
 	size_px: f32,
 	weight: f32,
-	style: Font_Style,
+	style: Font_Styles,
 	fake_bold: bool,
 	fake_italic: bool,
 ) -> (
@@ -424,7 +424,7 @@ font_create_instance :: proc(
 	src: ^Font_Family_Source,
 	size_px: f32,
 	weight: f32,
-	style: Font_Style,
+	style: Font_Styles,
 	fake_bold: bool,
 	fake_italic: bool,
 ) -> (
