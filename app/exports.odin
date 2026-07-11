@@ -6,20 +6,13 @@ import "core:fmt"
 import "core:mem"
 
 /*
-App-local state kept alongside the o engine in persistent memory.
-*/
-App_State :: struct {
-	theme: o.Theme,
-}
-
-/*
 Root heap allocation shared between the host and hot-reloaded app library.
 
 Holds engine state and app state; layout size is exported for reload detection.
 */
 Persistent :: struct {
 	engine: o.State,
-	app:    App_State,
+	app:    g.Global_State,
 }
 
 persistent: ^Persistent
@@ -28,13 +21,14 @@ persistent: ^Persistent
 init: proc()
 
 /*
-Re-binds o engine and theme globals to the current persistent state.
+Re-binds o engine, theme, and globals.app to the current persistent state.
 
 Call after any operation that may change the persistent pointer, such as
 allocation, hot reload, or realloc.
 */
 bind :: proc() {
 	o.Bind(&persistent.engine, &persistent.app.theme)
+	g.app = &persistent.app
 }
 
 /*
@@ -45,6 +39,7 @@ Safe to call from any exported entry point before touching engine state.
 ensure_persistent :: proc() {
 	if persistent == nil {
 		persistent = new(Persistent)
+		persistent.app.Route = .Widgets
 	}
 	bind()
 }
@@ -55,7 +50,7 @@ Per-frame app update passed to o.Run_Frame.
 Handles mouse-wheel zoom around the cursor in screen space.
 */
 app_tick :: proc(dt: f32) {
-	g.frame_dt = dt
+	g.app.frame_dt = dt
 
 	if persistent.engine.input.mouse_wheel_y == 0 do return
 
@@ -88,6 +83,7 @@ Engine state is preserved; used after realloc failure and full restarts.
 reset_app_state :: proc() {
 	persistent.app = {}
 	persistent.app.theme = build_theme()
+	persistent.app.Route = .Widgets
 }
 
 /*
@@ -163,6 +159,7 @@ app_shutdown :: proc() {
 	o.Shutdown()
 	free(persistent)
 	persistent = nil
+	g.app = nil
 }
 
 /*

@@ -7,7 +7,7 @@ import "core:mem"
 /*
 App-local state kept alongside the oni engine in persistent memory.
 */
-App_State :: struct {
+Global_State :: struct {
 	theme: oni.Theme,
 }
 
@@ -18,7 +18,7 @@ Holds engine state and app state; layout size is exported for reload detection.
 */
 Persistent :: struct {
 	engine: oni.State,
-	app:    App_State,
+	app:    Global_State,
 }
 
 persistent: ^Persistent

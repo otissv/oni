@@ -15,7 +15,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .Home
+					g.app.Route = .Home
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "home-nav-button", text = "Home"}})
@@ -27,7 +27,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .About
+					g.app.Route = .About
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "about-nav-button", text = "About"}})
@@ -39,7 +39,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .Artboard
+					g.app.Route = .Artboard
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "artboard-nav-button", text = "Artboard"}})
@@ -51,7 +51,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .Layout
+					g.app.Route = .Layout
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "layout-nav-button", text = "Layout"}})
@@ -63,7 +63,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .Widgets
+					g.app.Route = .Widgets
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "widgets-nav-button", text = "Widgets"}})
@@ -75,7 +75,7 @@ Nav :: proc() {
 				variant = .GHOST,
 				radius = set.Radius(5),
 				on_click = proc(_: ui.Button_Event) {
-					g.Route = .Components
+					g.app.Route = .Components
 				},
 				child = proc(_: ui.Button_state) {
 					w.Text({config = {id = "Components-nav-button", text = "Components"}})

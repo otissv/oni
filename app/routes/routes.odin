@@ -9,7 +9,7 @@ import widgets "./widgets"
 
 routes_init :: proc() {
 	tex, ok := o.Load_Texture("assets/oni-2.avif")
-	if ok do g.image_texture = tex
+	if ok do g.app.image_texture = tex
 }
 
 widgets_route :: proc() {

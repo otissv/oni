@@ -12,6 +12,7 @@ For a general renderer for **2D games + desktop UI + editor/tools**, learn in th
 7. **Enemies & NPCs** — entity AI, combat, and a full playable game loop (before text and audio polish).  
 8. **Custom UI & widgets** — build panels, buttons, text, images, dropdowns, selects, and lists on your own renderer (no Dear ImGui or other GUI libraries).  
 9. **Audio** — SDL3_mixer for decode, mix, and playback (parallel to graphics; not tied to SDL_GPU).
+10. **Oni production gaps** — Section 13 checklist for unfinished engine/demo shipping work (half-wired styles, form widgets, SPIR-V/debug GPU, hot-reload demo state, tests/CI).
 
 
 
@@ -385,25 +386,29 @@ Then Section 9 enemies and NPCs plug into the same sort bucket without redraw bu
   - [   ] `draw_render_target`
 
  **Layer 4**: custom UI & widgets (no third-party GUI library): 
-  - [   ] layout rects — parent/child bounds, padding, hit areas (see Section 7.1 / 7.4)
-  - [   ] `ui_panel`, `ui_label`, `ui_text`, `ui_image`, `ui_button` — draw + hover/pressed states
+  - [ * ] layout rects — parent/child bounds, padding, hit areas (see Section 7.1 / 7.4)
+  - [ * ] `ui_panel`, `ui_label`, `ui_text`, `ui_image`, `ui_button` — draw + hover/pressed states
   - [   ] `ui_select`, `ui_dropdown` — pick one option from a list
-  - [   ] scrolling panels — clip rect + content offset
-  - [   ] text input — caret, selection, keyboard routing (`ui_text_field`)
+  - [   ] scrolling panels — clip rect + content offset (`Overflow.SCROLL` / `AUTO` style fields exist but are unused by layout/draw)
+  - [   ] text input — caret, selection, IME, `SDL_StartTextInput` (`input.text_input` buffer exists; no field widget)
   - [   ] lists & asset browser rows — click, scroll, selection
-  - [   ] focus & active widget — one keyboard target at a time
+  - [ * ] focus & active widget — one keyboard target at a time
   - [   ] editor chrome — toolbar, property fields, viewport frame (all built from the widgets above)
+  - [   ] form widgets — checkbox, slider, progress, tabs, tooltip, menu, dialog/modal
+  - [   ] wire style APIs that resolve but do nothing — `overflow*`, `position`, `visibility`, `z_index`
 
   **Layer 5**: production systems
-  - [   ] asset loading
-  - [   ] texture atlases
-  - [   ] font atlas
-  - [   ] batching
-  - [ * ] hot reload
+  - [ * ] asset loading (basic; missing broken-image fallback)
+  - [ * ] texture atlases (fixed 2048; no growth / eviction / repack)
+  - [ * ] font atlas (same atlas limits)
+  - [ * ] batching
+  - [ * ] hot reload (engine path; demo package globals still violate persistence — see §13)
   - [   ] debug overlay
   - [   ] frame stats
-  - [   ] error logging
-  - [   ] RenderDoc captures.
+  - [   ] structured error logging (levels / filter; not always-on stderr DEBUG)
+  - [   ] RenderDoc captures
+  - [   ] release GPU build (no always-`debug` device; multi-backend shaders beyond SPIR-V)
+  - [   ] CI — `odin test` + hot-reload build on push
 
 ## 9. Enemies & NPCs — full playable game before polish
 
@@ -548,20 +553,23 @@ Mini demo: three stacked buttons; hover tint and click log the button id.
 
 Each widget is draw calls plus a thin behavior proc. Reuse the same rect/hit-test helpers.
 
-Focus on:
-- [   ] **Panel** — background rect, optional border, clip children
-- [   ] **Label** — short single-line caption (`draw_text` in a rect)
-- [   ] **Text** — static read-only block; multi-line and word-wrap optional
-- [   ] **Image** — `draw_texture` in a rect; fit, fill, or stretch; optional tint
-- [   ] **Button** — normal / hover / pressed colors; `on_click` callback or returned id
+Shipped today (demo/engine): Rectangle, Text, Button, Image, Table (+ head/body/foot/row/cell/caption), focus/tab order.
+
+Still missing for production form/editor UIs:
 - [   ] **Checkbox / toggle** — bool state, click to flip
 - [   ] **Slider** — drag along axis, map position to value
-- [   ] **Text field** — editable; SDL text input or key events; caret and selection rects
-- [   ] **Select** — listbox; several options visible, one selected (e.g. layer enum, entity type)
-- [   ] **Dropdown** — combobox; shows current choice, click expands a popup list to pick one
-- [   ] **Scroll view** — clip rect, wheel delta adjusts content offset, scrollbar thumb optional
+- [   ] **Text field** — editable; `SDL_StartTextInput` / Stop; caret and selection; consume `input.text_input`
+- [   ] **Select** — listbox; several options visible, one selected
+- [   ] **Dropdown** — combobox; closed row + popup list; clip to screen; draw above siblings
+- [   ] **Scroll view** — overflow clip + content offset + wheel + optional scrollbar thumb
 - [   ] **List row** — selectable row for asset names or entity ids
+- [   ] **Dialog / modal**, **tooltip**, **menu**, **tabs**, **progress**
 
+Also unfinished style/layout behavior (fields resolve in `style.odin`, unused in `layout.odin` / `draw.odin`):
+- [   ] **Overflow** — HIDDEN clip, SCROLL/AUTO scroll offset
+- [   ] **Position** — RELATIVE / ABSOLUTE / FIXED / STICKY
+- [   ] **Visibility** — hide from hit-test and draw
+- [   ] **Z-index** — stacking within a parent
 
 Mini demo: property panel with one label, one slider, and one text field editing a platform’s `x` position.
 
@@ -581,11 +589,11 @@ Focus on:
 
 ### 10.5 Checkpoint before the tiny editor
 
-- [   ] `draw_text` works in screen space
-- [   ] Button, label, and panel with hover/click
+- [ * ] `draw_text` works in screen space
+- [ * ] Button, label, and panel with hover/click
 - [   ] One text field or slider that mutates live game data
-- [   ] Scroll view or clipped panel
-- [   ] No Dear ImGui / Clay / other GUI dependency in the build
+- [   ] Scroll view or clipped panel (overflow must actually clip/scroll)
+- [ * ] No Dear ImGui / Clay / other GUI dependency in the build
 
 Then Section 12’s editor is just more widgets and layout, not a new UI stack.
 
@@ -657,3 +665,66 @@ Make these mini-projects in order:
 - Custom widget library — panel, label, text, image, button, slider, text field, select, dropdown, scroll view (Section 10)
 - Tiny level editor built from those widgets — viewport, toolbar, asset list, property panel (no Dear ImGui)
 - SVG / paths
+
+## 13. Oni production gaps (codebase scan)
+
+Open work for shipping the toolkit / demo as a production app UI stack. Tengu is stable (`tengu/STABILITY.md`); this section is **Oni + demo only**.
+
+### 13.1 Layout & style — half-wired APIs
+
+Resolved into `Resolved_Widget_Style` but **not consumed** by layout or draw:
+
+- [   ] `overflow` / `overflow_x` / `overflow_y` — clip and scroll
+- [   ] `position` — RELATIVE / ABSOLUTE / FIXED / STICKY layout
+- [   ] `visibility` — skip hit-test and paint
+- [   ] `z_index` — draw / hit stacking
+- [   ] `Dim` extras ignored by resolvers — `grow`, breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
+- [   ] `aspect_ratio` — listed in `attributes.md`, **absent** from `Widget_Style`
+- [   ] Flex beyond grow — shrink / basis (full flexbox not required; document or implement)
+- [   ] Polish styles not in the model — margin, opacity, transform, box-shadow
+
+### 13.2 Input & widgets
+
+- [   ] Text field + IME — `SDL_StartTextInput` / Stop; caret; selection; widget that drains `input.text_input`
+- [   ] Scroll system — content offset, wheel binding, scrollbar widget
+- [   ] Checkbox, slider, select, dropdown, list row
+- [   ] Dialog/modal, tooltip, menu, tabs, progress
+- [   ] Gamepad → focus / widget nav (polling exists in `oni/gamepad.odin`; not on `api.odin`, not wired to widgets)
+- [   ] Touch, clipboard, file-drop event paths
+- [   ] `SetPointerState` — still a no-op stub (`oni/widgets/widget_types.odin`)
+- [   ] `Image.alt` / a11y hooks; missing-texture fallback paint
+- [   ] `Widget_Config.title` — field unused
+
+### 13.3 GPU, assets, logging
+
+- [   ] Ship backends beyond SPIR-V — `CreateGPUDevice({.SPIRV}, true, …)` and shader packaging are Vulkan/SPIR-V oriented (MSL / DXIL gaps)
+- [   ] Release path — drop always-on GPU debug validation; `build_hot_reload.sh` always passes `-debug`
+- [   ] Atlas growth / eviction when the fixed 2048 atlas fills (`texture.odin` / `font.odin`)
+- [   ] Structured GPU/present errors to the app (not only `eprintln` + skip)
+- [   ] Log levels / filtering (`Log_Debug` always prints; warn not on public API)
+- [   ] Optional: debug overlay, frame stats, RenderDoc capture helper
+
+### 13.4 Hot reload & demo app
+
+`Persistent` lives in package `app`. Leaf packages (`components`, `routes`, …) cannot import `app` without cycles (`app` → them). `app/globlas/` holds `Global_State` and a rebound `app: ^Global_State` pointer (`g.app = &persistent.app` in `bind()`).
+
+- [ * ] Hot-reload survival for app-local fields — `theme`, `Route`, `image_texture`, `frame_dt` live in `Persistent.app` via `g.Global_State`
+- [   ] Wire `Routes.Components` — nav sets it; `#partial switch` has no case → blank main
+- [   ] Starter template `oni/templates/app.odin` — empty `app_draw` / commented init is not a usable production template
+
+### 13.5 Tests, CI, docs, cross-platform
+
+- [   ] Engine tests beyond table layout (`oni/layout_test.odin` only) — flex edges, overflow/scroll, text/font/atlas, input/focus, hot-reload migrate, widgets, textures
+- [   ] App package tests
+- [   ] CI workflow — build + `odin test` (no `.github/` workflows today)
+- [   ] Watch/rebuild on Darwin / Windows (`inotify` + `flock` are Linux-centric)
+- [   ] Reconcile `attributes.md` with real fields (stale `aspect_ratio`, half-wired overflow/position notes)
+- [   ] Oni stability / version contract (mirror Tengu’s `STABILITY.md` if the engine API is meant to be public)
+
+### 13.6 Still on the learning path (not Oni toolkit)
+
+Unchanged open curriculum work — game + audio, not engine HUD gaps:
+
+- [   ] Sections 6–7, 9 — collision, camera, Y-sort, enemies/NPCs (playable game)
+- [   ] Section 11 — SDL3_mixer end to end
+- [   ] Section 2 audio examples; Section 3 `draw_geometry`; Section 4–5 GPU tutorial study items

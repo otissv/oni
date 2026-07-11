@@ -9,7 +9,7 @@ import g "../../globlas"
 Widget_Image :: proc() {
 	w.Image(
 		{
-			texture = g.image_texture,
+			texture = g.app.image_texture,
 			config = {
 				id = "image1_widget",
 				width = 464,

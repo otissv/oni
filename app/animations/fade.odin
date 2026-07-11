@@ -27,7 +27,7 @@ route_fade_step :: proc(fade: ^Route_Fade, mounting: o.Mount) -> o.Mount {
 	result := tengu.tween_step(
 		tengu.Step_Params(f32) {
 			state = &fade.tween,
-			dt = g.frame_dt,
+			dt = g.app.frame_dt,
 			anim = tengu.F32_Animatable(),
 			completion = tengu.DEFAULT_COMPLETION_POLICY,
 		},
