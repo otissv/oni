@@ -22,8 +22,8 @@ Keep the `game` package name and `build/hot_reload/game.{so,dll,dylib}` output s
 | `game/draw.odin` | Public draw API (`draw_rect`, `draw_texture`, `draw_text`, clip stack) |
 | `game/batch.odin` | GPU vertex/index buffers, texture batch flush (internal to `draw`) |
 | `game/texture.odin` | GPU texture upload, sampler, atlas slots |
-| `game/font_shaper.odin` | FreeType face load + HarfBuzz shaping (glyph runs, clusters, direction) |
-| `game/font.odin` | Glyph atlas upload, metrics, `measure_text` / `draw_text` via shaped runs |
+| `game/font_shaper.odin` | Font family registry, VF/static face matching, FreeType + HarfBuzz shaping |
+| `game/font.odin` | Glyph atlas, resolve instances, synthetic bold/italic, text + decoration draw |
 | `game/assets.odin` | Path resolution, load cache, stable `Asset_Id` handles |
 | `game/theme.odin` | Design tokens: colors, spacing, radii, typography |
 | `game/layout.odin` | Pass-1 measure + flex/stack solve; writes `rect` on each tree node (not a widget) |
@@ -52,7 +52,10 @@ Dpi_Info :: struct {
 
 Asset_Id :: distinct i32
 Texture_Handle :: struct { id: Asset_Id, w, h: f32 }
-Font_Handle    :: struct { id: Asset_Id, size_px: f32 }
+Font_Handle      :: struct { id: Asset_Id, size_px: f32 } // registered family + default size
+Font_Face_Handle :: struct { id: Asset_Id, size_px: f32 } // resolved raster instance
+Font_Style  :: enum { NORMAL, ITALIC }
+Font_Weight :: distinct f32 // 100–900; default 400
 
 Theme :: struct {
     background, surface, border, text, text_muted: Color,
@@ -78,7 +81,7 @@ UI_Id :: distinct u64
 
 ### Hot reload rules
 
-- GPU objects (`pipeline`, `textures`, `font atlas`) and font faces (`Font_Face` / HarfBuzz buffers) live in `App_State`; reload via `game_hot_reloaded` → `gpu_reload()` + `font_reload()` + rebind asset paths, same as today.
+- GPU objects (`pipeline`, `textures`, `font atlas`), registered font families, and face instances (`Font_Face` / HarfBuzz) live in `App_State`; reload via `game_hot_reloaded` → `gpu_reload()` + `font_reload_faces()` (re-register families; instances recreate on next resolve) + rebind asset paths, same as today.
 - UI widget code is plain procs; no static UI state outside `App_State`.
 - `Asset_Id` and file paths survive reload; GPU handles are recreated in `assets_reload_gpu()`.
 
@@ -177,7 +180,7 @@ draw_rect      :: proc(r: Rect, color: Color, radius: f32 = 0) // radius 0 = sha
 draw_rect_outline :: proc(r: Rect, color: Color, thickness: f32)
 draw_line      :: proc(a, b: Vec2, color: Color, thickness: f32)
 draw_texture   :: proc(tex: Texture_Handle, src, dst: Rect, tint: Color = {255,255,255,255})
-draw_text      :: proc(font: Font_Handle, text: string, pos: Vec2, color: Color, max_w: f32 = 0) // stub returns size; implemented Section 4
+draw_text      :: proc(font: Font_Handle, text: string, pos: Vec2, color: Color, max_w: f32 = 0) // prefer layout-owned text; see Section 5
 ```
 
 ### `batch.odin`
@@ -244,13 +247,61 @@ assets_get_texture  :: proc(id: Asset_Id) -> Texture_Handle
 
 ## Section 5 — Font shaping, text & theme
 
-**Goal:** Production text from day one: FreeType rasterization, HarfBuzz shaping, GPU glyph atlas, and a consistent visual language. Widgets in Section 8 only read from `Theme`; all text paths go through the shaper — no SDL_ttf, no per-codepoint shortcuts.
+**Goal:** Production text from day one: font **families** (user-registerable), FreeType rasterization, HarfBuzz shaping, GPU glyph atlas, CSS-like weight/style/decoration, and a consistent visual language. Widgets only read from `Theme`; all text paths go through the shaper — no SDL_ttf, no per-codepoint shortcuts, no legacy path+size public load API.
 
 ### Dependencies
 
-Link **FreeType** and **HarfBuzz** in `build_hot_reload.sh` (system libs or vendored). Odin bindings: `vendor:freetype` / `vendor:harfbuzz` if available in your Odin tree; otherwise thin `foreign` bindings in `game/font_shaper.odin`.
+Link **FreeType** and **HarfBuzz** in `build_hot_reload.sh` (system libs or vendored). Thin `foreign` bindings in `game/freetype.odin` / `game/harfbuzz.odin` (or `font_shaper.odin`).
 
-### `font_shaper.odin` — FreeType + HarfBuzz (required)
+### Public font API — families, not bare files
+
+```odin
+Font_Face_Desc :: struct {
+    path:   string,
+    style:  Font_Style,   // NORMAL or ITALIC
+    weight: Font_Weight,  // nominal for static; VF with wght uses requested weight
+}
+
+Register_Font_Family :: proc(name: string, faces: []Font_Face_Desc) -> (Font_Handle, bool)
+Font_With_Size       :: proc(font: Font_Handle, size_px: f32) -> Font_Handle
+
+font_resolve :: proc(
+    font: Font_Handle,
+    logical_size: f32,
+    space: Draw_Space,
+    weight: Font_Weight = 400,
+    style: Font_Style = .NORMAL,
+) -> (resolved: Font_Face_Handle, layout_scale: f32, ok: bool)
+```
+
+Theme registers Inter once, then sizes body/heading:
+
+```odin
+inter, ok := Register_Font_Family("Inter", {
+    {path = "assets/fonts/Inter-VariableFont_opsz,wght.ttf", style = .NORMAL, weight = 400},
+    {path = "assets/fonts/Inter-Italic-VariableFont_opsz,wght.ttf", style = .ITALIC, weight = 400},
+})
+font_body    = Font_With_Size(inter, 16)
+font_heading = Font_With_Size(inter, 20)
+```
+
+Static families (e.g. PixelOperator) register separate Regular/Bold files with explicit weights. Callers declare style/weight on each `Font_Face_Desc` — no auto-detect from name tables.
+
+### Style surface (widget config)
+
+| Field | Type | Notes |
+|-------|------|--------|
+| `font` | `Font_Handle` | Family reference |
+| `font_size` | `f32` | Logical px |
+| `font_weight` | `Font_Weight` | 100–900; default 400 |
+| `font_style` | `Font_Style` | `NORMAL` / `ITALIC` |
+| `text_decoration` | `bit_set[Text_Decoration_Line]` | underline / line-through / overline |
+| `text_decoration_style` | `Text_Decoration_Style` | solid, double, dotted, dashed, wavy |
+| `text_decoration_color` | `Colors` | Unset → text color (`currentColor`) |
+
+No user-facing `font-synthesis` toggle: missing weight/style always synthesizes (CSS default).
+
+### `font_shaper.odin` — registry, resolve, shape
 
 ```odin
 Text_Direction :: enum { LTR, RTL }
@@ -271,33 +322,48 @@ Shaped_Line :: struct {
 Font_Face :: struct {
     ft_face:    rawptr, // FT_Face
     hb_font:    rawptr, // hb_font_t*
+    path:       string,
     size_px:    f32,
+    weight:     Font_Weight,
+    style:      Font_Style,
+    fake_bold, fake_italic: bool,
     ascent, descent, line_height: f32,
+    underline_position, underline_thickness: f32,
 }
 
-font_load_face   :: proc(path: string, size_px: f32) -> (Font_Face, bool)
-font_destroy_face :: proc(face: ^Font_Face)
-font_reload_faces :: proc() // after hot reload: destroy and reload all faces from cached paths
+font_register_family :: proc(name: string, faces: []Font_Face_Desc) -> (Font_Handle, bool)
+font_with_size       :: proc(font: Font_Handle, size_px: f32) -> Font_Handle
+font_reload_faces    :: proc() // re-register families; drop instances (recreated on resolve)
+font_destroy_face    :: proc(face: ^Font_Face)
 
-font_shape       :: proc(face: ^Font_Face, text: string, direction: Text_Direction) -> []Shaped_Glyph
-font_shape_line  :: proc(face: ^Font_Face, text: string, max_w: f32, direction: Text_Direction) -> []Shaped_Line
+font_shape            :: proc(face: ^Font_Face, text: string, direction: Text_Direction) -> []Shaped_Glyph
+font_shape_line_build :: proc(face: ^Font_Face, text: string, max_w: f32, letter_spacing: f32, wrap: Text_Wrap_Kind, direction: Text_Direction) -> []Shaped_Line
 ```
+
+Resolution rules:
+
+1. Scale size for artboard zoom (return `layout_scale`).
+2. Prefer a family source whose `style` matches; else roman + `fake_italic`.
+3. Variable face with `wght`: `FT_Set_Var_Design_Coordinates`; `opsz` from logical size when present; then `hb_ft_font_changed`.
+4. Else closest static weight; if requested is clearly heavier → `fake_bold` (`FT_GlyphSlot_Embolden`).
+5. Cache instances keyed by `(path, pixel_size, weight, style, fake_bold, fake_italic)` — do not mutate one shared FT face across weights.
 
 Implementation requirements:
 
-- **FreeType:** load `.ttf`/`.otf`; set char size in points scaled by `dpi.scale`; `FT_Load_Glyph` + `FT_Render_Glyph` (or SDF later — bitmap is fine for this section)
-- **HarfBuzz:** `hb_ft_font_create`, `hb_buffer_add_utf8`, set direction/script/language, `hb_shape`, read glyph positions/advances/clusters
-- **Clusters:** preserve for caret placement and selection in Section 9 (map click offset → byte index via cluster array)
-- **Direction:** explicit `Text_Direction` per widget; default LTR; RTL paragraphs shaped with `HB_DIRECTION_RTL`
-- **Font stack:** body 16px + heading 20px as two `Font_Face` instances in `App_State`
+- **FreeType:** load `.ttf`/`.otf`; pixel sizes scaled by `dpi.scale`; `FT_Get_MM_Var` / `FT_Set_Var_Design_Coordinates`; `FT_Set_Transform` (~12° shear for fake italic); `FT_Load_Glyph` + embolden + `FT_Render_Glyph`
+- **HarfBuzz:** `hb_ft_font_create_referenced`, `hb_buffer_add_utf8`, direction/script/language, `hb_shape`, glyph positions/advances/clusters
+- **Clusters:** preserve for caret/selection (map click → byte index via cluster array)
+- **Direction:** explicit `Text_Direction` per widget; default LTR; RTL via `HB_DIRECTION_RTL`
+- **Theme stack:** one Inter family; body 16px + heading 20px via `Font_With_Size`
 
-### `font.odin` — atlas & draw
+### `font.odin` — atlas, draw, decorations
 
-- **Glyph atlas** texture: dynamic upload per `glyph_id` on first use; shelf/bin pack in atlas (same allocator as Section 4 texture atlas)
-- `font_ensure_glyphs(face, glyphs: []Shaped_Glyph)` — rasterize missing glyphs into atlas before draw
-- `font_measure(face, text, max_w, direction) -> Vec2` — uses `font_shape_line` for wrap width/height
-- `draw_text` — iterate shaped lines/glyphs, emit `draw_texture` quads from atlas regions; vertex color × tint
-- Line breaking: break on `max_w` using shaped advances; respect HarfBuzz cluster boundaries (no mid-grapheme breaks)
+- **Glyph atlas:** dynamic upload per `(face_id, glyph_id)` on first use; shelf pack
+- `font_ensure_glyphs` — rasterize missing glyphs (apply fake bold at rasterize time)
+- Layout owns wrap/align: `layout_text_build` → `font_resolve` + `font_shape_line_build`; draw via `font_draw_layout_text`
+- `font_draw_shaped_line` — atlas quads; vertex color × tint
+- `font_draw_decoration` — after glyphs: underline / line-through / overline with solid / double / dotted / dashed / wavy strokes via `draw_line`
+- Line breaking: wrap modes (`NONE`, `NEWLINES`, `BALANCE`) + letter-spacing; respect HarfBuzz cluster boundaries
 
 ### `theme.odin`
 
@@ -308,18 +374,20 @@ theme_color   :: proc(t: ^Theme, role: Theme_Color_Role) -> Color
 
 - Provide `theme_dark()` and `theme_light()` presets
 - Store active theme in `App_State.theme`
-- All hardcoded colors from earlier sections removed
+- Register font families in theme build; all hardcoded colors from earlier sections removed
 
 ### Checkpoint
 
-- [ ] `draw_text` renders multi-line wrapped Latin text in a clipped rect
-- [ ] Arabic sample string (`مرحبا`) shapes RTL and aligns to the right when `direction = .RTL`
+- [ ] Layout-owned text renders multi-line wrapped Latin text in a clipped rect
+- [ ] `font_weight` / `font_style` select VF axes or static faces; missing faces synthesize bold/italic
+- [ ] Decorations draw for underline / line-through / overline in all five styles
+- [ ] Arabic sample string (`مرحبا`) shapes RTL and aligns when `direction = .RTL`
 - [ ] Mixed EN+AR paragraph selects correct direction per run (or explicit paragraph direction) without tofu boxes
 - [ ] CJK sample (`日本語`) shapes and wraps without mid-glyph cluster splits
-- [ ] `font_measure` and drawn output agree within 1 logical px
+- [ ] Measured and drawn sizes agree within 1 logical px
 - [ ] Resizing window does not blur text (atlas pixel-aligned; snap draw positions to 0.5 logical px)
-- [ ] Switching `theme_light` / `theme_dark` at runtime recolors a demo screen without code changes in draw calls
-- [ ] Hot reload recreates FreeType/HarfBuzz faces and GPU atlas without leaks
+- [ ] Switching `theme_light` / `theme_dark` at runtime recolors without code changes in draw calls
+- [ ] Hot reload re-registers families and recreates GPU atlas without leaks
 
 ---
 
@@ -697,8 +765,11 @@ Replace Settings-only demo with a small **Document browser** app:
 ```
 assets/
   fonts/
-    Inter-Regular.ttf       # Latin body
-    NotoSansArabic-Regular.ttf
+    Inter-VariableFont_opsz,wght.ttf
+    Inter-Italic-VariableFont_opsz,wght.ttf
+    PixelOperator8.ttf          # optional static family example
+    PixelOperator8-Bold.ttf
+    NotoSansArabic-Regular.ttf  # optional fallback family (next tier)
     NotoSansJP-Regular.otf
   ui/
     icons.png          # atlas sheet

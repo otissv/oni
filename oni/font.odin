@@ -5,21 +5,7 @@ import "core:math"
 import sdl "vendor:sdl3"
 
 /*
-Returns an existing face handle for path and size, or loads a new face.
-
-Scans loaded faces before calling font_load_face to avoid duplicate entries.
-*/
-font_find_or_load :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
-	for &face, i in state.fonts.faces {
-		if face.size_px == size_px && face.path == path {
-			return Font_Handle{id = Asset_Id(i), size_px = size_px}, true
-		}
-	}
-	return font_load_face(path, size_px)
-}
-
-/*
-Resolves a logical font size to a rasterized face for the current draw space.
+Resolves a family + weight/style + logical size to a raster face instance.
 
 On artboard space, scales by view zoom and returns a layout_scale to map back.
 */
@@ -27,27 +13,42 @@ font_resolve :: proc(
 	font: Font_Handle,
 	logical_size: f32,
 	space: Draw_Space,
+	weight: Font_Weight = FONT_WEIGHT_NORMAL,
+	style: Font_Style = .NORMAL,
 ) -> (
-	resolved: Font_Handle,
+	resolved: Font_Face_Handle,
 	layout_scale: f32,
 	ok: bool,
 ) {
-	draw_space := space
-	base := font_face_from_handle(font)
-	if base == nil do return {}, 1, false
+	family := font_family_from_handle(font)
+	if family == nil do return {}, 1, false
 
 	size := logical_size > 0 ? logical_size : font.size_px
+	if size <= 0 do size = 16
+
 	zoom: f32 = 1
-	if draw_space == .ARTBOARD {
+	if space == .ARTBOARD {
 		zoom = view_effective_zoom()
 	}
 
 	raster_size := max(size * zoom, 1)
-	resolved, ok = font_find_or_load(base.path, raster_size)
+	req_weight := weight != 0 ? weight : FONT_WEIGHT_NORMAL
+
+	src, fake_bold, fake_italic, match_ok := font_match_source(family, req_weight, style)
+	if !match_ok do return {}, 1, false
+
+	resolved, ok = font_find_or_create_instance(
+		src,
+		raster_size,
+		req_weight,
+		style,
+		fake_bold,
+		fake_italic,
+	)
 	if !ok do return {}, 1, false
 
 	layout_scale = 1
-	if draw_space == .ARTBOARD && zoom > 0 {
+	if space == .ARTBOARD && zoom > 0 {
 		layout_scale = 1 / zoom
 	}
 	return resolved, layout_scale, true
@@ -103,15 +104,20 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 /*
 Rasterizes a single glyph via FreeType and packs it into the texture atlas.
 
-Allocates a 1×1 transparent region for zero-sized glyphs.
+Applies synthetic embolden when the face instance requests fake bold.
 */
 font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Entry, bool) {
-	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), FT_LOAD_RENDER)) {
+	load_flags: c.int = face.fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_RENDER)
+	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), load_flags)) {
 		log_errorf("FT_Load_Glyph failed for glyph %d", glyph_id)
 		return {}, false
 	}
 
 	slot := ft_glyph_slot(face.ft_face)
+	if face.fake_bold {
+		GlyphSlot_Embolden(slot)
+	}
+
 	if ft_slot_format(slot) != .BITMAP {
 		if !ft_ok(Render_Glyph(slot, FT_RENDER_MODE_NORMAL)) {
 			log_errorf("FT_Render_Glyph failed for glyph %d", glyph_id)
@@ -244,50 +250,47 @@ font_measure_lines :: proc(
 }
 
 /*
-Measures text using a persistent shaped-text cache.
-
-Rebuilds shaped lines only when the cache key or text content changes.
-*/
-font_measure_cached :: proc(
-	handle: Font_Handle,
-	cache: ^Shaped_Text,
-	text: string,
-	max_w: f32 = 0,
-	direction: Text_Direction = .LTR,
-) -> Vec2 {
-	face := font_face_from_handle(handle)
-	if face == nil || len(text) == 0 || cache == nil do return {}
-
-	lines := shaped_text_ensure(cache, handle.id, face, text, max_w, direction)
-	if len(lines) == 0 do return {}
-	return font_measure_lines(face, lines)
-}
-
-/*
-Measures text by shaping lines on the fly without caching.
-
-The temporary shaped lines are destroyed before returning.
-*/
-font_measure_uncached :: proc(
-	handle: Font_Handle,
-	text: string,
-	max_w: f32 = 0,
-	direction: Text_Direction = .LTR,
-) -> Vec2 {
-	face := font_face_from_handle(handle)
-	if face == nil || len(text) == 0 do return {}
-
-	lines := font_shape_line_build(face, text, max_w, direction)
-	if len(lines) == 0 do return {}
-	defer font_destroy_shaped_lines(lines)
-	return font_measure_lines(face, lines)
-}
-
-/*
 Snaps a logical coordinate to the nearest half-pixel for crisp glyph placement.
 */
 snap_logical :: proc(v: f32) -> f32 {
 	return math.round(v * 2) / 2
+}
+
+/*
+Decoration parameters for drawing text decorations over shaped lines.
+*/
+Font_Decoration_Draw :: struct {
+	lines: Text_Decoration_Lines,
+	style: Text_Decoration_Style_Kind,
+	color: RGBA,
+}
+
+/*
+Draws layout-owned shaped text at the node's rect using precomputed line origins.
+
+Does not reshape, wrap, or align — layout owns those.
+*/
+font_draw_layout_text :: proc(
+	laid: ^Layout_Text,
+	rect: Rect,
+	color: RGBA,
+	decoration: Font_Decoration_Draw = {},
+) -> Vec2 {
+	if laid == nil || len(laid.lines) == 0 do return {}
+
+	face := font_face_from_handle(laid.font)
+	if face == nil do return {}
+
+	for line, i in laid.lines {
+		origin := laid.line_origins[i]
+		pos := Vec2{rect.x + origin.x, rect.y + origin.y}
+		font_draw_shaped_line(face, laid.font.id, line, pos, color, laid.layout_scale)
+		if decoration.lines != {} {
+			font_draw_decoration(face, line, pos, decoration, laid.layout_scale)
+		}
+	}
+
+	return laid.size
 }
 
 /*
@@ -301,7 +304,7 @@ font_draw_shaped_line :: proc(
 	line: Shaped_Line,
 	pos: Vec2,
 	color: RGBA,
-	layout_scale: f32 = 1,
+	layout_scale: f32,
 ) {
 	if face == nil || len(line.glyphs) == 0 do return
 	if !font_ensure_glyphs(face, face_id, line.glyphs) do return
@@ -342,35 +345,87 @@ font_draw_shaped_line :: proc(
 }
 
 /*
-Draws multiple shaped lines and returns the total laid-out size.
-
-Right-aligns RTL lines within max_w and advances the cursor by line height.
+Draws underline, line-through, and/or overline for one shaped line.
 */
-font_draw_shaped_lines :: proc(
-	handle: Font_Handle,
+font_draw_decoration :: proc(
 	face: ^Font_Face,
-	lines: []Shaped_Line,
+	line: Shaped_Line,
 	pos: Vec2,
-	color: RGBA,
-	max_w: f32 = 0,
-	line_height: f32 = 0,
-	layout_scale: f32 = 1,
-) -> Vec2 {
-	if face == nil || len(lines) == 0 do return {}
+	decoration: Font_Decoration_Draw,
+	layout_scale: f32,
+) {
+	if face == nil || decoration.lines == {} do return
 
-	lh := font_text_line_height(face, line_height, layout_scale)
+	width := line.width * layout_scale
+	if width <= 0 do return
 
-	width: f32
-	cursor := pos
-	for line in lines {
-		width = max(width, line.width * layout_scale)
-		line_pos := cursor
-		if line.direction == .RTL && max_w > 0 {
-			line_pos.x = pos.x + max_w - line.width * layout_scale
-		}
-		font_draw_shaped_line(face, handle.id, line, line_pos, color, layout_scale)
-		cursor.y += lh
+	baseline_y := pos.y + face.ascent * layout_scale
+	thickness := max(face.underline_thickness * layout_scale, 1)
+	x0 := pos.x
+	x1 := pos.x + width
+
+	if .UNDERLINE in decoration.lines {
+		y := baseline_y - face.underline_position * layout_scale
+		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
 	}
+	if .LINE_THROUGH in decoration.lines {
+		y := baseline_y - (face.ascent * 0.35) * layout_scale
+		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
+	}
+	if .OVERLINE in decoration.lines {
+		y := pos.y + thickness * 0.5
+		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
+	}
+}
 
-	return {width, f32(len(lines)) * lh}
+/*
+Draws a single decoration stroke between x0 and x1 at y with the given style.
+*/
+@(private)
+font_draw_decoration_stroke :: proc(
+	x0, x1, y, thickness: f32,
+	style: Text_Decoration_Style_Kind,
+	color: RGBA,
+) {
+	switch style {
+	case .SOLID:
+		draw_line({x0, y}, {x1, y}, color, thickness)
+	case .DOUBLE:
+		gap := thickness * 1.5
+		draw_line({x0, y - gap * 0.5}, {x1, y - gap * 0.5}, color, thickness)
+		draw_line({x0, y + gap * 0.5}, {x1, y + gap * 0.5}, color, thickness)
+	case .DOTTED:
+		dot := max(thickness, 1)
+		gap := dot
+		x := x0
+		for x < x1 {
+			end := min(x + dot, x1)
+			draw_line({x, y}, {end, y}, color, thickness)
+			x += dot + gap
+		}
+	case .DASHED:
+		dash := thickness * 3
+		gap := thickness * 2
+		x := x0
+		for x < x1 {
+			end := min(x + dash, x1)
+			draw_line({x, y}, {end, y}, color, thickness)
+			x += dash + gap
+		}
+	case .WAVY:
+		amp := thickness
+		period := max(thickness * 2.5, 4)
+		x := x0
+		prev := Vec2{x0, y}
+		up := true
+		for x < x1 {
+			next_x := min(x + period * 0.5, x1)
+			next_y := y + (up ? -amp : amp)
+			next := Vec2{next_x, next_y}
+			draw_line(prev, next, color, thickness)
+			prev = next
+			x = next_x
+			up = !up
+		}
+	}
 }

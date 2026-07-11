@@ -73,6 +73,16 @@ Font :: proc(font: oni.Font_Handle) -> oni.Cfg(oni.Font_Handle) {return cfg_valu
 Font_size :: F32
 
 /*
+Sets a font-style widget config field to an explicit value.
+*/
+Font_style :: proc(style: oni.Font_Style) -> oni.Cfg(oni.Font_Style) {return cfg_value(style)}
+
+/*
+Sets a font-weight widget config field to an explicit value.
+*/
+Font_weight :: proc(weight: oni.Font_Weight) -> oni.Cfg(oni.Font_Weight) {return cfg_value(weight)}
+
+/*
 Sets a horizontal gap widget config field to an explicit value.
 */
 Gap_X :: proc(value: oni.Gap_X) -> oni.Cfg(oni.Gap_X) {return cfg_value(value)}
@@ -102,9 +112,9 @@ Sets a justify widget config field to an explicit value.
 */
 Justify :: proc(value: oni.Justify) -> oni.Cfg(oni.Justify) {return cfg_value(value)}
 
-Letter_Spacig :: F32
+Letter_Spacing :: F32
 
-Letter_Height :: F32
+Line_Height :: F32
 
 Max_H :: F32
 
@@ -139,6 +149,25 @@ Sets a draw-space widget config field to an explicit value.
 Space :: proc(space: oni.Draw_Space) -> oni.Cfg(oni.Draw_Space) {return cfg_value(space)}
 
 Tabbable :: F32
+
+/*
+Sets text-decoration lines (underline, line-through, overline).
+*/
+Text_decoration :: proc(
+	value: oni.Text_Decoration,
+) -> oni.Cfg(oni.Text_Decoration) {return cfg_value(value)}
+
+/*
+Sets text-decoration-color to an explicit color.
+*/
+Text_decoration_color :: Colors
+
+/*
+Sets text-decoration-style (solid, double, dotted, dashed, wavy).
+*/
+Text_decoration_style :: proc(
+	value: oni.Text_Decoration_Style,
+) -> oni.Cfg(oni.Text_Decoration_Style) {return cfg_value(value)}
 
 /*
 Sets a text-direction widget config field to an explicit value.
@@ -176,7 +205,7 @@ Sets a width widget config field to an explicit value.
 */
 Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 
-Wrap :: proc(value: oni.Text_Warp) -> oni.Cfg(oni.Text_Warp) {return cfg_value(value)}
+Wrap :: proc(value: oni.Text_Wrap) -> oni.Cfg(oni.Text_Wrap) {return cfg_value(value)}
 
 Border_Collapse :: proc(value: oni.Border_Collapse) -> oni.Cfg(oni.Border_Collapse) {
 	return cfg_value(value)

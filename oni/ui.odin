@@ -41,14 +41,9 @@ ui_init :: proc() {
 
 /*
 Tears down widget storage, scope/style stacks, and layout state.
-
-Releases shaped text for every cached widget entry.
 */
 ui_shutdown :: proc() {
 	if state.ui.widgets != nil {
-		for _, &entry in state.ui.widgets {
-			widget_entry_release_shaped(&entry)
-		}
 		clear(&state.ui.widgets)
 		delete(state.ui.widgets)
 		state.ui.widgets = nil
@@ -141,7 +136,7 @@ ui_end_layout_pass :: proc() {
 }
 
 /*
-Prunes widgets not touched this frame and frees their shaped text.
+Prunes widgets not touched this frame.
 
 Call once per frame after the draw pass finishes.
 */
@@ -156,10 +151,7 @@ ui_end_frame :: proc() {
 	}
 
 	for id in remove_ids {
-		if entry, ok := &state.ui.widgets[id]; ok {
-			widget_entry_release_shaped(entry)
-			delete_key(&state.ui.widgets, id)
-		}
+		delete_key(&state.ui.widgets, id)
 	}
 
 	widget_prune_element_maps()

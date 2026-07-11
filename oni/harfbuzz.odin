@@ -142,12 +142,19 @@ foreign lib {
 	Binds to hb_ft_font_create_referenced; does not take ownership of the face.
 	*/
 	ft_font_create_referenced :: proc(ft_face: FT_Face) -> hb_font_t ---
+
+	/*
+	Notifies HarfBuzz that the underlying FreeType face changed (size/variations).
+
+	Binds to hb_ft_font_changed.
+	*/
+	ft_font_changed :: proc(font: hb_font_t) ---
 }
 
 /*
 Maps oni Text_Direction to the corresponding HarfBuzz direction constant.
 */
-hb_to_direction :: proc(direction: Text_Direction) -> hb_direction_t {
+hb_to_direction :: proc(direction: Text_Direction_Kind) -> hb_direction_t {
 	switch direction {
 	case .LTR:
 		return HB_DIRECTION_LTR

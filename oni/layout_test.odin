@@ -353,9 +353,7 @@ ui_shutdown_releases_heap_state :: proc(t: ^testing.T) {
 			defer ui_shutdown()
 
 			layout_id := UI_Id(42)
-			entry := widget_lifecycle_entry(layout_id)
-			entry.shaped = new(Shaped_Text)
-			entry.shaped.pool_slot = INVALID_SHAPE_POOL_SLOT
+			_ = widget_lifecycle_entry(layout_id)
 
 			register_tabbable("tab-target")
 			register_static_id("widget", "runtime-key")

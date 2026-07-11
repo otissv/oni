@@ -15,8 +15,10 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `direction` (bidi) | `text_direction` | `Text_Direction` enum |
 | `flex-direction` | `direction` | Row/column only (`.Horizontal` / `.Vertical`) |
 | `flex-grow` | `flex` | Number only; not full `flex` shorthand |
-| `font-family` | `font` | `Font_Handle`, not a CSS string |
+| `font-family` | `font` | `Font_Handle` (registered family), not a CSS string |
 | `font-size` | `font_size` | |
+| `font-style` | `font_style` | `NORMAL` / `ITALIC`; missing italic faces use synthetic oblique |
+| `font-weight` | `font_weight` | `Font_Weight` 100–900; VF `wght` or closest static face + fake bold |
 | `gap` | `gap` | Single value; no separate row/column gap |
 | `height` | `height` | `f32` px; `Height` union exists but not on struct |
 | `justify-content` + `align-items` | `justify` | Combined in `Justify_Pos` |
@@ -32,6 +34,9 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `overflow-y` | `overflow_y` | |
 | `padding` | `padding` | Per-side via `Padding` union |
 | `text-align` | `align` | Left / Center / Right |
+| `text-decoration-line` | `text_decoration` | `bit_set` of underline / line-through / overline |
+| `text-decoration-style` | `text_decoration_style` | solid, double, dotted, dashed, wavy |
+| `text-decoration-color` | `text_decoration_color` | Unset uses text `color` (currentColor) |
 | `top` | `y` | Fixed offset only |
 | `width` | `width` | `f32` px; `Width` union exists but not on struct |
 | `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Balance` — not full `white-space` |
@@ -203,8 +208,6 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 ### Typography
 
 - `font` (shorthand)
-- `font-weight`
-- `font-style`
 - `font-stretch`
 - `font-variant`
 - `font-variant-caps`
@@ -216,10 +219,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `font-synthesis`
 - `font-variation-settings`
 - `word-spacing`
-- `text-decoration`
-- `text-decoration-color`
-- `text-decoration-line`
-- `text-decoration-style`
+- `text-decoration` (shorthand — use line/style/color fields)
 - `text-decoration-thickness`
 - `text-underline-offset`
 - `text-underline-position`

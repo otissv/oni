@@ -2,11 +2,24 @@ package oni
 
 
 /*
-Optional text and wrap width used to measure a layout node intrinsically.
+Author text and optional wrap-width hint for leaf text measurement.
 */
 Layout_Measure :: struct {
 	text:  string,
 	max_w: f32,
+}
+
+/*
+Layout-owned shaped text: wrap, line boxes, and draw origins relative to node.rect.
+*/
+Layout_Text :: struct {
+	lines:         []Shaped_Line,
+	line_origins:  []Vec2,
+	font:          Font_Face_Handle,
+	layout_scale:  f32,
+	wrap_w:        f32,
+	line_height:   f32,
+	size:          Vec2,
 }
 
 /*
@@ -23,6 +36,7 @@ Layout_Node :: struct {
 	parent:        int,
 	child_indices: [dynamic]int,
 	measure:       Layout_Measure,
+	text:          Layout_Text,
 }
 
 /*
@@ -53,6 +67,7 @@ Layout_State :: struct {
 layout_release_node_children :: proc(layout: ^Layout_State) {
 	for &node in layout.nodes {
 		delete(node.child_indices)
+		layout_text_release(&node)
 	}
 }
 
@@ -358,25 +373,151 @@ layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
 }
 
 /*
-Measures shaped text size for a widget style and optional max width.
+Returns whether a layout node carries author text to shape.
 */
-layout_measure_text :: proc(config: Resolved_Widget_Style, text: string, max_w: f32) -> Vec2 {
-	if len(text) == 0 do return {}
+layout_node_has_text :: proc(node: ^Layout_Node) -> bool {
+	return node != nil && len(node.measure.text) > 0
+}
 
-	resolved_font, layout_scale, ok := font_resolve(config.font, config.font_size, config.space)
-	if !ok do return {}
+/*
+Frees shaped lines and origins owned by a layout node.
+*/
+layout_text_release :: proc(node: ^Layout_Node) {
+	if node == nil do return
+	if len(node.text.lines) > 0 {
+		font_destroy_shaped_lines(node.text.lines)
+	}
+	delete(node.text.line_origins)
+	node.text = {}
+}
+
+/*
+Resolves the wrap width layout owns for text.
+
+Priority: author max_w, fixed width, then the available layout width.
+*/
+layout_text_resolve_wrap_w :: proc(node: ^Layout_Node, available_w: f32) -> f32 {
+	if node.measure.max_w > 0 do return node.measure.max_w
+	if node.config.width.kind == .FIXED && node.config.width.value > 0 {
+		return node.config.width.value
+	}
+	if node.config.max_w > 0 do return node.config.max_w
+	return available_w
+}
+
+/*
+Shapes text into the node and records measured size.
+
+Destroys any previous shaped lines. Line origins are filled by layout_text_position_lines.
+*/
+layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
+	layout_text_release(node)
+	if !layout_node_has_text(node) do return
+
+	config := node.config
+	resolved_font, layout_scale, ok := font_resolve(
+		config.font,
+		config.font_size,
+		config.space,
+		config.font_weight,
+		config.font_style,
+	)
+	if !ok do return
 
 	face := font_face_from_handle(resolved_font)
-	if face == nil do return {}
+	if face == nil do return
 
-	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
-	lines := font_shape_line_build(face, text, shape_max_w, config.text_direction)
-	if len(lines) == 0 do return {}
-	defer font_destroy_shaped_lines(lines)
+	shape_max_w := wrap_w > 0 ? wrap_w / layout_scale : wrap_w
+	letter_spacing := config.letter_spacing / layout_scale
+	wrap := text_wrap_kind(config.wrap)
+	direction := text_direction_kind(config.text_direction)
+	lines := font_shape_line_build(
+		face,
+		node.measure.text,
+		shape_max_w,
+		letter_spacing,
+		wrap,
+		direction,
+	)
+	if len(lines) == 0 do return
 
 	line_height := config.font_size * config.line_height
-	if line_height <= 0 do line_height = 0
-	return font_measure_lines(face, lines, line_height, layout_scale)
+	size := font_measure_lines(face, lines, line_height, layout_scale)
+
+	node.text = {
+		lines        = lines,
+		line_origins = nil,
+		font         = resolved_font,
+		layout_scale = layout_scale,
+		wrap_w       = wrap_w,
+		line_height  = line_height,
+		size         = size,
+	}
+}
+
+/*
+Computes per-line draw origins relative to node.rect using text-align.
+*/
+layout_text_position_lines :: proc(node: ^Layout_Node) {
+	if len(node.text.lines) == 0 do return
+
+	delete(node.text.line_origins)
+	origins := make([]Vec2, len(node.text.lines))
+
+	face := font_face_from_handle(node.text.font)
+	lh := font_text_line_height(face, node.text.line_height, node.text.layout_scale)
+	align := text_align_kind(node.config.align)
+	box_w := node.rect.w
+
+	y: f32
+	for line, i in node.text.lines {
+		line_w := line.width * node.text.layout_scale
+		x: f32
+		switch align {
+		case .LEFT:
+			x = 0
+		case .CENTER:
+			x = (box_w - line_w) * 0.5
+		case .RIGHT:
+			x = box_w - line_w
+		}
+		origins[i] = {x, y}
+		y += lh
+	}
+
+	node.text.line_origins = origins
+}
+
+/*
+Builds or refreshes layout-owned text for the node's allocated rect.
+
+Uses the allocated width as wrap width when the author did not set one.
+Updates auto height from the shaped result.
+*/
+layout_finalize_text_node :: proc(node: ^Layout_Node) {
+	if !layout_node_has_text(node) do return
+
+	wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
+	if len(node.text.lines) == 0 || node.text.wrap_w != wrap_w {
+		layout_text_build(node, wrap_w)
+	}
+
+	if !length_is_definite(node.config.height) && node.text.size.y > 0 {
+		node.rect.h = layout_clamp_axis(node.text.size.y, node.config.min_h, node.config.max_h)
+	}
+
+	layout_text_position_lines(node)
+}
+
+/*
+Returns layout-owned text for a UI id after the layout pass.
+*/
+layout_text_result :: proc(id: UI_Id) -> ^Layout_Text {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		node := &state.ui.layout.nodes[node_index]
+		if len(node.text.lines) > 0 do return &node.text
+	}
+	return nil
 }
 
 /*
@@ -386,11 +527,11 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	config := node.config
 	size: Vec2
 
-	if len(node.measure.text) > 0 {
-		max_w := node.measure.max_w
-		if max_w <= 0 && node.config.width.kind == .FIXED do max_w = node.config.width.value
-		if max_w <= 0 && node.config.max_w > 0 do max_w = node.config.max_w
-		size = layout_measure_text(config, node.measure.text, max_w)
+	if layout_node_has_text(node) {
+		available_w := ui_style_current().content_w
+		wrap_w := layout_text_resolve_wrap_w(node, available_w)
+		layout_text_build(node, wrap_w)
+		size = node.text.size
 	} else {
 		width := length_resolve(node.config.width, 0)
 		height := length_resolve(node.config.height, 0)
@@ -539,7 +680,7 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 }
 
 /*
-Attaches text and max-width hints for leaf text measurement.
+Attaches author text and optional max-width hint for layout-owned shaping.
 */
 layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.text = text
@@ -1217,6 +1358,7 @@ layout_position_child_rect :: proc(
 		w = size.x,
 		h = size.y,
 	}
+	layout_finalize_text_node(child)
 
 	if len(child.child_indices) > 0 {
 		layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
@@ -1709,6 +1851,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			w = size.x,
 			h = size.y,
 		}
+		layout_finalize_text_node(child)
 
 		if len(child.child_indices) > 0 {
 			layout_position_children(
@@ -1756,6 +1899,7 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 		w = size.x,
 		h = size.y,
 	}
+	layout_finalize_text_node(node)
 
 	if len(node.child_indices) > 0 {
 		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))

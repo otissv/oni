@@ -1,14 +1,8 @@
 package oni
 
 import "core:c"
-import "core:hash"
 import "core:math"
 import "core:strings"
-
-Text_Direction :: enum {
-	LTR,
-	RTL,
-}
 
 /*
 One glyph produced by text shaping with cluster and advance offsets.
@@ -26,21 +20,27 @@ A single line of shaped glyphs with total width and text direction.
 Shaped_Line :: struct {
 	glyphs:    []Shaped_Glyph,
 	width:     f32,
-	direction: Text_Direction,
+	direction: Text_Direction_Kind,
 }
 
 /*
 Loaded font face pairing FreeType and HarfBuzz handles with metrics.
 */
 Font_Face :: struct {
-	ft_face:     FT_Face,
-	hb_font:     hb_font_t,
-	path:        string,
-	size_px:     f32,
-	pixel_size:  i32,
-	ascent:      f32,
-	descent:     f32,
-	line_height: f32,
+	ft_face:              FT_Face,
+	hb_font:              hb_font_t,
+	path:                 string,
+	size_px:              f32,
+	pixel_size:           i32,
+	weight:               Font_Weight,
+	style:                Font_Style,
+	fake_bold:            bool,
+	fake_italic:          bool,
+	ascent:               f32,
+	descent:              f32,
+	line_height:          f32,
+	underline_position:   f32,
+	underline_thickness:  f32,
 }
 
 /*
@@ -53,13 +53,41 @@ Font_Glyph_Entry :: struct {
 }
 
 /*
-Font subsystem: FreeType library, loaded faces, glyph cache, and shape pool.
+Probed source file belonging to a registered family.
+*/
+Font_Family_Source :: struct {
+	path:      string,
+	style:     Font_Style,
+	weight:    Font_Weight,
+	has_wght:  bool,
+	has_opsz:  bool,
+	num_axes:  u32,
+	wght_axis: i32,
+	opsz_axis: i32,
+	wght_min:  f32,
+	wght_max:  f32,
+	wght_def:  f32,
+	opsz_min:  f32,
+	opsz_max:  f32,
+	opsz_def:  f32,
+}
+
+/*
+Registered font family with one or more source faces.
+*/
+Font_Family :: struct {
+	name:    string,
+	sources: [dynamic]Font_Family_Source,
+}
+
+/*
+Font subsystem: FreeType library, families, face instances, and glyph cache.
 */
 Font_State :: struct {
 	library:     FT_Library,
+	families:    [dynamic]Font_Family,
 	faces:       [dynamic]Font_Face,
 	glyph_cache: map[Font_Glyph_Key]Font_Glyph_Entry,
-	shape_pool:  Shaped_Text_Pool,
 }
 
 /*
@@ -68,42 +96,6 @@ Cache key identifying a rasterized glyph by face and glyph id.
 Font_Glyph_Key :: struct {
 	face_id:  Asset_Id,
 	glyph_id: u32,
-}
-
-TEXT_SHAPE_POOL_CAPACITY :: 256
-
-/*
-Cache key for shaped text: face, size, wrap width, direction, and text hash.
-*/
-Shaped_Text_Key :: struct {
-	face_id:    Asset_Id,
-	pixel_size: i32,
-	max_w:      f32,
-	direction:  Text_Direction,
-	text_hash:  u64,
-	text_len:   int,
-}
-
-INVALID_SHAPE_POOL_SLOT :: -1
-
-/*
-Cached shaped text lines with pool slot and LRU access timestamp.
-*/
-Shaped_Text :: struct {
-	key:         Shaped_Text_Key,
-	text:        string,
-	lines:       []Shaped_Line,
-	pool_slot:   int,
-	last_access: u64,
-}
-
-/*
-Fixed-capacity LRU pool of shaped-text cache entries.
-*/
-Shaped_Text_Pool :: struct {
-	entries:    [TEXT_SHAPE_POOL_CAPACITY]^Shaped_Text,
-	count:      int,
-	access_seq: u64,
 }
 
 /*
@@ -127,195 +119,13 @@ font_init :: proc() -> bool {
 }
 
 /*
-Builds a cache key from face, text, wrap width, and shaping direction.
-
-Hashes text content with CRC32 for fast invalidation checks.
-*/
-shaped_text_key_make :: proc(
-	face_id: Asset_Id,
-	face: ^Font_Face,
-	text: string,
-	max_w: f32,
-	direction: Text_Direction,
-) -> Shaped_Text_Key {
-	return {
-		face_id = face_id,
-		pixel_size = face.pixel_size,
-		max_w = max_w,
-		direction = direction,
-		text_hash = u64(hash.crc32(transmute([]u8)text)),
-		text_len = len(text),
-	}
-}
-
-/*
-Returns whether a cache entry still matches the given key and text content.
-
-Compares the full key struct and verifies the stored text string equals text.
-*/
-shaped_text_key_valid :: proc(cache: ^Shaped_Text, key: Shaped_Text_Key, text: string) -> bool {
-	if cache.key != key do return false
-	if len(cache.text) != len(text) do return false
-	return cache.text == text
-}
-
-/*
-Bumps the LRU access sequence for a pooled shaped-text entry.
-*/
-shaped_text_pool_touch :: proc(cache: ^Shaped_Text) {
-	state.fonts.shape_pool.access_seq += 1
-	cache.last_access = state.fonts.shape_pool.access_seq
-}
-
-/*
-Removes a cache entry from the shape pool using swap-remove bookkeeping.
-
-Clears the entry's pool_slot to INVALID_SHAPE_POOL_SLOT.
-*/
-shaped_text_pool_unregister :: proc(cache: ^Shaped_Text) {
-	if cache.pool_slot == INVALID_SHAPE_POOL_SLOT do return
-	if state.fonts.shape_pool.count <= 0 {
-		cache.pool_slot = INVALID_SHAPE_POOL_SLOT
-		return
-	}
-
-	slot := cache.pool_slot
-	last := state.fonts.shape_pool.count - 1
-	if slot != last {
-		moved := state.fonts.shape_pool.entries[last]
-		state.fonts.shape_pool.entries[slot] = moved
-		moved.pool_slot = slot
-	}
-	state.fonts.shape_pool.count -= 1
-	cache.pool_slot = INVALID_SHAPE_POOL_SLOT
-}
-
-/*
-Evicts the least-recently-used shaped-text entry when the pool is full.
-
-Delegates to shaped_text_release on the oldest pooled cache.
-*/
-shaped_text_pool_evict_lru :: proc() {
-	if state.fonts.shape_pool.count <= 0 do return
-
-	oldest_slot := 0
-	oldest_access := state.fonts.shape_pool.entries[0].last_access
-	for i in 1 ..< state.fonts.shape_pool.count {
-		entry := state.fonts.shape_pool.entries[i]
-		if entry.last_access < oldest_access {
-			oldest_access = entry.last_access
-			oldest_slot = i
-		}
-	}
-
-	shaped_text_release(state.fonts.shape_pool.entries[oldest_slot])
-}
-
-/*
-Registers a cache entry in the shape pool, evicting LRU when at capacity.
-
-Re-touching an already-registered entry only updates its access time.
-*/
-shaped_text_pool_register :: proc(cache: ^Shaped_Text) {
-	if cache.pool_slot != INVALID_SHAPE_POOL_SLOT {
-		shaped_text_pool_touch(cache)
-		return
-	}
-
-	if state.fonts.shape_pool.count >= TEXT_SHAPE_POOL_CAPACITY {
-		shaped_text_pool_evict_lru()
-	}
-
-	slot := state.fonts.shape_pool.count
-	state.fonts.shape_pool.entries[slot] = cache
-	cache.pool_slot = slot
-	state.fonts.shape_pool.count += 1
-	shaped_text_pool_touch(cache)
-}
-
-/*
-Frees shaped lines and text owned by a cache entry and unregisters it from the pool.
-
-Resets the cache key and access metadata to empty defaults.
-*/
-shaped_text_release :: proc(cache: ^Shaped_Text) {
-	if cache == nil do return
-
-	shaped_text_pool_unregister(cache)
-	font_destroy_shaped_lines(cache.lines)
-	cache.lines = nil
-	delete(cache.text)
-	cache.text = ""
-	cache.key = {}
-	cache.last_access = 0
-}
-
-/*
-Clears every entry in the shaped-text pool without freeing the pool array.
-
-Used during shutdown and face destruction to drop cached shaped text.
-*/
-shaped_text_pool_clear :: proc() {
-	for i in 0 ..< state.fonts.shape_pool.count {
-		cache := state.fonts.shape_pool.entries[i]
-		if cache == nil do continue
-
-		font_destroy_shaped_lines(cache.lines)
-		cache.lines = nil
-		delete(cache.text)
-		cache.text = ""
-		cache.key = {}
-		cache.pool_slot = INVALID_SHAPE_POOL_SLOT
-		cache.last_access = 0
-	}
-	state.fonts.shape_pool.count = 0
-	state.fonts.shape_pool.access_seq = 0
-}
-
-/*
-Returns cached shaped lines, rebuilding when the key or text changes.
-
-Lines are owned by the cache; do not free the result.
-*/
-shaped_text_ensure :: proc(
-	cache: ^Shaped_Text,
-	face_id: Asset_Id,
-	face: ^Font_Face,
-	text: string,
-	max_w: f32,
-	direction: Text_Direction,
-) -> []Shaped_Line {
-	if cache == nil || face == nil || len(text) == 0 {
-		if cache != nil do shaped_text_release(cache)
-		return nil
-	}
-	if !font_init() do return nil
-
-	key := shaped_text_key_make(face_id, face, text, max_w, direction)
-	if len(cache.lines) > 0 && shaped_text_key_valid(cache, key, text) {
-		shaped_text_pool_touch(cache)
-		return cache.lines
-	}
-
-	shaped_text_release(cache)
-
-	lines := font_shape_line_build(face, text, max_w, direction)
-	if len(lines) == 0 do return nil
-
-	cache.key = key
-	cache.text = strings.clone(text)
-	cache.lines = lines
-	shaped_text_pool_register(cache)
-	return cache.lines
-}
-
-/*
-Shuts down all font resources: faces, FreeType, glyph cache, and shape pool.
+Shuts down all font resources: faces, families, FreeType, and glyph cache.
 
 Safe to call during engine teardown after drawing has stopped.
 */
 font_shutdown :: proc() {
 	font_destroy_faces()
+	font_destroy_families()
 
 	if state.fonts.library != nil {
 		Done_FreeType(state.fonts.library)
@@ -328,108 +138,423 @@ font_shutdown :: proc() {
 	delete(state.fonts.glyph_cache)
 	state.fonts.glyph_cache = nil
 
-	shaped_text_pool_clear()
-
 	delete(state.fonts.faces)
 	state.fonts.faces = nil
+	delete(state.fonts.families)
+	state.fonts.families = nil
 }
 
 /*
-Saved face path and size used to reload fonts after hot reload or DPI change.
+Saved family registration used to reload fonts after hot reload or DPI change.
 */
-Font_Reload_Entry :: struct {
-	path:    string,
-	size_px: f32,
+Font_Family_Reload :: struct {
+	name:  string,
+	faces: [dynamic]Font_Face_Desc,
 }
 
 /*
-Saves loaded face paths and sizes, clears the atlas, and reloads every face.
+Saves family registrations, clears the atlas, and re-registers every family.
 
-Used after hot reload or DPI changes that invalidate FreeType/HarfBuzz handles.
+Face instances are discarded; they are recreated on the next font_resolve.
 */
 font_reload_faces :: proc() {
-	saved := make([dynamic]Font_Reload_Entry)
+	saved := make([dynamic]Font_Family_Reload)
 	defer {
-		for entry in saved {
-			delete(entry.path)
+		for &entry in saved {
+			delete(entry.name)
+			for face in entry.faces {
+				delete(face.path)
+			}
+			delete(entry.faces)
 		}
 		delete(saved)
 	}
 
-	for face in state.fonts.faces {
-		append_elem(&saved, Font_Reload_Entry{strings.clone(face.path), face.size_px})
+	for family in state.fonts.families {
+		entry := Font_Family_Reload {
+			name  = strings.clone(family.name),
+			faces = make([dynamic]Font_Face_Desc),
+		}
+		for src in family.sources {
+			append(
+				&entry.faces,
+				Font_Face_Desc {
+					path = strings.clone(src.path),
+					style = src.style,
+					weight = src.weight,
+				},
+			)
+		}
+		append(&saved, entry)
 	}
 
 	font_atlas_reset()
 	font_destroy_faces()
+	font_destroy_families()
 
 	for entry in saved {
-		if _, ok := font_load_face(entry.path, entry.size_px); !ok {
-			log_errorf("font_reload_faces: failed to reload %q", entry.path)
+		if _, ok := font_register_family(entry.name, entry.faces[:]); !ok {
+			log_errorf("font_reload_faces: failed to reload family %q", entry.name)
 		}
 	}
 }
 
 /*
-Loads a font file at the given logical size and registers a new Font_Face.
+Registers a named font family from one or more source files.
 
-Creates linked FreeType and HarfBuzz objects and records font metrics.
+Probes variable axes on each source. Returns a family handle with size_px 0;
+use font_with_size for theme body/heading defaults.
 */
-font_load_face :: proc(path: string, size_px: f32) -> (Font_Handle, bool) {
+font_register_family :: proc(name: string, faces: []Font_Face_Desc) -> (Font_Handle, bool) {
 	if !font_init() do return {}, false
+	if len(faces) == 0 {
+		log_errorf("font_register_family: family %q has no faces", name)
+		return {}, false
+	}
 
-	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+	family := Font_Family {
+		name    = strings.clone(name),
+		sources = make([dynamic]Font_Family_Source),
+	}
+
+	ok_count := 0
+	for desc in faces {
+		src, src_ok := font_probe_family_source(desc)
+		if !src_ok {
+			log_errorf(
+				"font_register_family: failed to probe %q for family %q",
+				desc.path,
+				name,
+			)
+			continue
+		}
+		append(&family.sources, src)
+		ok_count += 1
+	}
+
+	if ok_count == 0 {
+		delete(family.name)
+		delete(family.sources)
+		return {}, false
+	}
+
+	append(&state.fonts.families, family)
+	return Font_Handle{id = Asset_Id(len(state.fonts.families) - 1), size_px = 0}, true
+}
+
+/*
+Returns a family handle with an explicit default logical size.
+*/
+font_with_size :: proc(font: Font_Handle, size_px: f32) -> Font_Handle {
+	return Font_Handle{id = font.id, size_px = size_px}
+}
+
+/*
+Probes a font file for style/weight metadata and variable axes.
+*/
+@(private)
+font_probe_family_source :: proc(desc: Font_Face_Desc) -> (Font_Family_Source, bool) {
+	cpath := strings.clone_to_cstring(desc.path, context.temp_allocator)
 	ft_face: FT_Face
 	if !ft_ok(New_Face(state.fonts.library, cpath, 0, &ft_face)) {
-		log_errorf("FT_New_Face failed for %q", path)
+		return {}, false
+	}
+	defer Done_Face(ft_face)
+
+	src := Font_Family_Source {
+		path      = strings.clone(desc.path),
+		style     = desc.style,
+		weight    = desc.weight != 0 ? desc.weight : FONT_WEIGHT_NORMAL,
+		wght_axis = -1,
+		opsz_axis = -1,
+	}
+
+	mm: ^FT_MM_Var
+	if ft_ok(Get_MM_Var(ft_face, &mm)) && mm != nil {
+		defer Done_MM_Var(state.fonts.library, mm)
+		src.num_axes = u32(mm.num_axis)
+		for i in 0 ..< int(mm.num_axis) {
+			axis := mm.axis[i]
+			tag := u32(axis.tag)
+			min_v := ft_fixed_to_f32(axis.minimum)
+			max_v := ft_fixed_to_f32(axis.maximum)
+			def_v := ft_fixed_to_f32(axis.def)
+			if tag == FT_TAG_WGHT {
+				src.has_wght = true
+				src.wght_axis = i32(i)
+				src.wght_min = min_v
+				src.wght_max = max_v
+				src.wght_def = def_v
+			} else if tag == FT_TAG_OPSZ {
+				src.has_opsz = true
+				src.opsz_axis = i32(i)
+				src.opsz_min = min_v
+				src.opsz_max = max_v
+				src.opsz_def = def_v
+			}
+		}
+	}
+
+	return src, true
+}
+
+/*
+Destroys all registered families and their cloned paths/names.
+*/
+font_destroy_families :: proc() {
+	for &family in state.fonts.families {
+		delete(family.name)
+		for &src in family.sources {
+			delete(src.path)
+		}
+		delete(family.sources)
+	}
+	clear(&state.fonts.families)
+}
+
+/*
+Returns the Font_Family for a handle, or nil when out of range.
+*/
+font_family_from_handle :: proc(handle: Font_Handle) -> ^Font_Family {
+	index := int(handle.id)
+	if index < 0 || index >= len(state.fonts.families) do return nil
+	return &state.fonts.families[index]
+}
+
+/*
+Selects the best family source for the requested style and weight.
+*/
+@(private)
+font_match_source :: proc(
+	family: ^Font_Family,
+	weight: Font_Weight,
+	style: Font_Style,
+) -> (
+	src: ^Font_Family_Source,
+	fake_bold: bool,
+	fake_italic: bool,
+	ok: bool,
+) {
+	if family == nil || len(family.sources) == 0 do return nil, false, false, false
+
+	want_style := style
+	fake_italic = false
+
+	has_style := false
+	for &s in family.sources {
+		if s.style == want_style {
+			has_style = true
+			break
+		}
+	}
+	if !has_style && want_style == .ITALIC {
+		want_style = .NORMAL
+		fake_italic = true
+	}
+
+	best_idx := -1
+	best_score: f32 = 1e9
+	best_has_wght := false
+
+	for &s, i in family.sources {
+		if s.style != want_style do continue
+		if s.has_wght {
+			if !best_has_wght || best_idx < 0 {
+				best_idx = i
+				best_has_wght = true
+				best_score = 0
+			}
+			continue
+		}
+		if best_has_wght do continue
+		score := abs(f32(s.weight) - f32(weight))
+		if score < best_score {
+			best_score = score
+			best_idx = i
+		}
+	}
+
+	if best_idx < 0 {
+		// Fall back to any source.
+		best_idx = 0
+		fake_italic = style == .ITALIC && family.sources[0].style != .ITALIC
+	}
+
+	src = &family.sources[best_idx]
+	fake_bold = !src.has_wght && f32(weight) > f32(src.weight) + 50
+	return src, fake_bold, fake_italic, true
+}
+
+/*
+Finds or creates a raster face instance for the given source and parameters.
+*/
+@(private)
+font_find_or_create_instance :: proc(
+	src: ^Font_Family_Source,
+	size_px: f32,
+	weight: Font_Weight,
+	style: Font_Style,
+	fake_bold: bool,
+	fake_italic: bool,
+) -> (
+	Font_Face_Handle,
+	bool,
+) {
+	pixel_size := font_pixel_size(size_px)
+	instance_weight := src.has_wght ? weight : src.weight
+
+	for &face, i in state.fonts.faces {
+		if face.path == src.path &&
+		   face.pixel_size == pixel_size &&
+		   face.weight == instance_weight &&
+		   face.style == style &&
+		   face.fake_bold == fake_bold &&
+		   face.fake_italic == fake_italic {
+			return Font_Face_Handle{id = Asset_Id(i), size_px = size_px}, true
+		}
+	}
+
+	return font_create_instance(src, size_px, instance_weight, style, fake_bold, fake_italic)
+}
+
+/*
+Creates a FreeType/HarfBuzz face instance with optional VF axes and synthesis flags.
+*/
+@(private)
+font_create_instance :: proc(
+	src: ^Font_Family_Source,
+	size_px: f32,
+	weight: Font_Weight,
+	style: Font_Style,
+	fake_bold: bool,
+	fake_italic: bool,
+) -> (
+	Font_Face_Handle,
+	bool,
+) {
+	cpath := strings.clone_to_cstring(src.path, context.temp_allocator)
+	ft_face: FT_Face
+	if !ft_ok(New_Face(state.fonts.library, cpath, 0, &ft_face)) {
+		log_errorf("FT_New_Face failed for %q", src.path)
 		return {}, false
 	}
 
 	pixel_size := font_pixel_size(size_px)
 	if !ft_ok(Set_Pixel_Sizes(ft_face, c.uint(pixel_size), c.uint(pixel_size))) {
-		log_errorf("FT_Set_Pixel_Sizes failed for %q", path)
+		log_errorf("FT_Set_Pixel_Sizes failed for %q", src.path)
 		Done_Face(ft_face)
 		return {}, false
+	}
+
+	if src.num_axes > 0 && (src.has_wght || src.has_opsz) {
+		coords := make([]FT_Fixed, src.num_axes, context.temp_allocator)
+		for i in 0 ..< int(src.num_axes) {
+			coords[i] = 0
+		}
+		// Default all axes to 0 first; set known axes explicitly.
+		if src.has_wght && src.wght_axis >= 0 {
+			w := clamp(f32(weight), src.wght_min, src.wght_max)
+			coords[src.wght_axis] = ft_fixed_from_f32(w)
+		}
+		if src.has_opsz && src.opsz_axis >= 0 {
+			opsz := clamp(size_px, src.opsz_min, src.opsz_max)
+			coords[src.opsz_axis] = ft_fixed_from_f32(opsz)
+		}
+		// For axes we did not set, FreeType expects valid coords — re-read defaults.
+		mm: ^FT_MM_Var
+		if ft_ok(Get_MM_Var(ft_face, &mm)) && mm != nil {
+			defer Done_MM_Var(state.fonts.library, mm)
+			for i in 0 ..< int(mm.num_axis) {
+				if i32(i) == src.wght_axis || i32(i) == src.opsz_axis do continue
+				coords[i] = mm.axis[i].def
+			}
+		}
+		if !ft_ok(Set_Var_Design_Coordinates(ft_face, c.uint(src.num_axes), raw_data(coords))) {
+			log_errorf("FT_Set_Var_Design_Coordinates failed for %q", src.path)
+			Done_Face(ft_face)
+			return {}, false
+		}
+	}
+
+	if fake_italic {
+		// ~12° shear (tan(12°) ≈ 0.2126) for CSS-like synthetic italic.
+		shear := FT_Matrix {
+			xx = 0x10000,
+			xy = 13933, // ~tan(12°) in 16.16 fixed
+			yx = 0,
+			yy = 0x10000,
+		}
+		Set_Transform(ft_face, &shear, nil)
+	} else {
+		Set_Transform(ft_face, nil, nil)
 	}
 
 	hb_font := ft_font_create_referenced(ft_face)
 	if hb_font == nil {
-		log_errorf("hb_ft_font_create_referenced failed for %q", path)
+		log_errorf("hb_ft_font_create_referenced failed for %q", src.path)
 		Done_Face(ft_face)
 		return {}, false
 	}
+	ft_font_changed(hb_font)
 
 	ascent, descent, line_height := font_metrics_from_face(ft_face)
+	underline_position, underline_thickness := font_underline_metrics(ft_face, pixel_size)
 
 	entry := Font_Face {
-		ft_face     = ft_face,
-		hb_font     = hb_font,
-		path        = strings.clone(path),
-		size_px     = size_px,
-		pixel_size  = pixel_size,
-		ascent      = ascent,
-		descent     = descent,
-		line_height = line_height,
+		ft_face             = ft_face,
+		hb_font             = hb_font,
+		path                = strings.clone(src.path),
+		size_px             = size_px,
+		pixel_size          = pixel_size,
+		weight              = weight,
+		style               = style,
+		fake_bold           = fake_bold,
+		fake_italic         = fake_italic,
+		ascent              = ascent,
+		descent             = descent,
+		line_height         = line_height,
+		underline_position  = underline_position,
+		underline_thickness = underline_thickness,
 	}
 
 	append(&state.fonts.faces, entry)
 	face_id := Asset_Id(len(state.fonts.faces) - 1)
-
-	return Font_Handle{id = face_id, size_px = size_px}, true
+	return Font_Face_Handle{id = face_id, size_px = size_px}, true
 }
 
 /*
-Destroys all loaded faces and clears glyph and shape-pool caches.
+Reads underline position/thickness in pixels from FreeType face metrics.
+*/
+@(private)
+font_underline_metrics :: proc(ft_face: FT_Face, pixel_size: i32) -> (position, thickness: f32) {
+	upem := ft_face_units_per_em(ft_face)
+	if upem == 0 {
+		thickness = max(f32(pixel_size) / 14, 1)
+		position = -f32(pixel_size) * 0.15
+		return
+	}
+	scale := f32(pixel_size) / f32(upem)
+	position = f32(ft_face_underline_position(ft_face)) * scale
+	thickness = f32(ft_face_underline_thickness(ft_face)) * scale
+	if thickness <= 0 {
+		thickness = max(f32(pixel_size) / 14, 1)
+	}
+	if position == 0 {
+		position = -f32(pixel_size) * 0.15
+	}
+	return
+}
 
-Does not shut down the FreeType library itself.
+/*
+Destroys all loaded face instances and clears the glyph cache.
+
+Does not shut down the FreeType library or registered families.
 */
 font_destroy_faces :: proc() {
 	for &face in state.fonts.faces {
 		font_destroy_face(&face)
 	}
 	clear(&state.fonts.faces)
-
-	shaped_text_pool_clear()
 
 	for key, _ in state.fonts.glyph_cache {
 		delete_key(&state.fonts.glyph_cache, key)
@@ -458,9 +583,9 @@ font_destroy_face :: proc(face: ^Font_Face) {
 }
 
 /*
-Returns the Font_Face pointer for a handle, or nil when out of range.
+Returns the Font_Face pointer for a face handle, or nil when out of range.
 */
-font_face_from_handle :: proc(handle: Font_Handle) -> ^Font_Face {
+font_face_from_handle :: proc(handle: Font_Face_Handle) -> ^Font_Face {
 	index := int(handle.id)
 	if index < 0 || index >= len(state.fonts.faces) do return nil
 	return &state.fonts.faces[index]
@@ -501,7 +626,11 @@ Shapes a UTF-8 string into positioned glyphs using HarfBuzz.
 
 Returns a newly allocated glyph slice, or nil on failure.
 */
-font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) -> []Shaped_Glyph {
+font_shape :: proc(
+	face: ^Font_Face,
+	text: string,
+	direction: Text_Direction_Kind,
+) -> []Shaped_Glyph {
 	if face == nil || len(text) == 0 do return nil
 
 	buffer := buffer_create()
@@ -549,7 +678,90 @@ font_shape :: proc(face: ^Font_Face, text: string, direction: Text_Direction) ->
 }
 
 /*
-Shapes text and splits it into wrapped lines at max_w, honoring newlines.
+Returns the concrete text-align kind from a resolved Text_Align value.
+*/
+text_align_kind :: proc(align: Text_Align) -> Text_Align_Kind {
+	#partial switch v in align {
+	case Text_Align_Kind:
+		return v
+	}
+	panic("text_align_kind: unresolved Text_Align")
+}
+
+/*
+Returns the concrete text-wrap kind from a resolved Text_Wrap value.
+*/
+text_wrap_kind :: proc(wrap: Text_Wrap) -> Text_Wrap_Kind {
+	#partial switch v in wrap {
+	case Text_Wrap_Kind:
+		return v
+	}
+	panic("text_wrap_kind: unresolved Text_Wrap")
+}
+
+/*
+Returns the concrete text-direction kind from a resolved Text_Direction value.
+*/
+text_direction_kind :: proc(direction: Text_Direction) -> Text_Direction_Kind {
+	#partial switch v in direction {
+	case Text_Direction_Kind:
+		return v
+	}
+	panic("text_direction_kind: unresolved Text_Direction")
+}
+
+/*
+Returns the concrete decoration lines from a resolved Text_Decoration value.
+*/
+text_decoration_lines :: proc(decoration: Text_Decoration) -> Text_Decoration_Lines {
+	#partial switch v in decoration {
+	case Text_Decoration_Lines:
+		return v
+	}
+	panic("text_decoration_lines: unresolved Text_Decoration")
+}
+
+/*
+Returns the concrete decoration style kind from a resolved Text_Decoration_Style value.
+*/
+text_decoration_style_kind :: proc(style: Text_Decoration_Style) -> Text_Decoration_Style_Kind {
+	#partial switch v in style {
+	case Text_Decoration_Style_Kind:
+		return v
+	}
+	panic("text_decoration_style_kind: unresolved Text_Decoration_Style")
+}
+
+/*
+Copies glyphs into a shaped line and bakes letter-spacing into advances.
+
+Spacing is applied between glyphs (not after the last), matching CSS letter-spacing.
+*/
+font_make_shaped_line :: proc(
+	glyphs: []Shaped_Glyph,
+	direction: Text_Direction_Kind,
+	letter_spacing: f32,
+) -> Shaped_Line {
+	line_glyphs := make([]Shaped_Glyph, len(glyphs))
+	copy(line_glyphs, glyphs)
+	if letter_spacing != 0 && len(line_glyphs) > 1 {
+		for i in 0 ..< len(line_glyphs) - 1 {
+			line_glyphs[i].x_advance += letter_spacing
+		}
+	}
+	return Shaped_Line {
+		glyphs = line_glyphs,
+		width = shaped_line_width(line_glyphs),
+		direction = direction,
+	}
+}
+
+/*
+Shapes text and splits it into lines according to wrap mode, width, and spacing.
+
+NONE: single line (newlines omitted).
+NEWLINES: hard breaks only.
+BALANCE: soft-wrap at max_w, then rebalance line lengths.
 
 Returns owned Shaped_Line slices; free with font_destroy_shaped_lines.
 */
@@ -557,15 +769,163 @@ font_shape_line_build :: proc(
 	face: ^Font_Face,
 	text: string,
 	max_w: f32,
-	direction: Text_Direction,
+	letter_spacing: f32,
+	wrap: Text_Wrap_Kind,
+	direction: Text_Direction_Kind,
 ) -> []Shaped_Line {
 	shaped := font_shape(face, text, direction)
 	if len(shaped) == 0 do return nil
-	defer delete(shaped)
 
+	result: []Shaped_Line
+	switch wrap {
+	case .NONE:
+		result = font_shape_lines_none(text, shaped, direction, letter_spacing)
+	case .NEWLINES:
+		result = font_shape_lines_newlines(text, shaped, direction, letter_spacing)
+	case .BALANCE:
+		result = font_shape_lines_balance(text, shaped, max_w, direction, letter_spacing)
+	}
+	delete(shaped)
+	return result
+}
+
+/*
+Builds one line from all glyphs, omitting newline clusters.
+*/
+@(private)
+font_shape_lines_none :: proc(
+	text: string,
+	shaped: []Shaped_Glyph,
+	direction: Text_Direction_Kind,
+	letter_spacing: f32,
+) -> []Shaped_Line {
+	kept := make([dynamic]Shaped_Glyph)
+	defer delete(kept)
+
+	for glyph in shaped {
+		if font_is_newline_cluster(text, glyph.cluster) do continue
+		append(&kept, glyph)
+	}
+	if len(kept) == 0 do return nil
+
+	lines := make([]Shaped_Line, 1)
+	lines[0] = font_make_shaped_line(kept[:], direction, letter_spacing)
+	return lines
+}
+
+/*
+Builds lines broken only on newline clusters.
+*/
+@(private)
+font_shape_lines_newlines :: proc(
+	text: string,
+	shaped: []Shaped_Glyph,
+	direction: Text_Direction_Kind,
+	letter_spacing: f32,
+) -> []Shaped_Line {
+	lines := make([dynamic]Shaped_Line)
+	line_start := 0
+
+	for i in 0 ..< len(shaped) {
+		if !font_is_newline_cluster(text, shaped[i].cluster) do continue
+		if i > line_start {
+			append(&lines, font_make_shaped_line(shaped[line_start:i], direction, letter_spacing))
+		}
+		line_start = i + 1
+	}
+
+	if line_start < len(shaped) {
+		append(&lines, font_make_shaped_line(shaped[line_start:], direction, letter_spacing))
+	}
+
+	if len(lines) == 0 do return nil
+	return lines[:]
+}
+
+/*
+Soft-wraps at max_w with newline breaks, then balances line lengths when possible.
+*/
+@(private)
+font_shape_lines_balance :: proc(
+	text: string,
+	shaped: []Shaped_Glyph,
+	max_w: f32,
+	direction: Text_Direction_Kind,
+	letter_spacing: f32,
+) -> []Shaped_Line {
+	if max_w <= 0 {
+		return font_shape_lines_newlines(text, shaped, direction, letter_spacing)
+	}
+
+	lines := font_shape_lines_soft_wrap(text, shaped, max_w, direction, letter_spacing)
+	if len(lines) <= 1 do return lines
+
+	target_count := len(lines)
+	lo := font_shape_min_wrap_width(text, shaped, letter_spacing)
+	hi := max_w
+	if lo >= hi do return lines
+
+	best := lines
+	for _ in 0 ..< 16 {
+		mid := (lo + hi) * 0.5
+		trial := font_shape_lines_soft_wrap(text, shaped, mid, direction, letter_spacing)
+		if len(trial) > target_count {
+			font_destroy_shaped_lines(trial)
+			lo = mid
+			continue
+		}
+		font_destroy_shaped_lines(best)
+		best = trial
+		hi = mid
+	}
+	return best
+}
+
+/*
+Minimum width that can hold the widest unbreakable run (for balance search).
+*/
+@(private)
+font_shape_min_wrap_width :: proc(text: string, shaped: []Shaped_Glyph, letter_spacing: f32) -> f32 {
+	min_w: f32
+	run_w: f32
+	run_glyphs := 0
+
+	for glyph in shaped {
+		if font_is_newline_cluster(text, glyph.cluster) || font_is_break_cluster(text, glyph.cluster) {
+			if run_glyphs > 0 {
+				min_w = max(min_w, run_w)
+			}
+			run_w = 0
+			run_glyphs = 0
+			continue
+		}
+		if run_glyphs > 0 {
+			run_w += letter_spacing
+		}
+		run_w += glyph.x_advance
+		run_glyphs += 1
+	}
+	if run_glyphs > 0 {
+		min_w = max(min_w, run_w)
+	}
+	return min_w
+}
+
+/*
+Greedy soft-wrap at max_w, honoring newlines and letter-spacing in width checks.
+*/
+@(private)
+font_shape_lines_soft_wrap :: proc(
+	text: string,
+	shaped: []Shaped_Glyph,
+	max_w: f32,
+	direction: Text_Direction_Kind,
+	letter_spacing: f32,
+) -> []Shaped_Line {
 	lines := make([dynamic]Shaped_Line)
 	line_start := 0
 	line_width: f32 = 0
+	line_glyphs := 0
 	last_break := 0
 	i := 0
 
@@ -574,72 +934,51 @@ font_shape_line_build :: proc(
 
 		if font_is_newline_cluster(text, glyph.cluster) {
 			if i > line_start {
-				line_glyphs := make([]Shaped_Glyph, i - line_start)
-				copy(line_glyphs, shaped[line_start:i])
-				append(
-					&lines,
-					Shaped_Line {
-						glyphs = line_glyphs,
-						width = shaped_line_width(line_glyphs),
-						direction = direction,
-					},
-				)
+				append(&lines, font_make_shaped_line(shaped[line_start:i], direction, letter_spacing))
 			}
 			line_start = i + 1
 			line_width = 0
+			line_glyphs = 0
 			last_break = line_start
 			i += 1
 			continue
 		}
 
-		next_width := line_width + glyph.x_advance
+		spacing := line_glyphs > 0 ? letter_spacing : 0
+		next_width := line_width + spacing + glyph.x_advance
 
-		if max_w > 0 && i > line_start && next_width > max_w {
+		if i > line_start && next_width > max_w {
 			break_at := last_break > line_start ? last_break : i
 			if break_at <= line_start {
 				break_at = i
 			}
 
-			line_glyphs := make([]Shaped_Glyph, break_at - line_start)
-			copy(line_glyphs, shaped[line_start:break_at])
 			append(
 				&lines,
-				Shaped_Line {
-					glyphs = line_glyphs,
-					width = shaped_line_width(line_glyphs),
-					direction = direction,
-				},
+				font_make_shaped_line(shaped[line_start:break_at], direction, letter_spacing),
 			)
 
 			line_start = break_at
 			line_width = 0
+			line_glyphs = 0
 			last_break = break_at
 			i = break_at
 			continue
 		}
 
-		if max_w > 0 {
-			line_width = next_width
-			if font_is_break_cluster(text, glyph.cluster) {
-				last_break = i + 1
-			}
+		line_width = next_width
+		line_glyphs += 1
+		if font_is_break_cluster(text, glyph.cluster) {
+			last_break = i + 1
 		}
 		i += 1
 	}
 
 	if line_start < len(shaped) {
-		line_glyphs := make([]Shaped_Glyph, len(shaped) - line_start)
-		copy(line_glyphs, shaped[line_start:])
-		append(
-			&lines,
-			Shaped_Line {
-				glyphs = line_glyphs,
-				width = shaped_line_width(line_glyphs),
-				direction = direction,
-			},
-		)
+		append(&lines, font_make_shaped_line(shaped[line_start:], direction, letter_spacing))
 	}
 
+	if len(lines) == 0 do return nil
 	return lines[:]
 }
 

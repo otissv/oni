@@ -1,6 +1,7 @@
 package oni
 
 import "core:c"
+import "core:math"
 
 FT_Library :: distinct rawptr
 FT_Face :: distinct rawptr
@@ -10,12 +11,20 @@ FT_Pos :: c.long
 
 FT_LOAD_DEFAULT :: 0
 FT_LOAD_RENDER :: 1 << 2
+FT_LOAD_NO_BITMAP :: 1 << 3
 
 FT_RENDER_MODE_NORMAL :: 0
 
 FT_PIXEL_MODE_MONO :: 1
 FT_PIXEL_MODE_GRAY :: 2
 FT_PIXEL_MODE_BGRA :: 7
+
+FT_TAG_WGHT :: u32(0x77676874) // 'wght'
+FT_TAG_OPSZ :: u32(0x6F70737A) // 'opsz'
+
+FT_FACE_OFFSET_UNITS_PER_EM :: 136
+FT_FACE_OFFSET_UNDERLINE_POSITION :: 148
+FT_FACE_OFFSET_UNDERLINE_THICKNESS :: 150
 
 FT_Glyph_Format :: enum c.int {
 	BITMAP = 1651078259,
@@ -36,6 +45,46 @@ FT_Bitmap :: struct {
 }
 
 FT_Fixed :: c.long
+FT_Short :: c.short
+FT_UShort :: c.ushort
+
+/*
+FreeType 2x2 affine transform matching the C FT_Matrix struct.
+*/
+FT_Matrix :: struct {
+	xx, xy: FT_Fixed,
+	yx, yy: FT_Fixed,
+}
+
+/*
+FreeType 2D vector matching the C FT_Vector struct.
+*/
+FT_Vector :: struct {
+	x, y: FT_Pos,
+}
+
+/*
+One axis of a Multiple Master / variable font (FT_Var_Axis).
+*/
+FT_Var_Axis :: struct {
+	name:    cstring,
+	minimum: FT_Fixed,
+	def:     FT_Fixed,
+	maximum: FT_Fixed,
+	tag:     c.ulong,
+	strid:   c.uint,
+}
+
+/*
+Variable font descriptor returned by FT_Get_MM_Var (partial layout).
+*/
+FT_MM_Var :: struct {
+	num_axis:        c.uint,
+	num_designs:     c.uint,
+	num_namedstyles: c.uint,
+	axis:            [^]FT_Var_Axis,
+	namedstyle:      rawptr,
+}
 
 /*
 FreeType generic pointer/finalizer pair matching the C FT_Generic struct.
@@ -139,6 +188,45 @@ foreign lib {
 	Binds to FT_Render_Glyph.
 	*/
 	Render_Glyph :: proc(slot: ^FT_GlyphSlotRec, render_mode: c.int) -> FT_Error ---
+
+	/*
+	Queries Multiple Master / variable-font axis data for a face.
+
+	Binds to FT_Get_MM_Var. Caller must release with Done_MM_Var.
+	*/
+	Get_MM_Var :: proc(face: FT_Face, amaster: ^^FT_MM_Var) -> FT_Error ---
+
+	/*
+	Frees an FT_MM_Var allocated by Get_MM_Var.
+
+	Binds to FT_Done_MM_Var.
+	*/
+	Done_MM_Var :: proc(library: FT_Library, amaster: ^FT_MM_Var) -> FT_Error ---
+
+	/*
+	Sets design coordinates for all variable axes on a face.
+
+	Binds to FT_Set_Var_Design_Coordinates. Values are 16.16 FT_Fixed.
+	*/
+	Set_Var_Design_Coordinates :: proc(
+		face: FT_Face,
+		num_coords: c.uint,
+		coords: [^]FT_Fixed,
+	) -> FT_Error ---
+
+	/*
+	Applies an affine transform to subsequent glyph loads on a face.
+
+	Binds to FT_Set_Transform. Pass nil matrix/delta for identity.
+	*/
+	Set_Transform :: proc(face: FT_Face, xform: ^FT_Matrix, delta: ^FT_Vector) ---
+
+	/*
+	Emboldens the outline or bitmap currently in a glyph slot.
+
+	Binds to FT_GlyphSlot_Embolden (synthetic bold).
+	*/
+	GlyphSlot_Embolden :: proc(slot: ^FT_GlyphSlotRec) ---
 }
 
 /*
@@ -196,4 +284,39 @@ ft_face_size_metrics :: proc(face: FT_Face) -> ^FT_Size_Metrics {
 	size := size_ptr^
 	if size == nil do return nil
 	return &size.metrics
+}
+
+/*
+Reads units_per_EM from FT_FaceRec.
+*/
+ft_face_units_per_em :: proc(face: FT_Face) -> FT_UShort {
+	return (cast(^FT_UShort)(uintptr(face) + FT_FACE_OFFSET_UNITS_PER_EM))^
+}
+
+/*
+Reads underline_position (font units) from FT_FaceRec.
+*/
+ft_face_underline_position :: proc(face: FT_Face) -> FT_Short {
+	return (cast(^FT_Short)(uintptr(face) + FT_FACE_OFFSET_UNDERLINE_POSITION))^
+}
+
+/*
+Reads underline_thickness (font units) from FT_FaceRec.
+*/
+ft_face_underline_thickness :: proc(face: FT_Face) -> FT_Short {
+	return (cast(^FT_Short)(uintptr(face) + FT_FACE_OFFSET_UNDERLINE_THICKNESS))^
+}
+
+/*
+Converts a floating design coordinate to 16.16 FT_Fixed.
+*/
+ft_fixed_from_f32 :: proc(v: f32) -> FT_Fixed {
+	return FT_Fixed(math.round(v * 65536.0))
+}
+
+/*
+Converts 16.16 FT_Fixed to floating design coordinate.
+*/
+ft_fixed_to_f32 :: proc(v: FT_Fixed) -> f32 {
+	return f32(v) / 65536.0
 }

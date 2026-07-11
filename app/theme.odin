@@ -11,24 +11,30 @@ WINDOW_TITLE :: "Oni GUI"
 MIN_WINDOW_W :: 320
 MIN_WINDOW_H :: 180
 INTER_FONT_PATH :: "assets/fonts/Inter-VariableFont_opsz,wght.ttf"
+INTER_ITALIC_FONT_PATH :: "assets/fonts/Inter-Italic-VariableFont_opsz,wght.ttf"
 FONT_BODY_SIZE :: f32(16)
 FONT_HEADING_SIZE :: f32(20)
 
 /*
 Builds the default app theme with Inter body and heading fonts.
 
-Loads font faces from INTER_FONT_PATH and logs errors for any face that
-fails to load. Palette, spacing, and layout defaults come from o.
+Registers the Inter family (roman + italic variable fonts) and logs errors on
+failure. Palette, spacing, and layout defaults come from o.
 */
 build_theme :: proc() -> o.Theme {
-	body, body_ok := o.Load_Font_Face(INTER_FONT_PATH, FONT_BODY_SIZE)
-	heading, heading_ok := o.Load_Font_Face(INTER_FONT_PATH, FONT_HEADING_SIZE)
-	if !body_ok {
-		o.Log_Errorf("build_theme: failed to load body font %q", INTER_FONT_PATH)
+	inter, inter_ok := o.Register_Font_Family(
+		"Inter",
+		{
+			{path = INTER_FONT_PATH, style = .NORMAL, weight = o.FONT_WEIGHT_NORMAL},
+			{path = INTER_ITALIC_FONT_PATH, style = .ITALIC, weight = o.FONT_WEIGHT_NORMAL},
+		},
+	)
+	if !inter_ok {
+		o.Log_Errorf("build_theme: failed to register Inter font family")
 	}
-	if !heading_ok {
-		o.Log_Errorf("build_theme: failed to load heading font %q", INTER_FONT_PATH)
-	}
+
+	body := o.Font_With_Size(inter, FONT_BODY_SIZE)
+	heading := o.Font_With_Size(inter, FONT_HEADING_SIZE)
 
 	return o.Theme {
 		palette = o.palette,

@@ -5,11 +5,10 @@ import set "../set"
 
 
 /*
-Text widget configuration extending Widget_Config with text and cache flags.
+Text widget configuration extending Widget_Config with display text.
 */
 Text_Config :: struct {
 	using _: o.Widget_Config,
-	flags:   o.Widget_Text_Flags,
 	text:    string,
 }
 
@@ -21,12 +20,11 @@ Text_State :: struct {
 }
 
 /*
-Text widget per-frame frame_state merged with resolved style, flags, and display string.
+Text widget per-frame frame_state merged with resolved style and display string.
 */
 Text_Merged_State :: struct {
 	using frame_state: Text_State,
 	style:             o.Resolved_Widget_Config,
-	flags:             o.Widget_Text_Flags,
 	text:              string,
 }
 
@@ -74,7 +72,7 @@ text_widget_decl :: proc(frame_state: ^Text_Merged_State) -> Text_Config {
 }
 
 /*
-Refreshes merged style, flags, and text on frame_state and returns a fresh event snapshot.
+Refreshes merged style and text on frame_state and returns a fresh event snapshot.
 */
 @(private)
 text_refresh_merged :: proc(props: Text_Props, frame_state: ^Text_Merged_State) -> Text_Event {
@@ -82,16 +80,13 @@ text_refresh_merged :: proc(props: Text_Props, frame_state: ^Text_Merged_State) 
 	base := text_widget_decl(frame_state)
 	override := props.config
 	frame_state.style = o.resolve_widget_config(base, override, frame_state, event)
-	frame_state.flags = override.flags
 	frame_state.text = override.text
 
 	return widget_event(frame_state^)
 }
 
 /*
-Renders shaped text with layout measurement and optional pointer interaction.
-
-Returns the drawn text size; uses a shaped-text cache unless Uncached is set.
+Lays out and draws text. Layout owns wrap, size, and line positions; draw paints them.
 */
 Text :: proc(props: Text_Props) -> o.Vec2 {
 	config := props.config
@@ -137,12 +132,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		widget_register_tab_order(key, style.tabbable, can_interact)
 
 		node := o.layout_push_node(layout_id, style)
-		max_w: f32
-
-		if config.max_w.mode == .Value do max_w = config.max_w.value
-		if max_w <= 0 && style.width.kind == .FIXED do max_w = style.width.value
-
-		o.layout_set_measure_text(node, frame_state.text, max_w)
+		o.layout_set_measure_text(node, frame_state.text, style.max_w)
 		o.layout_pop_node()
 
 		return {}
@@ -152,7 +142,8 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	rect := o.widget_hit_rect(layout_id, style)
+	layout_rect := o.ui_layout_rect(layout_id)
+	hit_rect := o.widget_hit_rect(layout_id, style)
 
 	got_focus, lost_focus := widget_handle_interaction(
 		props,
@@ -161,7 +152,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		key,
 		was_focused,
 		style.tabbable,
-		rect,
+		hit_rect,
 		style,
 	)
 
@@ -190,52 +181,31 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	rgbaColor, color_ok := o.to_rgba(style.color, &frame_state, event)
 	if !color_ok do return {}
 
-	resolved_font, layout_scale, ok := o.font_resolve(style.font, style.font_size, style.space)
-	if !ok do return {}
+	laid := o.layout_text_result(layout_id)
+	if laid == nil do return {}
 
-	face := o.font_face_from_handle(resolved_font)
-	if face == nil || len(frame_state.text) == 0 do return {}
-
-	pos := o.Vec2{rect.x, rect.y}
-	max_w := style.max_w != 0 ? style.max_w : rect.w
-	shape_max_w := max_w > 0 ? max_w / layout_scale : max_w
-
-	if .UNCACHED in frame_state.flags {
-		lines := o.font_shape_line_build(face, frame_state.text, shape_max_w, style.text_direction)
-		if len(lines) == 0 do return {}
-		defer o.font_destroy_shaped_lines(lines)
-		return o.font_draw_shaped_lines(
-			resolved_font,
-			face,
-			lines,
-			pos,
-			rgbaColor,
-			max_w,
-			style.font_size * style.line_height,
-			layout_scale,
-		)
+	deco_color := rgbaColor
+	#partial switch c in style.text_decoration_color {
+	case o.Color:
+		if c != .INHERIT {
+			if resolved, ok := o.to_rgba(style.text_decoration_color, &frame_state, event); ok {
+				deco_color = resolved
+			}
+		}
+	case:
+		if resolved, ok := o.to_rgba(style.text_decoration_color, &frame_state, event); ok {
+			deco_color = resolved
+		}
 	}
 
-	cache_id := config.id != "" ? config.id : key
-	cache := o.widget_shaped(cache_id)
-	lines := o.shaped_text_ensure(
-		cache,
-		resolved_font.id,
-		face,
-		frame_state.text,
-		shape_max_w,
-		style.text_direction,
-	)
-	if len(lines) == 0 do return {}
-
-	return o.font_draw_shaped_lines(
-		resolved_font,
-		face,
-		lines,
-		pos,
+	return o.font_draw_layout_text(
+		laid,
+		layout_rect,
 		rgbaColor,
-		max_w,
-		style.font_size * style.line_height,
-		layout_scale,
+		{
+			lines = o.text_decoration_lines(style.text_decoration),
+			style = o.text_decoration_style_kind(style.text_decoration_style),
+			color = deco_color,
+		},
 	)
 }

@@ -170,98 +170,99 @@ Length :: struct {
 Author-time widget style overrides using tri-frame_state Cfg fields and dimension unions.
 */
 Widget_Config :: struct {
-	id:             string,
-	kind:           Widget_Kind,
-	title:          string,
-	align:          Cfg(Text_Align),
-	auto_focus:     Cfg(bool),
-	background:     Cfg(Colors),
-	border:         Cfg(Border),
-	border_color:   Cfg(Colors),
-	color:          Cfg(Colors),
-	direction:      Cfg(Widget_Direction),
-	disabled:       Cfg(bool),
-	flex:           Cfg(f32),
-	font:           Cfg(Font_Handle),
-	font_size:      Cfg(f32),
-	gap_x:          Cfg(Gap_X),
-	gap_y:          Cfg(Gap_Y),
-	height:         Height,
-	justify:        Cfg(Justify),
-	letter_spacing: Cfg(f32),
-	line_height:    Cfg(f32),
-	max_h:          Cfg(f32),
-	max_w:          Cfg(f32),
-	min_h:          Cfg(f32),
-	min_w:          Cfg(f32),
-	overflow_x:     Cfg(Overflow),
-	overflow_y:     Cfg(Overflow),
-	padding:        Cfg(Padding),
-	position:       Cfg(Position),
-	radius:         Cfg(Radius),
-	self:           Cfg(Justify),
-	space:          Cfg(Draw_Space),
-	tabbable:       Cfg(bool),
-	text_direction: Cfg(Text_Direction),
-	texture_fit:    Cfg(Style_Image_Fit),
-	texture_pos:    Cfg(Style_Image_Pos),
-	visibility:     Cfg(Visibility),
-	width:          Width,
-	wrap:           Cfg(Text_Warp),
-	x:              Cfg(f32),
-	y:              Cfg(f32),
-	z_index:        Cfg(f32),
+	id:                    string,
+	kind:                  Widget_Kind,
+	title:                 string,
+	align:                 Cfg(Text_Align),
+	auto_focus:            Cfg(bool),
+	background:            Cfg(Colors),
+	border:                Cfg(Border),
+	border_color:          Cfg(Colors),
+	color:                 Cfg(Colors),
+	direction:             Cfg(Widget_Direction),
+	disabled:              Cfg(bool),
+	flex:                  Cfg(f32),
+	font:                  Cfg(Font_Handle),
+	font_size:             Cfg(f32),
+	font_style:            Cfg(Font_Style),
+	font_weight:           Cfg(Font_Weight),
+	gap_x:                 Cfg(Gap_X),
+	gap_y:                 Cfg(Gap_Y),
+	height:                Height,
+	justify:               Cfg(Justify),
+	letter_spacing:        Cfg(f32),
+	line_height:           Cfg(f32),
+	max_h:                 Cfg(f32),
+	max_w:                 Cfg(f32),
+	min_h:                 Cfg(f32),
+	min_w:                 Cfg(f32),
+	overflow_x:            Cfg(Overflow),
+	overflow_y:            Cfg(Overflow),
+	padding:               Cfg(Padding),
+	position:              Cfg(Position),
+	radius:                Cfg(Radius),
+	self:                  Cfg(Justify),
+	space:                 Cfg(Draw_Space),
+	tabbable:              Cfg(bool),
+	text_decoration:       Cfg(Text_Decoration),
+	text_decoration_color: Cfg(Colors),
+	text_decoration_style: Cfg(Text_Decoration_Style),
+	text_direction:        Cfg(Text_Direction),
+	texture_fit:           Cfg(Style_Image_Fit),
+	texture_pos:           Cfg(Style_Image_Pos),
+	visibility:            Cfg(Visibility),
+	width:                 Width,
+	wrap:                  Cfg(Text_Wrap),
+	x:                     Cfg(f32),
+	y:                     Cfg(f32),
+	z_index:               Cfg(f32),
 }
 
-Widget_Text_Flag :: enum {
-	UNCACHED,
-}
-
-Widget_Text_Flags :: bit_set[Widget_Text_Flag;i32]
-
-/*
-Fully resolved widget style after merging theme, parent, and prop overrides.
-*/
 Resolved_Widget_Style :: struct {
-	align:          Text_Align,
-	auto_focus:     bool,
-	background:     Colors,
-	border:         Border,
-	border_color:   Colors,
-	color:          Colors,
-	direction:      Direction_Layout,
-	disabled:       bool,
-	flex:           f32,
-	font:           Font_Handle,
-	font_size:      f32,
-	gap_x:          u16,
-	gap_y:          u16,
-	height:         Length,
-	justify:        Justify_Pos,
-	letter_spacing: f32,
-	line_height:    f32,
-	max_h:          f32,
-	max_w:          f32,
-	min_h:          f32,
-	min_w:          f32,
-	padding:        Padding,
-	radius:         Radius,
-	space:          Draw_Space,
-	text_direction: Text_Direction,
-	width:          Length,
-	wrap:           Text_Warp,
-	x:              f32,
-	y:              f32,
-	overflow:       Overflow,
-	overflow_y:     Overflow,
-	overflow_x:     Overflow,
-	visibility:     Visibility,
-	z_index:        f32,
-	position:       Position,
-	self:           Justify_Pos,
-	texture_fit:    Style_Image_Fit,
-	texture_pos:    Style_Image_Pos,
-	tabbable:       bool,
+	align:                     Text_Align,
+	auto_focus:                bool,
+	background:                Colors,
+	border:                    Border,
+	border_color:              Colors,
+	color:                     Colors,
+	direction:                 Direction_Layout,
+	disabled:                  bool,
+	flex:                      f32,
+	font:                      Font_Handle,
+	font_size:                 f32,
+	font_style:                Font_Style,
+	font_weight:               Font_Weight,
+	gap_x:                     u16,
+	gap_y:                     u16,
+	height:                    Length,
+	justify:                   Justify_Pos,
+	letter_spacing:            f32,
+	line_height:               f32,
+	max_h:                     f32,
+	max_w:                     f32,
+	min_h:                     f32,
+	min_w:                     f32,
+	padding:                   Padding,
+	radius:                    Radius,
+	space:                     Draw_Space,
+	text_decoration:           Text_Decoration,
+	text_decoration_color:     Colors,
+	text_decoration_style:     Text_Decoration_Style,
+	text_direction:            Text_Direction,
+	width:                     Length,
+	wrap:                      Text_Wrap,
+	x:                         f32,
+	y:                         f32,
+	overflow:                  Overflow,
+	overflow_y:                Overflow,
+	overflow_x:                Overflow,
+	visibility:                Visibility,
+	z_index:                   f32,
+	position:                  Position,
+	self:                      Justify_Pos,
+	texture_fit:               Style_Image_Fit,
+	texture_pos:               Style_Image_Pos,
+	tabbable:                  bool,
 }
 
 /*
@@ -280,13 +281,6 @@ Style_Context :: struct {
 	using style: Resolved_Widget_Style,
 	content_w:   f32,
 	content_h:   f32,
-}
-
-Whitespace :: union {
-	enum {
-		AUTO,
-		WRAP,
-	},
 }
 
 Position :: union {
@@ -496,24 +490,77 @@ Gap_Y :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_Y,
 }
 
-Text_Warp :: union {
-	struct{},
-	enum {
-		NONE,
-		NEWLINES,
-		BALANCE,
-	},
-	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Warp,
+Text_Wrap_Kind :: enum {
+	NONE,
+	NEWLINES,
+	BALANCE,
+}
+
+Text_Wrap :: union {
+	Text_Wrap_Kind,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Wrap,
+}
+
+Text_Align_Kind :: enum {
+	LEFT,
+	CENTER,
+	RIGHT,
 }
 
 Text_Align :: union {
-	struct{},
-	enum {
-		LEFT,
-		CENTER,
-		RIGHT,
-	},
+	Text_Align_Kind,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Align,
+}
+
+Text_Direction_Kind :: enum {
+	LTR,
+	RTL,
+}
+
+Text_Direction :: union {
+	Text_Direction_Kind,
+	proc(
+		frame_state: Widget_Frame_State,
+		event: Widget_Event(Widget_Frame_State),
+	) -> Text_Direction,
+}
+
+/*
+Which decoration lines are drawn on text.
+*/
+Text_Decoration_Line :: enum {
+	UNDERLINE,
+	LINE_THROUGH,
+	OVERLINE,
+}
+
+Text_Decoration_Lines :: bit_set[Text_Decoration_Line; u8]
+
+Text_Decoration :: union {
+	Text_Decoration_Lines,
+	proc(
+		frame_state: Widget_Frame_State,
+		event: Widget_Event(Widget_Frame_State),
+	) -> Text_Decoration,
+}
+
+/*
+Stroke pattern for text decorations (CSS text-decoration-style).
+*/
+Text_Decoration_Style_Kind :: enum {
+	SOLID,
+	DOUBLE,
+	DOTTED,
+	DASHED,
+	WAVY,
+}
+
+Text_Decoration_Style :: union {
+	Text_Decoration_Style_Kind,
+	proc(
+		frame_state: Widget_Frame_State,
+		event: Widget_Event(Widget_Frame_State),
+	) -> Text_Decoration_Style,
 }
 
 Justify_Align :: enum {
@@ -731,9 +778,42 @@ Atlas_Region :: struct {
 }
 
 /*
-Reference to a loaded font face at a specific raster size in pixels.
+Font upright vs italic style selection.
+*/
+Font_Style :: enum {
+	NORMAL,
+	ITALIC,
+}
+
+/*
+CSS-like numeric font weight (100–900). Default regular is 400.
+*/
+Font_Weight :: distinct f32
+
+FONT_WEIGHT_NORMAL :: Font_Weight(400)
+FONT_WEIGHT_BOLD :: Font_Weight(700)
+
+/*
+One source file in a font family registration.
+*/
+Font_Face_Desc :: struct {
+	path:   string,
+	style:  Font_Style,
+	weight: Font_Weight,
+}
+
+/*
+Reference to a registered font family with a default logical size in pixels.
 */
 Font_Handle :: struct {
+	id:      Asset_Id,
+	size_px: f32,
+}
+
+/*
+Reference to a resolved raster face instance (path + size + weight/style/synthesis).
+*/
+Font_Face_Handle :: struct {
 	id:      Asset_Id,
 	size_px: f32,
 }
