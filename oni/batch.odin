@@ -266,7 +266,7 @@ batch_push_vertex :: proc(
 	border_color: [4]f32,
 	rect_size: Vec2,
 	radii: [4]f32,
-	border: Bd,
+	border: Bd_px,
 	mode: Draw_Mode,
 	tex_clip: bool = false,
 ) {
@@ -301,7 +301,7 @@ batch_push_quad :: proc(
 	border_color: RGBA,
 	rect_size: Vec2,
 	radii: [4]f32,
-	border: Bd,
+	border: Bd_px,
 	mode: Draw_Mode,
 	tex_clip: bool = false,
 ) {
@@ -341,7 +341,7 @@ batch_push_axis_quad :: proc(
 	border_color: RGBA,
 	rect_size: Vec2,
 	radii: [4]f32,
-	border: Bd,
+	border: Bd_px,
 	mode: Draw_Mode,
 ) {
 	screen := view_transform_rect(r)

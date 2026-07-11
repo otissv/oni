@@ -31,7 +31,6 @@ with_test_global_state :: proc(test_state: ^State, body: proc(test_state: ^State
 layout_test_begin :: proc() -> Layout_State {
 	return Layout_State {
 		table_tracks = make(map[int]Layout_Table_Tracks),
-		table_border_collapse = make(map[UI_Id]Border_Collapse),
 	}
 }
 
@@ -73,8 +72,6 @@ layout_test_end :: proc(layout: ^Layout_State) {
 	}
 	delete(layout.table_tracks)
 	layout.table_tracks = nil
-	delete(layout.table_border_collapse)
-	layout.table_border_collapse = nil
 
 	layout_release_node_children(layout)
 	delete(layout.nodes)
@@ -304,7 +301,7 @@ layout_nested_table_solve_equalizes_heading_and_cell_widths :: proc(t: ^testing.
 @(test)
 table_border_compare_prefers_thicker_width :: proc(t: ^testing.T) {
 	a := Table_Border_Side{width = 2, source = .CELL, order = 1}
-	b := Table_Border_Side{width = 1, source = .TABLE, order = 0}
+	b := Table_Border_Side{width = 1, source = .ROW, order = 0}
 	testing.expect(t, table_border_compare(a, b) > 0)
 }
 
@@ -313,6 +310,199 @@ table_border_compare_prefers_cell_source_on_equal_width :: proc(t: ^testing.T) {
 	a := Table_Border_Side{width = 1, source = .CELL, order = 0}
 	b := Table_Border_Side{width = 1, source = .ROW, order = 1}
 	testing.expect(t, table_border_compare(a, b) > 0)
+}
+
+@(test)
+table_border_compare_prefers_table_only_when_thicker :: proc(t: ^testing.T) {
+	table := Table_Border_Side{width = 2, source = .TABLE, order = 0}
+	cell := Table_Border_Side{width = 1, source = .CELL, order = 1}
+	testing.expect(t, table_border_compare(table, cell) > 0)
+
+	equal_table := Table_Border_Side{width = 1, source = .TABLE, order = 0}
+	equal_cell := Table_Border_Side{width = 1, source = .CELL, order = 1}
+	testing.expect(t, table_border_compare(equal_cell, equal_table) > 0)
+}
+
+@(test)
+table_collapsed_borders_keep_vertical_edge_between_cells :: proc(t: ^testing.T) {
+	layout := layout_test_begin()
+	defer layout_test_end(&layout)
+
+	border := Border(Bd{t = 1, b = 1, l = 1, r = 1})
+
+	table := layout_test_append_node(
+		&layout,
+		-1,
+		.TABLE,
+		{},
+		{},
+		{gap_x = 0, gap_y = 0, border = border},
+	)
+	head := layout_test_append_node(&layout, table, .TABLE_HEAD, {}, {}, {border = border})
+	row := layout_test_append_node(
+		&layout,
+		head,
+		.TABLE_ROW,
+		{x = .TABLE_CELL, y = .TABLE_CELL},
+		{},
+		{border = border},
+	)
+	h1 := layout_test_append_node(&layout, row, .TABLE_HEADING, {}, {80, 30}, {border = border})
+	h2 := layout_test_append_node(&layout, row, .TABLE_HEADING, {}, {80, 30}, {border = border})
+
+	layout.nodes[h1].rect = {0, 0, 80, 30}
+	layout.nodes[h2].rect = {80, 0, 80, 30}
+
+	layout_table_prepare_in(&layout, table)
+	layout_table_finalize_in(&layout, table)
+
+	collapsed := layout.nodes[h2].collapsed_borders
+	testing.expect(t, collapsed.active)
+	expect_close(t, collapsed.borders.l.width, 1)
+	testing.expect(t, collapsed.borders.l.source == .CELL)
+}
+
+@(test)
+table_collapsed_row_border_forms_vertical_grid_line :: proc(t: ^testing.T) {
+	layout := layout_test_begin()
+	defer layout_test_end(&layout)
+
+	row_border := Border(Bd{t = 1, b = 1, l = 1, r = 1})
+
+	table := layout_test_append_node(
+		&layout,
+		-1,
+		.TABLE,
+		{},
+		{},
+		{gap_x = 0, gap_y = 0},
+	)
+	head := layout_test_append_node(&layout, table, .TABLE_HEAD)
+	row := layout_test_append_node(
+		&layout,
+		head,
+		.TABLE_ROW,
+		{x = .TABLE_CELL, y = .TABLE_CELL},
+		{},
+		{border = row_border},
+	)
+	h1 := layout_test_append_node(&layout, row, .TABLE_HEADING, {}, {80, 30})
+	h2 := layout_test_append_node(&layout, row, .TABLE_HEADING, {}, {80, 30})
+
+	layout.nodes[h1].rect = {0, 0, 80, 30}
+	layout.nodes[h2].rect = {80, 0, 80, 30}
+
+	layout_table_prepare_in(&layout, table)
+	layout_table_finalize_in(&layout, table)
+
+	collapsed := layout.nodes[h2].collapsed_borders
+	testing.expect(t, collapsed.active)
+	expect_close(t, collapsed.borders.l.width, 1)
+	testing.expect(t, collapsed.borders.l.source == .ROW)
+}
+
+@(test)
+layout_push_inherited_table_border_is_concrete :: proc(t: ^testing.T) {
+	test_state: State
+	with_test_global_state(
+		&test_state,
+		proc(test_state: ^State, t: ^testing.T) {
+			ui_init()
+			defer ui_shutdown()
+
+			theme = new(Theme)
+			theme^ = Theme {
+				palette = palette,
+				border = 0,
+				border_color = .BLACK,
+				background = .TRANSPARENT,
+				gap_x = u16(0),
+				gap_y = u16(0),
+			}
+			defer free(theme)
+
+			layout_reset()
+			ui_push_style(style_root(.SCREEN, Rect{0, 0, 400, 300}))
+			defer ui_pop_style()
+
+			empty: Widget_Frame_State
+			event := Widget_Event(Widget_Frame_State){frame_state = empty}
+
+			table_cfg := resolve_widget_config(
+				{
+					kind = .TABLE,
+					gap_x = {mode = .Value, value = u16(0)},
+					gap_y = {mode = .Value, value = u16(0)},
+				},
+				{border = {mode = .Value, value = f32(1)}},
+				&empty,
+				event,
+			)
+			being_children(UI_Id(1), table_cfg)
+
+			head_cfg := resolve_widget_config(
+				{kind = .TABLE_HEAD},
+				{border = {mode = .Value, value = Inherit.INHERIT}},
+				&empty,
+				event,
+			)
+			being_children(UI_Id(2), head_cfg)
+
+			row_cfg := resolve_widget_config(
+				{kind = .TABLE_ROW},
+				{
+					border = {mode = .Value, value = Inherit.INHERIT},
+					justify = {mode = .Value, value = Justify_Pos{x = .TABLE_CELL, y = .TABLE_CELL}},
+				},
+				&empty,
+				event,
+			)
+			being_children(UI_Id(3), row_cfg)
+
+			h1_cfg := resolve_widget_config(
+				{kind = .TABLE_HEADING},
+				{border = {mode = .Value, value = Inherit.INHERIT}},
+				&empty,
+				event,
+			)
+			_ = layout_push_node(UI_Id(4), h1_cfg)
+			layout_pop_node()
+
+			h2_cfg := resolve_widget_config(
+				{kind = .TABLE_HEADING},
+				{border = {mode = .Value, value = Inherit.INHERIT}},
+				&empty,
+				event,
+			)
+			h2 := layout_push_node(UI_Id(5), h2_cfg)
+			h2_border, h2_ok := resolve_border_value(h2.config.border)
+			testing.expect(t, h2_ok)
+			expect_close(t, h2_border.l, 1)
+			expect_close(t, h2_border.r, 1)
+
+			// Mirror a 2-heading row and ensure collapse keeps the shared vertical edge.
+			h1_index := test_state.ui.layout.id_to_node[UI_Id(4)]
+			h2_index := test_state.ui.layout.id_to_node[UI_Id(5)]
+			table_index := test_state.ui.layout.id_to_node[UI_Id(1)]
+			test_state.ui.layout.nodes[h1_index].rect = {0, 0, 80, 30}
+			test_state.ui.layout.nodes[h2_index].rect = {80, 0, 80, 30}
+			test_state.ui.layout.nodes[h1_index].desired = {80, 30}
+			test_state.ui.layout.nodes[h2_index].desired = {80, 30}
+			layout_table_prepare_in(&test_state.ui.layout, table_index)
+			layout_table_finalize_in(&test_state.ui.layout, table_index)
+			collapsed := test_state.ui.layout.nodes[h2_index].collapsed_borders
+			testing.expect(t, collapsed.active)
+			expect_close(t, collapsed.borders.l.width, 1)
+			testing.expect(t, collapsed.borders.l.source == .CELL)
+
+			layout_pop_node()
+
+			end_children()
+			end_children()
+			end_children()
+		},
+		t,
+	)
 }
 
 @(test)
@@ -329,7 +519,8 @@ layout_table_finalize_assigns_cell_positions :: proc(t: ^testing.T) {
 	_ = layout_test_append_node(&layout, row2, .TABLE_CELL, {}, {80, 20})
 
 	layout.nodes[table].ui_id = UI_Id(1)
-	layout.table_border_collapse[UI_Id(1)] = .COLLAPSE
+	layout.nodes[table].config.gap_x = 0
+	layout.nodes[table].config.gap_y = 0
 	layout_table_prepare_in(&layout, table)
 	layout_table_finalize_in(&layout, table)
 
@@ -454,4 +645,129 @@ table_border_strip_rect_matches_side_geometry :: proc(t: ^testing.T) {
 	right := table_border_strip_rect(rect, 'r', 5)
 	expect_close(t, right.x, 105)
 	expect_close(t, right.w, 5)
+}
+
+@(test)
+radius_inherit_resolves_parent_corners :: proc(t: ^testing.T) {
+	test_state: State
+
+	with_test_global_state(
+		&test_state,
+		proc(test_state: ^State, t: ^testing.T) {
+			test_theme := Theme {
+				palette = palette,
+				justify = Justify_Pos{x = .START, y = .START},
+				direction = .HORIZONTAL,
+				border_color = .BLACK,
+				background = .BACKGROUND,
+				padding = 0,
+				radius = 0,
+				border = 0,
+				width = 0,
+				height = 0,
+			}
+			theme = &test_theme
+			ui_push_style(style_root(.SCREEN, Rect{0, 0, 200, 200}))
+			defer clear(&test_state.ui.style_stack)
+
+			frame: Widget_Frame_State
+			event := Widget_Event(Widget_Frame_State) {
+				frame_state = frame,
+			}
+
+			parent := resolve_widget_config(
+				{},
+				{radius = {mode = .Value, value = f32(10)}},
+				&frame,
+				event,
+			)
+			ui_push_style(style_child_context(parent))
+
+			child := resolve_widget_config(
+				{},
+				{radius = {mode = .Value, value = .INHERIT}},
+				&frame,
+				event,
+			)
+			corners, ok := resolve_radius_value(child.radius)
+			testing.expect(t, ok)
+			expect_close(t, corners.tl, 10)
+			expect_close(t, corners.tr, 10)
+			expect_close(t, corners.bl, 10)
+			expect_close(t, corners.br, 10)
+
+			partial := resolve_widget_config(
+				{},
+				{
+					radius = {
+						mode = .Value,
+						value = Radius_corners{tl = .INHERIT, tr = .INHERIT},
+					},
+				},
+				&frame,
+				event,
+			)
+			pc, pok := resolve_radius_value(partial.radius)
+			testing.expect(t, pok)
+			expect_close(t, pc.tl, 10)
+			expect_close(t, pc.tr, 10)
+			expect_close(t, pc.bl, 0)
+			expect_close(t, pc.br, 0)
+		},
+		t,
+	)
+}
+
+@(test)
+table_descendant_outer_radius_matches_shared_corners :: proc(t: ^testing.T) {
+	test_state: State
+
+	with_test_global_state(
+		&test_state,
+		proc(test_state: ^State, t: ^testing.T) {
+			_ = layout_test_begin()
+			defer layout_test_end(&test_state.ui.layout)
+			test_state.ui.layout.table_tracks = make(map[int]Layout_Table_Tracks)
+
+			table := layout_test_append_node(&test_state.ui.layout, -1, .TABLE)
+			head := layout_test_append_node(&test_state.ui.layout, table, .TABLE_HEAD)
+			row := layout_test_append_node(&test_state.ui.layout, head, .TABLE_ROW)
+			cell := layout_test_append_node(&test_state.ui.layout, row, .TABLE_HEADING)
+
+			test_state.ui.layout.nodes[table].rect = {0, 0, 100, 100}
+			test_state.ui.layout.nodes[table].border = {1, 1, 1, 1}
+			test_state.ui.layout.nodes[table].config.radius = f32(10)
+			test_state.ui.layout.nodes[table].ui_id = UI_Id(1)
+
+			test_state.ui.layout.nodes[cell].rect = {1, 1, 40, 20}
+			test_state.ui.layout.nodes[cell].ui_id = UI_Id(2)
+			test_state.ui.layout.id_to_node[UI_Id(2)] = cell
+
+			got := table_descendant_outer_radius(UI_Id(2), test_state.ui.layout.nodes[cell].rect)
+			expect_close(t, got.tl, 9)
+			expect_close(t, got.tr, 0)
+			expect_close(t, got.bl, 0)
+			expect_close(t, got.br, 0)
+		},
+		t,
+	)
+}
+
+@(test)
+border_px_to_bd_roundtrip_resolves :: proc(t: ^testing.T) {
+	px := Bd_px{t = 1, b = 1, l = 1, r = 1}
+	bd := border_px_to_bd(px)
+	resolved, ok := resolve_border_value(bd)
+	testing.expect(t, ok)
+	expect_close(t, resolved.l, 1)
+	expect_close(t, resolved.r, 1)
+
+	side := table_border_side_from_node(
+		&Layout_Node{config = {border = bd}},
+		'l',
+		.CELL,
+		0,
+		{},
+	)
+	expect_close(t, side.width, 1)
 }

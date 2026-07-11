@@ -156,7 +156,7 @@ Image :: proc(props: Image_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Image_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 
@@ -278,7 +278,7 @@ Image :: proc(props: Image_Props) {
 		background = resolved_background
 	}
 
-	border: o.Bd
+	border: o.Bd_px
 	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
 	   border_ok {
 		border = resolved_border
@@ -293,7 +293,7 @@ Image :: proc(props: Image_Props) {
 		border_color = resolved_border_color
 	}
 
-	radius: o.Radius_corners
+	radius: o.Radius_px
 	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
@@ -303,7 +303,7 @@ Image :: proc(props: Image_Props) {
 		tint = resolved_tint
 	}
 
-	padding: o.Pd
+	padding: o.Pd_px
 	if resolved_padding, padding_ok := o.resolve_padding(config.padding, &frame_state, event);
 	   padding_ok {
 		padding = resolved_padding

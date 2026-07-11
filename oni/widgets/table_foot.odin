@@ -1,6 +1,7 @@
 package widgets
 
 import o ".."
+import set "../set"
 
 /*
 Table widget configuration extending Widget_Config.
@@ -54,7 +55,12 @@ table_foot_theme_base :: proc(frame_state: ^Table_Foot_State) -> Table_Foot_Conf
 		color = o.Color.MUTED
 	}
 
-	return Table_Foot_Config{kind = .TABLE_FOOT}
+	return Table_Foot_Config {
+		kind = .TABLE_FOOT,
+		direction = set.Direction(.VERTICAL),
+		gap_x = set.Gap_X(.INHERIT),
+		gap_y = set.Gap_Y(.INHERIT),
+	}
 }
 
 /*
@@ -71,7 +77,7 @@ Table_Foot :: proc(props: Table_Foot_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Foot_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

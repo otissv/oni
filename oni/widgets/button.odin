@@ -72,7 +72,7 @@ Button :: proc(props: Button_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Button_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 
@@ -154,7 +154,7 @@ Button :: proc(props: Button_Props) {
 		background = resolved_background
 	}
 
-	border: o.Bd
+	border: o.Bd_px
 	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
 	   border_ok {
 		border = resolved_border
@@ -169,7 +169,7 @@ Button :: proc(props: Button_Props) {
 		border_color = resolved_border_color
 	}
 
-	radius: o.Radius_corners
+	radius: o.Radius_px
 	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}

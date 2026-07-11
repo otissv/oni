@@ -973,7 +973,7 @@ to_rgba_color :: proc {
 /*
 Resolves any Colors value (including callbacks) to RGBA using widget context.
 
-Handles .Inherit by walking the current style stack for a parent color.
+Handles Color.INHERIT by walking the current style stack for a parent color.
 */
 to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, ok: bool) {
 	#partial switch v in c {

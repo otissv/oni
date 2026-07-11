@@ -21,7 +21,7 @@ Label_Props :: struct {
 }
 
 Label :: proc(props: Label_Props) {
-	font_size: o.Cfg(f32)
+	font_size: o.Cfg(o.Style_F32)
 
 	switch props.size {
 	case .Default:

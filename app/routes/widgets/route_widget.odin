@@ -16,7 +16,7 @@ Sidebar_Widgets_options :: enum {
 }
 
 @(private)
-active_widget_option: Sidebar_Widgets_options = .IMAGE
+active_widget_option: Sidebar_Widgets_options = .TABLE
 
 container := proc(state: w.Rectangle_State) {
 	switch active_widget_option {

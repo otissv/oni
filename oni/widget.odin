@@ -335,38 +335,62 @@ Builds uniform or axis-pair padding from x and optional y values.
 
 When y is zero, all sides use x.
 */
-resolve_padding_xy :: proc(x, y: f32) -> Pd {
+resolve_padding_xy :: proc(x, y: f32) -> Pd_px {
 	if y == 0 do return {t = x, b = x, l = x, r = x}
 
 	return {t = y, b = y, l = x, r = x}
 }
 
 /*
+Resolves an F32_I padding/border field against a parent pixel value.
+*/
+@(private)
+resolve_side_f32_i :: proc(v: F32_I, parent: f32) -> f32 {
+	return f32_i_resolve(v, parent)
+}
+
+/*
 Resolves a padding struct into concrete side values.
 
 Handles preset sizes and explicit per-side or axis shorthand.
+Per-field `.INHERIT` takes the matching parent side.
 */
-resolve_padding_struct :: proc(s: Pd_struct) -> (padding: Pd, ok: bool) {
+resolve_padding_struct :: proc(s: Pd_struct, parent: Pd_px = {}) -> (padding: Pd_px, ok: bool) {
 	switch {
 	case s.sm:
 		v := PADDING_SM
-		return Pd{t = v, b = v, l = v, r = v}, true
+		return Pd_px{t = v, b = v, l = v, r = v}, true
 	case s.md:
 		v := PADDING_MD
-		return Pd{t = v, b = v, l = v, r = v}, true
+		return Pd_px{t = v, b = v, l = v, r = v}, true
 	case s.lg:
 		v := PADDING_LG
-		return Pd{t = v, b = v, l = v, r = v}, true
+		return Pd_px{t = v, b = v, l = v, r = v}, true
 	case s.xl:
 		v := PADDING_XL
-		return Pd{t = v, b = v, l = v, r = v}, true
+		return Pd_px{t = v, b = v, l = v, r = v}, true
 	}
 
-	if s.l != 0 || s.r != 0 || s.t != 0 || s.b != 0 {
-		return Pd{t = s.t, b = s.b, l = s.l, r = s.r}, true
+	any_side :=
+		f32_i_is_set(s.l) ||
+		f32_i_is_set(s.r) ||
+		f32_i_is_set(s.t) ||
+		f32_i_is_set(s.b)
+	if any_side {
+		return Pd_px {
+				t = resolve_side_f32_i(s.t, parent.t),
+				b = resolve_side_f32_i(s.b, parent.b),
+				l = resolve_side_f32_i(s.l, parent.l),
+				r = resolve_side_f32_i(s.r, parent.r),
+			},
+			true
 	}
-	if s.x != 0 || s.y != 0 {
-		return resolve_padding_xy(s.x, s.y), true
+	if f32_i_is_set(s.x) || f32_i_is_set(s.y) {
+		return resolve_padding_xy(
+				resolve_side_f32_i(s.x, parent.l),
+				resolve_side_f32_i(s.y, parent.t),
+			),
+			true
 	}
 
 	return {}, false
@@ -377,20 +401,32 @@ Resolves a static Padding union value into concrete side insets.
 
 Does not evaluate proc-valued padding; use resolve_padding for that.
 */
-resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
+resolve_padding_value :: proc(p: Padding, parent: Pd_px = {}) -> (padding: Pd_px, ok: bool) {
 	switch v in p {
+	case Inherit:
+		return parent, true
 	case struct{}:
 		return {}, false
 	case f32:
 		if v == 0 do return {}, false
 		return {v, v, v, v}, true
 	case Pd_pos:
-		if v.x == 0 && v.y == 0 do return {}, false
-		return resolve_padding_xy(v.x, v.y), true
+		if !f32_i_is_set(v.x) && !f32_i_is_set(v.y) do return {}, false
+		return resolve_padding_xy(
+				resolve_side_f32_i(v.x, parent.l),
+				resolve_side_f32_i(v.y, parent.t),
+			),
+			true
 	case Pd_struct:
-		return resolve_padding_struct(v)
+		return resolve_padding_struct(v, parent)
 	case Pd:
-		return v, true
+		return Pd_px {
+				t = resolve_side_f32_i(v.t, parent.t),
+				b = resolve_side_f32_i(v.b, parent.b),
+				l = resolve_side_f32_i(v.l, parent.l),
+				r = resolve_side_f32_i(v.r, parent.r),
+			},
+			true
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding:
 		return {}, false
 	}
@@ -399,32 +435,29 @@ resolve_padding_value :: proc(p: Padding) -> (padding: Pd, ok: bool) {
 }
 
 /*
-Resolves padding from a union value, evaluating proc callbacks when present.
+Returns concrete parent padding from the current style stack.
 */
-resolve_padding :: proc(
-	p: Padding,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> (
-	padding: Pd,
-	ok: bool,
-) {
-	#partial switch v in p {
-	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding:
-		ui_state := to_ui_state(state)
-		ui_event := to_ui_event(state)
-		return resolve_padding(v(ui_state, ui_event), state, event)
-	}
-
-	return resolve_padding_value(p)
+@(private)
+padding_parent_px :: proc() -> Pd_px {
+	if len(state.ui.style_stack) == 0 do return {}
+	padding, ok := resolve_padding_value(ui_style_current().padding)
+	if ok do return padding
+	return {}
 }
 
 /*
-Resolves a radius struct into per-corner values.
+Resolves a radius struct into concrete per-corner pixel values.
 
 Handles presets, shorthand axes, and explicit corner overrides.
+Per-field `.INHERIT` takes the matching parent corner.
 */
-resolve_radius_struct :: proc(s: Radius_struct) -> (radius: Radius_corners, ok: bool) {
+resolve_radius_struct :: proc(
+	s: Radius_struct,
+	parent: Radius_px = {},
+) -> (
+	radius: Radius_px,
+	ok: bool,
+) {
 	switch {
 	case s.sm:
 		v := RADIUS_SM
@@ -440,32 +473,114 @@ resolve_radius_struct :: proc(s: Radius_struct) -> (radius: Radius_corners, ok: 
 		return {tl = v, tr = v, bl = v, br = v}, true
 	}
 
-	if s.tl != 0 || s.tr != 0 || s.bl != 0 || s.br != 0 {
-		return {s.tl, s.tr, s.bl, s.br}, true
+	any_corner :=
+		f32_i_is_set(s.tl) ||
+		f32_i_is_set(s.tr) ||
+		f32_i_is_set(s.bl) ||
+		f32_i_is_set(s.br)
+	if any_corner {
+		return {
+				tl = resolve_side_f32_i(s.tl, parent.tl),
+				tr = resolve_side_f32_i(s.tr, parent.tr),
+				bl = resolve_side_f32_i(s.bl, parent.bl),
+				br = resolve_side_f32_i(s.br, parent.br),
+			},
+			true
 	}
 
-	tl, tr, bl, br := s.tl, s.tr, s.bl, s.br
-	if s.t != 0 {
-		if tl == 0 do tl = s.t
-		if tr == 0 do tr = s.t
+	tl := resolve_side_f32_i(s.tl, parent.tl)
+	tr := resolve_side_f32_i(s.tr, parent.tr)
+	bl := resolve_side_f32_i(s.bl, parent.bl)
+	br := resolve_side_f32_i(s.br, parent.br)
+
+	if f32_i_is_set(s.t) {
+		tv := resolve_side_f32_i(s.t, parent.tl)
+		if !f32_i_is_set(s.tl) do tl = tv
+		if !f32_i_is_set(s.tr) do tr = tv
 	}
-	if s.b != 0 {
-		if bl == 0 do bl = s.b
-		if br == 0 do br = s.b
+	if f32_i_is_set(s.b) {
+		bv := resolve_side_f32_i(s.b, parent.bl)
+		if !f32_i_is_set(s.bl) do bl = bv
+		if !f32_i_is_set(s.br) do br = bv
 	}
-	if s.l != 0 {
-		if tl == 0 do tl = s.l
-		if bl == 0 do bl = s.l
+	if f32_i_is_set(s.l) {
+		lv := resolve_side_f32_i(s.l, parent.tl)
+		if !f32_i_is_set(s.tl) do tl = lv
+		if !f32_i_is_set(s.bl) do bl = lv
 	}
-	if s.r != 0 {
-		if tr == 0 do tr = s.r
-		if br == 0 do br = s.r
+	if f32_i_is_set(s.r) {
+		rv := resolve_side_f32_i(s.r, parent.tr)
+		if !f32_i_is_set(s.tr) do tr = rv
+		if !f32_i_is_set(s.br) do br = rv
 	}
-	if tl != 0 || tr != 0 || bl != 0 || br != 0 {
+	if tl != 0 || tr != 0 || bl != 0 || br != 0 || any_corner {
 		return {tl, tr, bl, br}, true
 	}
-	if s.x != 0 || s.y != 0 {
-		return {s.x, s.x, s.y, s.y}, true
+	if f32_i_is_set(s.x) || f32_i_is_set(s.y) {
+		x := resolve_side_f32_i(s.x, parent.tl)
+		y := resolve_side_f32_i(s.y, parent.bl)
+		return {x, x, y, y}, true
+	}
+
+	return {}, false
+}
+
+/*
+Resolves Radius_corners with per-corner `.INHERIT` against parent pixels.
+*/
+resolve_radius_corners :: proc(
+	c: Radius_corners,
+	parent: Radius_px = {},
+) -> (
+	radius: Radius_px,
+	ok: bool,
+) {
+	any :=
+		f32_i_is_set(c.tl) ||
+		f32_i_is_set(c.tr) ||
+		f32_i_is_set(c.bl) ||
+		f32_i_is_set(c.br)
+	if !any do return {}, false
+	return {
+			tl = resolve_side_f32_i(c.tl, parent.tl),
+			tr = resolve_side_f32_i(c.tr, parent.tr),
+			bl = resolve_side_f32_i(c.bl, parent.bl),
+			br = resolve_side_f32_i(c.br, parent.br),
+		},
+		true
+}
+
+/*
+Returns concrete parent radius from the current style stack.
+*/
+@(private)
+radius_parent_px :: proc() -> Radius_px {
+	if len(state.ui.style_stack) == 0 do return {}
+	radius, ok := resolve_radius_value(ui_style_current().radius)
+	if ok do return radius
+	return {}
+}
+
+/*
+Resolves a static Radius union value into concrete per-corner radii.
+
+Does not evaluate proc-valued radii; use resolve_radius for that.
+*/
+resolve_radius_value :: proc(r: Radius, parent: Radius_px = {}) -> (radius: Radius_px, ok: bool) {
+	switch v in r {
+	case Inherit:
+		return parent, true
+	case struct{}:
+		return {}, false
+	case f32:
+		if v == 0 do return {}, false
+		return resolve_radius_struct({t = v, b = v, l = v, r = v}, parent)
+	case Radius_struct:
+		return resolve_radius_struct(v, parent)
+	case Radius_corners:
+		return resolve_radius_corners(v, parent)
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Radius:
+		return {}, false
 	}
 
 	return {}, false
@@ -479,21 +594,24 @@ resolve_radius :: proc(
 	state: ^$S,
 	event: Widget_Event(S),
 ) -> (
-	radius: Radius_corners,
+	radius: Radius_px,
 	ok: bool,
 ) {
 	ui_state := to_ui_state(state)
 	ui_event := to_ui_event(state)
+	p := radius_parent_px()
 	switch v in r {
+	case Inherit:
+		return p, true
 	case struct{}:
 		return {}, false
 	case f32:
 		if v == 0 do return {}, false
-		return resolve_radius_struct({t = v, b = v, l = v, r = v})
+		return resolve_radius_struct({t = v, b = v, l = v, r = v}, p)
 	case Radius_struct:
-		return resolve_radius_struct(v)
+		return resolve_radius_struct(v, p)
 	case Radius_corners:
-		return v, true
+		return resolve_radius_corners(v, p)
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Radius:
 		return resolve_radius(v(ui_state, ui_event), state, event)
 	}
@@ -502,31 +620,44 @@ resolve_radius :: proc(
 }
 
 /*
+Builds Radius_corners author value from resolved pixels (for style stack storage).
+*/
+radius_px_to_corners :: proc(r: Radius_px) -> Radius_corners {
+	return {tl = r.tl, tr = r.tr, bl = r.bl, br = r.br}
+}
+
+/*
 Resolves a border struct into per-side widths.
 
 Handles preset sizes and explicit per-side values.
+Per-field `.INHERIT` takes the matching parent side.
 */
-resolve_border_struct :: proc(s: Bd_struct) -> (width: Bd, ok: bool) {
+resolve_border_struct :: proc(s: Bd_struct, parent: Bd_px = {}) -> (width: Bd_px, ok: bool) {
 	switch {
 	case s.sm:
 		v := BORDER_SM
-		return Bd{t = v, b = v, l = v, r = v}, true
+		return Bd_px{t = v, b = v, l = v, r = v}, true
 	case s.md:
 		v := BORDER_MD
-		return Bd{t = v, b = v, l = v, r = v}, true
+		return Bd_px{t = v, b = v, l = v, r = v}, true
 	case s.lg:
 		v := BORDER_LG
-		return Bd{t = v, b = v, l = v, r = v}, true
+		return Bd_px{t = v, b = v, l = v, r = v}, true
 	case s.xl:
 		v := BORDER_XL
-		return Bd{t = v, b = v, l = v, r = v}, true
+		return Bd_px{t = v, b = v, l = v, r = v}, true
 	}
 
-	if s.l != 0 || s.r != 0 || s.t != 0 || s.b != 0 {
-		return Bd{s.t, s.b, s.l, s.r}, true
-	}
-
-	return {}, false
+	any :=
+		f32_i_is_set(s.t) || f32_i_is_set(s.b) || f32_i_is_set(s.l) || f32_i_is_set(s.r)
+	if !any do return {}, false
+	return Bd_px {
+			t = resolve_side_f32_i(s.t, parent.t),
+			b = resolve_side_f32_i(s.b, parent.b),
+			l = resolve_side_f32_i(s.l, parent.l),
+			r = resolve_side_f32_i(s.r, parent.r),
+		},
+		true
 }
 
 /*
@@ -534,17 +665,25 @@ Resolves a static Border union value into per-side widths.
 
 Does not evaluate proc-valued borders; use resolve_border for that.
 */
-resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
+resolve_border_value :: proc(b: Border, parent: Bd_px = {}) -> (border: Bd_px, ok: bool) {
 	switch v in b {
+	case Inherit:
+		return parent, true
 	case struct{}:
 		return {}, false
 	case f32:
 		if v == 0 do return {}, false
 		return {v, v, v, v}, true
 	case Bd_struct:
-		return resolve_border_struct(v)
+		return resolve_border_struct(v, parent)
 	case Bd:
-		return v, true
+		return Bd_px {
+				t = resolve_side_f32_i(v.t, parent.t),
+				b = resolve_side_f32_i(v.b, parent.b),
+				l = resolve_side_f32_i(v.l, parent.l),
+				r = resolve_side_f32_i(v.r, parent.r),
+			},
+			true
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border:
 		return {}, false
 	}
@@ -553,9 +692,27 @@ resolve_border_value :: proc(b: Border) -> (border: Bd, ok: bool) {
 }
 
 /*
+Returns concrete parent border from the current style stack.
+*/
+@(private)
+border_parent_px :: proc() -> Bd_px {
+	if len(state.ui.style_stack) == 0 do return {}
+	border, ok := resolve_border_value(ui_style_current().border)
+	if ok do return border
+	return {}
+}
+
+/*
 Resolves border width from a union value, evaluating proc callbacks when present.
 */
-resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border: Bd, ok: bool) {
+resolve_border :: proc(
+	b: Border,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	border: Bd_px,
+	ok: bool,
+) {
 	#partial switch v in b {
 	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border:
 		ui_state := to_ui_state(state)
@@ -563,7 +720,39 @@ resolve_border :: proc(b: Border, state: ^$S, event: Widget_Event(S)) -> (border
 		return resolve_border(v(ui_state, ui_event), state, event)
 	}
 
-	return resolve_border_value(b)
+	return resolve_border_value(b, border_parent_px())
+}
+
+resolve_padding :: proc(
+	p: Padding,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	padding: Pd_px,
+	ok: bool,
+) {
+	#partial switch v in p {
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_padding(v(ui_state, ui_event), state, event)
+	}
+
+	return resolve_padding_value(p, padding_parent_px())
+}
+
+/*
+Builds author Bd from resolved pixels (for style stack storage).
+*/
+border_px_to_bd :: proc(b: Bd_px) -> Bd {
+	return {t = b.t, b = b.b, l = b.l, r = b.r}
+}
+
+/*
+Builds author Pd from resolved pixels (for style stack storage).
+*/
+padding_px_to_pd :: proc(p: Pd_px) -> Pd {
+	return {t = p.t, b = p.b, l = p.l, r = p.r}
 }
 
 /*
@@ -573,6 +762,8 @@ Does not evaluate proc-valued gaps; use resolve_child_gap_x for that.
 */
 resolve_gap_x_value :: proc(g: Gap_X) -> (gap: u16, ok: bool) {
 	switch v in g {
+	case Inherit:
+		return 0, false
 	case struct{}:
 		return 0, false
 	case u16:
@@ -605,6 +796,8 @@ Does not evaluate proc-valued gaps; use resolve_child_gap_y for that.
 */
 resolve_gap_y_value :: proc(g: Gap_Y) -> (gap: u16, ok: bool) {
 	switch v in g {
+	case Inherit:
+		return 0, false
 	case struct{}:
 		return 0, false
 	case u16:
@@ -694,6 +887,8 @@ Does not evaluate proc-valued justify; use resolve_align for that.
 */
 resolve_justify_value :: proc(a: Justify) -> (align: Justify_Pos, ok: bool) {
 	switch v in a {
+	case Inherit:
+		return {}, false
 	case struct{}:
 		return {}, false
 	case Justify_Pos:
@@ -734,6 +929,8 @@ Resolves a static Widget_Direction union value to a layout direction.
 */
 resolve_direction_value :: proc(d: Widget_Direction) -> (direction: Direction_Layout, ok: bool) {
 	switch v in d {
+	case Inherit:
+		return .HORIZONTAL, false
 	case struct{}:
 		return .HORIZONTAL, false
 	case Direction_Layout:
@@ -945,27 +1142,39 @@ Does not evaluate proc-valued positions; use resolve_texture_pos for that.
 */
 resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Texture_Pos, ok: bool) {
 	switch v in p {
+	case Inherit:
+		return {}, false
 	case struct{}:
 		return {0.5, 0.5, 0, 0}, true
 	case Texture_Pos:
 		pos = {0.5, 0.5, 0, 0}
-		if v.l > 0 && v.r == 0 {
+		l := f32_i_px(v.l)
+		r := f32_i_px(v.r)
+		t := f32_i_px(v.t)
+		b := f32_i_px(v.b)
+		if l > 0 && r == 0 {
 			pos.x = 0
-			pos.offset_x = v.l
-		} else if v.r > 0 && v.l == 0 {
+			pos.offset_x = l
+		} else if r > 0 && l == 0 {
 			pos.x = 1
-			pos.offset_x = -v.r
+			pos.offset_x = -r
 		}
-		if v.t > 0 && v.b == 0 {
+		if t > 0 && b == 0 {
 			pos.y = 0
-			pos.offset_y = v.t
-		} else if v.b > 0 && v.t == 0 {
+			pos.offset_y = t
+		} else if b > 0 && t == 0 {
 			pos.y = 1
-			pos.offset_y = -v.b
+			pos.offset_y = -b
 		}
 		return pos, true
 	case Texture_Pos_X_Y:
-		return {texture_pos_normalize(v.x), texture_pos_normalize(v.y), 0, 0}, true
+		return {
+				texture_pos_normalize(f32_i_px(v.x)),
+				texture_pos_normalize(f32_i_px(v.y)),
+				0,
+				0,
+			},
+			true
 	case Resolved_Texture_Pos:
 		return v, true
 	case proc(
@@ -1006,6 +1215,8 @@ Does not evaluate proc-valued fit; use resolve_texture_fit for that.
 */
 resolve_texture_fit_value :: proc(f: Style_Texture_Fit) -> (fit: Texture_Fit, ok: bool) {
 	switch v in f {
+	case Inherit:
+		return {}, false
 	case struct{}:
 		return {}, false
 	case Texture_Fit:

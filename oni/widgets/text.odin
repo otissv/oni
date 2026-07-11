@@ -97,7 +97,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Text_Merged_State {
-		is_disabled = config.disabled.mode == .Value && config.disabled.value,
+		is_disabled = o.cfg_style_bool(config.disabled),
 		is_focused  = was_focused,
 	}
 

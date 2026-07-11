@@ -71,7 +71,7 @@ Table_Caption :: proc(props: Table_Caption_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Caption_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

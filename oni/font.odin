@@ -38,6 +38,8 @@ Nil weight defaults to Normal (400). Unresolved procs panic.
 */
 font_weight_value :: proc(weight: Font_Weight) -> f32 {
 	switch v in weight {
+	case Inherit:
+		panic("font_weight_value: unresolved Inherit")
 	case Font_Weights:
 		return font_weights_to_f32(v)
 	case f32:
@@ -55,6 +57,8 @@ Nil style defaults to NORMAL. Unresolved procs panic.
 */
 font_style_kind :: proc(style: Font_Style) -> Font_Styles {
 	switch v in style {
+	case Inherit:
+		panic("font_style_kind: unresolved Inherit")
 	case Font_Styles:
 		return v
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Style:

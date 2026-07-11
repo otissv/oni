@@ -23,7 +23,7 @@ Heading_Props :: struct {
 }
 
 Heading :: proc(props: Heading_Props) {
-	font_size: o.Cfg(f32)
+	font_size: o.Cfg(o.Style_F32)
 
 	switch props.variant {
 	case .H1:

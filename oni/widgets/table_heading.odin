@@ -77,7 +77,7 @@ Table_Heading :: proc(props: Table_Heading_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Heading_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

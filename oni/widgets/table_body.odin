@@ -58,6 +58,8 @@ table_body_theme_base :: proc(frame_state: ^Table_Body_State) -> Table_Body_Conf
 	return Table_Body_Config {
 		kind = .TABLE_BODY,
 		direction = set.Direction(.VERTICAL),
+		gap_x = set.Gap_X(.INHERIT),
+		gap_y = set.Gap_Y(.INHERIT),
 	}
 }
 
@@ -75,7 +77,7 @@ Table_Body :: proc(props: Table_Body_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Body_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

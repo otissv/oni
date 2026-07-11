@@ -1,6 +1,7 @@
 package widgets
 
 import o ".."
+import set "../set"
 
 /*
 Table widget configuration extending Widget_Config.
@@ -54,7 +55,12 @@ table_head_theme_base :: proc(frame_state: ^Table_Head_State) -> Table_Head_Conf
 		color = o.Color.MUTED
 	}
 
-	return Table_Head_Config{kind = .TABLE_HEAD}
+	return Table_Head_Config {
+		kind = .TABLE_HEAD,
+		direction = set.Direction(.VERTICAL),
+		gap_x = set.Gap_X(.INHERIT),
+		gap_y = set.Gap_Y(.INHERIT),
+	}
 }
 
 /*
@@ -71,7 +77,7 @@ Table_Head :: proc(props: Table_Head_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Head_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

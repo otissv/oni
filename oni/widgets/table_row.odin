@@ -59,6 +59,8 @@ table_row_theme_base :: proc(frame_state: ^Table_Row_State) -> Table_Row_Config 
 		kind = .TABLE_ROW,
 		direction = set.Direction(.HORIZONTAL),
 		justify = set.Justify(o.Justify_Pos{x = .TABLE_CELL, y = .TABLE_CELL}),
+		gap_x = set.Gap_X(.INHERIT),
+		gap_y = set.Gap_Y(.INHERIT),
 	}
 }
 
@@ -76,7 +78,7 @@ Table_Row :: proc(props: Table_Row_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_Row_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 

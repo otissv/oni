@@ -77,8 +77,8 @@ Layout_Node :: struct {
 	ui_id:             UI_Id,
 	kind:              Widget_Kind,
 	config:            Resolved_Widget_Style,
-	padding:           Pd,
-	border:            Bd,
+	padding:           Pd_px,
+	border:            Bd_px,
 	desired:           Vec2,
 	rect:              Rect,
 	parent:            int,
@@ -97,7 +97,7 @@ Layout_Table_Tracks :: struct {
 	rows:           [dynamic]int,
 	col_widths:     [dynamic]f32,
 	row_heights:    [dynamic]f32,
-	border_collapse: Border_Collapse,
+	collapsed:      bool,
 	cell_positions: map[int]Table_Grid_Pos,
 }
 
@@ -105,13 +105,12 @@ Layout_Table_Tracks :: struct {
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
-	nodes:                 [dynamic]Layout_Node,
-	node_stack:            [dynamic]int,
-	bounds_stack:          [dynamic]Rect,
-	space_markers:         [dynamic]int,
-	id_to_node:            map[UI_Id]int,
-	table_tracks:          map[int]Layout_Table_Tracks,
-	table_border_collapse: map[UI_Id]Border_Collapse,
+	nodes:         [dynamic]Layout_Node,
+	node_stack:    [dynamic]int,
+	bounds_stack:  [dynamic]Rect,
+	space_markers: [dynamic]int,
+	id_to_node:    map[UI_Id]int,
+	table_tracks:  map[int]Layout_Table_Tracks,
 }
 
 @(private)
@@ -135,7 +134,6 @@ layout_reset :: proc() {
 		delete(tracks.cell_positions)
 	}
 	clear(&state.ui.layout.table_tracks)
-	clear(&state.ui.layout.table_border_collapse)
 	layout_release_node_children(&state.ui.layout)
 	clear(&state.ui.layout.nodes)
 	clear(&state.ui.layout.node_stack)
@@ -399,7 +397,7 @@ layout_clamp_axis :: proc(value, min_v, max_v: f32) -> f32 {
 /*
 Shrinks an outer rect inward by padding to the content box.
 */
-layout_content_rect :: proc(outer: Rect, padding: Pd) -> Rect {
+layout_content_rect :: proc(outer: Rect, padding: Pd_px) -> Rect {
 	return {
 		x = outer.x + padding.l,
 		y = outer.y + padding.t,
@@ -411,7 +409,7 @@ layout_content_rect :: proc(outer: Rect, padding: Pd) -> Rect {
 /*
 Shrinks an outer rect inward by border and padding to the inner box.
 */
-layout_inner_rect :: proc(outer: Rect, border: Bd, padding: Pd) -> Rect {
+layout_inner_rect :: proc(outer: Rect, border: Bd_px, padding: Pd_px) -> Rect {
 	return layout_content_rect(
 		outer,
 		{
@@ -962,14 +960,21 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	append(&state.ui.layout.nodes, node)
 	node_index := len(state.ui.layout.nodes) - 1
 
-	if layout_node_is_table_cell(config.kind) {
-		table_index := layout_find_table_ancestor_in(&state.ui.layout, node_index)
-		if table_index >= 0 {
-			table := &state.ui.layout.nodes[table_index]
-			if mode, ok := state.ui.layout.table_border_collapse[table.ui_id]; ok &&
-			   mode == .COLLAPSE {
-				node.border = {}
+	// Collapsed tables share borders via paint conflict resolution; layout must
+	// not reserve separate border space on the table or its structural parts.
+	if layout_node_participates_in_table_collapse(config.kind) {
+		collapsed := false
+		if config.kind == .TABLE {
+			collapsed = table_gaps_are_collapsed(config.gap_x, config.gap_y)
+		} else {
+			table_index := layout_find_table_ancestor_in(&state.ui.layout, node_index)
+			if table_index >= 0 {
+				table := &state.ui.layout.nodes[table_index]
+				collapsed = table_gaps_are_collapsed(table.config.gap_x, table.config.gap_y)
 			}
+		}
+		if collapsed {
+			state.ui.layout.nodes[node_index].border = {}
 		}
 	}
 
@@ -1154,6 +1159,17 @@ layout_node_is_table_cell :: proc(kind: Widget_Kind) -> bool {
 }
 
 /*
+Returns whether a widget kind shares collapsed table border layout/paint.
+*/
+layout_node_participates_in_table_collapse :: proc(kind: Widget_Kind) -> bool {
+	#partial switch kind {
+	case .TABLE, .TABLE_HEAD, .TABLE_BODY, .TABLE_FOOT, .TABLE_ROW, .TABLE_CELL, .TABLE_HEADING:
+		return true
+	}
+	return false
+}
+
+/*
 Returns whether a justify position uses TABLE_CELL on the x axis.
 */
 layout_justify_uses_TABLE_CELL_x :: proc(justify: Justify_Pos) -> bool {
@@ -1297,15 +1313,12 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 		delete(existing.cell_positions)
 	}
 
-	border_collapse := layout.table_border_collapse[table.ui_id]
-	if border_collapse == {} do border_collapse = .SEPERATE
-
 	layout.table_tracks[table_index] = Layout_Table_Tracks {
-		rows            = rows,
-		col_widths      = col_widths,
-		row_heights     = row_heights,
-		border_collapse = border_collapse,
-		cell_positions  = make(map[int]Table_Grid_Pos),
+		rows           = rows,
+		col_widths     = col_widths,
+		row_heights    = row_heights,
+		collapsed      = table_gaps_are_collapsed(table.config.gap_x, table.config.gap_y),
+		cell_positions = make(map[int]Table_Grid_Pos),
 	}
 }
 
@@ -1343,13 +1356,6 @@ layout_table_apply_cell_size :: proc(
 }
 
 /*
-Registers a table's border-collapse mode for the current layout pass.
-*/
-layout_table_register_border_collapse :: proc(ui_id: UI_Id, mode: Border_Collapse) {
-	state.ui.layout.table_border_collapse[ui_id] = mode
-}
-
-/*
 Builds the table cell grid after rows and cells have been positioned.
 
 Also resolves collapsed border winners and paint strip rects for each cell.
@@ -1376,12 +1382,22 @@ layout_table_finalize_in :: proc(layout: ^Layout_State, table_index: int) {
 		}
 	}
 
-	if tracks.border_collapse == .COLLAPSE {
+	if tracks.collapsed {
 		for row_node_index in tracks.rows {
 			row := &layout.nodes[row_node_index]
+			row.border = {}
 			for child_index in row.child_indices {
 				child := &layout.nodes[child_index]
 				if !layout_node_is_table_cell(child.kind) do continue
+				child.border = {}
+			}
+		}
+
+		table.border = {}
+		for child_index in table.child_indices {
+			child := &layout.nodes[child_index]
+			#partial switch child.kind {
+			case .TABLE_HEAD, .TABLE_BODY, .TABLE_FOOT:
 				child.border = {}
 			}
 		}

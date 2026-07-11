@@ -139,16 +139,63 @@ Widget_Kind :: enum {
 
 Cfg_Tri :: enum {
 	UNSET,
-	Inherit,
 	Value,
 }
 
 /*
-Tri-frame_state config field: unset, inherit from parent, or explicit value.
+Tri-frame_state config field: unset or explicit value.
+
+Inherit is expressed inside each value union as `.INHERIT`, not on Cfg.
 */
 Cfg :: struct($T: typeid) {
 	mode:  Cfg_Tri,
 	value: T,
+}
+
+/*
+Shared inherit tag used as a variant on Widget_Config value unions.
+*/
+Inherit :: enum {
+	INHERIT,
+}
+
+/*
+Numeric style field that may be an explicit f32 or `.INHERIT` from the parent.
+*/
+F32_I :: union {
+	Inherit,
+	f32,
+}
+
+/*
+Resolves an F32_I field: `.INHERIT` takes parent, f32 is kept, unset is 0.
+*/
+f32_i_resolve :: proc(v: F32_I, parent: f32) -> f32 {
+	switch x in v {
+	case Inherit:
+		return parent
+	case f32:
+		return x
+	}
+	return 0
+}
+
+/*
+Returns the concrete f32 from an F32_I, or 0 when unset/inherit.
+*/
+f32_i_px :: proc(v: F32_I) -> f32 {
+	#partial switch x in v {
+	case f32:
+		return x
+	}
+	return 0
+}
+
+/*
+Returns whether an F32_I field was authored (inherit or explicit value).
+*/
+f32_i_is_set :: proc(v: F32_I) -> bool {
+	return v != nil
 }
 
 Length_Kind :: enum {
@@ -174,36 +221,36 @@ Widget_Config :: struct {
 	kind:                  Widget_Kind,
 	title:                 string,
 	align:                 Cfg(Text_Align),
-	auto_focus:            Cfg(bool),
+	auto_focus:            Cfg(Style_Bool),
 	background:            Cfg(Colors),
 	border:                Cfg(Border),
 	border_color:          Cfg(Colors),
 	color:                 Cfg(Colors),
 	direction:             Cfg(Widget_Direction),
-	disabled:              Cfg(bool),
-	flex:                  Cfg(f32),
-	font:                  Cfg(Font_Handle),
-	font_size:             Cfg(f32),
+	disabled:              Cfg(Style_Bool),
+	flex:                  Cfg(Style_F32),
+	font:                  Cfg(Style_Font),
+	font_size:             Cfg(Style_F32),
 	font_style:            Cfg(Font_Style),
 	font_weight:           Cfg(Font_Weight),
 	gap_x:                 Cfg(Gap_X),
 	gap_y:                 Cfg(Gap_Y),
 	height:                Height,
 	justify:               Cfg(Justify),
-	letter_spacing:        Cfg(f32),
-	line_height:           Cfg(f32),
-	max_h:                 Cfg(f32),
-	max_w:                 Cfg(f32),
-	min_h:                 Cfg(f32),
-	min_w:                 Cfg(f32),
+	letter_spacing:        Cfg(Style_F32),
+	line_height:           Cfg(Style_F32),
+	max_h:                 Cfg(Style_F32),
+	max_w:                 Cfg(Style_F32),
+	min_h:                 Cfg(Style_F32),
+	min_w:                 Cfg(Style_F32),
 	overflow_x:            Cfg(Overflow),
 	overflow_y:            Cfg(Overflow),
 	padding:               Cfg(Padding),
 	position:              Cfg(Position),
 	radius:                Cfg(Radius),
 	self:                  Cfg(Justify),
-	space:                 Cfg(Draw_Space),
-	tabbable:              Cfg(bool),
+	space:                 Cfg(Style_Space),
+	tabbable:              Cfg(Style_Bool),
 	text_decoration:       Cfg(Text_Decoration),
 	text_decoration_color: Cfg(Colors),
 	text_decoration_style: Cfg(Text_Decoration_Style),
@@ -213,9 +260,9 @@ Widget_Config :: struct {
 	visibility:            Cfg(Visibility),
 	width:                 Width,
 	wrap:                  Cfg(Text_Wrap),
-	x:                     Cfg(f32),
-	y:                     Cfg(f32),
-	z_index:               Cfg(f32),
+	x:                     Cfg(Style_F32),
+	y:                     Cfg(Style_F32),
+	z_index:               Cfg(Style_F32),
 }
 
 Resolved_Widget_Style :: struct {
@@ -284,6 +331,7 @@ Style_Context :: struct {
 }
 
 Position :: union {
+	Inherit,
 	enum {
 		RELATIVE,
 		ABSOLUTE,
@@ -294,6 +342,7 @@ Position :: union {
 }
 
 Visibility :: union {
+	Inherit,
 	enum {
 		VISIBLE,
 		HIDDEN,
@@ -302,6 +351,7 @@ Visibility :: union {
 }
 
 Overflow :: union {
+	Inherit,
 	enum {
 		AUTO,
 		SCROLL,
@@ -314,28 +364,29 @@ Overflow :: union {
 Per-side padding values: top, bottom, left, and right.
 */
 Pd :: struct {
-	t, b, l, r: f32,
+	t, b, l, r: F32_I,
 }
 
 /*
 Symmetric horizontal/vertical padding shorthand.
 */
 Pd_pos :: struct {
-	x, y: f32,
+	x, y: F32_I,
 }
 
 /*
 Full padding specification with per-side, corner, axis, and preset flags.
 */
 Pd_struct :: struct {
-	t, b, l, r:     f32,
-	tl, tr, bl, br: f32,
-	x, y:           f32,
+	t, b, l, r:     F32_I,
+	tl, tr, bl, br: F32_I,
+	x, y:           F32_I,
 	sm, md, lg, xl: bool,
 }
 
 
 Padding :: union {
+	Inherit,
 	struct{},
 	f32,
 	Pd,
@@ -345,26 +396,34 @@ Padding :: union {
 }
 
 /*
-Per-corner border radius values.
+Resolved per-side padding in pixels for layout and draw.
+*/
+Pd_px :: struct {
+	t, b, l, r: f32,
+}
+
+/*
+Per-corner border radius values (each corner may be `.INHERIT`).
 */
 Radius_corners :: struct {
-	tl: f32,
-	tr: f32,
-	bl: f32,
-	br: f32,
+	tl: F32_I,
+	tr: F32_I,
+	bl: F32_I,
+	br: F32_I,
 }
 
 /*
 Full radius specification with corners, sides, axis, and preset flags.
 */
 Radius_struct :: struct {
-	tl, tr, bl, br: f32,
-	t, b, l, r:     f32,
-	x, y:           f32,
+	tl, tr, bl, br: F32_I,
+	t, b, l, r:     F32_I,
+	x, y:           F32_I,
 	sm, md, lg, xl: bool,
 }
 
 Radius :: union {
+	Inherit,
 	struct{},
 	f32,
 	Radius_struct,
@@ -373,21 +432,29 @@ Radius :: union {
 }
 
 /*
+Resolved per-corner radii in pixels for layout and draw.
+*/
+Radius_px :: struct {
+	tl, tr, bl, br: f32,
+}
+
+/*
 Per-side border width values: top, bottom, left, and right.
 */
 Bd :: struct {
-	t, b, l, r: f32,
+	t, b, l, r: F32_I,
 }
 
 /*
 Full border specification with per-side widths and preset flags.
 */
 Bd_struct :: struct {
-	t, b, l, r:     f32,
+	t, b, l, r:     F32_I,
 	sm, md, lg, xl: bool,
 }
 
 Border :: union {
+	Inherit,
 	struct{},
 	f32,
 	Bd_struct,
@@ -395,9 +462,11 @@ Border :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Border,
 }
 
-Border_Collapse :: enum {
-	SEPERATE,
-	COLLAPSE,
+/*
+Resolved per-side border widths in pixels for layout and draw.
+*/
+Bd_px :: struct {
+	t, b, l, r: f32,
 }
 
 /*
@@ -437,19 +506,11 @@ Table_Grid_Pos :: struct {
 }
 
 /*
-Fully resolved table widget config including border-collapse mode.
-*/
-Resolved_Table_Config :: struct {
-	using widget:    Resolved_Widget_Config,
-	border_collapse: Border_Collapse,
-}
-
-/*
 Width/height dimension with min/max, percent, grow, and preset flags.
 */
 Dim_struct :: struct {
-	min, max:       f32,
-	percent:        f32,
+	min, max:       F32_I,
+	percent:        F32_I,
 	sm, md, lg, xl: bool,
 	grow:           bool,
 }
@@ -481,12 +542,14 @@ Height :: union {
 }
 
 Gap_X :: union {
+	Inherit,
 	struct{},
 	u16,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_X,
 }
 
 Gap_Y :: union {
+	Inherit,
 	struct{},
 	u16,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Gap_Y,
@@ -499,6 +562,7 @@ Text_Wrap_Kind :: enum {
 }
 
 Text_Wrap :: union {
+	Inherit,
 	Text_Wrap_Kind,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Wrap,
 }
@@ -510,6 +574,7 @@ Text_Align_Kind :: enum {
 }
 
 Text_Align :: union {
+	Inherit,
 	Text_Align_Kind,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Text_Align,
 }
@@ -520,6 +585,7 @@ Text_Direction_Kind :: enum {
 }
 
 Text_Direction :: union {
+	Inherit,
 	Text_Direction_Kind,
 	proc(
 		frame_state: Widget_Frame_State,
@@ -539,6 +605,7 @@ Text_Decoration_Line :: enum {
 Text_Decoration_Lines :: bit_set[Text_Decoration_Line;u8]
 
 Text_Decoration :: union {
+	Inherit,
 	Text_Decoration_Lines,
 	proc(
 		frame_state: Widget_Frame_State,
@@ -558,6 +625,7 @@ Text_Decoration_Style_Kind :: enum {
 }
 
 Text_Decoration_Style :: union {
+	Inherit,
 	Text_Decoration_Style_Kind,
 	proc(
 		frame_state: Widget_Frame_State,
@@ -579,12 +647,14 @@ Justify_Align :: enum {
 }
 
 Justify_X :: union {
+	Inherit,
 	struct{},
 	Justify_Align,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify_X,
 }
 
 Justify_Y :: union {
+	Inherit,
 	struct{},
 	Justify_Align,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Justify_Y,
@@ -599,6 +669,7 @@ Justify_Pos :: struct {
 }
 
 Justify :: union {
+	Inherit,
 	struct{},
 	Justify_Pos,
 	Justify_Align,
@@ -618,6 +689,7 @@ Direction_Layout :: enum {
 }
 
 Widget_Direction :: union {
+	Inherit,
 	struct{},
 	Direction_Layout,
 	proc(
@@ -635,6 +707,7 @@ Texture_Fit :: enum {
 }
 
 Style_Texture_Fit :: union {
+	Inherit,
 	struct{},
 	Texture_Fit,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Fit,
@@ -645,14 +718,14 @@ Style_Texture_Fit :: union {
 Texture inset positioning using top/bottom/left/right offsets.
 */
 Texture_Pos :: struct {
-	t, b, l, r: f32,
+	t, b, l, r: F32_I,
 }
 
 /*
 Texture anchor position as normalized x/y percentages in 0-1.
 */
 Texture_Pos_X_Y :: struct {
-	x, y: f32,
+	x, y: F32_I,
 }
 
 /*
@@ -664,6 +737,7 @@ Resolved_Texture_Pos :: struct {
 }
 
 Style_Texture_Pos :: union {
+	Inherit,
 	struct{},
 	Texture_Pos,
 	Texture_Pos_X_Y,
@@ -751,6 +825,33 @@ Draw_Space :: enum {
 }
 
 /*
+Draw-space style value with inherit support.
+*/
+Style_Space :: union {
+	Inherit,
+	Draw_Space,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Space,
+}
+
+/*
+Scalar style value (flex, font_size, offsets, etc.) with inherit support.
+*/
+Style_F32 :: union {
+	Inherit,
+	f32,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_F32,
+}
+
+/*
+Boolean style value with inherit support.
+*/
+Style_Bool :: union {
+	Inherit,
+	bool,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Bool,
+}
+
+/*
 Window DPI scale and logical vs drawable pixel dimensions.
 */
 Dpi_Info :: struct {
@@ -788,9 +889,10 @@ Font_Styles :: enum {
 }
 
 /*
-Font style: named style, or a reactive proc.
+Font style: named style, inherit, or a reactive proc.
 */
 Font_Style :: union {
+	Inherit,
 	Font_Styles,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Style,
 }
@@ -811,9 +913,10 @@ Font_Weights :: enum {
 }
 
 /*
-Font weight: named weight, numeric 100–900, or a reactive proc.
+Font weight: named weight, numeric 100–900, inherit, or a reactive proc.
 */
 Font_Weight :: union {
+	Inherit,
 	Font_Weights,
 	f32,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Weight,
@@ -835,6 +938,15 @@ Reference to a registered font family with a default logical size in pixels.
 Font_Handle :: struct {
 	id:      Asset_Id,
 	size_px: f32,
+}
+
+/*
+Font handle style value with inherit support.
+*/
+Style_Font :: union {
+	Inherit,
+	Font_Handle,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Font,
 }
 
 /*

@@ -210,8 +210,8 @@ Corner radii and border widths are scaled by the current artboard zoom.
 draw_rect :: proc(
 	r: Rect,
 	color: RGBA,
-	radius: Radius_corners = {},
-	border: Bd = {},
+	radius: Radius_px = {},
+	border: Bd_px = {},
 	border_color: RGBA = {},
 ) {
 	has_fill := color.a > 0
@@ -226,7 +226,7 @@ draw_rect :: proc(
 		radius.br * scale,
 		radius.bl * scale,
 	}
-	screen_border := Bd {
+	screen_border := Bd_px {
 		t = border.t * scale,
 		b = border.b * scale,
 		l = border.l * scale,
@@ -287,8 +287,8 @@ draw_texture :: proc(
 	src, dst: Rect,
 	tint: RGBA = {255, 255, 255, 255},
 	background: RGBA = {},
-	radius: Radius_corners = {},
-	border: Bd = {},
+	radius: Radius_px = {},
+	border: Bd_px = {},
 	border_color: RGBA = {},
 ) {
 	has_texture := texture.w > 0 && texture.h > 0
@@ -308,7 +308,7 @@ draw_texture :: proc(
 		radius.br * scale,
 		radius.bl * scale,
 	}
-	screen_border := Bd {
+	screen_border := Bd_px {
 		t = border.t * scale,
 		b = border.b * scale,
 		l = border.l * scale,
@@ -355,7 +355,7 @@ draw_texture_fitted :: proc(
 	texture: Texture_Handle,
 	src, content, image_dst: Rect,
 	tint: RGBA,
-	radius: Radius_corners,
+	radius: Radius_px,
 ) {
 	if texture.w <= 0 || texture.h <= 0 do return
 	if content.w <= 0 || content.h <= 0 do return

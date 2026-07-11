@@ -6,15 +6,12 @@ import set "../set"
 /*
 Table widget configuration extending Widget_Config.
 */
-Table_Config :: struct {
-	using _:         o.Widget_Config,
-	border_collapse: o.Cfg(o.Border_Collapse),
-}
+Table_Config :: o.Widget_Config
 
 /*
 Table widget per-frame frame_state merged with its fully resolved style config.
 */
-Table_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Table_Config)
+Table_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 
 /*
 Table widget event snapshot with frame_state and optional input metadata.
@@ -55,33 +52,12 @@ table_theme_base :: proc(frame_state: ^Table_State) -> Table_Config {
 		color = o.Color.MUTED
 	}
 
-	return Table_Config{kind = .TABLE, direction = set.Direction(.VERTICAL)}
-}
-
-@(private)
-table_config :: proc(props: Table_Props, frame_state: ^Table_State) -> o.Resolved_Table_Config {
-	event := widget_event(frame_state^)
-	base := table_theme_base(frame_state)
-	override := props.config
-	widget := o.resolve_widget_config(base, override, frame_state, event)
-
-	border_collapse := o.Border_Collapse.COLLAPSE
-
-	if override.border_collapse.mode == .Value {
-		border_collapse = override.border_collapse.value
+	return Table_Config {
+		kind = .TABLE,
+		direction = set.Direction(.VERTICAL),
+		gap_x = set.Gap_X(u16(0)),
+		gap_y = set.Gap_Y(u16(0)),
 	}
-
-	if base.border_collapse.mode == .Value {
-		border_collapse = base.border_collapse.value
-	}
-
-	return {widget = widget, border_collapse = border_collapse}
-}
-
-@(private)
-table_refresh_merged :: proc(props: Table_Props, frame_state: ^Table_State) -> Table_Event {
-	frame_state.config = table_config(props, frame_state)
-	return widget_event(frame_state^)
 }
 
 /*
@@ -98,15 +74,15 @@ Table :: proc(props: Table_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Table_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 
-	event := table_refresh_merged(props, &frame_state)
+	event := widget_refresh_merged(props, &frame_state, table_theme_base)
 	config := frame_state.config
 	child := props.child
 	handlers := widget_lifecycle_handlers(props, Table_State)
-	should_auto_focus := widget_should_auto_focus(config.widget, key)
+	should_auto_focus := widget_should_auto_focus(config, key)
 
 	if o.ui_pass() == .Layout {
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
@@ -117,9 +93,9 @@ Table :: proc(props: Table_Props) {
 		)
 
 		if ran_unmount {
-			event = table_refresh_merged(props, &frame_state)
+			event = widget_refresh_merged(props, &frame_state, table_theme_base)
 			config = frame_state.config
-			should_auto_focus = widget_should_auto_focus(config.widget, key)
+			should_auto_focus = widget_should_auto_focus(config, key)
 		}
 
 		if !skip_layout {
@@ -128,9 +104,8 @@ Table :: proc(props: Table_Props) {
 				widget_apply_auto_focus(key, true)
 				frame_state.is_focused = true
 			}
-			widget_register_tab_order(key, config.widget.tabbable, can_interact)
-			o.layout_table_register_border_collapse(layout_id, config.border_collapse)
-			o.Children(child, layout_id, config.widget, frame_state)
+			widget_register_tab_order(key, config.tabbable, can_interact)
+			o.Children(child, layout_id, config, frame_state)
 		}
 
 		return
@@ -148,12 +123,12 @@ Table :: proc(props: Table_Props) {
 		handlers,
 		key,
 		was_focused,
-		config.widget.tabbable,
+		config.tabbable,
 		rect,
-		config.widget,
+		config,
 	)
 
-	event = table_refresh_merged(props, &frame_state)
+	event = widget_refresh_merged(props, &frame_state, table_theme_base)
 	config = frame_state.config
 
 	if widget_can_interact(handlers, &frame_state) {
@@ -175,7 +150,7 @@ Table :: proc(props: Table_Props) {
 		props.on_focus(event)
 	}
 
-	table_widget_draw_chrome(layout_id, .TABLE, rect, config.widget, &frame_state, event)
+	table_widget_draw_chrome(layout_id, .TABLE, rect, config, &frame_state, event)
 
-	o.Children(child, layout_id, config.widget, frame_state)
+	o.Children(child, layout_id, config, frame_state)
 }

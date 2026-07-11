@@ -124,7 +124,7 @@ button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Varian
 
 @(private)
 button_apply_size :: proc(config: ^w.Rectangle_Config, size: Button_Size) {
-	current := config.font_size.mode == .Value ? config.font_size.value : 0
+	current := o.cfg_style_f32(config.font_size)
 	padding_x: f32 = 12
 	padding_y: f32 = 8
 

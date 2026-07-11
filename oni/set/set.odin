@@ -12,27 +12,17 @@ cfg_value :: proc(v: $T) -> oni.Cfg(T) {
 	return oni.Cfg(T){mode = .Value, value = v}
 }
 
-/*
-Wraps a type in a Cfg with mode set to Inherit.
-
-Used internally when a style field should defer to the parent context.
-*/
-@(private)
-cfg_inherit :: proc($T: typeid) -> oni.Cfg(T) {
-	return oni.Cfg(T){mode = .Inherit}
-}
-
 Align :: proc(value: oni.Text_Align) -> oni.Cfg(oni.Text_Align) {return cfg_value(value)}
 
 Background :: Colors
 
 /*
-Sets a bool widget config field to an explicit value.
+Sets a bool widget config field to an explicit value or `.INHERIT`.
 */
-Bool :: proc(value: bool) -> oni.Cfg(bool) {return cfg_value(value)}
+Bool :: proc(value: oni.Style_Bool) -> oni.Cfg(oni.Style_Bool) {return cfg_value(value)}
 
 /*
-Sets a border widget config field to an explicit value.
+Sets a border widget config field to an explicit value or `.INHERIT`.
 */
 Border :: proc(value: oni.Border) -> oni.Cfg(oni.Border) {return cfg_value(value)}
 
@@ -41,54 +31,54 @@ Border_color :: Colors
 Color :: Colors
 
 /*
-Sets a colors widget config field to an explicit value.
+Sets a colors widget config field to an explicit value or `.INHERIT`.
 */
 Colors :: proc(value: oni.Colors) -> oni.Cfg(oni.Colors) {return cfg_value(value)}
 
 /*
-Sets a layout direction widget config field to an explicit value.
+Sets a layout direction widget config field to an explicit value or `.INHERIT`.
 */
 Direction :: proc(
-	direction: oni.Direction_Layout,
-) -> oni.Cfg(oni.Widget_Direction) {return cfg_value(oni.Widget_Direction(direction))}
+	direction: oni.Widget_Direction,
+) -> oni.Cfg(oni.Widget_Direction) {return cfg_value(direction)}
 
 
 Disabled :: Bool
 
 
 /*
-Sets an f32 widget config field to an explicit value.
+Sets an f32 widget config field to an explicit value or `.INHERIT`.
 */
-F32 :: proc(value: f32) -> oni.Cfg(f32) {return cfg_value(value)}
+F32 :: proc(value: oni.Style_F32) -> oni.Cfg(oni.Style_F32) {return cfg_value(value)}
 
 Flex :: F32
 
 
 /*
-Sets a font widget config field to an explicit value.
+Sets a font widget config field to an explicit value or `.INHERIT`.
 */
-Font :: proc(font: oni.Font_Handle) -> oni.Cfg(oni.Font_Handle) {return cfg_value(font)}
+Font :: proc(font: oni.Style_Font) -> oni.Cfg(oni.Style_Font) {return cfg_value(font)}
 
 
 Font_size :: F32
 
 /*
-Sets a font-style widget config field to an explicit value.
+Sets a font-style widget config field to an explicit value or `.INHERIT`.
 */
 Font_style :: proc(style: oni.Font_Style) -> oni.Cfg(oni.Font_Style) {return cfg_value(style)}
 
 /*
-Sets a font-weight widget config field to an explicit value.
+Sets a font-weight widget config field to an explicit value or `.INHERIT`.
 */
 Font_weight :: proc(weight: oni.Font_Weight) -> oni.Cfg(oni.Font_Weight) {return cfg_value(weight)}
 
 /*
-Sets a horizontal gap widget config field to an explicit value.
+Sets a horizontal gap widget config field to an explicit value or `.INHERIT`.
 */
 Gap_X :: proc(value: oni.Gap_X) -> oni.Cfg(oni.Gap_X) {return cfg_value(value)}
 
 /*
-Sets a vertical gap widget config field to an explicit value.
+Sets a vertical gap widget config field to an explicit value or `.INHERIT`.
 */
 Gap_Y :: proc(value: oni.Gap_Y) -> oni.Cfg(oni.Gap_Y) {return cfg_value(value)}
 
@@ -98,17 +88,7 @@ Sets a height widget config field to an explicit value.
 Height :: proc(value: oni.Height) -> oni.Height {return oni.Height(value)}
 
 /*
-Marks a widget config field to inherit from the parent context.
-*/
-Inherit :: proc($T: typeid) -> oni.Cfg(T) {return cfg_inherit(T)}
-
-/*
-Marks a draw-space config field to inherit from the parent context.
-*/
-Inherit_Space :: proc() -> oni.Cfg(oni.Draw_Space) {return cfg_inherit(oni.Draw_Space)}
-
-/*
-Sets a justify widget config field to an explicit value.
+Sets a justify widget config field to an explicit value or `.INHERIT`.
 */
 Justify :: proc(value: oni.Justify) -> oni.Cfg(oni.Justify) {return cfg_value(value)}
 
@@ -127,28 +107,28 @@ Min_W :: F32
 overflow :: proc(value: oni.Overflow) -> oni.Cfg(oni.Overflow) {return cfg_value(value)}
 
 /*
-Sets a padding widget config field to an explicit value.
+Sets a padding widget config field to an explicit value or `.INHERIT`.
 */
 Padding :: proc(value: oni.Padding) -> oni.Cfg(oni.Padding) {return cfg_value(value)}
 
 Position :: proc(value: oni.Position) -> oni.Cfg(oni.Position) {return cfg_value(value)}
 
 /*
-Sets a radius widget config field to an explicit value.
+Sets a radius widget config field to an explicit value or `.INHERIT`.
 */
 Radius :: proc(value: oni.Radius) -> oni.Cfg(oni.Radius) {return cfg_value(value)}
 
 /*
-Sets a self-alignment justify config field to an explicit value.
+Sets a self-alignment justify config field to an explicit value or `.INHERIT`.
 */
 Self :: proc(value: oni.Justify) -> oni.Cfg(oni.Justify) {return cfg_value(value)}
 
 /*
-Sets a draw-space widget config field to an explicit value.
+Sets a draw-space widget config field to an explicit value or `.INHERIT`.
 */
-Space :: proc(space: oni.Draw_Space) -> oni.Cfg(oni.Draw_Space) {return cfg_value(space)}
+Space :: proc(space: oni.Style_Space) -> oni.Cfg(oni.Style_Space) {return cfg_value(space)}
 
-Tabbable :: F32
+Tabbable :: Bool
 
 /*
 Sets text-decoration lines (underline, line-through, overline).
@@ -170,7 +150,7 @@ Text_decoration_style :: proc(
 ) -> oni.Cfg(oni.Text_Decoration_Style) {return cfg_value(value)}
 
 /*
-Sets a text-direction widget config field to an explicit value.
+Sets a text-direction widget config field to an explicit value or `.INHERIT`.
 */
 Text_Direction :: proc(
 	value: oni.Text_Direction,
@@ -178,10 +158,10 @@ Text_Direction :: proc(
 
 
 /*
-Sets a texture-fit style config field to an explicit value.
+Sets a texture-fit style config field to an explicit value or `.INHERIT`.
 */
-Texture_Fit :: proc(value: oni.Texture_Fit) -> oni.Cfg(oni.Style_Texture_Fit) {
-	return cfg_value(oni.Style_Texture_Fit(value))
+Texture_Fit :: proc(value: oni.Style_Texture_Fit) -> oni.Cfg(oni.Style_Texture_Fit) {
+	return cfg_value(value)
 }
 
 /*
@@ -206,7 +186,3 @@ Sets a width widget config field to an explicit value.
 Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 
 Wrap :: proc(value: oni.Text_Wrap) -> oni.Cfg(oni.Text_Wrap) {return cfg_value(value)}
-
-Border_Collapse :: proc(value: oni.Border_Collapse) -> oni.Cfg(oni.Border_Collapse) {
-	return cfg_value(value)
-}

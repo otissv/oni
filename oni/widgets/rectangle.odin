@@ -67,7 +67,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 	was_focused := widget_is_focused(key)
 
 	frame_state := Rectangle_State {
-		is_disabled = cfg.disabled.mode == .Value && cfg.disabled.value,
+		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 
@@ -183,7 +183,7 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		background = resolved_background
 	}
 
-	border: o.Bd
+	border: o.Bd_px
 	if resolved_border, border_ok := o.resolve_border(config.border, frame_state, event);
 	   border_ok {
 		border = resolved_border
@@ -198,7 +198,7 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		border_color = resolved_border_color
 	}
 
-	radius: o.Radius_corners
+	radius: o.Radius_px
 	if resolved_radius, ok := o.resolve_radius(config.radius, frame_state, event); ok {
 		radius = resolved_radius
 	}
