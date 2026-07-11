@@ -943,11 +943,11 @@ Resolves a static Style_Texture_Pos union to anchor and offset values.
 
 Does not evaluate proc-valued positions; use resolve_texture_pos for that.
 */
-resolve_texture_pos_value :: proc(p: Style_Image_Pos) -> (pos: Resolved_Image_Pos, ok: bool) {
+resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Texture_Pos, ok: bool) {
 	switch v in p {
 	case struct{}:
 		return {0.5, 0.5, 0, 0}, true
-	case Image_Pos:
+	case Texture_Pos:
 		pos = {0.5, 0.5, 0, 0}
 		if v.l > 0 && v.r == 0 {
 			pos.x = 0
@@ -964,14 +964,14 @@ resolve_texture_pos_value :: proc(p: Style_Image_Pos) -> (pos: Resolved_Image_Po
 			pos.offset_y = -v.b
 		}
 		return pos, true
-	case Image_Pos_X_Y:
+	case Texture_Pos_X_Y:
 		return {texture_pos_normalize(v.x), texture_pos_normalize(v.y), 0, 0}, true
-	case Resolved_Image_Pos:
+	case Resolved_Texture_Pos:
 		return v, true
 	case proc(
 		     frame_state: Widget_Frame_State,
 		     event: Widget_Event(Widget_Frame_State),
-	     ) -> Image_Pos:
+	     ) -> Texture_Pos:
 		return {}, false
 	}
 
@@ -982,18 +982,18 @@ resolve_texture_pos_value :: proc(p: Style_Image_Pos) -> (pos: Resolved_Image_Po
 Resolves texture anchor position from a union value, evaluating proc callbacks when present.
 */
 resolve_texture_pos :: proc(
-	p: Style_Image_Pos,
+	p: Style_Texture_Pos,
 	state: ^$S,
 	event: Widget_Event(S),
 ) -> (
-	pos: Resolved_Image_Pos,
+	pos: Resolved_Texture_Pos,
 	ok: bool,
 ) {
 	#partial switch v in p {
-	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Pos:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Pos:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
-		return resolve_texture_pos_value(Style_Image_Pos(v(ui_state, ui_event)))
+		return resolve_texture_pos_value(Style_Texture_Pos(v(ui_state, ui_event)))
 	}
 
 	return resolve_texture_pos_value(p)
@@ -1004,16 +1004,16 @@ Resolves a static Style_Texture_Fit union to a texture fit mode.
 
 Does not evaluate proc-valued fit; use resolve_texture_fit for that.
 */
-resolve_texture_fit_value :: proc(f: Style_Image_Fit) -> (fit: Image_Fit, ok: bool) {
+resolve_texture_fit_value :: proc(f: Style_Texture_Fit) -> (fit: Texture_Fit, ok: bool) {
 	switch v in f {
 	case struct{}:
 		return {}, false
-	case Image_Fit:
+	case Texture_Fit:
 		return v, true
 	case proc(
 		     frame_state: Widget_Frame_State,
 		     event: Widget_Event(Widget_Frame_State),
-	     ) -> Image_Fit:
+	     ) -> Texture_Fit:
 		return {}, false
 	}
 
@@ -1024,18 +1024,18 @@ resolve_texture_fit_value :: proc(f: Style_Image_Fit) -> (fit: Image_Fit, ok: bo
 Resolves texture fit mode from a union value, evaluating proc callbacks when present.
 */
 resolve_texture_fit :: proc(
-	f: Style_Image_Fit,
+	f: Style_Texture_Fit,
 	state: ^$S,
 	event: Widget_Event(S),
 ) -> (
-	fit: Image_Fit,
+	fit: Texture_Fit,
 	ok: bool,
 ) {
 	#partial switch v in f {
-	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Fit:
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Fit:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
-		return resolve_texture_fit_value(Style_Image_Fit(v(ui_state, ui_event)))
+		return resolve_texture_fit_value(Style_Texture_Fit(v(ui_state, ui_event)))
 	}
 
 	return resolve_texture_fit_value(f)
@@ -1048,8 +1048,8 @@ Handles fill, contain, cover, none, and scale-down fitting.
 */
 texture_fit_rects :: proc(
 	src, container: Rect,
-	fit: Image_Fit,
-	pos: Resolved_Image_Pos,
+	fit: Texture_Fit,
+	pos: Resolved_Texture_Pos,
 ) -> (
 	out_src: Rect,
 	out_dst: Rect,

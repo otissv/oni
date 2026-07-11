@@ -180,22 +180,22 @@ Text_Direction :: proc(
 /*
 Sets a texture-fit style config field to an explicit value.
 */
-Image_Fit :: proc(value: oni.Image_Fit) -> oni.Cfg(oni.Style_Image_Fit) {
-	return cfg_value(oni.Style_Image_Fit(value))
+Texture_Fit :: proc(value: oni.Texture_Fit) -> oni.Cfg(oni.Style_Texture_Fit) {
+	return cfg_value(oni.Style_Texture_Fit(value))
 }
 
 /*
 Sets a texture position config field from x/y anchor values.
 */
-Image_Pos :: proc(value: oni.Image_Pos_X_Y) -> oni.Cfg(oni.Style_Image_Pos) {
-	return cfg_value(oni.Style_Image_Pos(value))
+Texture_Pos :: proc(value: oni.Texture_Pos_X_Y) -> oni.Cfg(oni.Style_Texture_Pos) {
+	return cfg_value(oni.Style_Texture_Pos(value))
 }
 
 /*
 Sets a texture position config field from edge-based anchor values.
 */
-Image_Pos_Edges :: proc(value: oni.Image_Pos) -> oni.Cfg(oni.Style_Image_Pos) {
-	return cfg_value(oni.Style_Image_Pos(value))
+Texture_Pos_Edges :: proc(value: oni.Texture_Pos) -> oni.Cfg(oni.Style_Texture_Pos) {
+	return cfg_value(oni.Style_Texture_Pos(value))
 }
 
 Visibility :: proc(value: oni.Visibility) -> oni.Cfg(oni.Visibility) {return cfg_value(value)}

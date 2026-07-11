@@ -392,6 +392,48 @@ layout_finalize_image_node_owns_object_fit :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_finalize_image_scale_down_large_src_fits_content :: proc(t: ^testing.T) {
+	node := Layout_Node {
+		rect = {0, 0, 464, 464},
+		image_input = {
+			src = {0, 0, 1064, 1330},
+			fit = .SCALE_DOWN,
+			pos = {0.5, 0.5, 0, 0},
+			active = true,
+		},
+	}
+
+	layout_finalize_image_node(&node)
+
+	testing.expect(t, node.image.active)
+	expect_close(t, node.image.content.w, 464)
+	expect_close(t, node.image.content.h, 464)
+	// min(464/1064, 464/1330) * 1064 ≈ 371.07, height fills 464
+	expect_close(t, node.image.dst.h, 464)
+	expect_close(t, node.image.dst.w, 1064 * (464.0 / 1330.0))
+	testing.expect(t, node.image.dst.w <= node.image.content.w + 0.01)
+	testing.expect(t, node.image.dst.h <= node.image.content.h + 0.01)
+}
+
+@(test)
+texture_fit_rects_contain_and_scale_down_do_not_exceed_container :: proc(t: ^testing.T) {
+	src := Rect{0, 0, 1064, 1330}
+	container := Rect{10, 20, 464, 464}
+	pos := Resolved_Texture_Pos{0.5, 0.5, 0, 0}
+
+	fits := [2]Texture_Fit{.CONTAIN, .SCALE_DOWN}
+	for fit in fits {
+		_, dst := texture_fit_rects(src, container, fit, pos)
+		testing.expect(t, dst.w <= container.w + 0.01)
+		testing.expect(t, dst.h <= container.h + 0.01)
+		testing.expect(t, dst.x >= container.x - 0.01)
+		testing.expect(t, dst.y >= container.y - 0.01)
+		testing.expect(t, dst.x + dst.w <= container.x + container.w + 0.01)
+		testing.expect(t, dst.y + dst.h <= container.y + container.h + 0.01)
+	}
+}
+
+@(test)
 table_border_strip_rect_matches_side_geometry :: proc(t: ^testing.T) {
 	rect := Rect{10, 20, 100, 40}
 

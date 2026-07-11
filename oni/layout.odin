@@ -46,8 +46,8 @@ Author image inputs captured during the layout pass for fit finalization.
 Layout_Image_Input :: struct {
 	src:    Rect,
 	dst:    Rect,
-	fit:    Image_Fit,
-	pos:    Resolved_Image_Pos,
+	fit:    Texture_Fit,
+	pos:    Resolved_Texture_Pos,
 	active: bool,
 }
 
@@ -742,8 +742,8 @@ Attaches author image source/fit inputs for layout-owned object-fit finalization
 layout_set_image :: proc(
 	node: ^Layout_Node,
 	src, dst: Rect,
-	fit: Image_Fit,
-	pos: Resolved_Image_Pos,
+	fit: Texture_Fit,
+	pos: Resolved_Texture_Pos,
 ) {
 	node.image_input = {src = src, dst = dst, fit = fit, pos = pos, active = true}
 	node.image = {}

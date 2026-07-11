@@ -208,8 +208,8 @@ Widget_Config :: struct {
 	text_decoration_color: Cfg(Colors),
 	text_decoration_style: Cfg(Text_Decoration_Style),
 	text_direction:        Cfg(Text_Direction),
-	texture_fit:           Cfg(Style_Image_Fit),
-	texture_pos:           Cfg(Style_Image_Pos),
+	texture_fit:           Cfg(Style_Texture_Fit),
+	texture_pos:           Cfg(Style_Texture_Pos),
 	visibility:            Cfg(Visibility),
 	width:                 Width,
 	wrap:                  Cfg(Text_Wrap),
@@ -260,8 +260,8 @@ Resolved_Widget_Style :: struct {
 	z_index:               f32,
 	position:              Position,
 	self:                  Justify_Pos,
-	texture_fit:           Style_Image_Fit,
-	texture_pos:           Style_Image_Pos,
+	texture_fit:           Style_Texture_Fit,
+	texture_pos:           Style_Texture_Pos,
 	tabbable:              bool,
 }
 
@@ -626,7 +626,7 @@ Widget_Direction :: union {
 	) -> Widget_Direction,
 }
 
-Image_Fit :: enum {
+Texture_Fit :: enum {
 	FILL,
 	CONTAIN,
 	COVER,
@@ -634,41 +634,41 @@ Image_Fit :: enum {
 	NONE,
 }
 
-Style_Image_Fit :: union {
+Style_Texture_Fit :: union {
 	struct{},
-	Image_Fit,
-	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Fit,
+	Texture_Fit,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Fit,
 }
 
 
 /*
-Image inset positioning using top/bottom/left/right offsets.
+Texture inset positioning using top/bottom/left/right offsets.
 */
-Image_Pos :: struct {
+Texture_Pos :: struct {
 	t, b, l, r: f32,
 }
 
 /*
-Image anchor position as normalized x/y percentages in 0-1.
+Texture anchor position as normalized x/y percentages in 0-1.
 */
-Image_Pos_X_Y :: struct {
+Texture_Pos_X_Y :: struct {
 	x, y: f32,
 }
 
 /*
 Fully resolved texture position with anchor and pixel offsets.
 */
-Resolved_Image_Pos :: struct {
+Resolved_Texture_Pos :: struct {
 	x, y:               f32,
 	offset_x, offset_y: f32,
 }
 
-Style_Image_Pos :: union {
+Style_Texture_Pos :: union {
 	struct{},
-	Image_Pos,
-	Image_Pos_X_Y,
-	Resolved_Image_Pos,
-	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Image_Pos,
+	Texture_Pos,
+	Texture_Pos_X_Y,
+	Resolved_Texture_Pos,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Pos,
 }
 
 SizingType :: enum {

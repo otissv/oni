@@ -345,40 +345,11 @@ draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 25
 }
 
 /*
-Maps a logical point inside image_dst to normalized texture UV coordinates.
+Draws a texture into the fitted image_dst rect, clipped to the content box.
 
-Used by draw_texture_fitted to derive per-corner UVs from content layout.
-*/
-@(private)
-texture_content_uv :: proc(px, py: f32, image_dst, src: Rect, tex_w, tex_h: f32) -> Vec2 {
-	if image_dst.w <= 0 || image_dst.h <= 0 || tex_w <= 0 || tex_h <= 0 do return {0, 0}
-	return {
-		(src.x + (px - image_dst.x) / image_dst.w * src.w) / tex_w,
-		(src.y + (py - image_dst.y) / image_dst.h * src.h) / tex_h,
-	}
-}
-
-/*
-Computes border insets between a content rect and its image destination rect.
-
-Positive inset values mark regions where the source image does not cover
-the content area, enabling nine-slice-style clipping in the shader.
-*/
-@(private)
-texture_image_insets :: proc(content, image_dst: Rect) -> Bd {
-	return {
-		t = image_dst.y - content.y,
-		b = (content.y + content.h) - (image_dst.y + image_dst.h),
-		l = image_dst.x - content.x,
-		r = (content.x + content.w) - (image_dst.x + image_dst.w),
-	}
-}
-
-/*
-Draws a texture fitted to a content rect with per-corner UV interpolation.
-
-Clips to the current batch clip, maps visible corners to source UVs, and
-uses image insets for nine-slice-style shader clipping when needed.
+Paints only the intersection of image_dst and content so CONTAIN / SCALE_DOWN
+never overflow the widget, and NONE oversized sources are cropped to content.
+Corner radii are evaluated in content space so chrome rounding still applies.
 */
 draw_texture_fitted :: proc(
 	texture: Texture_Handle,
@@ -388,6 +359,21 @@ draw_texture_fitted :: proc(
 ) {
 	if texture.w <= 0 || texture.h <= 0 do return
 	if content.w <= 0 || content.h <= 0 do return
+	if image_dst.w <= 0 || image_dst.h <= 0 do return
+
+	painted := rect_intersect(image_dst, content)
+	if painted.w <= 0 || painted.h <= 0 do return
+
+	tw, th := texture.w, texture.h
+	fx0 := (painted.x - image_dst.x) / image_dst.w
+	fy0 := (painted.y - image_dst.y) / image_dst.h
+	fx1 := fx0 + painted.w / image_dst.w
+	fy1 := fy0 + painted.h / image_dst.h
+
+	u0 := (src.x + src.w * fx0) / tw
+	v0 := (src.y + src.h * fy0) / th
+	u1 := (src.x + src.w * fx1) / tw
+	v1 := (src.y + src.h * fy1) / th
 
 	scale := view_artboard_zoom()
 	screen_radii := [4]f32 {
@@ -397,26 +383,41 @@ draw_texture_fitted :: proc(
 		radius.bl * scale,
 	}
 
-	tw, th := texture.w, texture.h
-	screen := view_transform_rect(content)
+	screen_content := view_transform_rect(content)
+	screen_painted := view_transform_rect(painted)
 	clip := batch_current_clip()
-	visible := rect_intersect(screen, clip)
+	visible := rect_intersect(screen_painted, clip)
 	if visible.w <= 0 || visible.h <= 0 do return
+
+	if screen_painted.w > 0 && screen_painted.h > 0 {
+		ax0 := (visible.x - screen_painted.x) / screen_painted.w
+		ay0 := (visible.y - screen_painted.y) / screen_painted.h
+		ax1 := ax0 + visible.w / screen_painted.w
+		ay1 := ay0 + visible.h / screen_painted.h
+		ru0 := u0 + (u1 - u0) * ax0
+		rv0 := v0 + (v1 - v0) * ay0
+		ru1 := u0 + (u1 - u0) * ax1
+		rv1 := v0 + (v1 - v0) * ay1
+		u0, v0, u1, v1 = ru0, rv0, ru1, rv1
+	}
 
 	x0, y0 := visible.x, visible.y
 	x1, y1 := visible.x + visible.w, visible.y + visible.h
 	corners_screen := [4]Vec2{{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}
+	uvs := [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 
-	uvs: [4]Vec2
 	local_uvs: [4]Vec2
 	for i in 0 ..< 4 {
 		logical := draw_space_to_logical(corners_screen[i])
-		uvs[i] = texture_content_uv(logical.x, logical.y, image_dst, src, tw, th)
-		local_uvs[i] = {(logical.x - content.x) / content.w, (logical.y - content.y) / content.h}
+		local_uvs[i] = {
+			(logical.x - content.x) / content.w,
+			(logical.y - content.y) / content.h,
+		}
 	}
 
-	insets := texture_image_insets(content, image_dst)
-	use_image_clip := insets.t > 0.001 || insets.b > 0.001 || insets.l > 0.001 || insets.r > 0.001
+	has_radius := radius.tl > 0 || radius.tr > 0 || radius.br > 0 || radius.bl > 0
+	mode: Draw_Mode = .Textured
+	if has_radius do mode = .Textured_Rounded
 
 	state.gpu_state.batch.dpi = state.dpi
 	batch_check_key(texture.id)
@@ -426,10 +427,9 @@ draw_texture_fitted :: proc(
 		local_uvs,
 		tint,
 		{},
-		{screen.w, screen.h},
+		{screen_content.w, screen_content.h},
 		screen_radii,
-		insets,
-		.Textured_Rounded,
-		use_image_clip,
+		{},
+		mode,
 	)
 }
