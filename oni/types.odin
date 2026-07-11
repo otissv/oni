@@ -219,50 +219,50 @@ Widget_Config :: struct {
 }
 
 Resolved_Widget_Style :: struct {
-	align:                     Text_Align,
-	auto_focus:                bool,
-	background:                Colors,
-	border:                    Border,
-	border_color:              Colors,
-	color:                     Colors,
-	direction:                 Direction_Layout,
-	disabled:                  bool,
-	flex:                      f32,
-	font:                      Font_Handle,
-	font_size:                 f32,
-	font_style:                Font_Style,
-	font_weight:               Font_Weight,
-	gap_x:                     u16,
-	gap_y:                     u16,
-	height:                    Length,
-	justify:                   Justify_Pos,
-	letter_spacing:            f32,
-	line_height:               f32,
-	max_h:                     f32,
-	max_w:                     f32,
-	min_h:                     f32,
-	min_w:                     f32,
-	padding:                   Padding,
-	radius:                    Radius,
-	space:                     Draw_Space,
-	text_decoration:           Text_Decoration,
-	text_decoration_color:     Colors,
-	text_decoration_style:     Text_Decoration_Style,
-	text_direction:            Text_Direction,
-	width:                     Length,
-	wrap:                      Text_Wrap,
-	x:                         f32,
-	y:                         f32,
-	overflow:                  Overflow,
-	overflow_y:                Overflow,
-	overflow_x:                Overflow,
-	visibility:                Visibility,
-	z_index:                   f32,
-	position:                  Position,
-	self:                      Justify_Pos,
-	texture_fit:               Style_Image_Fit,
-	texture_pos:               Style_Image_Pos,
-	tabbable:                  bool,
+	align:                 Text_Align,
+	auto_focus:            bool,
+	background:            Colors,
+	border:                Border,
+	border_color:          Colors,
+	color:                 Colors,
+	direction:             Direction_Layout,
+	disabled:              bool,
+	flex:                  f32,
+	font:                  Font_Handle,
+	font_size:             f32,
+	font_style:            Font_Style,
+	font_weight:           Font_Weight,
+	gap_x:                 u16,
+	gap_y:                 u16,
+	height:                Length,
+	justify:               Justify_Pos,
+	letter_spacing:        f32,
+	line_height:           f32,
+	max_h:                 f32,
+	max_w:                 f32,
+	min_h:                 f32,
+	min_w:                 f32,
+	padding:               Padding,
+	radius:                Radius,
+	space:                 Draw_Space,
+	text_decoration:       Text_Decoration,
+	text_decoration_color: Colors,
+	text_decoration_style: Text_Decoration_Style,
+	text_direction:        Text_Direction,
+	width:                 Length,
+	wrap:                  Text_Wrap,
+	x:                     f32,
+	y:                     f32,
+	overflow:              Overflow,
+	overflow_y:            Overflow,
+	overflow_x:            Overflow,
+	visibility:            Visibility,
+	z_index:               f32,
+	position:              Position,
+	self:                  Justify_Pos,
+	texture_fit:           Style_Image_Fit,
+	texture_pos:           Style_Image_Pos,
+	tabbable:              bool,
 }
 
 /*
@@ -536,7 +536,7 @@ Text_Decoration_Line :: enum {
 	OVERLINE,
 }
 
-Text_Decoration_Lines :: bit_set[Text_Decoration_Line; u8]
+Text_Decoration_Lines :: bit_set[Text_Decoration_Line;u8]
 
 Text_Decoration :: union {
 	Text_Decoration_Lines,
@@ -788,12 +788,29 @@ Font_Style :: enum {
 }
 
 /*
-CSS-like numeric font weight (100–900). Default regular is 400.
+Named CSS font weights (100–900). Regular is Normal (400).
 */
-Font_Weight :: distinct f32
+Font_Weights :: enum {
+	Thin, // 100
+	Extra_Light, // 200
+	Light, // 300
+	Normal, // 400
+	Medium, // 500
+	Semi_Bold, // 600
+	Bold, // 700
+	Extra_Bold, // 800
+	Heavy, // 900
+}
 
-FONT_WEIGHT_NORMAL :: Font_Weight(400)
-FONT_WEIGHT_BOLD :: Font_Weight(700)
+/*
+Font weight: named weight, numeric 100–900, or a reactive proc.
+*/
+Font_Weight :: union {
+	Font_Weights,
+	f32,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Weight,
+}
+
 
 /*
 One source file in a font family registration.

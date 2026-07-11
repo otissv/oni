@@ -32,7 +32,7 @@ Font_Face :: struct {
 	path:                 string,
 	size_px:              f32,
 	pixel_size:           i32,
-	weight:               Font_Weight,
+	weight:               f32,
 	style:                Font_Style,
 	fake_bold:            bool,
 	fake_italic:          bool,
@@ -58,7 +58,7 @@ Probed source file belonging to a registered family.
 Font_Family_Source :: struct {
 	path:      string,
 	style:     Font_Style,
-	weight:    Font_Weight,
+	weight:    f32,
 	has_wght:  bool,
 	has_opsz:  bool,
 	num_axes:  u32,
@@ -264,7 +264,7 @@ font_probe_family_source :: proc(desc: Font_Face_Desc) -> (Font_Family_Source, b
 	src := Font_Family_Source {
 		path      = strings.clone(desc.path),
 		style     = desc.style,
-		weight    = desc.weight != 0 ? desc.weight : FONT_WEIGHT_NORMAL,
+		weight    = font_weight_value(desc.weight),
 		wght_axis = -1,
 		opsz_axis = -1,
 	}
@@ -327,7 +327,7 @@ Selects the best family source for the requested style and weight.
 @(private)
 font_match_source :: proc(
 	family: ^Font_Family,
-	weight: Font_Weight,
+	weight: f32,
 	style: Font_Style,
 ) -> (
 	src: ^Font_Family_Source,
@@ -367,7 +367,7 @@ font_match_source :: proc(
 			continue
 		}
 		if best_has_wght do continue
-		score := abs(f32(s.weight) - f32(weight))
+		score := abs(s.weight - weight)
 		if score < best_score {
 			best_score = score
 			best_idx = i
@@ -375,13 +375,12 @@ font_match_source :: proc(
 	}
 
 	if best_idx < 0 {
-		// Fall back to any source.
 		best_idx = 0
 		fake_italic = style == .ITALIC && family.sources[0].style != .ITALIC
 	}
 
 	src = &family.sources[best_idx]
-	fake_bold = !src.has_wght && f32(weight) > f32(src.weight) + 50
+	fake_bold = !src.has_wght && weight > src.weight + 50
 	return src, fake_bold, fake_italic, true
 }
 
@@ -392,7 +391,7 @@ Finds or creates a raster face instance for the given source and parameters.
 font_find_or_create_instance :: proc(
 	src: ^Font_Family_Source,
 	size_px: f32,
-	weight: Font_Weight,
+	weight: f32,
 	style: Font_Style,
 	fake_bold: bool,
 	fake_italic: bool,
@@ -424,7 +423,7 @@ Creates a FreeType/HarfBuzz face instance with optional VF axes and synthesis fl
 font_create_instance :: proc(
 	src: ^Font_Family_Source,
 	size_px: f32,
-	weight: Font_Weight,
+	weight: f32,
 	style: Font_Style,
 	fake_bold: bool,
 	fake_italic: bool,
@@ -453,7 +452,7 @@ font_create_instance :: proc(
 		}
 		// Default all axes to 0 first; set known axes explicitly.
 		if src.has_wght && src.wght_axis >= 0 {
-			w := clamp(f32(weight), src.wght_min, src.wght_max)
+			w := clamp(weight, src.wght_min, src.wght_max)
 			coords[src.wght_axis] = ft_fixed_from_f32(w)
 		}
 		if src.has_opsz && src.opsz_axis >= 0 {

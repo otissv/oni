@@ -5,6 +5,50 @@ import "core:math"
 import sdl "vendor:sdl3"
 
 /*
+Maps a named Font_Weights value to its CSS numeric weight.
+*/
+font_weights_to_f32 :: proc(weight: Font_Weights) -> f32 {
+	switch weight {
+	case .Thin:
+		return 100
+	case .Extra_Light:
+		return 200
+	case .Light:
+		return 300
+	case .Normal:
+		return 400
+	case .Medium:
+		return 500
+	case .Semi_Bold:
+		return 600
+	case .Bold:
+		return 700
+	case .Extra_Bold:
+		return 800
+	case .Heavy:
+		return 900
+	}
+	unreachable()
+}
+
+/*
+Returns the numeric CSS weight from a resolved Font_Weight value.
+
+Nil weight defaults to Normal (400). Unresolved procs panic.
+*/
+font_weight_value :: proc(weight: Font_Weight) -> f32 {
+	switch v in weight {
+	case Font_Weights:
+		return font_weights_to_f32(v)
+	case f32:
+		return v
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Weight:
+		panic("font_weight_value: unresolved Font_Weight")
+	}
+	return font_weights_to_f32(.Normal)
+}
+
+/*
 Resolves a family + weight/style + logical size to a raster face instance.
 
 On artboard space, scales by view zoom and returns a layout_scale to map back.
@@ -13,7 +57,7 @@ font_resolve :: proc(
 	font: Font_Handle,
 	logical_size: f32,
 	space: Draw_Space,
-	weight: Font_Weight = FONT_WEIGHT_NORMAL,
+	weight: Font_Weight = Font_Weights.Normal,
 	style: Font_Style = .NORMAL,
 ) -> (
 	resolved: Font_Face_Handle,
@@ -32,7 +76,7 @@ font_resolve :: proc(
 	}
 
 	raster_size := max(size * zoom, 1)
-	req_weight := weight != 0 ? weight : FONT_WEIGHT_NORMAL
+	req_weight := font_weight_value(weight)
 
 	src, fake_bold, fake_italic, match_ok := font_match_source(family, req_weight, style)
 	if !match_ok do return {}, 1, false

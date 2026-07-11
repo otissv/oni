@@ -25,8 +25,8 @@ build_theme :: proc() -> oni.Theme {
 	inter, inter_ok := oni.Register_Font_Family(
 		"Inter",
 		{
-			{path = INTER_FONT_PATH, style = .NORMAL, weight = oni.FONT_WEIGHT_NORMAL},
-			{path = INTER_ITALIC_FONT_PATH, style = .ITALIC, weight = oni.FONT_WEIGHT_NORMAL},
+			{path = INTER_FONT_PATH, style = .NORMAL, weight = .Normal},
+			{path = INTER_ITALIC_FONT_PATH, style = .ITALIC, weight = .Normal},
 		},
 	)
 	if !inter_ok {

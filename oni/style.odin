@@ -321,7 +321,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	return Resolved_Widget_Style {
 		font = theme.font_body,
 		font_size = theme.font_body.size_px,
-		font_weight = FONT_WEIGHT_NORMAL,
+		font_weight = Font_Weights.Normal,
 		font_style = .NORMAL,
 		color = theme.palette[.FOREGROUND],
 		background = theme.background,
@@ -471,6 +471,9 @@ finalize_resolved_procs :: proc(
 	   direction_ok {
 		config.text_direction = direction
 	}
+	if weight, weight_ok := resolve_font_weight(config.font_weight, state, event); weight_ok {
+		config.font_weight = weight
+	}
 	if overflow, overflow_ok := resolve_overflow(config.overflow_x, state, event); overflow_ok {
 		config.overflow_x = overflow
 	}
@@ -490,6 +493,34 @@ finalize_resolved_procs :: proc(
 	if pos, pos_ok := resolve_texture_pos(config.texture_pos, state, event); pos_ok {
 		config.texture_pos = pos
 	}
+}
+
+/*
+Resolves font weight, evaluating proc callbacks when present.
+*/
+@(private)
+resolve_font_weight :: proc(
+	weight: Font_Weight,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	Font_Weight,
+	bool,
+) {
+	switch v in weight {
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Font_Weight:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_font_weight(v(ui_state, ui_event), state, event)
+	case Font_Weights:
+		return v, true
+	case f32:
+		return v, true
+	}
+	return {}, false
 }
 
 /*
