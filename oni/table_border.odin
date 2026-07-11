@@ -76,17 +76,6 @@ table_border_side_from_node :: proc(
 	return Table_Border_Side{width = width, color = color, source = source, order = order}
 }
 
-table_layout_node_border_color :: proc(
-	node: ^Layout_Node,
-	state: ^$S,
-	event: Widget_Event(S),
-) -> (
-	RGBA,
-	bool,
-) {
-	return to_rgba(node.config.border_color, state, event)
-}
-
 table_layout_cell_ancestors :: proc(
 	layout: ^Layout_State,
 	cell_index: int,
@@ -123,15 +112,11 @@ table_layout_append_side_candidates :: proc(
 	side: u8,
 	source: Table_Border_Source,
 	order: int,
-	state_ptr: ^$S,
-	event: Widget_Event(S),
 	candidates: ^[dynamic]Table_Border_Side,
 ) {
 	if node_index < 0 do return
 	node := &layout.nodes[node_index]
-	color, color_ok := table_layout_node_border_color(node, state_ptr, event)
-	if !color_ok do return
-	segment := table_border_side_from_node(node, side, source, order, color)
+	segment := table_border_side_from_node(node, side, source, order, {})
 	if segment.width > 0 do append(candidates, segment)
 }
 
@@ -141,8 +126,6 @@ table_layout_collect_edge_candidates :: proc(
 	side: u8,
 	neighbor_index: int,
 	neighbor_side: u8,
-	state_ptr: ^$S,
-	event: Widget_Event(S),
 	candidates: ^[dynamic]Table_Border_Side,
 ) {
 	table_index, group_index, row_index := table_layout_cell_ancestors(layout, cell_index)
@@ -153,40 +136,18 @@ table_layout_collect_edge_candidates :: proc(
 		side,
 		.CELL,
 		cell_index,
-		state_ptr,
-		event,
 		candidates,
 	)
-	table_layout_append_side_candidates(
-		layout,
-		row_index,
-		side,
-		.ROW,
-		row_index,
-		state_ptr,
-		event,
-		candidates,
-	)
+	table_layout_append_side_candidates(layout, row_index, side, .ROW, row_index, candidates)
 	table_layout_append_side_candidates(
 		layout,
 		group_index,
 		side,
 		.ROW_GROUP,
 		group_index,
-		state_ptr,
-		event,
 		candidates,
 	)
-	table_layout_append_side_candidates(
-		layout,
-		table_index,
-		side,
-		.TABLE,
-		table_index,
-		state_ptr,
-		event,
-		candidates,
-	)
+	table_layout_append_side_candidates(layout, table_index, side, .TABLE, table_index, candidates)
 
 	if neighbor_index >= 0 {
 		table_layout_append_side_candidates(
@@ -195,11 +156,135 @@ table_layout_collect_edge_candidates :: proc(
 			neighbor_side,
 			.CELL,
 			neighbor_index,
-			state_ptr,
-			event,
 			candidates,
 		)
 	}
+}
+
+table_border_strip_rect :: proc(rect: Rect, side: u8, width: f32) -> Rect {
+	if width <= 0 do return {}
+	switch side {
+	case 't':
+		return {rect.x, rect.y, rect.w, width}
+	case 'b':
+		return {rect.x, rect.y + rect.h - width, rect.w, width}
+	case 'l':
+		return {rect.x, rect.y, width, rect.h}
+	case 'r':
+		return {rect.x + rect.w - width, rect.y, width, rect.h}
+	}
+	return {}
+}
+
+table_layout_resolve_collapsed_borders :: proc(
+	layout: ^Layout_State,
+	tracks: ^Layout_Table_Tracks,
+	node_index: int,
+) -> Layout_Collapsed_Borders {
+	cell := &layout.nodes[node_index]
+	if !layout_node_is_table_cell(cell.kind) do return {}
+	if tracks.border_collapse != .COLLAPSE do return {}
+
+	pos, pos_ok := tracks.cell_positions[node_index]
+	if !pos_ok do return {}
+
+	candidates: [dynamic]Table_Border_Side
+	defer delete(candidates)
+
+	result: Layout_Collapsed_Borders
+	result.active = true
+
+	neighbor_index, neighbor_side := table_layout_find_cell_neighbor(
+		layout,
+		tracks,
+		node_index,
+		pos,
+		't',
+	)
+	clear(&candidates)
+	table_layout_collect_edge_candidates(
+		layout,
+		node_index,
+		't',
+		neighbor_index,
+		neighbor_side,
+		&candidates,
+	)
+	result.borders.t = table_border_pick_winner(candidates[:])
+	result.strips[0] = table_border_strip_rect(cell.rect, 't', result.borders.t.width)
+
+	neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
+		layout,
+		tracks,
+		node_index,
+		pos,
+		'l',
+	)
+	clear(&candidates)
+	table_layout_collect_edge_candidates(
+		layout,
+		node_index,
+		'l',
+		neighbor_index,
+		neighbor_side,
+		&candidates,
+	)
+	result.borders.l = table_border_pick_winner(candidates[:])
+	result.strips[2] = table_border_strip_rect(cell.rect, 'l', result.borders.l.width)
+
+	if pos.row + 1 == len(tracks.rows) {
+		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
+			layout,
+			tracks,
+			node_index,
+			pos,
+			'b',
+		)
+		clear(&candidates)
+		table_layout_collect_edge_candidates(
+			layout,
+			node_index,
+			'b',
+			neighbor_index,
+			neighbor_side,
+			&candidates,
+		)
+		result.borders.b = table_border_pick_winner(candidates[:])
+		result.strips[1] = table_border_strip_rect(cell.rect, 'b', result.borders.b.width)
+	}
+
+	col_count := 0
+	if len(tracks.rows) > 0 {
+		row_index := tracks.rows[pos.row]
+		row := &layout.nodes[row_index]
+		for child_index in row.child_indices {
+			child := &layout.nodes[child_index]
+			if layout_node_is_table_cell(child.kind) do col_count += 1
+		}
+	}
+
+	if pos.col + 1 == col_count {
+		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
+			layout,
+			tracks,
+			node_index,
+			pos,
+			'r',
+		)
+		clear(&candidates)
+		table_layout_collect_edge_candidates(
+			layout,
+			node_index,
+			'r',
+			neighbor_index,
+			neighbor_side,
+			&candidates,
+		)
+		result.borders.r = table_border_pick_winner(candidates[:])
+		result.strips[3] = table_border_strip_rect(cell.rect, 'r', result.borders.r.width)
+	}
+
+	return result
 }
 
 table_layout_border_collapse_for :: proc(layout_id: UI_Id) -> Border_Collapse {
@@ -300,156 +385,47 @@ table_layout_find_cell_neighbor :: proc(
 	return
 }
 
-table_resolve_collapsed_borders :: proc(
-	layout_id: UI_Id,
+table_collapsed_border_color :: proc(
+	segment: Table_Border_Side,
 	state_ptr: ^$S,
 	event: Widget_Event(S),
 ) -> (
-	borders: Table_Cell_Borders,
-	ok: bool,
+	RGBA,
+	bool,
 ) {
-	node_index, found := state.ui.layout.id_to_node[layout_id]
-	if !found do return
-
-	cell := &state.ui.layout.nodes[node_index]
-	if !layout_node_is_table_cell(cell.kind) do return
-
-	table_index := layout_find_table_ancestor_in(&state.ui.layout, node_index)
-	if table_index < 0 do return
-
-	tracks, tracks_ok := state.ui.layout.table_tracks[table_index]
-	if !tracks_ok || tracks.border_collapse != .COLLAPSE do return
-
-	pos, pos_ok := tracks.cell_positions[node_index]
-	if !pos_ok do return
-
-	candidates: [dynamic]Table_Border_Side
-	defer delete(candidates)
-
-	neighbor_index, neighbor_side := table_layout_find_cell_neighbor(
-		&state.ui.layout,
-		&tracks,
-		node_index,
-		pos,
-		't',
-	)
-	clear(&candidates)
-	table_layout_collect_edge_candidates(
-		&state.ui.layout,
-		node_index,
-		't',
-		neighbor_index,
-		neighbor_side,
-		state_ptr,
-		event,
-		&candidates,
-	)
-	borders.t = table_border_pick_winner(candidates[:])
-
-	neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
-		&state.ui.layout,
-		&tracks,
-		node_index,
-		pos,
-		'l',
-	)
-	clear(&candidates)
-	table_layout_collect_edge_candidates(
-		&state.ui.layout,
-		node_index,
-		'l',
-		neighbor_index,
-		neighbor_side,
-		state_ptr,
-		event,
-		&candidates,
-	)
-	borders.l = table_border_pick_winner(candidates[:])
-
-	if pos.row + 1 == len(tracks.rows) {
-		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
-			&state.ui.layout,
-			&tracks,
-			node_index,
-			pos,
-			'b',
-		)
-		clear(&candidates)
-		table_layout_collect_edge_candidates(
-			&state.ui.layout,
-			node_index,
-			'b',
-			neighbor_index,
-			neighbor_side,
-			state_ptr,
-			event,
-			&candidates,
-		)
-		borders.b = table_border_pick_winner(candidates[:])
-	}
-
-	col_count := 0
-	if len(tracks.rows) > 0 {
-		row_index := tracks.rows[pos.row]
-		row := &state.ui.layout.nodes[row_index]
-		for child_index in row.child_indices {
-			child := &state.ui.layout.nodes[child_index]
-			if layout_node_is_table_cell(child.kind) do col_count += 1
-		}
-	}
-
-	if pos.col + 1 == col_count {
-		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
-			&state.ui.layout,
-			&tracks,
-			node_index,
-			pos,
-			'r',
-		)
-		clear(&candidates)
-		table_layout_collect_edge_candidates(
-			&state.ui.layout,
-			node_index,
-			'r',
-			neighbor_index,
-			neighbor_side,
-			state_ptr,
-			event,
-			&candidates,
-		)
-		borders.r = table_border_pick_winner(candidates[:])
-	}
-
-	return borders, true
+	if segment.width <= 0 do return {}, false
+	if segment.order < 0 || segment.order >= len(state.ui.layout.nodes) do return {}, false
+	node := &state.ui.layout.nodes[segment.order]
+	return to_rgba(node.config.border_color, state_ptr, event)
 }
 
-table_draw_border_side :: proc(rect: Rect, side: u8, segment: Table_Border_Side) {
-	if segment.width <= 0 || segment.color.a <= 0 do return
-
-	r: Rect
-	switch side {
-	case 't':
-		r = {rect.x, rect.y, rect.w, segment.width}
-	case 'b':
-		r = {rect.x, rect.y + rect.h - segment.width, rect.w, segment.width}
-	case 'l':
-		r = {rect.x, rect.y, segment.width, rect.h}
-	case 'r':
-		r = {rect.x + rect.w - segment.width, rect.y, segment.width, rect.h}
-	case:
-		return
-	}
-
-	draw_rect(r, segment.color)
+table_draw_border_strip :: proc(strip: Rect, color: RGBA) {
+	if strip.w <= 0 || strip.h <= 0 || color.a <= 0 do return
+	draw_rect(strip, color)
 }
 
-table_draw_collapsed_cell :: proc(rect: Rect, background: RGBA, borders: Table_Cell_Borders) {
+table_draw_collapsed_cell :: proc(
+	rect: Rect,
+	background: RGBA,
+	collapsed: Layout_Collapsed_Borders,
+	state_ptr: ^$S,
+	event: Widget_Event(S),
+) {
+	if !collapsed.active do return
+
 	if background.a > 0 {
 		draw_rect(rect, background)
 	}
 
-	table_draw_border_side(rect, 't', borders.t)
-	table_draw_border_side(rect, 'l', borders.l)
-	table_draw_border_side(rect, 'b', borders.b)
-	table_draw_border_side(rect, 'r', borders.r)
+	sides := [4]Table_Border_Side {
+		collapsed.borders.t,
+		collapsed.borders.b,
+		collapsed.borders.l,
+		collapsed.borders.r,
+	}
+	for side, i in sides {
+		color, color_ok := table_collapsed_border_color(side, state_ptr, event)
+		if !color_ok do continue
+		table_draw_border_strip(collapsed.strips[i], color)
+	}
 }

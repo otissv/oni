@@ -143,7 +143,6 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	frame_state.is_focused = widget_is_focused(key)
 
 	layout_rect := o.ui_layout_rect(layout_id)
-	hit_rect := o.widget_hit_rect(layout_id, style)
 
 	got_focus, lost_focus := widget_handle_interaction(
 		props,
@@ -152,7 +151,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		key,
 		was_focused,
 		style.tabbable,
-		hit_rect,
+		layout_rect,
 		style,
 	)
 
@@ -198,14 +197,5 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		}
 	}
 
-	return o.font_draw_layout_text(
-		laid,
-		layout_rect,
-		rgbaColor,
-		{
-			lines = o.text_decoration_lines(style.text_decoration),
-			style = o.text_decoration_style_kind(style.text_decoration_style),
-			color = deco_color,
-		},
-	)
+	return o.font_draw_layout_text(laid, rgbaColor, deco_color)
 }

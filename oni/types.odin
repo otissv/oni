@@ -411,7 +411,9 @@ Table_Border_Source :: enum {
 }
 
 /*
-One resolved border segment used during collapsed table painting.
+One resolved border segment used during collapsed table layout.
+
+Color is resolved at draw from the winning source node (`order`).
 */
 Table_Border_Side :: struct {
 	width:  f32,

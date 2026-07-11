@@ -300,27 +300,6 @@ pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 }
 
 /*
-Returns the hit-test rect for a widget, honoring fixed width and height.
-*/
-widget_hit_rect :: proc(layout_id: UI_Id, style: Resolved_Widget_Style) -> Rect {
-	rect := ui_layout_rect(layout_id)
-
-	if style.width.kind == .FIXED {
-		rect.w = style.width.value
-	} else if w := length_resolve(style.width, rect.w); w > 0 {
-		rect.w = w
-	}
-
-	if style.height.kind == .FIXED {
-		rect.h = style.height.value
-	} else if h := length_resolve(style.height, rect.h); h > 0 {
-		rect.h = h
-	}
-
-	return rect
-}
-
-/*
 Casts a typed widget state pointer to the generic Widget_Frame_State view.
 */
 to_ui_state :: proc(state: ^$S) -> Widget_Frame_State {

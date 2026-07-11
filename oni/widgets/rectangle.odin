@@ -113,8 +113,6 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	rect = widget_resolve_hit_rect(rect, config)
-
 	got_focus, lost_focus := widget_handle_interaction(
 		props,
 		&frame_state,

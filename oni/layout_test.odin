@@ -363,3 +363,53 @@ ui_shutdown_releases_heap_state :: proc(t: ^testing.T) {
 		t,
 	)
 }
+
+@(test)
+layout_finalize_image_node_owns_object_fit :: proc(t: ^testing.T) {
+	node := Layout_Node {
+		rect = {10, 20, 200, 100},
+		padding = {t = 4, b = 4, l = 8, r = 8},
+		border = {t = 1, b = 1, l = 1, r = 1},
+		image_input = {
+			src = {0, 0, 50, 50},
+			fit = .CONTAIN,
+			pos = {0.5, 0.5, 0, 0},
+			active = true,
+		},
+	}
+
+	layout_finalize_image_node(&node)
+
+	testing.expect(t, node.image.active)
+	expect_close(t, node.image.content.x, 19)
+	expect_close(t, node.image.content.y, 25)
+	expect_close(t, node.image.content.w, 182)
+	expect_close(t, node.image.content.h, 90)
+	expect_close(t, node.image.dst.w, 90)
+	expect_close(t, node.image.dst.h, 90)
+	expect_close(t, node.image.dst.x, 19 + (182 - 90) * 0.5)
+	expect_close(t, node.image.dst.y, 25)
+}
+
+@(test)
+table_border_strip_rect_matches_side_geometry :: proc(t: ^testing.T) {
+	rect := Rect{10, 20, 100, 40}
+
+	top := table_border_strip_rect(rect, 't', 3)
+	expect_close(t, top.x, 10)
+	expect_close(t, top.y, 20)
+	expect_close(t, top.w, 100)
+	expect_close(t, top.h, 3)
+
+	bottom := table_border_strip_rect(rect, 'b', 2)
+	expect_close(t, bottom.y, 58)
+	expect_close(t, bottom.h, 2)
+
+	left := table_border_strip_rect(rect, 'l', 4)
+	expect_close(t, left.w, 4)
+	expect_close(t, left.h, 40)
+
+	right := table_border_strip_rect(rect, 'r', 5)
+	expect_close(t, right.x, 105)
+	expect_close(t, right.w, 5)
+}

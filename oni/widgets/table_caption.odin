@@ -112,8 +112,7 @@ Table_Caption :: proc(props: Table_Caption_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	layout_rect := o.ui_layout_rect(layout_id)
-	rect := widget_resolve_hit_rect(layout_rect, config)
+	rect := o.ui_layout_rect(layout_id)
 
 	got_focus, lost_focus := widget_handle_interaction(
 		props,

@@ -198,6 +198,28 @@ Image :: proc(props: Image_Props) {
 			o.layout_set_measure_size(node, measure)
 		}
 
+		src := props.src
+		if src.w == 0 && src.h == 0 {
+			src_w, src_h := texture_src_size(props)
+			if src_w > 0 && src_h > 0 {
+				src = {0, 0, src_w, src_h}
+			}
+		}
+
+		fit := o.Image_Fit.FILL
+		if resolved_fit, fit_ok := o.resolve_texture_fit(config.texture_fit, &frame_state, event);
+		   fit_ok {
+			fit = resolved_fit
+		}
+
+		pos := o.Resolved_Image_Pos{0.5, 0.5, 0, 0}
+		if resolved_pos, pos_ok := o.resolve_texture_pos(config.texture_pos, &frame_state, event);
+		   pos_ok {
+			pos = resolved_pos
+		}
+
+		o.layout_set_image(node, src, props.dst, fit, pos)
+
 		o.ui_push_style(o.style_child_context(config))
 
 		if child != nil do child(frame_state)
@@ -213,8 +235,7 @@ Image :: proc(props: Image_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	layout_rect := o.ui_layout_rect(layout_id)
-	rect := widget_resolve_hit_rect(layout_rect, config)
+	rect := o.ui_layout_rect(layout_id)
 
 	got_focus, lost_focus := widget_handle_interaction(
 		props,
@@ -263,12 +284,6 @@ Image :: proc(props: Image_Props) {
 		border = resolved_border
 	}
 
-	padding: o.Pd
-	if resolved_padding, padding_ok := o.resolve_padding(config.padding, &frame_state, event);
-	   padding_ok {
-		padding = resolved_padding
-	}
-
 	border_color: o.RGBA
 	if resolved_border_color, border_color_ok := o.to_rgba(
 		config.border_color,
@@ -282,42 +297,6 @@ Image :: proc(props: Image_Props) {
 	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
-
-	src := props.src
-	if src.w == 0 && src.h == 0 {
-		src_w, src_h := texture_src_size(props)
-		if src_w > 0 && src_h > 0 {
-			src = {0, 0, src_w, src_h}
-		}
-	}
-
-	content := o.layout_inner_rect(rect, border, padding)
-	container := content
-
-	if props.dst.w > 0 || props.dst.h > 0 {
-		container = props.dst
-		if container.w == 0 do container.w = content.w
-		if container.h == 0 do container.h = content.h
-		if container.x == 0 && container.y == 0 {
-			container.x = content.x
-			container.y = content.y
-		}
-	}
-
-	fit := o.Image_Fit.FILL
-	if resolved_fit, fit_ok := o.resolve_texture_fit(config.texture_fit, &frame_state, event);
-	   fit_ok {
-		fit = resolved_fit
-	}
-
-	pos := o.Resolved_Image_Pos{0.5, 0.5, 0, 0}
-	if resolved_pos, pos_ok := o.resolve_texture_pos(config.texture_pos, &frame_state, event);
-	   pos_ok {
-		pos = resolved_pos
-	}
-
-	dst := container
-	src, dst = o.texture_fit_rects(src, container, fit, pos)
 
 	tint := o.RGBA{255, 255, 255, 255}
 	if resolved_tint, tint_ok := o.to_rgba(props.tint, &frame_state, event); tint_ok {
@@ -336,7 +315,9 @@ Image :: proc(props: Image_Props) {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	o.draw_texture_fitted(props.texture, src, content, dst, tint, radius)
+	if laid := o.layout_image_result(layout_id); laid != nil {
+		o.draw_texture_fitted(props.texture, laid.src, laid.content, laid.dst, tint, radius)
+	}
 
 	o.Children(child, layout_id, config, frame_state)
 }

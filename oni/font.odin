@@ -257,36 +257,36 @@ snap_logical :: proc(v: f32) -> f32 {
 }
 
 /*
-Decoration parameters for drawing text decorations over shaped lines.
-*/
-Font_Decoration_Draw :: struct {
-	lines: Text_Decoration_Lines,
-	style: Text_Decoration_Style_Kind,
-	color: RGBA,
-}
+Draws layout-owned shaped text using precomputed glyph quads and decoration strokes.
 
-/*
-Draws layout-owned shaped text at the node's rect using precomputed line origins.
-
-Does not reshape, wrap, or align — layout owns those.
+Does not reshape, wrap, align, or position — layout owns those.
 */
 font_draw_layout_text :: proc(
 	laid: ^Layout_Text,
-	rect: Rect,
 	color: RGBA,
-	decoration: Font_Decoration_Draw = {},
+	decoration_color: RGBA = {},
 ) -> Vec2 {
 	if laid == nil || len(laid.lines) == 0 do return {}
 
 	face := font_face_from_handle(laid.font)
 	if face == nil do return {}
 
-	for line, i in laid.lines {
-		origin := laid.line_origins[i]
-		pos := Vec2{rect.x + origin.x, rect.y + origin.y}
-		font_draw_shaped_line(face, laid.font.id, line, pos, color, laid.layout_scale)
-		if decoration.lines != {} {
-			font_draw_decoration(face, line, pos, decoration, laid.layout_scale)
+	if len(laid.glyphs) > 0 {
+		if !font_ensure_glyphs_from_paint(face, laid.font.id, laid.glyphs) do return {}
+		for paint in laid.glyphs {
+			key := Font_Glyph_Key {
+				face_id  = laid.font.id,
+				glyph_id = paint.glyph_id,
+			}
+			entry, ok := state.fonts.glyph_cache[key]
+			if !ok do continue
+			draw_atlas_region(entry.region, paint.dst, color)
+		}
+	}
+
+	if decoration_color.a > 0 {
+		for stroke in laid.decoration_strokes {
+			draw_line(stroke.a, stroke.b, decoration_color, stroke.thickness)
 		}
 	}
 
@@ -294,138 +294,27 @@ font_draw_layout_text :: proc(
 }
 
 /*
-Draws one shaped line of text by blitting cached atlas glyphs at the given position.
-
-Handles LTR and RTL pen advancement and applies layout_scale to metrics.
+Ensures atlas glyphs exist for precomputed layout glyph paint quads.
 */
-font_draw_shaped_line :: proc(
+font_ensure_glyphs_from_paint :: proc(
 	face: ^Font_Face,
 	face_id: Asset_Id,
-	line: Shaped_Line,
-	pos: Vec2,
-	color: RGBA,
-	layout_scale: f32,
-) {
-	if face == nil || len(line.glyphs) == 0 do return
-	if !font_ensure_glyphs(face, face_id, line.glyphs) do return
+	glyphs: []Layout_Glyph_Paint,
+) -> bool {
+	if face == nil || len(glyphs) == 0 do return true
+	if !texture_atlas_init() do return false
 
-	baseline_y := snap_logical(pos.y + face.ascent * layout_scale)
-	pen_x := pos.x
-	if line.direction == .RTL {
-		pen_x = pos.x + line.width * layout_scale
-	}
-
-	for glyph in line.glyphs {
+	for paint in glyphs {
 		key := Font_Glyph_Key {
 			face_id  = face_id,
-			glyph_id = glyph.glyph_id,
+			glyph_id = paint.glyph_id,
 		}
-		entry, ok := state.fonts.glyph_cache[key]
-		if !ok do continue
+		if key in state.fonts.glyph_cache do continue
 
-		glyph_x: f32
-		if line.direction == .RTL {
-			pen_x -= glyph.x_advance * layout_scale
-			glyph_x = pen_x + glyph.x_offset * layout_scale
-		} else {
-			glyph_x = pen_x + glyph.x_offset * layout_scale
-			pen_x += glyph.x_advance * layout_scale
-		}
-
-		glyph_y := baseline_y + glyph.y_offset * layout_scale - entry.bearing_y * layout_scale
-		dst := Rect {
-			x = snap_logical(glyph_x + entry.bearing_x * layout_scale),
-			y = snap_logical(glyph_y),
-			w = entry.region.w * layout_scale,
-			h = entry.region.h * layout_scale,
-		}
-
-		draw_atlas_region(entry.region, dst, color)
+		entry, ok := font_rasterize_glyph(face, key.glyph_id)
+		if !ok do return false
+		state.fonts.glyph_cache[key] = entry
 	}
-}
 
-/*
-Draws underline, line-through, and/or overline for one shaped line.
-*/
-font_draw_decoration :: proc(
-	face: ^Font_Face,
-	line: Shaped_Line,
-	pos: Vec2,
-	decoration: Font_Decoration_Draw,
-	layout_scale: f32,
-) {
-	if face == nil || decoration.lines == {} do return
-
-	width := line.width * layout_scale
-	if width <= 0 do return
-
-	baseline_y := pos.y + face.ascent * layout_scale
-	thickness := max(face.underline_thickness * layout_scale, 1)
-	x0 := pos.x
-	x1 := pos.x + width
-
-	if .UNDERLINE in decoration.lines {
-		y := baseline_y - face.underline_position * layout_scale
-		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
-	}
-	if .LINE_THROUGH in decoration.lines {
-		y := baseline_y - (face.ascent * 0.35) * layout_scale
-		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
-	}
-	if .OVERLINE in decoration.lines {
-		y := pos.y + thickness * 0.5
-		font_draw_decoration_stroke(x0, x1, y, thickness, decoration.style, decoration.color)
-	}
-}
-
-/*
-Draws a single decoration stroke between x0 and x1 at y with the given style.
-*/
-@(private)
-font_draw_decoration_stroke :: proc(
-	x0, x1, y, thickness: f32,
-	style: Text_Decoration_Style_Kind,
-	color: RGBA,
-) {
-	switch style {
-	case .SOLID:
-		draw_line({x0, y}, {x1, y}, color, thickness)
-	case .DOUBLE:
-		gap := thickness * 1.5
-		draw_line({x0, y - gap * 0.5}, {x1, y - gap * 0.5}, color, thickness)
-		draw_line({x0, y + gap * 0.5}, {x1, y + gap * 0.5}, color, thickness)
-	case .DOTTED:
-		dot := max(thickness, 1)
-		gap := dot
-		x := x0
-		for x < x1 {
-			end := min(x + dot, x1)
-			draw_line({x, y}, {end, y}, color, thickness)
-			x += dot + gap
-		}
-	case .DASHED:
-		dash := thickness * 3
-		gap := thickness * 2
-		x := x0
-		for x < x1 {
-			end := min(x + dash, x1)
-			draw_line({x, y}, {end, y}, color, thickness)
-			x += dash + gap
-		}
-	case .WAVY:
-		amp := thickness
-		period := max(thickness * 2.5, 4)
-		x := x0
-		prev := Vec2{x0, y}
-		up := true
-		for x < x1 {
-			next_x := min(x + period * 0.5, x1)
-			next_y := y + (up ? -amp : amp)
-			next := Vec2{next_x, next_y}
-			draw_line(prev, next, color, thickness)
-			prev = next
-			x = next_x
-			up = !up
-		}
-	}
+	return true
 }

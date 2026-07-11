@@ -42,18 +42,6 @@ widget_refresh_merged :: proc(
 }
 
 @(private)
-widget_resolve_hit_rect :: proc(rect: o.Rect, config: o.Resolved_Widget_Config) -> o.Rect {
-	out := rect
-	if out.w == 0 {
-		if w := o.length_resolve(config.width, 0); w > 0 do out.w = w
-	}
-	if out.h == 0 {
-		if h := o.length_resolve(config.height, 0); h > 0 do out.h = h
-	}
-	return out
-}
-
-@(private)
 widget_lifecycle_handlers :: proc(props: $P, $S: typeid) -> Widget_Lifecycle_Handlers(S) {
 	return {
 		unmount = props.unmount,

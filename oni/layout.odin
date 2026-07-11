@@ -10,33 +10,84 @@ Layout_Measure :: struct {
 }
 
 /*
-Layout-owned shaped text: wrap, line boxes, and draw origins relative to node.rect.
+One layout-owned glyph paint quad in absolute logical coordinates.
+*/
+Layout_Glyph_Paint :: struct {
+	glyph_id: u32,
+	dst:      Rect,
+}
+
+/*
+One layout-owned decoration stroke segment in absolute logical coordinates.
+*/
+Layout_Decoration_Stroke :: struct {
+	a, b:      Vec2,
+	thickness: f32,
+}
+
+/*
+Layout-owned shaped text: wrap, line boxes, glyph quads, and decoration strokes.
 */
 Layout_Text :: struct {
-	lines:         []Shaped_Line,
-	line_origins:  []Vec2,
-	font:          Font_Face_Handle,
-	layout_scale:  f32,
-	wrap_w:        f32,
-	line_height:   f32,
-	size:          Vec2,
+	lines:               []Shaped_Line,
+	line_origins:        []Vec2,
+	glyphs:              []Layout_Glyph_Paint,
+	decoration_strokes:  []Layout_Decoration_Stroke,
+	font:                Font_Face_Handle,
+	layout_scale:        f32,
+	wrap_w:              f32,
+	line_height:         f32,
+	size:                Vec2,
+}
+
+/*
+Author image inputs captured during the layout pass for fit finalization.
+*/
+Layout_Image_Input :: struct {
+	src:    Rect,
+	dst:    Rect,
+	fit:    Image_Fit,
+	pos:    Resolved_Image_Pos,
+	active: bool,
+}
+
+/*
+Layout-owned image paint geometry after object-fit and content insets.
+*/
+Layout_Image :: struct {
+	content: Rect,
+	src:     Rect,
+	dst:     Rect,
+	active:  bool,
+}
+
+/*
+Layout-owned collapsed table border winners and paint strip rects (t,b,l,r).
+*/
+Layout_Collapsed_Borders :: struct {
+	borders: Table_Cell_Borders,
+	strips:  [4]Rect,
+	active:  bool,
 }
 
 /*
 One node in the flex layout tree with resolved style, geometry, and children.
 */
 Layout_Node :: struct {
-	ui_id:         UI_Id,
-	kind:          Widget_Kind,
-	config:        Resolved_Widget_Style,
-	padding:       Pd,
-	border:        Bd,
-	desired:       Vec2,
-	rect:          Rect,
-	parent:        int,
-	child_indices: [dynamic]int,
-	measure:       Layout_Measure,
-	text:          Layout_Text,
+	ui_id:             UI_Id,
+	kind:              Widget_Kind,
+	config:            Resolved_Widget_Style,
+	padding:           Pd,
+	border:            Bd,
+	desired:           Vec2,
+	rect:              Rect,
+	parent:            int,
+	child_indices:     [dynamic]int,
+	measure:           Layout_Measure,
+	text:              Layout_Text,
+	image_input:       Layout_Image_Input,
+	image:             Layout_Image,
+	collapsed_borders: Layout_Collapsed_Borders,
 }
 
 /*
@@ -380,7 +431,7 @@ layout_node_has_text :: proc(node: ^Layout_Node) -> bool {
 }
 
 /*
-Frees shaped lines and origins owned by a layout node.
+Frees shaped lines, origins, glyph quads, and decoration strokes owned by a layout node.
 */
 layout_text_release :: proc(node: ^Layout_Node) {
 	if node == nil do return
@@ -388,6 +439,8 @@ layout_text_release :: proc(node: ^Layout_Node) {
 		font_destroy_shaped_lines(node.text.lines)
 	}
 	delete(node.text.line_origins)
+	delete(node.text.glyphs)
+	delete(node.text.decoration_strokes)
 	node.text = {}
 }
 
@@ -445,13 +498,15 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	size := font_measure_lines(face, lines, line_height, layout_scale)
 
 	node.text = {
-		lines        = lines,
-		line_origins = nil,
-		font         = resolved_font,
-		layout_scale = layout_scale,
-		wrap_w       = wrap_w,
-		line_height  = line_height,
-		size         = size,
+		lines               = lines,
+		line_origins        = nil,
+		glyphs              = nil,
+		decoration_strokes  = nil,
+		font                = resolved_font,
+		layout_scale        = layout_scale,
+		wrap_w              = wrap_w,
+		line_height         = line_height,
+		size                = size,
 	}
 }
 
@@ -489,10 +544,180 @@ layout_text_position_lines :: proc(node: ^Layout_Node) {
 }
 
 /*
+Builds absolute glyph paint quads from shaped lines and line origins.
+*/
+layout_text_position_glyphs :: proc(node: ^Layout_Node) {
+	delete(node.text.glyphs)
+	node.text.glyphs = nil
+
+	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
+
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return
+
+	face_id := node.text.font.id
+	scale := node.text.layout_scale
+	glyphs: [dynamic]Layout_Glyph_Paint
+
+	for line, i in node.text.lines {
+		if len(line.glyphs) == 0 do continue
+		if !font_ensure_glyphs(face, face_id, line.glyphs) do continue
+
+		origin := node.text.line_origins[i]
+		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+		baseline_y := snap_logical(pos.y + face.ascent * scale)
+		pen_x := pos.x
+		if line.direction == .RTL {
+			pen_x = pos.x + line.width * scale
+		}
+
+		for glyph in line.glyphs {
+			key := Font_Glyph_Key {
+				face_id  = face_id,
+				glyph_id = glyph.glyph_id,
+			}
+			entry, ok := state.fonts.glyph_cache[key]
+			if !ok do continue
+
+			glyph_x: f32
+			if line.direction == .RTL {
+				pen_x -= glyph.x_advance * scale
+				glyph_x = pen_x + glyph.x_offset * scale
+			} else {
+				glyph_x = pen_x + glyph.x_offset * scale
+				pen_x += glyph.x_advance * scale
+			}
+
+			glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
+			append(
+				&glyphs,
+				Layout_Glyph_Paint {
+					glyph_id = glyph.glyph_id,
+					dst = {
+						x = snap_logical(glyph_x + entry.bearing_x * scale),
+						y = snap_logical(glyph_y),
+						w = entry.region.w * scale,
+						h = entry.region.h * scale,
+					},
+				},
+			)
+		}
+	}
+
+	if len(glyphs) == 0 {
+		delete(glyphs)
+		return
+	}
+	node.text.glyphs = glyphs[:]
+}
+
+/*
+Expands one decoration stroke style into layout-owned line segments.
+*/
+layout_text_append_decoration_stroke :: proc(
+	strokes: ^[dynamic]Layout_Decoration_Stroke,
+	x0, x1, y, thickness: f32,
+	style: Text_Decoration_Style_Kind,
+) {
+	switch style {
+	case .SOLID:
+		append(strokes, Layout_Decoration_Stroke{{x0, y}, {x1, y}, thickness})
+	case .DOUBLE:
+		gap := thickness * 1.5
+		append(strokes, Layout_Decoration_Stroke{{x0, y - gap * 0.5}, {x1, y - gap * 0.5}, thickness})
+		append(strokes, Layout_Decoration_Stroke{{x0, y + gap * 0.5}, {x1, y + gap * 0.5}, thickness})
+	case .DOTTED:
+		dot := max(thickness, 1)
+		gap := dot
+		x := x0
+		for x < x1 {
+			end := min(x + dot, x1)
+			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness})
+			x += dot + gap
+		}
+	case .DASHED:
+		dash := thickness * 3
+		gap := thickness * 2
+		x := x0
+		for x < x1 {
+			end := min(x + dash, x1)
+			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness})
+			x += dash + gap
+		}
+	case .WAVY:
+		amp := thickness
+		period := max(thickness * 2.5, 4)
+		x := x0
+		prev := Vec2{x0, y}
+		up := true
+		for x < x1 {
+			next_x := min(x + period * 0.5, x1)
+			next_y := y + (up ? -amp : amp)
+			next := Vec2{next_x, next_y}
+			append(strokes, Layout_Decoration_Stroke{prev, next, thickness})
+			prev = next
+			x = next_x
+			up = !up
+		}
+	}
+}
+
+/*
+Builds absolute decoration stroke segments from text style and line origins.
+*/
+layout_text_position_decorations :: proc(node: ^Layout_Node) {
+	delete(node.text.decoration_strokes)
+	node.text.decoration_strokes = nil
+
+	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
+
+	lines := text_decoration_lines(node.config.text_decoration)
+	if lines == {} do return
+
+	style := text_decoration_style_kind(node.config.text_decoration_style)
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return
+
+	scale := node.text.layout_scale
+	strokes: [dynamic]Layout_Decoration_Stroke
+
+	for line, i in node.text.lines {
+		width := line.width * scale
+		if width <= 0 do continue
+
+		origin := node.text.line_origins[i]
+		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+		baseline_y := pos.y + face.ascent * scale
+		thickness := max(face.underline_thickness * scale, 1)
+		x0 := pos.x
+		x1 := pos.x + width
+
+		if .UNDERLINE in lines {
+			y := baseline_y - face.underline_position * scale
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+		}
+		if .LINE_THROUGH in lines {
+			y := baseline_y - (face.ascent * 0.35) * scale
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+		}
+		if .OVERLINE in lines {
+			y := pos.y + thickness * 0.5
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+		}
+	}
+
+	if len(strokes) == 0 {
+		delete(strokes)
+		return
+	}
+	node.text.decoration_strokes = strokes[:]
+}
+
+/*
 Builds or refreshes layout-owned text for the node's allocated rect.
 
 Uses the allocated width as wrap width when the author did not set one.
-Updates auto height from the shaped result.
+Updates auto height from the shaped result and precomputes paint geometry.
 */
 layout_finalize_text_node :: proc(node: ^Layout_Node) {
 	if !layout_node_has_text(node) do return
@@ -507,6 +732,62 @@ layout_finalize_text_node :: proc(node: ^Layout_Node) {
 	}
 
 	layout_text_position_lines(node)
+	layout_text_position_glyphs(node)
+	layout_text_position_decorations(node)
+}
+
+/*
+Attaches author image source/fit inputs for layout-owned object-fit finalization.
+*/
+layout_set_image :: proc(
+	node: ^Layout_Node,
+	src, dst: Rect,
+	fit: Image_Fit,
+	pos: Resolved_Image_Pos,
+) {
+	node.image_input = {src = src, dst = dst, fit = fit, pos = pos, active = true}
+	node.image = {}
+}
+
+/*
+Computes content/src/dst paint rects for an image node after its layout rect is set.
+*/
+layout_finalize_image_node :: proc(node: ^Layout_Node) {
+	node.image = {}
+	if !node.image_input.active do return
+
+	content := layout_inner_rect(node.rect, node.border, node.padding)
+	container := content
+
+	props_dst := node.image_input.dst
+	if props_dst.w > 0 || props_dst.h > 0 {
+		container = props_dst
+		if container.w == 0 do container.w = content.w
+		if container.h == 0 do container.h = content.h
+		if container.x == 0 && container.y == 0 {
+			container.x = content.x
+			container.y = content.y
+		}
+	}
+
+	src := node.image_input.src
+	dst := container
+	src, dst = texture_fit_rects(src, container, node.image_input.fit, node.image_input.pos)
+
+	node.image = {
+		content = content,
+		src     = src,
+		dst     = dst,
+		active  = true,
+	}
+}
+
+/*
+Finalizes all layout-owned paint geometry for a node after its rect is assigned.
+*/
+layout_finalize_node :: proc(node: ^Layout_Node) {
+	layout_finalize_text_node(node)
+	layout_finalize_image_node(node)
 }
 
 /*
@@ -516,6 +797,28 @@ layout_text_result :: proc(id: UI_Id) -> ^Layout_Text {
 	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
 		node := &state.ui.layout.nodes[node_index]
 		if len(node.text.lines) > 0 do return &node.text
+	}
+	return nil
+}
+
+/*
+Returns layout-owned image paint geometry for a UI id after the layout pass.
+*/
+layout_image_result :: proc(id: UI_Id) -> ^Layout_Image {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		node := &state.ui.layout.nodes[node_index]
+		if node.image.active do return &node.image
+	}
+	return nil
+}
+
+/*
+Returns layout-owned collapsed border geometry for a UI id after the layout pass.
+*/
+layout_collapsed_borders_result :: proc(id: UI_Id) -> ^Layout_Collapsed_Borders {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		node := &state.ui.layout.nodes[node_index]
+		if node.collapsed_borders.active do return &node.collapsed_borders
 	}
 	return nil
 }
@@ -1048,6 +1351,8 @@ layout_table_register_border_collapse :: proc(ui_id: UI_Id, mode: Border_Collaps
 
 /*
 Builds the table cell grid after rows and cells have been positioned.
+
+Also resolves collapsed border winners and paint strip rects for each cell.
 */
 layout_table_finalize_in :: proc(layout: ^Layout_State, table_index: int) {
 	table := &layout.nodes[table_index]
@@ -1078,6 +1383,19 @@ layout_table_finalize_in :: proc(layout: ^Layout_State, table_index: int) {
 				child := &layout.nodes[child_index]
 				if !layout_node_is_table_cell(child.kind) do continue
 				child.border = {}
+			}
+		}
+
+		for row_node_index in tracks.rows {
+			row := &layout.nodes[row_node_index]
+			for child_index in row.child_indices {
+				child := &layout.nodes[child_index]
+				if !layout_node_is_table_cell(child.kind) do continue
+				child.collapsed_borders = table_layout_resolve_collapsed_borders(
+					layout,
+					&tracks,
+					child_index,
+				)
 			}
 		}
 	}
@@ -1358,7 +1676,7 @@ layout_position_child_rect :: proc(
 		w = size.x,
 		h = size.y,
 	}
-	layout_finalize_text_node(child)
+	layout_finalize_node(child)
 
 	if len(child.child_indices) > 0 {
 		layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
@@ -1851,7 +2169,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			w = size.x,
 			h = size.y,
 		}
-		layout_finalize_text_node(child)
+		layout_finalize_node(child)
 
 		if len(child.child_indices) > 0 {
 			layout_position_children(
@@ -1899,7 +2217,7 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 		w = size.x,
 		h = size.y,
 	}
-	layout_finalize_text_node(node)
+	layout_finalize_node(node)
 
 	if len(node.child_indices) > 0 {
 		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))

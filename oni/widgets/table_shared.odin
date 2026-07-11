@@ -24,12 +24,8 @@ table_widget_draw_chrome :: proc(
 	if collapse == .COLLAPSE {
 		#partial switch kind {
 		case .TABLE_CELL, .TABLE_HEADING:
-			if collapsed, collapsed_ok := o.table_resolve_collapsed_borders(
-				layout_id,
-				frame_state,
-				event,
-			); collapsed_ok {
-				o.table_draw_collapsed_cell(rect, background, collapsed)
+			if collapsed := o.layout_collapsed_borders_result(layout_id); collapsed != nil {
+				o.table_draw_collapsed_cell(rect, background, collapsed^, frame_state, event)
 				return
 			}
 		case .TABLE, .TABLE_ROW, .TABLE_BODY, .TABLE_HEAD, .TABLE_FOOT:
