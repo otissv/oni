@@ -138,14 +138,7 @@ table_layout_collect_edge_candidates :: proc(
 	_ = pos
 	_ = col_count
 
-	table_layout_append_side_candidates(
-		layout,
-		cell_index,
-		side,
-		.CELL,
-		cell_index,
-		candidates,
-	)
+	table_layout_append_side_candidates(layout, cell_index, side, .CELL, cell_index, candidates)
 	// Row and row-group borders compete on every cell edge they touch, so an
 	// inherited row/group border still forms internal column/row grid lines.
 	table_layout_append_side_candidates(layout, row_index, side, .ROW, row_index, candidates)
@@ -317,10 +310,7 @@ table_layout_resolve_collapsed_borders :: proc(
 	return result
 }
 
-table_layout_borders_collapsed_for_widget :: proc(
-	layout_id: UI_Id,
-	kind: Widget_Kind,
-) -> bool {
+table_layout_borders_collapsed_for_widget :: proc(layout_id: UI_Id, kind: Widget_Kind) -> bool {
 	if kind == .TABLE_CAPTION do return false
 
 	node_index, ok := state.ui.layout.id_to_node[layout_id]

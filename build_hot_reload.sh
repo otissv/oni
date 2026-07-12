@@ -205,11 +205,11 @@ start_watch() {
 		fi
 	fi
 
-	echo "Watching ${ONI_DIR} and app/ for changes (save to auto-rebuild)"
+	echo "Watching ${ONI_DIR}, colors/, and app/ for changes (save to auto-rebuild)"
 	(
 		while inotifywait \
 			-e close_write,move_self,create \
-			-r "${ONI_DIR}" app \
+			-r "${ONI_DIR}" colors app \
 			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
 			--format '%w%f' > /dev/null; do
 			if build_app; then
@@ -241,7 +241,7 @@ run)
 	start_app
 	start_watch || true
 	echo ""
-	echo "Save ${ONI_DIR} or app/ sources to auto-rebuild. F5/F6 reload in the app window."
+	echo "Save ${ONI_DIR}, colors/, or app/ sources to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 restart)
@@ -252,7 +252,7 @@ restart)
 	start_app
 	start_watch || true
 	echo ""
-	echo "Restarted. Save ${ONI_DIR}/engine or app/ sources to auto-rebuild. F5/F6 reload in the app window."
+	echo "Restarted. Save ${ONI_DIR}, colors/, or app/ sources to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 build)

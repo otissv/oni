@@ -117,7 +117,10 @@ resolve_cfg_f32 :: proc(field: Cfg(Style_F32), parent: f32, theme_default: f32) 
 			return parent
 		case f32:
 			return v
-		case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_F32:
+		case proc(
+			     frame_state: Widget_Frame_State,
+			     event: Widget_Event(Widget_Frame_State),
+		     ) -> Style_F32:
 			panic("resolve_cfg_f32: unresolved Style_F32 proc")
 		}
 	}
@@ -135,7 +138,10 @@ resolve_cfg_bool :: proc(field: Cfg(Style_Bool), parent: bool, theme_default: bo
 			return parent
 		case bool:
 			return v
-		case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Bool:
+		case proc(
+			     frame_state: Widget_Frame_State,
+			     event: Widget_Event(Widget_Frame_State),
+		     ) -> Style_Bool:
 			panic("resolve_cfg_bool: unresolved Style_Bool proc")
 		}
 	}
@@ -157,7 +163,10 @@ resolve_cfg_font :: proc(
 			return parent
 		case Font_Handle:
 			return v
-		case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Font:
+		case proc(
+			     frame_state: Widget_Frame_State,
+			     event: Widget_Event(Widget_Frame_State),
+		     ) -> Style_Font:
 			panic("resolve_cfg_font: unresolved Style_Font proc")
 		}
 	}
@@ -179,7 +188,10 @@ resolve_cfg_space :: proc(
 			return parent
 		case Draw_Space:
 			return v
-		case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_Space:
+		case proc(
+			     frame_state: Widget_Frame_State,
+			     event: Widget_Event(Widget_Frame_State),
+		     ) -> Style_Space:
 			panic("resolve_cfg_space: unresolved Style_Space proc")
 		}
 	}
@@ -911,7 +923,11 @@ resolve_widget_config :: proc(
 
 	style := Resolved_Widget_Style {
 		align                 = resolve_cfg(Text_Align, decl.align, parent.align, theme.align),
-		auto_focus            = resolve_cfg_bool(decl.auto_focus, parent.auto_focus, theme.auto_focus),
+		auto_focus            = resolve_cfg_bool(
+			decl.auto_focus,
+			parent.auto_focus,
+			theme.auto_focus,
+		),
 		background            = resolve_cfg_colors(
 			decl.background,
 			parent.background,

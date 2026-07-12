@@ -409,10 +409,7 @@ draw_texture_fitted :: proc(
 	local_uvs: [4]Vec2
 	for i in 0 ..< 4 {
 		logical := draw_space_to_logical(corners_screen[i])
-		local_uvs[i] = {
-			(logical.x - content.x) / content.w,
-			(logical.y - content.y) / content.h,
-		}
+		local_uvs[i] = {(logical.x - content.x) / content.w, (logical.y - content.y) / content.h}
 	}
 
 	has_radius := radius.tl > 0 || radius.tr > 0 || radius.br > 0 || radius.bl > 0

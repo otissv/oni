@@ -7,6 +7,7 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU, with a hot-reload ho
 | Path | Role |
 |------|------|
 | `main.odin` | Hot-reload host; loads `build/hot_reload/app.so` |
+| `colors/` | Standalone color types, Tailwind palette, and conversions |
 | `oni/` | Engine: GPU, layout, draw, fonts, UI frame, hot-reload lifecycle |
 | `oni/widgets/` | Built-in widgets (`Button`, `Text`, `Rectangle`, `Table`, …) |
 | `oni/set/` | Style helpers that wrap values in `Cfg(T)` |
@@ -20,7 +21,7 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU, with a hot-reload ho
 ## Build & run
 
 ```bash
-./build_hot_reload.sh run      # build app.so + host, start, watch oni/ and app/
+./build_hot_reload.sh run      # build app.so + host, start, watch oni/, colors/, and app/
 ./build_hot_reload.sh build    # rebuild app.so only (hot-reloads if running)
 ./build_hot_reload.sh restart  # fresh window
 ./build_hot_reload.sh stop

@@ -44,7 +44,10 @@ font_weight_value :: proc(weight: Font_Weight) -> f32 {
 		return font_weights_to_f32(v)
 	case f32:
 		return v
-	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Weight:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Font_Weight:
 		panic("font_weight_value: unresolved Font_Weight")
 	}
 	return font_weights_to_f32(.Normal)
@@ -61,7 +64,10 @@ font_style_kind :: proc(style: Font_Style) -> Font_Styles {
 		panic("font_style_kind: unresolved Inherit")
 	case Font_Styles:
 		return v
-	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Font_Style:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Font_Style:
 		panic("font_style_kind: unresolved Font_Style")
 	}
 	return .NORMAL

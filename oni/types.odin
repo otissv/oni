@@ -811,14 +811,6 @@ Rect :: struct {
 	x, y, w, h: f32,
 }
 
-/*
-8-bit per-channel sRGB color with premultiplied-friendly alpha.
-*/
-RGBA :: struct {
-	r, g, b, a: u8,
-}
-
-
 Draw_Space :: enum {
 	ARTBOARD,
 	SCREEN,
