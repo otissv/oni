@@ -7,7 +7,7 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU, with a hot-reload ho
 | Path | Role |
 |------|------|
 | `main.odin` | Hot-reload host; loads `build/hot_reload/app.so` |
-| `colors/` | Standalone color types, Tailwind palette, and conversions |
+| `colors/` | Standalone color types, Tailwind palette, and conversions (own README.md) |
 | `oni/` | Engine: GPU, layout, draw, fonts, UI frame, hot-reload lifecycle |
 | `oni/widgets/` | Built-in widgets (`Button`, `Text`, `Rectangle`, `Table`, …) |
 | `oni/set/` | Style helpers that wrap values in `Cfg(T)` |
@@ -17,6 +17,7 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU, with a hot-reload ho
 | `tengu/` | Animation library (own README / STABILITY.md) |
 | `assets/` | Runtime assets (textures, fonts) |
 | `build_hot_reload.sh` | Build, run, watch, stop |
+| `test_all.sh` | Package test runner (debug + leak checks) |
 
 ## Build & run
 
@@ -31,7 +32,20 @@ Flags used by the build: `-vet -strict-style -debug`. Needs `odin`, `glslc`, SDL
 
 In-app: **F5** force reload, **F6** force restart.
 
-Tests (when present): `odin test` on the relevant package (e.g. `oni`, `tengu`).
+## Tests
+
+```bash
+./test_all.sh                  # all packages: colors, oni, oni/widgets, tengu
+./test_all.sh colors tengu     # subset
+./test_all.sh --asan           # AddressSanitizer (+ leak detection)
+./test_all.sh --valgrind       # re-run kept binaries under Valgrind
+./test_all.sh --report-memory  # always print per-test memory usage
+odin test oni -debug           # single package (manual)
+```
+
+Always enabled by `test_all.sh`: `-vet -strict-style -debug -keep-executable`, plus Odin tracking-allocator defines that report leaks and fail the suite on bad memory. Binaries land under `build/test/` (gitignored). `oni` / `oni/widgets` link FreeType + HarfBuzz.
+
+Tests live as `*_test.odin` next to the package under test. Prefer `./test_all.sh` over ad-hoc `odin test` so leak checks stay consistent.
 
 ## Architecture (do not reinvent)
 

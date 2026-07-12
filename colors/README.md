@@ -1,6 +1,6 @@
 # Colors
 
-Standalone Odin color package. Depends only on `core:math` — no Oni dependency.
+Standalone Odin color package. Depends only on `core:math` — no other dependencies.
 
 Provides sRGB `RGBA`, a Tailwind-style named palette, alternate color spaces (hex, HSL, HWB, LCH, OKLCH), and conversions to byte and normalized float channels.
 
