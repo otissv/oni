@@ -104,6 +104,7 @@ Initializes the FreeType library and glyph cache on first use.
 Returns false if FT_Init_FreeType fails.
 */
 font_init :: proc() -> bool {
+	if test_hook_font_init_fail do return false
 	if state.fonts.library != nil do return true
 
 	if !ft_ok(Init_FreeType(&state.fonts.library)) {

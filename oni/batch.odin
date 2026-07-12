@@ -98,6 +98,15 @@ batch_create_gpu_buffers :: proc() -> bool {
 		{usage = {.INDEX}, size = index_bytes},
 	)
 
+	if test_hook_batch_fail_vertex_buffer && state.gpu_state.batch.vertex_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
+		state.gpu_state.batch.vertex_buffer = nil
+	}
+	if test_hook_batch_fail_index_buffer && state.gpu_state.batch.index_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.index_buffer)
+		state.gpu_state.batch.index_buffer = nil
+	}
+
 	if state.gpu_state.batch.vertex_buffer == nil || state.gpu_state.batch.index_buffer == nil {
 		fmt.eprintln("SDL_CreateGPUBuffer failed:", sdl.GetError())
 		if state.gpu_state.batch.vertex_buffer != nil do sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
@@ -415,6 +424,10 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 
 	transfer_size := vertex_bytes + index_bytes
 	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = transfer_size})
+	if test_hook_batch_upload_fail_transfer && transfer != nil {
+		sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+		transfer = nil
+	}
 	if transfer == nil {
 		fmt.eprintln("SDL_CreateGPUTransferBuffer failed:", sdl.GetError())
 		return false
@@ -422,6 +435,12 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
 
 	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+	if test_hook_batch_upload_fail_map {
+		if mapped != nil {
+			sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+		}
+		mapped = nil
+	}
 	if mapped == nil {
 		fmt.eprintln("SDL_MapGPUTransferBuffer failed:", sdl.GetError())
 		return false

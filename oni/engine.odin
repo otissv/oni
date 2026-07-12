@@ -25,17 +25,26 @@ dpi_sync :: proc() {
 	if state.window == nil do return
 
 	log_w, log_h: i32
-	if !sdl.GetWindowSize(state.window, &log_w, &log_h) {
+	if test_hook_dpi_sync_fail_get_size || !sdl.GetWindowSize(state.window, &log_w, &log_h) {
 		fmt.eprintln("SDL_GetWindowSize failed:", sdl.GetError())
 		state.can_render = false
 		return
 	}
 
 	px_w, px_h: c.int
-	if !sdl.GetWindowSizeInPixels(state.window, &px_w, &px_h) {
+	if test_hook_dpi_sync_fail_get_pixels ||
+	   !sdl.GetWindowSizeInPixels(state.window, &px_w, &px_h) {
 		fmt.eprintln("SDL_GetWindowSizeInPixels failed:", sdl.GetError())
 		state.can_render = false
 		return
+	}
+
+	if test_hook_dpi_sync_force_logical_w_zero {
+		log_w = 0
+	}
+	if test_hook_dpi_sync_force_drawable_zero {
+		px_w = 0
+		px_h = 0
 	}
 
 	state.dpi.logical_w = log_w
@@ -124,7 +133,7 @@ Returns false if the window is nil or SDL rejects the request.
 set_fullscreen :: proc(fullscreen: bool) -> bool {
 	if state.window == nil do return false
 
-	if !sdl.SetWindowFullscreen(state.window, fullscreen) {
+	if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, fullscreen) {
 		fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
 		return false
 	}
@@ -322,11 +331,16 @@ Catches keys missed by KEY_DOWN when focus or timing differs; updates
 reload_keys_prev for the next frame.
 */
 poll_reload_keys :: proc() {
-	kb := sdl.GetKeyboardState(nil)
-	if kb == nil do return
-
-	f5_down := kb[int(sdl.Scancode.F5)]
-	f6_down := kb[int(sdl.Scancode.F6)]
+	f5_down, f6_down: bool
+	if test_hook_keyboard_override {
+		f5_down = test_hook_keyboard_f5
+		f6_down = test_hook_keyboard_f6
+	} else {
+		kb := sdl.GetKeyboardState(nil)
+		if kb == nil do return
+		f5_down = kb[int(sdl.Scancode.F5)]
+		f6_down = kb[int(sdl.Scancode.F6)]
+	}
 
 	if f5_down && !state.reload_keys_prev.f5 {
 		state.force_reload = true
@@ -371,7 +385,7 @@ Claims the window for the GPU, sets swapchain and minimum size, and opens
 the first available gamepad. On failure, tears down partial resources.
 */
 create_window :: proc(config: Window_Config) -> bool {
-	if !sdl.Init({.VIDEO, .GAMEPAD}) {
+	if test_hook_create_window_fail == .Init || !sdl.Init({.VIDEO, .GAMEPAD}) {
 		fmt.eprintln("SDL_Init failed:", sdl.GetError())
 		return false
 	}
@@ -382,6 +396,10 @@ create_window :: proc(config: Window_Config) -> bool {
 		config.height,
 		sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY,
 	)
+	if test_hook_create_window_fail == .Window && state.window != nil {
+		sdl.DestroyWindow(state.window)
+		state.window = nil
+	}
 	if state.window == nil {
 		fmt.eprintln("SDL_CreateWindow failed:", sdl.GetError())
 		sdl.Quit()
@@ -389,6 +407,10 @@ create_window :: proc(config: Window_Config) -> bool {
 	}
 
 	state.gpu = sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	if test_hook_create_window_fail == .Gpu && state.gpu != nil {
+		sdl.DestroyGPUDevice(state.gpu)
+		state.gpu = nil
+	}
 	if state.gpu == nil {
 		fmt.eprintln("SDL_CreateGPUDevice failed:", sdl.GetError())
 		sdl.DestroyWindow(state.window)
@@ -397,7 +419,11 @@ create_window :: proc(config: Window_Config) -> bool {
 		return false
 	}
 
-	if !sdl.ClaimWindowForGPUDevice(state.gpu, state.window) {
+	claimed := sdl.ClaimWindowForGPUDevice(state.gpu, state.window)
+	if test_hook_create_window_fail == .Claim {
+		claimed = false
+	}
+	if !claimed {
 		fmt.eprintln("SDL_ClaimWindowForGPUDevice failed:", sdl.GetError())
 		sdl.DestroyGPUDevice(state.gpu)
 		state.gpu = nil
@@ -407,7 +433,11 @@ create_window :: proc(config: Window_Config) -> bool {
 		return false
 	}
 
-	if !sdl.SetGPUSwapchainParameters(state.gpu, state.window, .SDR, .VSYNC) {
+	swapchain_ok := sdl.SetGPUSwapchainParameters(state.gpu, state.window, .SDR, .VSYNC)
+	if test_hook_create_window_fail == .Swapchain {
+		swapchain_ok = false
+	}
+	if !swapchain_ok {
 		fmt.eprintln("SDL_SetGPUSwapchainParameters failed:", sdl.GetError())
 		sdl.DestroyGPUDevice(state.gpu)
 		state.gpu = nil

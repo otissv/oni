@@ -17,22 +17,38 @@ present_frame :: proc(draw: Draw_Proc) {
 	if theme == nil do return
 
 	cmd_buf := sdl.AcquireGPUCommandBuffer(state.gpu)
+	if test_hook_present_fail_acquire_cmd && cmd_buf != nil {
+		_ = sdl.CancelGPUCommandBuffer(cmd_buf)
+		cmd_buf = nil
+	}
 	if cmd_buf == nil {
 		fmt.eprintln("SDL_AcquireGPUCommandBuffer failed:", sdl.GetError())
 		return
 	}
 
 	swapchain_tex: ^sdl.GPUTexture
-	if !sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, state.window, &swapchain_tex, nil, nil) {
+	swapchain_ok: bool
+	if test_hook_present_fail_swapchain {
+		// Simulate acquire failure without claiming a swapchain texture (Cancel is illegal after acquire).
+		swapchain_ok = false
+		swapchain_tex = nil
+	} else if test_hook_present_nil_swapchain {
+		// Simulate minimized/hidden window: Wait succeeds but texture is nil.
+		swapchain_ok = true
+		swapchain_tex = nil
+	} else {
+		swapchain_ok = sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, state.window, &swapchain_tex, nil, nil)
+	}
+	if !swapchain_ok {
 		fmt.eprintln("SDL_WaitAndAcquireGPUSwapchainTexture failed:", sdl.GetError())
-		if !sdl.CancelGPUCommandBuffer(cmd_buf) {
+		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
 			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
 		}
 		return
 	}
 
 	if swapchain_tex == nil {
-		if !sdl.CancelGPUCommandBuffer(cmd_buf) {
+		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
 			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
 		}
 		return
@@ -42,13 +58,10 @@ present_frame :: proc(draw: Draw_Proc) {
 	draw()
 	draw_record_end()
 
+	// After a non-nil swapchain acquire, Cancel is illegal — always Submit.
+	uploaded := true
 	if len(state.gpu_state.batch.vertices) > 0 {
-		if !batch_upload(cmd_buf) {
-			if !sdl.CancelGPUCommandBuffer(cmd_buf) {
-				fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
-			}
-			return
-		}
+		uploaded = batch_upload(cmd_buf)
 	}
 
 	color_target := sdl.GPUColorTargetInfo {
@@ -59,20 +72,27 @@ present_frame :: proc(draw: Draw_Proc) {
 	}
 
 	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
+	if test_hook_present_fail_render_pass && render_pass != nil {
+		sdl.EndGPURenderPass(render_pass)
+		render_pass = nil
+	}
 	if render_pass == nil {
 		fmt.eprintln("SDL_BeginGPURenderPass failed:", sdl.GetError())
-		if !sdl.SubmitGPUCommandBuffer(cmd_buf) {
+		if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
 			fmt.eprintln("SDL_SubmitGPUCommandBuffer failed:", sdl.GetError())
 		}
+		batch_reset()
 		return
 	}
 
-	draw_begin(cmd_buf, render_pass, state.dpi)
-	draw_flush()
-	draw_end()
+	if uploaded {
+		draw_begin(cmd_buf, render_pass, state.dpi)
+		draw_flush()
+		draw_end()
+	}
 	sdl.EndGPURenderPass(render_pass)
 
-	if !sdl.SubmitGPUCommandBuffer(cmd_buf) {
+	if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
 		fmt.eprintln("SDL_SubmitGPUCommandBuffer failed:", sdl.GetError())
 	}
 

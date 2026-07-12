@@ -846,29 +846,8 @@ table_border_strip_rect_matches_side_geometry :: proc(t: ^testing.T) {
 
 @(test)
 radius_inherit_resolves_parent_corners :: proc(t: ^testing.T) {
-	test_state: State
-
-	with_test_global_state(&test_state, proc(test_state: ^State, t: ^testing.T) {
-			test_theme := Theme {
-				palette = palette,
-				justify = Justify_Pos{x = .START, y = .START},
-				direction = .HORIZONTAL,
-				border_color = .BLACK,
-				background = .BACKGROUND,
-				padding = 0,
-				radius = 0,
-				border = 0,
-				width = 0,
-				height = 0,
-			}
-			theme = &test_theme
-			ui_push_style(style_root(.SCREEN, Rect{0, 0, 200, 200}))
-			defer clear(&test_state.ui.style_stack)
-
-			frame: Widget_Frame_State
-			event := Widget_Event(Widget_Frame_State) {
-				frame_state = frame,
-			}
+	with_ui_env(t, proc(t: ^testing.T) {
+			frame, event := ui_test_frame_event()
 
 			parent := resolve_widget_config(
 				{},
@@ -877,6 +856,7 @@ radius_inherit_resolves_parent_corners :: proc(t: ^testing.T) {
 				event,
 			)
 			ui_push_style(style_child_context(parent))
+			defer ui_pop_style()
 
 			child := resolve_widget_config(
 				{},
@@ -903,7 +883,7 @@ radius_inherit_resolves_parent_corners :: proc(t: ^testing.T) {
 			expect_close(t, pc.tr, 10)
 			expect_close(t, pc.bl, 0)
 			expect_close(t, pc.br, 0)
-		}, t)
+		})
 }
 
 @(test)

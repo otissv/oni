@@ -52,7 +52,7 @@ gpu_load_shader :: proc(
 	num_uniform_buffers: u32,
 	num_samplers: u32,
 ) -> ^sdl.GPUShader {
-	return sdl.CreateGPUShader(
+	shader := sdl.CreateGPUShader(
 		device,
 		{
 			code_size = len(code),
@@ -64,6 +64,13 @@ gpu_load_shader :: proc(
 			num_samplers = num_samplers,
 		},
 	)
+	if shader != nil &&
+	   ((test_hook_gpu_fail_vert_shader && stage == .VERTEX) ||
+			   (test_hook_gpu_fail_frag_shader && stage == .FRAGMENT)) {
+		sdl.ReleaseGPUShader(device, shader)
+		return nil
+	}
+	return shader
 }
 
 /*
@@ -84,34 +91,16 @@ gpu_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
 }
 
 /*
-Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
+Vertex buffer pitch and attribute layout for UI_Vertex.
 
-Loads embedded SPIR-V shaders, configures blend state for the swapchain
-format, and returns nil if shader compilation or pipeline creation fails.
+Kept in one place so the pipeline and tests cannot drift.
 */
-gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
-	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
-	frag := gpu_load_shader(gpu, frag_shader_code, .FRAGMENT, 0, 1)
-
-	defer {
-		if vert != nil do sdl.ReleaseGPUShader(gpu, vert)
-		if frag != nil do sdl.ReleaseGPUShader(gpu, frag)
-	}
-
-	if vert == nil {
-		fmt.eprintln("gpu_load_shader (vertex) failed:", sdl.GetError())
-		return nil
-	}
-	if frag == nil {
-		fmt.eprintln("gpu_load_shader (fragment) failed:", sdl.GetError())
-		return nil
-	}
-
-	vertex_buffer_descs := [1]sdl.GPUVertexBufferDescription {
-		{slot = 0, pitch = u32(size_of(UI_Vertex))},
-	}
-
-	vertex_attributes := [9]sdl.GPUVertexAttribute {
+gpu_ui_vertex_layout :: proc() -> (
+	pitch: u32,
+	attrs: [9]sdl.GPUVertexAttribute,
+) {
+	pitch = u32(size_of(UI_Vertex))
+	attrs = {
 		{location = 0, buffer_slot = 0, format = .FLOAT2, offset = 0},
 		{location = 1, buffer_slot = 0, format = .FLOAT2, offset = u32(offset_of(UI_Vertex, uv))},
 		{
@@ -157,12 +146,43 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 			offset = u32(offset_of(UI_Vertex, border)),
 		},
 	}
+	return
+}
+
+/*
+Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
+
+Loads embedded SPIR-V shaders, configures blend state for the swapchain
+format, and returns nil if shader compilation or pipeline creation fails.
+*/
+gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
+	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
+	frag := gpu_load_shader(gpu, frag_shader_code, .FRAGMENT, 0, 1)
+
+	defer {
+		if vert != nil do sdl.ReleaseGPUShader(gpu, vert)
+		if frag != nil do sdl.ReleaseGPUShader(gpu, frag)
+	}
+
+	if vert == nil {
+		fmt.eprintln("gpu_load_shader (vertex) failed:", sdl.GetError())
+		return nil
+	}
+	if frag == nil {
+		fmt.eprintln("gpu_load_shader (fragment) failed:", sdl.GetError())
+		return nil
+	}
+
+	pitch, vertex_attributes := gpu_ui_vertex_layout()
+	vertex_buffer_descs := [1]sdl.GPUVertexBufferDescription {
+		{slot = 0, pitch = pitch},
+	}
 
 	vertex_input := sdl.GPUVertexInputState {
 		vertex_buffer_descriptions = raw_data(vertex_buffer_descs[:]),
 		num_vertex_buffers         = 1,
 		vertex_attributes          = raw_data(vertex_attributes[:]),
-		num_vertex_attributes      = 9,
+		num_vertex_attributes      = u32(len(vertex_attributes)),
 	}
 
 	color_target_desc := sdl.GPUColorTargetDescription {
@@ -170,7 +190,7 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 		blend_state = gpu_blend_state(),
 	}
 
-	return sdl.CreateGPUGraphicsPipeline(
+	pipeline := sdl.CreateGPUGraphicsPipeline(
 		gpu,
 		{
 			vertex_shader = vert,
@@ -181,6 +201,11 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 			target_info = {num_color_targets = 1, color_target_descriptions = &color_target_desc},
 		},
 	)
+	if test_hook_gpu_fail_pipeline && pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
+		return nil
+	}
+	return pipeline
 }
 
 /*
@@ -189,7 +214,7 @@ Creates a linear, clamp-to-edge sampler for UI texture rendering.
 Used for both atlas textures and the 1x1 white fallback texture.
 */
 gpu_create_sampler :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUSampler {
-	return sdl.CreateGPUSampler(
+	sampler := sdl.CreateGPUSampler(
 		gpu,
 		{
 			min_filter = .LINEAR,
@@ -200,6 +225,11 @@ gpu_create_sampler :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUSampler {
 			address_mode_w = .CLAMP_TO_EDGE,
 		},
 	)
+	if test_hook_gpu_fail_sampler && sampler != nil {
+		sdl.ReleaseGPUSampler(gpu, sampler)
+		return nil
+	}
+	return sampler
 }
 
 /*
@@ -213,6 +243,10 @@ gpu_upload_white_pixel :: proc(
 	transfer: ^sdl.GPUTransferBuffer,
 ) -> bool {
 	cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+	if test_hook_gpu_fail_acquire_cmd && cmd != nil {
+		_ = sdl.CancelGPUCommandBuffer(cmd)
+		cmd = nil
+	}
 	if cmd == nil {
 		fmt.eprintln("SDL_AcquireGPUCommandBuffer failed:", sdl.GetError())
 		return false
@@ -227,7 +261,7 @@ gpu_upload_white_pixel :: proc(
 	)
 	sdl.EndGPUCopyPass(copy_pass)
 
-	if !sdl.SubmitGPUCommandBuffer(cmd) {
+	if !sdl.SubmitGPUCommandBuffer(cmd) || test_hook_gpu_fail_submit_cmd {
 		fmt.eprintln("SDL_SubmitGPUCommandBuffer failed:", sdl.GetError())
 		return false
 	}
@@ -254,12 +288,20 @@ gpu_create_white_texture :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUTexture {
 			num_levels = 1,
 		},
 	)
+	if test_hook_gpu_fail_create_texture && texture != nil {
+		sdl.ReleaseGPUTexture(gpu, texture)
+		texture = nil
+	}
 	if texture == nil {
 		fmt.eprintln("SDL_CreateGPUTexture failed:", sdl.GetError())
 		return nil
 	}
 
 	transfer := sdl.CreateGPUTransferBuffer(gpu, {usage = .UPLOAD, size = 4})
+	if test_hook_gpu_fail_transfer_buffer && transfer != nil {
+		sdl.ReleaseGPUTransferBuffer(gpu, transfer)
+		transfer = nil
+	}
 	if transfer == nil {
 		fmt.eprintln("SDL_CreateGPUTransferBuffer failed:", sdl.GetError())
 		sdl.ReleaseGPUTexture(gpu, texture)
@@ -268,6 +310,12 @@ gpu_create_white_texture :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUTexture {
 	defer sdl.ReleaseGPUTransferBuffer(gpu, transfer)
 
 	mapped := sdl.MapGPUTransferBuffer(gpu, transfer, false)
+	if test_hook_gpu_fail_map_transfer {
+		if mapped != nil {
+			sdl.UnmapGPUTransferBuffer(gpu, transfer)
+		}
+		mapped = nil
+	}
 	if mapped == nil {
 		fmt.eprintln("SDL_MapGPUTransferBuffer failed:", sdl.GetError())
 		sdl.ReleaseGPUTexture(gpu, texture)

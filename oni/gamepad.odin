@@ -8,6 +8,12 @@ import sdl "vendor:sdl3"
 GAMEPAD_DEADZONE :: 0.15
 
 /*
+Fake non-nil gamepad handle used only when test_hook_gamepad_override is set.
+*/
+@(private)
+GAMEPAD_TEST_STUB_HANDLE := transmute(^sdl.Gamepad)uintptr(0xDEADBEEF)
+
+/*
 Maps an SDL gamepad button to a compact index, or rejects invalid buttons.
 */
 gamepad_button_index :: proc(button: sdl.GamepadButton) -> (int, bool) {
@@ -46,15 +52,37 @@ gamepad_sync_from_device :: proc() {
 
 	for axis in sdl.GamepadAxis {
 		if axis == .INVALID do continue
-		value := sdl.GetGamepadAxis(state.gamepad, axis)
+		value := gamepad_read_axis(axis)
 		gamepad_set_axis(axis, value)
 	}
 
 	for button in sdl.GamepadButton {
 		if button == .INVALID do continue
-		down := sdl.GetGamepadButton(state.gamepad, button)
+		down := gamepad_read_button(button)
 		gamepad_set_button(button, down)
 	}
+}
+
+@(private)
+gamepad_read_axis :: proc(axis: sdl.GamepadAxis) -> i16 {
+	if test_hook_gamepad_override {
+		idx := int(axis)
+		if idx >= 0 && idx < len(test_hook_gamepad_axes) {
+			return test_hook_gamepad_axes[idx]
+		}
+		return 0
+	}
+	return sdl.GetGamepadAxis(state.gamepad, axis)
+}
+
+@(private)
+gamepad_read_button :: proc(button: sdl.GamepadButton) -> bool {
+	if test_hook_gamepad_override {
+		idx, ok := gamepad_button_index(button)
+		if !ok do return false
+		return test_hook_gamepad_buttons[idx]
+	}
+	return sdl.GetGamepadButton(state.gamepad, button)
 }
 
 /*
@@ -62,6 +90,12 @@ Opens the first enumerated SDL gamepad if none is connected.
 */
 gamepad_open_first_available :: proc() {
 	if state.gamepad != nil do return
+
+	if test_hook_gamepad_override {
+		if test_hook_gamepad_ids_nil || test_hook_gamepad_ids_count <= 0 do return
+		gamepad_open(sdl.JoystickID(test_hook_gamepad_ids[0]))
+		return
+	}
 
 	count: c.int
 	ids := sdl.GetGamepads(&count)
@@ -77,7 +111,17 @@ Opens a gamepad by SDL instance id and syncs initial axis/button state.
 gamepad_open :: proc(instance_id: sdl.JoystickID) {
 	if state.gamepad != nil do return
 
-	gamepad := sdl.OpenGamepad(instance_id)
+	gamepad: ^sdl.Gamepad
+	if test_hook_gamepad_override {
+		if test_hook_gamepad_open_fail {
+			gamepad = nil
+		} else {
+			gamepad = GAMEPAD_TEST_STUB_HANDLE
+		}
+	} else {
+		gamepad = sdl.OpenGamepad(instance_id)
+	}
+
 	if gamepad == nil {
 		fmt.eprintln("SDL_OpenGamepad failed:", sdl.GetError())
 		return
@@ -94,7 +138,11 @@ Closes the current gamepad, clears the SDL handle, and resets input.
 gamepad_close :: proc() {
 	if state.gamepad == nil do return
 
-	sdl.CloseGamepad(state.gamepad)
+	if test_hook_gamepad_override {
+		test_hook_gamepad_close_called = true
+	} else {
+		sdl.CloseGamepad(state.gamepad)
+	}
 	state.gamepad = nil
 	state.gamepad_instance_id = 0
 	gamepad_clear_input()
