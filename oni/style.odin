@@ -31,6 +31,8 @@ Returns whether a Width union carries an explicit value.
 */
 @(private)
 cfg_width_is_set :: proc(w: Width) -> bool {
+	// Zero-value unions are nil (untagged), not struct{}.
+	if w == nil do return false
 	#partial switch _ in w {
 	case struct{}:
 		return false
@@ -43,6 +45,8 @@ Returns whether a Height union carries an explicit value.
 */
 @(private)
 cfg_height_is_set :: proc(h: Height) -> bool {
+	// Zero-value unions are nil (untagged), not struct{}.
+	if h == nil do return false
 	#partial switch _ in h {
 	case struct{}:
 		return false

@@ -311,7 +311,7 @@ to_ui_state :: proc(state: ^$S) -> Widget_Frame_State {
 Wraps a typed widget state pointer in a generic Widget_Event.
 */
 to_ui_event :: proc(frame_state: ^$S) -> Widget_Event(Widget_Frame_State) {
-	return {frame_state = to_ui_state(state)}
+	return {frame_state = to_ui_state(frame_state)}
 }
 
 /*

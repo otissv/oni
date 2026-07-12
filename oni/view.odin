@@ -29,8 +29,18 @@ view_default :: proc() -> View {
 Snaps a zoom value to the nearest quantization step.
 */
 view_quantize_zoom :: proc(zoom: f32) -> f32 {
-	if VIEW_ZOOM_QUANTIZE <= 0 do return zoom
-	return math.round(zoom / VIEW_ZOOM_QUANTIZE) * VIEW_ZOOM_QUANTIZE
+	return view_quantize_zoom_with_step(zoom, VIEW_ZOOM_QUANTIZE)
+}
+
+/*
+Snaps a zoom value to the nearest multiple of `step`.
+
+Returns `zoom` unchanged when `step` is not positive.
+*/
+@(private)
+view_quantize_zoom_with_step :: proc(zoom, step: f32) -> f32 {
+	if step <= 0 do return zoom
+	return math.round(zoom / step) * step
 }
 
 /*
@@ -142,9 +152,9 @@ Transforms a rect from artboard space to screen space when drawing on the artboa
 Returns the rect unchanged for screen-space drawing.
 */
 view_transform_rect :: proc(r: Rect) -> Rect {
-	if draw_current_space() != .ARTBOARD do return r
+	// Nil state cannot be on the artboard space stack (`draw_current_space` is SCREEN).
+	if state == nil || draw_current_space() != .ARTBOARD do return r
 	z := view_effective_zoom()
-	if state == nil do return r
 	return {
 		x = r.x * z + state.view.pan.x,
 		y = r.y * z + state.view.pan.y,

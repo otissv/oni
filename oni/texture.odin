@@ -382,7 +382,7 @@ texture_atlas_init :: proc(size: i32 = ATLAS_DEFAULT_SIZE) -> bool {
 
 	id, _, ok := texture_register_surface(surface, "")
 	if !ok {
-		sdl.DestroySurface(surface)
+		// texture_register_surface destroys the surface on upload failure.
 		return false
 	}
 
