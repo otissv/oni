@@ -291,6 +291,21 @@ runtime_run_frame_nil_tick_and_init_still_presents :: proc(t: ^testing.T) {
 }
 
 @(test)
+runtime_run_frame_nil_draw_still_completes :: proc(t: ^testing.T) {
+	with_runtime_window_env(
+		t,
+		proc(t: ^testing.T) {
+			run_frame(runtime_test_tick, nil, runtime_test_init)
+			testing.expect_value(t, runtime_test_tick_calls, 1)
+			testing.expect_value(t, runtime_test_init_calls, 1)
+			testing.expect_value(t, runtime_test_draw_calls, 0)
+			testing.expect(t, has_init_run_once)
+			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+		},
+	)
+}
+
+@(test)
 runtime_run_frame_runs_tick_init_draw_once :: proc(t: ^testing.T) {
 	with_runtime_window_env(
 		t,
@@ -584,34 +599,66 @@ runtime_migrate_state_copies_fields_and_releases_input :: proc(t: ^testing.T) {
 	dst: State
 	defer {
 		delete(dst.input.text_input)
+		delete(src.assets.paths)
 	}
 
 	src.window = transmute(^sdl.Window)uintptr(11)
 	src.gpu = transmute(^sdl.GPUDevice)uintptr(22)
+	src.gpu_state.pipeline = transmute(^sdl.GPUGraphicsPipeline)uintptr(33)
+	src.gpu_state.sampler = transmute(^sdl.GPUSampler)uintptr(34)
+	src.gpu_state.white_texture = transmute(^sdl.GPUTexture)uintptr(35)
+	src.assets.paths = make(map[string]Asset_Id)
+	src.assets.paths["tex"] = Asset_Id(9)
+	src.textures.atlas.width = 256
+	src.textures.atlas.height = 128
+	src.fonts.library = transmute(FT_Library)uintptr(44)
+	src.dpi = {logical_w = 100, logical_h = 50, scale = 2, drawable_w = 200, drawable_h = 100}
+	src.view = {zoom = 1.5, pan = {7, 8}, zoom_min = 0.25, zoom_max = 8}
 	src.can_render = true
 	src.running = true
 	src.fullscreen = true
-	src.dpi = {logical_w = 100, logical_h = 50, scale = 2, drawable_w = 200, drawable_h = 100}
-	src.view = view_default()
-	src.view.zoom = 1.5
 	src.perf_frequency = 99
 	src.last_counter = 7
+	src.ui.frame = 12
+	src.gamepad = transmute(^sdl.Gamepad)uintptr(55)
 	src.gamepad_instance_id = 3
+	src.force_reload = true
+	src.force_restart = true
 	append(&src.input.text_input, 'a', 'b', 'c')
 
 	migrate_state(&dst, &src)
 
-	testing.expect_value(t, uintptr(dst.window), uintptr(11))
-	testing.expect_value(t, uintptr(dst.gpu), uintptr(22))
+	testing.expect(t, dst.window == src.window)
+	testing.expect(t, dst.gpu == src.gpu)
+	testing.expect(t, dst.gpu_state.pipeline == src.gpu_state.pipeline)
+	testing.expect(t, dst.gpu_state.sampler == src.gpu_state.sampler)
+	testing.expect(t, dst.gpu_state.white_texture == src.gpu_state.white_texture)
+	testing.expect_value(t, dst.assets.paths["tex"], Asset_Id(9))
+	testing.expect_value(t, dst.textures.atlas.width, i32(256))
+	testing.expect_value(t, dst.textures.atlas.height, i32(128))
+	testing.expect(t, dst.fonts.library == src.fonts.library)
+	testing.expect_value(t, dst.dpi.logical_w, i32(100))
+	testing.expect_value(t, dst.dpi.logical_h, i32(50))
+	expect_close(t, dst.dpi.scale, 2)
+	expect_close(t, dst.view.zoom, 1.5)
+	expect_vec2(t, dst.view.pan, {7, 8})
+	expect_close(t, dst.view.zoom_min, 0.25)
+	expect_close(t, dst.view.zoom_max, 8)
 	testing.expect(t, dst.can_render)
 	testing.expect(t, dst.running)
 	testing.expect(t, dst.fullscreen)
-	testing.expect_value(t, dst.dpi.logical_w, i32(100))
-	expect_close(t, dst.view.zoom, 1.5)
 	testing.expect_value(t, dst.perf_frequency, u64(99))
 	testing.expect_value(t, dst.last_counter, u64(7))
+	testing.expect_value(t, dst.ui.frame, u64(12))
+	testing.expect(t, dst.gamepad == src.gamepad)
 	testing.expect_value(t, dst.gamepad_instance_id, sdl.JoystickID(3))
+	// Input heap is released from src and not transferred to dst.
 	testing.expect_value(t, len(dst.input.text_input), 0)
+	testing.expect(t, !dst.force_reload)
+	testing.expect(t, !dst.force_restart)
+	// migrate_state must leave reload flags on src untouched (not part of copy_state_fields).
+	testing.expect(t, src.force_reload)
+	testing.expect(t, src.force_restart)
 }
 
 @(test)

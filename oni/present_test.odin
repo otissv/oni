@@ -221,6 +221,21 @@ present_frame_clears_and_submits_empty_batch :: proc(t: ^testing.T) {
 }
 
 @(test)
+present_frame_nil_draw_still_clears_and_submits :: proc(t: ^testing.T) {
+	with_present_env(
+		t,
+		proc(t: ^testing.T) {
+			present_test_draw_calls = 0
+			present_frame(nil)
+			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect(t, state.gpu_state.batch.cmd == nil)
+			testing.expect(t, state.gpu_state.batch.pass == nil)
+		},
+	)
+}
+
+@(test)
 present_frame_uploads_geometry_and_resets_batch :: proc(t: ^testing.T) {
 	with_present_env(
 		t,
@@ -393,6 +408,73 @@ present_frame_vertices_only_skips_failed_upload_path :: proc(t: ^testing.T) {
 				present_test_draw_calls += 1
 				append(&state.gpu_state.batch.vertices, UI_Vertex{})
 			})
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+		},
+	)
+}
+
+// ---------------------------------------------------------------------------
+// Real SDL failure paths (not hook-simulated acquire)
+// ---------------------------------------------------------------------------
+
+@(private)
+present_test_reclaim_window :: proc(t: ^testing.T, loc := #caller_location) -> bool {
+	if !sdl.ClaimWindowForGPUDevice(state.gpu, state.window) {
+		testing.expectf(t, false, "ClaimWindowForGPUDevice failed: %s", sdl.GetError(), loc = loc)
+		return false
+	}
+	if !sdl.SetGPUSwapchainParameters(state.gpu, state.window, .SDR, .VSYNC) {
+		testing.expectf(t, false, "SetGPUSwapchainParameters failed: %s", sdl.GetError(), loc = loc)
+		return false
+	}
+	return true
+}
+
+@(test)
+present_frame_real_swapchain_acquire_fails_when_window_unclaimed :: proc(t: ^testing.T) {
+	with_present_env(
+		t,
+		proc(t: ^testing.T) {
+			sdl.ReleaseWindowFromGPUDevice(state.gpu, state.window)
+			defer present_test_reclaim_window(t)
+
+			present_test_draw_calls = 0
+			present_frame(present_test_noop_draw)
+			testing.expect_value(t, present_test_draw_calls, 0)
+		},
+	)
+}
+
+@(test)
+present_frame_real_cancel_after_unclaimed_acquire_failure :: proc(t: ^testing.T) {
+	with_present_env(
+		t,
+		proc(t: ^testing.T) {
+			// Unclaim forces a real WaitAndAcquire failure; Cancel then runs on that cmd buffer.
+			sdl.ReleaseWindowFromGPUDevice(state.gpu, state.window)
+			defer present_test_reclaim_window(t)
+
+			test_hook_present_fail_cancel = true
+			present_test_draw_calls = 0
+			present_frame(present_test_noop_draw)
+			testing.expect_value(t, present_test_draw_calls, 0)
+		},
+	)
+}
+
+@(test)
+present_frame_real_submit_after_unclaimed_then_reclaim_roundtrip :: proc(t: ^testing.T) {
+	with_present_env(
+		t,
+		proc(t: ^testing.T) {
+			sdl.ReleaseWindowFromGPUDevice(state.gpu, state.window)
+			present_frame(present_test_noop_draw)
+			testing.expect_value(t, present_test_draw_calls, 0)
+
+			testing.expect(t, present_test_reclaim_window(t))
+			present_test_draw_calls = 0
+			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
 			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
 		},

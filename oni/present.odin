@@ -55,7 +55,7 @@ present_frame :: proc(draw: Draw_Proc) {
 	}
 
 	draw_record_begin(state.dpi)
-	draw()
+	if draw != nil do draw()
 	draw_record_end()
 
 	// After a non-nil swapchain acquire, Cancel is illegal — always Submit.
@@ -73,6 +73,7 @@ present_frame :: proc(draw: Draw_Proc) {
 
 	render_pass := sdl.BeginGPURenderPass(cmd_buf, &color_target, 1, nil)
 	if test_hook_present_fail_render_pass && render_pass != nil {
+		// End the pass so the acquired swapchain stays valid, then take the nil-pass failure path.
 		sdl.EndGPURenderPass(render_pass)
 		render_pass = nil
 	}
