@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Oni is an Odin desktop UI toolkit on SDL3 + SDL_GPU, with a hot-reload host and a demo `app` package. Tengu is a standalone animation package with no Oni dependency.
+Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU, with a hot-reload host and a demo `app` package. Tengu is a standalone animation package with no Oni dependency.
 
 ## Layout
 

@@ -148,6 +148,20 @@ Ensures the atlas is initialized before packing missing glyphs.
 */
 font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
+
+	all_cached := true
+	for glyph in glyphs {
+		key := Font_Glyph_Key {
+			face_id  = face_id,
+			glyph_id = glyph.glyph_id,
+		}
+		if key not_in state.fonts.glyph_cache {
+			all_cached = false
+			break
+		}
+	}
+	if all_cached do return true
+
 	if !texture_atlas_init() do return false
 
 	for glyph in glyphs {

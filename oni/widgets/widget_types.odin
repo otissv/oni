@@ -7,8 +7,8 @@ import sdl "vendor:sdl3"
 /*
 Pairs widget state with a resolved config into a merged state value.
 */
-merge_state_config :: proc(state: $S, config: $C) -> Widget_Merged_State(S, C) {
-	return {state = state, config = config}
+merge_state_config :: proc(state: $S, config: $C) -> o.Widget_Merged_State(S, C) {
+	return {frame_state = state, config = config}
 }
 
 /*
@@ -19,8 +19,12 @@ merge_state_event :: proc(
 	config: $C,
 	mouse_button: u8 = 0,
 	key: o.Scancode = o.Scancode(0),
-) -> o.Widget_Event(Widget_Merged_State(S, C)) {
-	return {state = merge_state_config(state, config), mouse_button = mouse_button, key = key}
+) -> o.Widget_Event(o.Widget_Merged_State(S, C)) {
+	return {
+		frame_state = merge_state_config(state, config),
+		mouse_button = mouse_button,
+		key = key,
+	}
 }
 
 /*
