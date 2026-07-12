@@ -2,6 +2,7 @@ package oni
 
 import "core:c"
 import "core:math"
+import "core:mem"
 import sdl "vendor:sdl3"
 
 /*
@@ -250,41 +251,49 @@ font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Ent
 }
 
 /*
+Returns a pointer to scanline `row` of a FreeType bitmap.
+
+Honors FreeType's signed pitch: negative pitch means bottom-up storage while
+`buffer` still addresses the visually topmost row.
+*/
+font_bitmap_row :: proc(buffer: [^]u8, pitch: c.int, row: int) -> [^]u8 {
+	return mem.ptr_offset(buffer, row * int(pitch))
+}
+
+/*
 Copies a FreeType glyph bitmap into an RGBA SDL surface as white with alpha.
 
-Handles gray, mono, and BGRA pixel modes; logs a warning for unsupported modes.
+Handles gray, mono, and BGRA pixel modes (including negative pitch); logs a
+warning for unsupported modes.
 */
 font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	w := int(bitmap.width)
 	h := int(bitmap.rows)
+	if w <= 0 || h <= 0 || bitmap.buffer == nil do return
 
 	switch bitmap.pixel_mode {
 	case FT_PIXEL_MODE_GRAY:
-		src := bitmap.buffer
-		src_pitch := int(bitmap.pitch)
 		for row in 0 ..< h {
+			src := font_bitmap_row(bitmap.buffer, bitmap.pitch, row)
 			for col in 0 ..< w {
-				alpha := src[row * src_pitch + col]
-				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, alpha)
+				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, src[col])
 			}
 		}
 	case FT_PIXEL_MODE_MONO:
-		src := bitmap.buffer
-		src_pitch := int(bitmap.pitch)
 		for row in 0 ..< h {
+			src := font_bitmap_row(bitmap.buffer, bitmap.pitch, row)
 			for col in 0 ..< w {
-				byte := src[row * src_pitch + col / 8]
+				byte := src[col / 8]
 				bit := (byte >> u8(7 - (col % 8))) & 1
 				alpha: u8 = bit != 0 ? 255 : 0
 				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, alpha)
 			}
 		}
 	case FT_PIXEL_MODE_BGRA:
-		src := bitmap.buffer
-		src_pitch := int(bitmap.pitch)
 		for row in 0 ..< h {
+			src := font_bitmap_row(bitmap.buffer, bitmap.pitch, row)
 			for col in 0 ..< w {
-				src_off := row * src_pitch + col * 4
+				src_off := col * 4
 				sdl.WriteSurfacePixel(
 					surface,
 					c.int(col),
