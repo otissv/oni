@@ -122,7 +122,32 @@ widget_auto_element_id_and_static_id_mapping :: proc(t: ^testing.T) {
 			testing.expect(t, w_ctx.static_ids == nil || len(w_ctx.static_ids) == 0)
 
 			key := element_key("btn")
+			testing.expect_value(t, key, "btn")
 			testing.expect_value(t, w_ctx.static_ids["btn"], key)
+		},
+	)
+}
+
+@(test)
+widget_element_keys_survive_temp_allocator_wipe :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			named := element_key("stable")
+			auto := element_key("")
+			testing.expect_value(t, auto, "__auto_element__0")
+
+			widget_set_focused_id(auto)
+			_, _ = consume_hover_transition(named, true)
+			_, _ = consume_hover_transition(auto, true)
+
+			free_all(context.temp_allocator)
+
+			// Look up with stable/literal keys — the pre-wipe `auto` temp is invalid.
+			testing.expect_value(t, w_ctx.focused_id, "__auto_element__0")
+			testing.expect(t, w_ctx.element_was_hovered[named])
+			testing.expect(t, w_ctx.element_was_hovered["__auto_element__0"])
+			testing.expect_value(t, element_key("stable"), "stable")
 		},
 	)
 }
@@ -205,6 +230,235 @@ widget_pointer_over_screen_space :: proc(t: ^testing.T) {
 			w_ctx.mouse_x = 25
 			w_ctx.mouse_y = 50
 			testing.expect(t, !pointer_over(rect, .SCREEN))
+		},
+	)
+}
+
+@(test)
+widget_pointer_hits_prefers_higher_stack_order :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer {
+				ui_pop_style()
+			}
+
+			_ = layout_push_node(
+				UI_Id(10),
+				{kind = .RECT, space = .SCREEN, z_index = 1},
+			)
+			layout_pop_node()
+			_ = layout_push_node(
+				UI_Id(20),
+				{kind = .RECT, space = .SCREEN, z_index = 5},
+			)
+			layout_pop_node()
+
+			low_i := state.ui.layout.id_to_node[UI_Id(10)]
+			high_i := state.ui.layout.id_to_node[UI_Id(20)]
+			state.ui.layout.nodes[low_i].rect = {0, 0, 100, 100}
+			state.ui.layout.nodes[high_i].rect = {0, 0, 100, 100}
+
+			w_ctx.mouse_x = 50
+			w_ctx.mouse_y = 50
+			layout_finalize_stack_order()
+			layout_resolve_pointer_hit()
+
+			testing.expect(t, w_ctx.pointer_hit_valid)
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(20))
+			testing.expect(t, pointer_hits(UI_Id(20), state.ui.layout.nodes[high_i].rect, .SCREEN))
+			testing.expect(t, !pointer_hits(UI_Id(10), state.ui.layout.nodes[low_i].rect, .SCREEN))
+			testing.expect(t, pointer_is_target(UI_Id(20)))
+			testing.expect(t, !pointer_is_target(UI_Id(10)))
+		},
+	)
+}
+
+@(test)
+widget_pointer_hits_includes_layout_ancestors :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			_ = layout_push_node(
+				UI_Id(1),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			_ = layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			layout_pop_node()
+			layout_pop_node()
+
+			parent_i := state.ui.layout.id_to_node[UI_Id(1)]
+			child_i := state.ui.layout.id_to_node[UI_Id(2)]
+			state.ui.layout.nodes[parent_i].rect = {0, 0, 100, 100}
+			state.ui.layout.nodes[child_i].rect = {10, 10, 40, 40}
+
+			w_ctx.mouse_x = 20
+			w_ctx.mouse_y = 20
+			layout_finalize_stack_order()
+			layout_resolve_pointer_hit()
+
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(2))
+			testing.expect(t, pointer_hits(UI_Id(2), state.ui.layout.nodes[child_i].rect, .SCREEN))
+			testing.expect(t, pointer_hits(UI_Id(1), state.ui.layout.nodes[parent_i].rect, .SCREEN))
+			testing.expect(t, pointer_is_target(UI_Id(2)))
+			testing.expect(t, !pointer_is_target(UI_Id(1)))
+			testing.expect(t, layout_is_ancestor_of(UI_Id(1), UI_Id(2)))
+			testing.expect(t, !layout_is_ancestor_of(UI_Id(2), UI_Id(1)))
+		},
+	)
+}
+
+@(test)
+widget_stop_propagation_sets_frame_flag :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, !w_ctx.pointer_propagation_stopped)
+			stop_propagation()
+			testing.expect(t, w_ctx.pointer_propagation_stopped)
+			ui_begin_frame()
+			testing.expect(t, !w_ctx.pointer_propagation_stopped)
+		},
+	)
+}
+
+@(test)
+widget_pointer_hits_excludes_uncle_of_hit :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			_ = layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					space = .SCREEN,
+					direction = .HORIZONTAL,
+					width = layout_len_fixed(200),
+					height = layout_len_fixed(100),
+				},
+			)
+			_ = layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			layout_pop_node()
+			_ = layout_push_node(
+				UI_Id(3),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			layout_pop_node()
+			layout_pop_node()
+
+			root_i := state.ui.layout.id_to_node[UI_Id(1)]
+			a_i := state.ui.layout.id_to_node[UI_Id(2)]
+			b_i := state.ui.layout.id_to_node[UI_Id(3)]
+			state.ui.layout.nodes[root_i].rect = {0, 0, 200, 100}
+			state.ui.layout.nodes[a_i].rect = {0, 0, 100, 100}
+			state.ui.layout.nodes[b_i].rect = {100, 0, 100, 100}
+
+			w_ctx.mouse_x = 20
+			w_ctx.mouse_y = 20
+			layout_finalize_stack_order()
+			layout_resolve_pointer_hit()
+
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(2))
+			testing.expect(t, pointer_hits(UI_Id(1), state.ui.layout.nodes[root_i].rect, .SCREEN))
+			testing.expect(t, pointer_hits(UI_Id(2), state.ui.layout.nodes[a_i].rect, .SCREEN))
+			testing.expect(t, !pointer_hits(UI_Id(3), state.ui.layout.nodes[b_i].rect, .SCREEN))
+			testing.expect(t, !layout_is_ancestor_of(UI_Id(3), UI_Id(2)))
+		},
+	)
+}
+
+@(test)
+widget_pointer_hits_ancestor_when_child_overflows_parent_rect :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			_ = layout_push_node(
+				UI_Id(1),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(50), height = layout_len_fixed(50)},
+			)
+			_ = layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, space = .SCREEN, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			layout_pop_node()
+			layout_pop_node()
+
+			parent_i := state.ui.layout.id_to_node[UI_Id(1)]
+			child_i := state.ui.layout.id_to_node[UI_Id(2)]
+			state.ui.layout.nodes[parent_i].rect = {0, 0, 50, 50}
+			state.ui.layout.nodes[child_i].rect = {0, 0, 100, 100}
+
+			// Pointer over child ink outside the parent's box.
+			w_ctx.mouse_x = 80
+			w_ctx.mouse_y = 20
+			layout_finalize_stack_order()
+			layout_resolve_pointer_hit()
+
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(2))
+			testing.expect(t, pointer_is_target(UI_Id(2)))
+			testing.expect(t, pointer_hits(UI_Id(2), state.ui.layout.nodes[child_i].rect, .SCREEN))
+			testing.expect(t, pointer_hits(UI_Id(1), state.ui.layout.nodes[parent_i].rect, .SCREEN))
+			testing.expect(t, !pointer_over(state.ui.layout.nodes[parent_i].rect, .SCREEN))
+		},
+	)
+}
+
+@(test)
+widget_pointer_hits_includes_deep_ancestor_chain :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			_ = layout_push_node(UI_Id(1), {kind = .RECT, space = .SCREEN})
+			_ = layout_push_node(UI_Id(2), {kind = .RECT, space = .SCREEN})
+			_ = layout_push_node(UI_Id(3), {kind = .RECT, space = .SCREEN})
+			layout_pop_node()
+			layout_pop_node()
+			layout_pop_node()
+
+			g_i := state.ui.layout.id_to_node[UI_Id(1)]
+			p_i := state.ui.layout.id_to_node[UI_Id(2)]
+			c_i := state.ui.layout.id_to_node[UI_Id(3)]
+			state.ui.layout.nodes[g_i].rect = {0, 0, 100, 100}
+			state.ui.layout.nodes[p_i].rect = {0, 0, 80, 80}
+			state.ui.layout.nodes[c_i].rect = {10, 10, 40, 40}
+
+			w_ctx.mouse_x = 20
+			w_ctx.mouse_y = 20
+			layout_finalize_stack_order()
+			layout_resolve_pointer_hit()
+
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(3))
+			testing.expect(t, pointer_hits(UI_Id(3), state.ui.layout.nodes[c_i].rect, .SCREEN))
+			testing.expect(t, pointer_hits(UI_Id(2), state.ui.layout.nodes[p_i].rect, .SCREEN))
+			testing.expect(t, pointer_hits(UI_Id(1), state.ui.layout.nodes[g_i].rect, .SCREEN))
+			testing.expect(t, layout_is_ancestor_of(UI_Id(1), UI_Id(3)))
+			testing.expect(t, layout_is_ancestor_of(UI_Id(2), UI_Id(3)))
+			testing.expect(t, !pointer_is_target(UI_Id(1)))
+			testing.expect(t, !pointer_is_target(UI_Id(2)))
 		},
 	)
 }
@@ -868,6 +1122,7 @@ widget_sync_input_nil_state_and_all_mouse_buttons :: proc(t: ^testing.T) {
 			sync_widget_input()
 			expect_close(t, w_ctx.mouse_x, 1) // unchanged when state is nil
 			state = saved
+			widget_ctx_sync()
 
 			state.input.mouse_left = true
 			state.input.mouse_right = true

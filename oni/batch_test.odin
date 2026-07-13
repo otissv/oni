@@ -24,10 +24,12 @@ with_batch_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -70,10 +72,12 @@ with_batch_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 			state.gpu_state.white_texture = nil
 		}
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -397,6 +401,32 @@ batch_check_key_splits_on_clip_change :: proc(t: ^testing.T) {
 			testing.expect_value(t, len(state.gpu_state.batch.segments), 2)
 			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(6))
 			expect_rect(t, state.gpu_state.batch.segments[1].key.clip, {10, 10, 50, 50})
+		},
+	)
+}
+
+@(test)
+batch_finalize_segments_sorts_by_stack_index :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_set_stack_index(5)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(0)
+
+			batch_set_stack_index(1)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(4)
+
+			batch_set_stack_index(9)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(8)
+
+			batch_finalize_segments()
+			testing.expect_value(t, len(state.gpu_state.batch.segments), 3)
+			testing.expect_value(t, state.gpu_state.batch.segments[0].key.stack_index, u32(1))
+			testing.expect_value(t, state.gpu_state.batch.segments[1].key.stack_index, u32(5))
+			testing.expect_value(t, state.gpu_state.batch.segments[2].key.stack_index, u32(9))
 		},
 	)
 }

@@ -60,10 +60,15 @@ Widget_Mouse_Key_State :: struct {
 
 /*
 Global per-frame widget input context: focus, mouse, keys, and hover tracking.
+
+Lives inside State (Persistent) so hot reload rebinds the same heap storage.
+Cross-frame string fields own auto-generated ids; user-facing ids are borrowed.
 */
 Widget_Context :: struct {
 	auto_focused_id:       Widget_ID,
+	auto_focused_id_owned: bool,
 	focused_id:            Widget_ID,
+	focused_id_owned:      bool,
 	tab_order:             [dynamic]Widget_ID,
 	tab_focus_previous_id: Widget_ID,
 	tab_focus_changed:     bool,
@@ -76,8 +81,11 @@ Widget_Context :: struct {
 	right_mouse:           Widget_Mouse_Button_State,
 	middle_mouse:          Widget_Mouse_Button_State,
 	keys:                  [KEY_COUNT]Widget_Mouse_Key_State,
-	element_was_hovered:   map[string]bool,
-	element_pointer_down:  map[string]bool,
+	element_was_hovered:          map[string]bool,
+	element_pointer_down:         map[string]bool,
+	pointer_hit_ui_id:            UI_Id,
+	pointer_hit_valid:            bool,
+	pointer_propagation_stopped:  bool,
 }
 
 /*
@@ -88,7 +96,8 @@ Widget_Merged_State :: struct($S: typeid, $C: typeid) {
 	config:            C,
 }
 
-w_ctx: Widget_Context
+// Bound to &state.widget by bind(); nil when no engine state is active.
+w_ctx: ^Widget_Context
 
 /*
 Snapshot of widget frame_state plus optional input metadata for event callbacks.
@@ -108,19 +117,23 @@ Mount :: enum {
 
 /*
 Per-frame interaction flags for a widget: hover, press, focus, and click edges.
+
+`is_hovered` is CSS-like: true for the topmost pointer hit and its layout ancestors.
+`is_pointer_target` is true only for the topmost hit (focus / exact target).
 */
 Widget_Frame_State :: struct {
-	mounting:          Mount,
-	unmounting:        Mount,
-	is_hovered:        bool,
-	is_Pressed:        bool,
-	is_focused:        bool,
-	is_left_clicked:   bool,
-	is_right_clicked:  bool,
-	is_middle_clicked: bool,
-	is_left_released:  bool,
-	is_right_released: bool,
-	is_disabled:       bool,
+	mounting:           Mount,
+	unmounting:         Mount,
+	is_hovered:         bool,
+	is_pointer_target:  bool,
+	is_Pressed:         bool,
+	is_focused:         bool,
+	is_left_clicked:    bool,
+	is_right_clicked:   bool,
+	is_middle_clicked:  bool,
+	is_left_released:   bool,
+	is_right_released:  bool,
+	is_disabled:        bool,
 }
 
 Widget_Kind :: enum {
@@ -243,9 +256,11 @@ Widget_Config :: struct {
 	max_w:                 Cfg(Style_F32),
 	min_h:                 Cfg(Style_F32),
 	min_w:                 Cfg(Style_F32),
+	order:                 Cfg(Style_F32),
 	overflow_x:            Cfg(Overflow),
 	overflow_y:            Cfg(Overflow),
 	padding:               Cfg(Padding),
+	pointer_events:        Cfg(Pointer_Events),
 	position:              Cfg(Position),
 	radius:                Cfg(Radius),
 	self:                  Cfg(Justify),
@@ -257,11 +272,14 @@ Widget_Config :: struct {
 	text_direction:        Cfg(Text_Direction),
 	texture_fit:           Cfg(Style_Texture_Fit),
 	texture_pos:           Cfg(Style_Texture_Pos),
+	top_layer:             Cfg(Style_Bool),
 	visibility:            Cfg(Visibility),
 	width:                 Width,
 	wrap:                  Cfg(Text_Wrap),
 	x:                     Cfg(Style_F32),
 	y:                     Cfg(Style_F32),
+	right:                 Cfg(Style_F32),
+	bottom:                Cfg(Style_F32),
 	z_index:               Cfg(Style_F32),
 }
 
@@ -300,9 +318,18 @@ Resolved_Widget_Style :: struct {
 	wrap:                  Text_Wrap,
 	x:                     f32,
 	y:                     f32,
+	right:                 f32,
+	bottom:                f32,
+	x_set:                 bool,
+	y_set:                 bool,
+	right_set:             bool,
+	bottom_set:            bool,
+	opacity:               u8,
+	order:                 f32,
 	overflow:              Overflow,
 	overflow_y:            Overflow,
 	overflow_x:            Overflow,
+	pointer_events:        Pointer_Events,
 	visibility:            Visibility,
 	z_index:               f32,
 	position:              Position,
@@ -310,6 +337,7 @@ Resolved_Widget_Style :: struct {
 	texture_fit:           Style_Texture_Fit,
 	texture_pos:           Style_Texture_Pos,
 	tabbable:              bool,
+	top_layer:             bool,
 }
 
 /*
@@ -346,8 +374,24 @@ Visibility :: union {
 	enum {
 		VISIBLE,
 		HIDDEN,
+		NONE, // remove from tree
 	},
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Visibility,
+}
+
+/*
+Controls whether the widget can be the pointer hit target.
+*/
+Pointer_Events :: union {
+	Inherit,
+	enum {
+		AUTO,
+		NONE,
+	},
+	proc(
+		frame_state: Widget_Frame_State,
+		event: Widget_Event(Widget_Frame_State),
+	) -> Pointer_Events,
 }
 
 Overflow :: union {

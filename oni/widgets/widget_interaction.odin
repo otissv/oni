@@ -59,13 +59,16 @@ widget_handle_interaction :: proc(
 	key: string,
 	was_focused: bool,
 	tabbable: bool,
+	layout_id: o.UI_Id,
 	rect: o.Rect,
 	config: o.Resolved_Widget_Config,
 ) -> (
 	got_focus: bool,
 	lost_focus: bool,
 ) {
-	frame_state.is_hovered = o.pointer_over(rect, config.space)
+	o.draw_set_stack_index(o.ui_layout_stack_index(layout_id))
+	frame_state.is_hovered = o.pointer_hits(layout_id, rect, config.space)
+	frame_state.is_pointer_target = o.pointer_is_target(layout_id)
 	frame_state.is_left_clicked = frame_state.is_hovered && o.w_ctx.left_mouse.pressed
 	frame_state.is_right_clicked = frame_state.is_hovered && o.w_ctx.right_mouse.pressed
 	frame_state.is_middle_clicked = frame_state.is_hovered && o.w_ctx.middle_mouse.pressed
@@ -79,11 +82,19 @@ widget_handle_interaction :: proc(
 		key,
 		tabbable,
 		was_focused,
-		frame_state.is_hovered,
+		frame_state.is_pointer_target,
 		&frame_state.is_focused,
 	)
 }
 
+/*
+Dispatches enter/leave, pointer, focus, click, and keyboard handlers for a widget.
+
+Pointer handlers (move/press/down/release/click/contextmenu) are skipped when
+`o.stop_propagation()` was already called this frame so ancestors that dispatch
+after Children do not receive bubbled events. Enter/leave and keyboard are not
+gated by the stop flag.
+*/
 @(private)
 widget_dispatch_events :: proc(
 	props: $P,
@@ -97,6 +108,7 @@ widget_dispatch_events :: proc(
 	if !widget_can_interact(handlers, frame_state) do return
 
 	state := frame_state^
+	propagate := !o.w_ctx.pointer_propagation_stopped
 
 	entered, left := o.consume_hover_transition(key, state.is_hovered)
 
@@ -107,11 +119,11 @@ widget_dispatch_events :: proc(
 		props.on_mouse_leave(event)
 	}
 
-	if state.is_hovered && o.w_ctx.mouse_moved && props.on_mouse_move != nil {
+	if propagate && state.is_hovered && o.w_ctx.mouse_moved && props.on_mouse_move != nil {
 		props.on_mouse_move(event)
 	}
 
-	if state.is_hovered && o.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+	if propagate && state.is_hovered && o.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
 		props.on_contextmenu(widget_event(state, mouse_button = sdl.BUTTON_RIGHT))
 	}
 
@@ -123,7 +135,7 @@ widget_dispatch_events :: proc(
 		props.on_blur(widget_event(state, mouse_button = sdl.BUTTON_LEFT))
 	}
 
-	if state.is_hovered && props.on_mouse_pressed != nil {
+	if propagate && state.is_hovered && props.on_mouse_pressed != nil {
 		if o.w_ctx.left_mouse.pressed {
 			props.on_mouse_pressed(widget_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
@@ -135,7 +147,7 @@ widget_dispatch_events :: proc(
 		}
 	}
 
-	if state.is_hovered && props.on_mouse_down != nil {
+	if propagate && state.is_hovered && props.on_mouse_down != nil {
 		if o.w_ctx.left_mouse.down {
 			props.on_mouse_down(widget_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
@@ -147,7 +159,7 @@ widget_dispatch_events :: proc(
 		}
 	}
 
-	if state.is_hovered && props.on_mouse_released != nil {
+	if propagate && state.is_hovered && props.on_mouse_released != nil {
 		if o.w_ctx.left_mouse.released {
 			props.on_mouse_released(widget_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
@@ -181,7 +193,10 @@ widget_dispatch_events :: proc(
 	}
 
 	if clicked && props.on_click != nil {
-		props.on_click(click_event)
+		keyboard_click := click_event.key != o.Scancode(0)
+		if propagate || keyboard_click {
+			props.on_click(click_event)
+		}
 	}
 
 	if state.is_focused {

@@ -52,7 +52,7 @@ Build a **production HUD/APP UI** on the hot-reload stack (`main.odin` host + `a
 | `oni/log.odin`                                    | Structured error/warn/debug logging helpers                            | [x]    |
 | `oni/shaders/ui.vert` / `ui.frag`                 | 2D ortho + tinted textured quad                                        | [x]    |
 | `oni/input.odin` (shortcuts + text-editing state) | Dedicated input module beyond tab/focus                                | [ ]    |
-| `oni/modal.odin`                                  | Overlay stack: popups, tooltips, context menus, drag layer             | [ ]    |
+| `oni/modal.odin`                                  | Modal UX widgets (stacking slot: `top_layer` / `Top_Layer_Begin`)      | [ ]    |
 | `oni/platform_os.odin`                            | Native file dialogs, system clipboard, drag-and-drop                   | [ ]    |
 
 
@@ -89,7 +89,7 @@ UI_Id :: distinct u64
 3. `ui_begin_frame()` — reset per-frame UI transient state
 4. **Pass 1 — layout:** widgets register tree nodes; solver writes `rect`
 5. **Pass 2 — draw:** same widget procs; `ui_layout_rect`; emit draw + handle input
-6. `ui_end_frame()` — focus / tab bookkeeping (modal hit layers when Section 10 lands)
+6. `ui_end_frame()` — focus / tab bookkeeping (top-layer paint/hit via `top_layer` / `Top_Layer_Begin`)
 7. `present_frame()` — flush draw lists, present swapchain
 
 App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
@@ -308,9 +308,10 @@ App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
 - [x] Hover / pressed / focused helpers used by widgets
 - [x] Focus: click sets; click-empty clears; tab moves focus
 - [x] Tab order registration (`register_tabbable` / `focus_next` / `focus_prev`)
-- [ ] Global hit stack so only topmost overlapping widget receives hover/click
+- [x] Global hit stack so only topmost overlapping widget receives hover/click (layout paint lists)
+- [x] Modal/top-layer insertion at top of hit pass (`top_layer` / `Top_Layer_Begin`)
+- [ ] Modal UX widgets (dialog chrome, focus trap) on top of the stacking slot
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard`
-- [ ] Modal layer insertion at top of hit pass (Section 10)
 - [x] Clip push/pop during draw
 
 
@@ -408,13 +409,15 @@ App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
 
 **Goal:** Z-ordered overlays on the same UI core.
 
+Stacking/hit for overlays is already in layout (`top_layer`, `Top_Layer_Begin` / `End`). Remaining work is modal UX widgets on that slot.
+
 ### Deliverables
 
 - [ ] `ui_open_popup(anchor, body)`
 - [ ] `ui_tooltip(text, anchor)` — 400 ms delay; one active
 - [ ] `ui_context_menu(items, pos)` — arrows + Enter; Escape closes
 - [ ] `ui_drag_overlay(preview)` — drag ghost
-- [ ] Popup layer drawn last; separate hit pass before end frame
+- [x] Popup/top layer drawn last; separate hit pass (layout paint lists)
 - [ ] Click outside closes popup (configurable)
 - [ ] Dropdown uses shared popup API (no duplicate system)
 - [x] Widget `on_contextmenu` hook exists (no menu system behind it yet)

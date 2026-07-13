@@ -172,6 +172,7 @@ Image :: proc(props: Image_Props) {
 			layout_id,
 			cfg.id != "",
 			&frame_state,
+			config.visibility,
 		)
 
 		if ran_unmount {
@@ -244,6 +245,7 @@ Image :: proc(props: Image_Props) {
 		key,
 		was_focused,
 		config.tabbable,
+		layout_id,
 		rect,
 		config,
 	)
@@ -260,8 +262,6 @@ Image :: proc(props: Image_Props) {
 			props.on_blur(event)
 		}
 	}
-
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 
 	if should_auto_focus &&
 	   !was_focused &&
@@ -317,7 +317,9 @@ Image :: proc(props: Image_Props) {
 		radius.bl > 0 ||
 		radius.br > 0
 
-	if has_chrome {
+	paint := !o.ui_layout_paint_skip(layout_id)
+
+	if paint && has_chrome {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
@@ -356,23 +358,27 @@ Image :: proc(props: Image_Props) {
 	dst := container
 	src, dst = o.texture_fit_rects(src, container, fit, pos)
 
-	// Always clip to the content box so CONTAIN / SCALE_DOWN / NONE cannot paint outside.
-	o.draw_push_clip(content)
-	painted := o.rect_intersect(dst, content)
-	if painted.w > 0 && painted.h > 0 && src.w > 0 && src.h > 0 && dst.w > 0 && dst.h > 0 {
-		fx0 := (painted.x - dst.x) / dst.w
-		fy0 := (painted.y - dst.y) / dst.h
-		fx1 := fx0 + painted.w / dst.w
-		fy1 := fy0 + painted.h / dst.h
-		src_painted := o.Rect {
-			src.x + src.w * fx0,
-			src.y + src.h * fy0,
-			src.w * (fx1 - fx0),
-			src.h * (fy1 - fy0),
+	if paint {
+		// Always clip to the content box so CONTAIN / SCALE_DOWN / NONE cannot paint outside.
+		o.draw_push_clip(content)
+		painted := o.rect_intersect(dst, content)
+		if painted.w > 0 && painted.h > 0 && src.w > 0 && src.h > 0 && dst.w > 0 && dst.h > 0 {
+			fx0 := (painted.x - dst.x) / dst.w
+			fy0 := (painted.y - dst.y) / dst.h
+			fx1 := fx0 + painted.w / dst.w
+			fy1 := fy0 + painted.h / dst.h
+			src_painted := o.Rect {
+				src.x + src.w * fx0,
+				src.y + src.h * fy0,
+				src.w * (fx1 - fx0),
+				src.h * (fy1 - fy0),
+			}
+			o.draw_texture(props.texture, src_painted, painted, tint, {}, radius)
 		}
-		o.draw_texture(props.texture, src_painted, painted, tint, {}, radius)
+		o.draw_pop_clip()
 	}
-	o.draw_pop_clip()
 
 	o.Children(child, layout_id, config, frame_state)
+
+	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }

@@ -395,7 +395,7 @@ Then Section 9 enemies and NPCs plug into the same sort bucket without redraw bu
   - [ * ] focus & active widget — one keyboard target at a time
   - [   ] editor chrome — toolbar, property fields, viewport frame (all built from the widgets above)
   - [   ] form widgets — checkbox, slider, progress, tabs, tooltip, menu, dialog/modal
-  - [   ] wire style APIs that resolve but do nothing — `overflow*`, `position`, `visibility`, `z_index`
+  - [ * ] wire style APIs that resolve but do nothing — `overflow*` scroll offsets still open; `position` / `visibility` / `z_index` / clip / stacking are laid out
 
   **Layer 5**: production systems
   - [ * ] asset loading (basic; missing broken-image fallback)
@@ -569,7 +569,7 @@ Also unfinished style/layout behavior (fields resolve in `style.odin`, unused in
 - [   ] **Overflow** — HIDDEN clip, SCROLL/AUTO scroll offset
 - [   ] **Position** — RELATIVE / ABSOLUTE / FIXED / STICKY
 - [   ] **Visibility** — hide from hit-test and draw
-- [   ] **Z-index** — stacking within a parent
+- [ * ] **Z-index** — stacking within a parent (layout `stack_index`)
 
 Mini demo: property panel with one label, one slider, and one text field editing a platform’s `x` position.
 
@@ -672,12 +672,14 @@ Open work for shipping the toolkit / demo as a production app UI stack. Tengu is
 
 ### 13.1 Layout & style — half-wired APIs
 
-Resolved into `Resolved_Widget_Style` but **not consumed** by layout or draw:
+Resolved into `Resolved_Widget_Style`; layout/draw consumption:
 
-- [   ] `overflow` / `overflow_x` / `overflow_y` — clip and scroll
-- [   ] `position` — RELATIVE / ABSOLUTE / FIXED / STICKY layout
-- [   ] `visibility` — skip hit-test and paint
-- [   ] `z_index` — draw / hit stacking
+- [ * ] `overflow` / `overflow_x` / `overflow_y` — clip + hit; scroll offsets / scrollports still open
+- [ * ] `position` — RELATIVE / ABSOLUTE / FIXED / STICKY (sticky clamps to clip until scroll offsets exist)
+- [ * ] `visibility` — HIDDEN keeps layout (empty paint/hit); NONE removes subtree
+- [ * ] `z_index` / `order` — layout paint lists + `stack_index`; draw tags stack only
+- [ * ] `pointer_events` — NONE skips hit, still paints
+- [ * ] `top_layer` — paint/hit above screen and artboard
 - [   ] `Dim` extras ignored by resolvers — `grow`, breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
 - [   ] `aspect_ratio` — listed in `attributes.md`, **absent** from `Widget_Style`
 - [   ] Flex beyond grow — shrink / basis (full flexbox not required; document or implement)

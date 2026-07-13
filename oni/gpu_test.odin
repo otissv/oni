@@ -25,10 +25,12 @@ with_gpu_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -76,10 +78,12 @@ with_gpu_device_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 			state.gpu_state.pipeline = nil
 		}
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -102,10 +106,12 @@ with_gpu_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()

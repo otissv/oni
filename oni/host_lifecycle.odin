@@ -48,6 +48,8 @@ DEFAULT_CONFIG :: Host_Config {
 
 config: Host_Config
 
+host_logger: log.Logger
+
 /*
 Returns the path to the hot-reload app shared library on this platform.
 */
@@ -279,7 +281,8 @@ init_app :: proc(
 	exe_dir := filepath.dir(string(exe_path))
 	os.set_working_directory(exe_dir)
 
-	context.logger = log.create_console_logger()
+	host_logger = log.create_console_logger()
+	context.logger = host_logger
 	default_context = context
 
 	sdl.SetLogPriorities(.VERBOSE)
@@ -301,6 +304,8 @@ init_app :: proc(
 	app_api, loaded = load_app_api(api_version)
 	if !loaded {
 		fmt.println("Failed to load app library. Run ./build_hot_reload.sh first.")
+		log.destroy_console_logger(host_logger)
+		host_logger = {}
 		return
 	}
 
@@ -316,6 +321,10 @@ init_app :: proc(
 		use_host_context()
 		app_api.shutdown()
 		unload_app_api(&app_api)
+		if host_logger.procedure != nil {
+			log.destroy_console_logger(host_logger)
+			host_logger = {}
+		}
 		return
 	}
 
@@ -347,6 +356,11 @@ shutdown_app :: proc(
 	use_host_context()
 	app_api.shutdown_window()
 	unload_app_api(app_api)
+
+	if host_logger.procedure != nil {
+		log.destroy_console_logger(host_logger)
+		host_logger = {}
+	}
 }
 
 /*

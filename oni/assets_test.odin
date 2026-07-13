@@ -178,10 +178,12 @@ with_assets_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	assets_init(nil)
 	defer assets_shutdown()
@@ -212,10 +214,12 @@ with_assets_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	state.gpu = gpu
 	white := gpu_create_white_texture(gpu)
@@ -293,10 +297,12 @@ assets_shutdown_frees_cloned_paths_and_texture_state :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	assets_init(nil)
 
@@ -330,10 +336,12 @@ assets_shutdown_then_reinit_restores_empty_cache :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	assets_init(nil)
 	state.assets.paths[strings.clone("gone.png")] = Asset_Id(7)
@@ -820,10 +828,12 @@ assets_init_accepts_gpu_pointer_reserved_for_future_use :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	sentinel: sdl.GPUDevice
 	assets_init(&sentinel)
@@ -853,10 +863,12 @@ assets_shutdown_on_empty_cache_is_safe :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	assets_init(nil)
 	testing.expect_value(t, len(state.assets.paths), 0)

@@ -42,13 +42,17 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	saved_state := o.state
 	saved_theme := o.theme
+	saved_w_ctx := o.w_ctx
 	defer {
 		o.state = saved_state
 		o.theme = saved_theme
+		o.w_ctx = saved_w_ctx
 	}
 
 	o.state = &test_state
 	o.theme = &test_theme
+	o.w_ctx = &o.state.widget
+	o.state.widget = {}
 	o.state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	o.state.view = o.view_default()
 	// Allow draw_rect batching without a GPU device.
@@ -59,6 +63,11 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer {
 		drain_style_stack()
 		o.ui_shutdown()
+		delete(o.state.gpu_state.batch.vertices)
+		delete(o.state.gpu_state.batch.indices)
+		delete(o.state.gpu_state.batch.segments)
+		delete(o.state.gpu_state.batch.clip_stack)
+		delete(o.state.gpu_state.batch.space_stack)
 	}
 
 	// Root style required by resolve_widget_config / theme merges.
@@ -91,9 +100,13 @@ widget_test_end_frame :: proc() {
 	delete(o.state.gpu_state.batch.vertices)
 	delete(o.state.gpu_state.batch.indices)
 	delete(o.state.gpu_state.batch.segments)
+	delete(o.state.gpu_state.batch.clip_stack)
+	delete(o.state.gpu_state.batch.space_stack)
 	o.state.gpu_state.batch.vertices = nil
 	o.state.gpu_state.batch.indices = nil
 	o.state.gpu_state.batch.segments = nil
+	o.state.gpu_state.batch.clip_stack = nil
+	o.state.gpu_state.batch.space_stack = nil
 	o.state.gpu_state.batch.has_current_key = false
 }
 
@@ -143,4 +156,33 @@ len_fixed :: proc(v: f32) -> o.Length {
 @(private)
 set_bool :: proc(v: bool) -> o.Cfg(o.Style_Bool) {
 	return set.Bool(v)
+}
+
+/*
+Finds a root layout node and one of its direct children by parent links.
+
+Used when scoped `ui_id` lookups cannot resolve nested widget nodes after layout.
+*/
+@(private)
+widget_test_find_parent_child_nodes :: proc() -> (
+	parent: ^o.Layout_Node,
+	child: ^o.Layout_Node,
+	ok: bool,
+) {
+	nodes := o.state.ui.layout.nodes[:]
+	parent_i := -1
+	for i in 0 ..< len(nodes) {
+		if nodes[i].parent < 0 {
+			parent_i = i
+			break
+		}
+	}
+	if parent_i < 0 do return nil, nil, false
+
+	for i in 0 ..< len(nodes) {
+		if nodes[i].parent == parent_i {
+			return &nodes[parent_i], &nodes[i], true
+		}
+	}
+	return &nodes[parent_i], nil, false
 }

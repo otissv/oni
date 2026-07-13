@@ -26,10 +26,12 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -65,10 +67,12 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -114,10 +118,12 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -144,10 +150,12 @@ with_engine_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	clear_test_hooks()
 	defer clear_test_hooks()
@@ -665,10 +673,12 @@ engine_init_window_creates_when_missing :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	testing.expect(t, state.window == nil)
 	ok := init_window(
@@ -1437,6 +1447,7 @@ engine_dpi_sync_destroyed_window_disables_render :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	state.window = window
 	state.can_render = true
 	sdl.DestroyWindow(window)
@@ -1489,6 +1500,7 @@ engine_create_window_fail_init_returns_false :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	test_hook_create_window_fail = .Init
 	testing.expect(t, !create_window(engine_test_create_window_cfg()))
 	testing.expect(t, state.window == nil)
@@ -1506,6 +1518,7 @@ engine_create_window_fail_window_tears_down :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	test_hook_create_window_fail = .Window
 	testing.expect(t, !create_window(engine_test_create_window_cfg()))
 	testing.expect(t, state.window == nil)
@@ -1523,6 +1536,7 @@ engine_create_window_fail_gpu_tears_down_window :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	test_hook_create_window_fail = .Gpu
 	testing.expect(t, !create_window(engine_test_create_window_cfg()))
 	testing.expect(t, state.window == nil)
@@ -1540,6 +1554,7 @@ engine_create_window_fail_claim_tears_down :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	test_hook_create_window_fail = .Claim
 	testing.expect(t, !create_window(engine_test_create_window_cfg()))
 	testing.expect(t, state.window == nil)
@@ -1557,6 +1572,7 @@ engine_create_window_fail_swapchain_tears_down :: proc(t: ^testing.T) {
 	saved := state
 	defer {state = saved}
 	state = &test_state
+	widget_ctx_sync()
 	test_hook_create_window_fail = .Swapchain
 	testing.expect(t, !create_window(engine_test_create_window_cfg()))
 	testing.expect(t, state.window == nil)
@@ -1579,9 +1595,11 @@ engine_init_font_init_failure_cleans_up_and_returns_false :: proc(t: ^testing.T)
 	saved_theme := theme
 	defer {
 		state = saved
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 
 	testing.expect(t, create_window(engine_test_create_window_cfg()))

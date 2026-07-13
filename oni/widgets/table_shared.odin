@@ -18,6 +18,7 @@ table_widget_draw_chrome :: proc(
 	frame_state: ^$S,
 	event: o.Widget_Event(S),
 ) {
+	if o.ui_layout_paint_skip(layout_id) do return
 	collapsed := o.table_layout_borders_collapsed_for_widget(layout_id, kind)
 
 	background: o.RGBA

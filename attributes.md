@@ -22,26 +22,35 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `gap` | `gap` | Single value; no separate row/column gap |
 | `height` | `height` | `f32` px; `Height` union exists but not on struct |
 | `justify-content` + `align-items` | `justify` | Combined in `Justify_Pos` |
-| `left` | `x` | Fixed offset only |
+| `left` | `x` | Inset / offset; with `position` absolute/fixed, pairs with `right` |
 | `letter-spacing` | `letter_spacing` | |
 | `line-height` | `line_height` | |
 | `max-height` | `max_h` | |
 | `max-width` | `max_w` | |
 | `min-height` | `min_h` | |
 | `min-width` | `min_w` | |
+| `order` | `order` | Flex item order; optional `Cfg(Style_F32)`, default `0` |
 | `overflow` | `overflow` | `Auto`, `Scroll`, `Hidden` |
-| `overflow-x` | `overflow_x` | |
-| `overflow-y` | `overflow_y` | |
+| `overflow-x` | `overflow_x` | Clip when `Hidden`/`Scroll`; hit-test intersects clip |
+| `overflow-y` | `overflow_y` | Same as `overflow_x` |
 | `padding` | `padding` | Per-side via `Padding` union |
+| `pointer-events` | `pointer_events` | `AUTO` (default) or `NONE` (paint, skip hit) |
+| `position` | `position` | `RELATIVE` (default, in flow), `ABSOLUTE` / `FIXED` (out of flow), `STICKY` |
+| `right` | `right` | Absolute/fixed inset; with `left` stretches width |
+| `bottom` | `bottom` | Absolute/fixed inset; with `top`/`y` stretches height |
 | `text-align` | `align` | Left / Center / Right |
 | `text-decoration-line` | `text_decoration` | `bit_set` of underline / line-through / overline |
 | `text-decoration-style` | `text_decoration_style` | solid, double, dotted, dashed, wavy |
 | `text-decoration-color` | `text_decoration_color` | Unset uses text `color` (currentColor) |
-| `top` | `y` | Fixed offset only |
+| `top` | `y` | Inset / offset; with absolute/fixed pairs with `bottom` |
+| `visibility` | `visibility` | `VISIBLE` (default), `HIDDEN` (layout hole, no paint/hit), `NONE` (removed from tree) |
 | `width` | `width` | `f32` px; `Width` union exists but not on struct |
 | `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Balance` — not full `white-space` |
+| `z-index` | `z_index` | Local stacking context; layout builds paint/hit `stack_index` (default `0`) |
 
-Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard vs screen).
+Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard vs screen), `top_layer` (modal/popup paint/hit above screen+artboard).
+
+**Stacking:** Layout owns order. Negative-z children paint under parent chrome; then parent; then non-negative children. Sorted by `(z_index, order, source)`. Draw tags `stack_index` only. Hit order: top layer → screen → artboard.
 
 ---
 
@@ -54,9 +63,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `display`
 - `float`
 - `clear`
-- `visibility`
-- `content`
-- `contain`
+- `content`- `contain`
 - `container-type`
 - `container-name`
 
@@ -69,7 +76,6 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `flex-flow`
 - `align-content`
 - `align-self`
-- `order`
 - `row-gap` (only unified `gap`)
 - `column-gap` (only unified `gap`)
 
@@ -93,19 +99,14 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 
 ### Layout — positioning
 
-- `position` (`static`, `relative`, `absolute`, `fixed`, `sticky`)
-- `top` (only `y` offset; no positioning mode)
-- `right`
-- `bottom`
-- `left` (only `x` offset; no positioning mode)
-- `inset`
+- `static` position (Oni defaults every widget to `RELATIVE`)
+- `inset` shorthand (set `x`/`y`/`right`/`bottom` individually)
 - `inset-block`
 - `inset-block-end`
 - `inset-block-start`
 - `inset-inline`
 - `inset-inline-end`
 - `inset-inline-start`
-- `z-index`
 - `isolation`
 
 ### Box model

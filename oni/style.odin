@@ -107,22 +107,39 @@ resolve_cfg :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T
 }
 
 @(private)
-resolve_cfg_f32 :: proc(field: Cfg(Style_F32), parent: f32, theme_default: f32) -> f32 {
+resolve_style_f32_value :: proc(
+	value: Style_F32,
+	parent: f32,
+	theme_default: f32,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> f32 {
+	switch v in value {
+	case Inherit:
+		return parent
+	case f32:
+		return v
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_F32:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_style_f32_value(v(ui_state, ui_event), parent, theme_default, state, event)
+	}
+	return theme_default
+}
+
+@(private)
+resolve_cfg_f32 :: proc(
+	field: Cfg(Style_F32),
+	parent: f32,
+	theme_default: f32,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> f32 {
 	switch field.mode {
 	case .UNSET:
 		return theme_default
 	case .Value:
-		switch v in field.value {
-		case Inherit:
-			return parent
-		case f32:
-			return v
-		case proc(
-			     frame_state: Widget_Frame_State,
-			     event: Widget_Event(Widget_Frame_State),
-		     ) -> Style_F32:
-			panic("resolve_cfg_f32: unresolved Style_F32 proc")
-		}
+		return resolve_style_f32_value(field.value, parent, theme_default, state, event)
 	}
 	return theme_default
 }
@@ -482,6 +499,11 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		space = .SCREEN,
 		texture_fit = .FILL,
 		texture_pos = {},
+		position = .RELATIVE,
+		visibility = .VISIBLE,
+		pointer_events = .AUTO,
+		order = 0,
+		z_index = 0,
 	}
 }
 
@@ -518,17 +540,22 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Style_F32, &result.max_w, override.max_w)
 	merge_cfg(Style_F32, &result.min_h, override.min_h)
 	merge_cfg(Style_F32, &result.min_w, override.min_w)
+	merge_cfg(Style_F32, &result.order, override.order)
 	merge_cfg(Padding, &result.padding, override.padding)
+	merge_cfg(Pointer_Events, &result.pointer_events, override.pointer_events)
 	merge_cfg(Radius, &result.radius, override.radius)
 	merge_cfg(Style_Space, &result.space, override.space)
 	merge_cfg(Text_Decoration, &result.text_decoration, override.text_decoration)
 	merge_cfg(Colors, &result.text_decoration_color, override.text_decoration_color)
 	merge_cfg(Text_Decoration_Style, &result.text_decoration_style, override.text_decoration_style)
 	merge_cfg(Text_Direction, &result.text_direction, override.text_direction)
+	merge_cfg(Style_Bool, &result.top_layer, override.top_layer)
 	if cfg_width_is_set(override.width) do result.width = override.width
 	merge_cfg(Text_Wrap, &result.wrap, override.wrap)
 	merge_cfg(Style_F32, &result.x, override.x)
 	merge_cfg(Style_F32, &result.y, override.y)
+	merge_cfg(Style_F32, &result.right, override.right)
+	merge_cfg(Style_F32, &result.bottom, override.bottom)
 	merge_cfg(Overflow, &result.overflow_x, override.overflow_x)
 	merge_cfg(Overflow, &result.overflow_y, override.overflow_y)
 	merge_cfg(Visibility, &result.visibility, override.visibility)
@@ -628,6 +655,10 @@ finalize_resolved_procs :: proc(
 	}
 	if position, position_ok := resolve_position(config.position, state, event); position_ok {
 		config.position = position
+	}
+	if pointer_events, pointer_ok := resolve_pointer_events(config.pointer_events, state, event);
+	   pointer_ok {
+		config.pointer_events = pointer_events
 	}
 	if fit, fit_ok := resolve_texture_fit(config.texture_fit, state, event); fit_ok {
 		config.texture_fit = fit
@@ -905,6 +936,32 @@ resolve_position :: proc(
 }
 
 /*
+Resolves pointer-events mode, evaluating proc callbacks when present.
+*/
+@(private)
+resolve_pointer_events :: proc(
+	pointer_events: Pointer_Events,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	Pointer_Events,
+	bool,
+) {
+	#partial switch v in pointer_events {
+	case Inherit:
+		return {}, false
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Pointer_Events:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_pointer_events(v(ui_state, ui_event), state, event)
+	}
+	return pointer_events, true
+}
+
+/*
 Merges base and override configs, then resolves style against parent and theme.
 
 Returns a fully resolved widget config ready for layout and draw.
@@ -949,9 +1006,15 @@ resolve_widget_config :: proc(
 			event,
 		),
 		disabled              = resolve_cfg_bool(decl.disabled, parent.disabled, theme.disabled),
-		flex                  = resolve_cfg_f32(decl.flex, parent.flex, theme.flex),
+		flex                  = resolve_cfg_f32(decl.flex, parent.flex, theme.flex, state, event),
 		font                  = resolve_cfg_font(decl.font, parent.font, theme.font),
-		font_size             = resolve_cfg_f32(decl.font_size, parent.font_size, theme.font_size),
+		font_size             = resolve_cfg_f32(
+			decl.font_size,
+			parent.font_size,
+			theme.font_size,
+			state,
+			event,
+		),
 		font_style            = resolve_cfg(
 			Font_Style,
 			decl.font_style,
@@ -977,17 +1040,28 @@ resolve_widget_config :: proc(
 			decl.letter_spacing,
 			parent.letter_spacing,
 			theme.letter_spacing,
+			state,
+			event,
 		),
 		line_height           = resolve_cfg_f32(
 			decl.line_height,
 			parent.line_height,
 			theme.line_height,
+			state,
+			event,
 		),
-		max_h                 = resolve_cfg_f32(decl.max_h, parent.max_h, theme.max_h),
-		max_w                 = resolve_cfg_f32(decl.max_w, parent.max_w, theme.max_w),
-		min_h                 = resolve_cfg_f32(decl.min_h, parent.min_h, theme.min_h),
-		min_w                 = resolve_cfg_f32(decl.min_w, parent.min_w, theme.min_w),
+		max_h                 = resolve_cfg_f32(decl.max_h, parent.max_h, theme.max_h, state, event),
+		max_w                 = resolve_cfg_f32(decl.max_w, parent.max_w, theme.max_w, state, event),
+		min_h                 = resolve_cfg_f32(decl.min_h, parent.min_h, theme.min_h, state, event),
+		min_w                 = resolve_cfg_f32(decl.min_w, parent.min_w, theme.min_w, state, event),
+		order                 = resolve_cfg_f32(decl.order, parent.order, theme.order, state, event),
 		padding               = resolve_cfg(Padding, decl.padding, parent.padding, theme.padding),
+		pointer_events        = resolve_cfg(
+			Pointer_Events,
+			decl.pointer_events,
+			parent.pointer_events,
+			theme.pointer_events,
+		),
 		radius                = resolve_cfg(Radius, decl.radius, parent.radius, theme.radius),
 		space                 = resolve_cfg_space(decl.space, parent.space, theme.space),
 		text_decoration       = resolve_cfg(
@@ -1014,6 +1088,7 @@ resolve_widget_config :: proc(
 			parent.text_direction,
 			theme.text_direction,
 		),
+		top_layer             = resolve_cfg_bool(decl.top_layer, parent.top_layer, theme.top_layer),
 		width                 = resolve_length_from_width(
 			decl.width,
 			parent_ctx.content_w,
@@ -1021,8 +1096,20 @@ resolve_widget_config :: proc(
 			event,
 		),
 		wrap                  = resolve_cfg(Text_Wrap, decl.wrap, parent.wrap, theme.wrap),
-		x                     = resolve_cfg_f32(decl.x, parent.x, theme.x),
-		y                     = resolve_cfg_f32(decl.y, parent.y, theme.y),
+		x                     = resolve_cfg_f32(decl.x, parent.x, theme.x, state, event),
+		y                     = resolve_cfg_f32(decl.y, parent.y, theme.y, state, event),
+		right                 = resolve_cfg_f32(decl.right, parent.right, theme.right, state, event),
+		bottom                = resolve_cfg_f32(
+			decl.bottom,
+			parent.bottom,
+			theme.bottom,
+			state,
+			event,
+		),
+		x_set                 = cfg_f32_is_set(decl.x, parent.x_set),
+		y_set                 = cfg_f32_is_set(decl.y, parent.y_set),
+		right_set             = cfg_f32_is_set(decl.right, parent.right_set),
+		bottom_set            = cfg_f32_is_set(decl.bottom, parent.bottom_set),
 		overflow_x            = resolve_cfg(
 			Overflow,
 			decl.overflow_x,
@@ -1041,7 +1128,13 @@ resolve_widget_config :: proc(
 			parent.visibility,
 			theme.visibility,
 		),
-		z_index               = resolve_cfg_f32(decl.z_index, parent.z_index, theme.z_index),
+		z_index               = resolve_cfg_f32(
+			decl.z_index,
+			parent.z_index,
+			theme.z_index,
+			state,
+			event,
+		),
 		position              = resolve_cfg(
 			Position,
 			decl.position,
@@ -1165,6 +1258,7 @@ Children :: proc(
 	config: Resolved_Widget_Config,
 	state: S,
 ) {
+	if layout_visibility_is_none(config.visibility) do return
 	being_children(layout_id, config)
 	if child != nil do child(state)
 

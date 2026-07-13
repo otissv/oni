@@ -1132,3 +1132,61 @@ style_resolve_cfg_self_partial_and_full_align :: proc(t: ^testing.T) {
 	)
 }
 
+@(test)
+style_resolve_order_and_z_index_callbacks :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			frame, event := ui_test_frame_event()
+
+			order_proc :: proc(
+				frame_state: Widget_Frame_State,
+				event: Widget_Event(Widget_Frame_State),
+			) -> Style_F32 {
+				_ = frame_state
+				_ = event
+				return f32(7)
+			}
+			z_proc :: proc(
+				frame_state: Widget_Frame_State,
+				event: Widget_Event(Widget_Frame_State),
+			) -> Style_F32 {
+				_ = frame_state
+				_ = event
+				return f32(11)
+			}
+
+			resolved := resolve_widget_config(
+				{},
+				{
+					order = {mode = .Value, value = order_proc},
+					z_index = {mode = .Value, value = z_proc},
+				},
+				&frame,
+				event,
+			)
+			expect_close(t, resolved.order, 7)
+			expect_close(t, resolved.z_index, 11)
+
+			unset := resolve_widget_config({}, {}, &frame, event)
+			expect_close(t, unset.order, 0)
+			expect_close(t, unset.z_index, 0)
+		},
+	)
+}
+
+@(test)
+style_merge_order_overrides_base :: proc(t: ^testing.T) {
+	base := Widget_Config {
+		order = {mode = .Value, value = f32(1)},
+		z_index = {mode = .Value, value = f32(2)},
+	}
+	override := Widget_Config {
+		order = {mode = .Value, value = f32(9)},
+		z_index = {mode = .Value, value = f32(8)},
+	}
+	merged := merge_widget_config(base, override)
+	expect_close(t, cfg_style_f32(merged.order), 9)
+	expect_close(t, cfg_style_f32(merged.z_index), 8)
+}
+

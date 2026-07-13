@@ -39,6 +39,7 @@ widget_run_layout_lifecycle :: proc(
 	layout_id: o.UI_Id,
 	stable_id: bool,
 	frame_state: ^S,
+	visibility: o.Visibility = .VISIBLE,
 ) -> (
 	skip_layout: bool,
 	ran_unmount: bool,
@@ -48,6 +49,31 @@ widget_run_layout_lifecycle :: proc(
 
 	fs.mounting = entry.mounting
 	fs.unmounting = entry.unmounting
+
+	if o.layout_visibility_is_none(visibility) {
+		if o.ui_was_laid_out_prev(layout_id) {
+			if handlers.on_unmount != nil &&
+			   (entry.unmounting == .RUNNING || entry.unmounting == .UNSET) {
+				if entry.unmounting == .UNSET {
+					entry.unmounting = .RUNNING
+				}
+				ran_unmount = true
+				fs.unmounting = handlers.on_unmount(frame_state^)
+				entry.unmounting = fs.unmounting
+			}
+			if entry.unmounting == .COMPLETED ||
+			   entry.unmounting == .UNSET ||
+			   handlers.on_unmount == nil {
+				skip_layout = true
+				o.widget_lifecycle_remove(layout_id)
+			} else {
+				skip_layout = true
+			}
+		} else {
+			skip_layout = true
+		}
+		return
+	}
 
 	if handlers.on_mount != nil && stable_id {
 		switch entry.mounting {

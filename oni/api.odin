@@ -68,3 +68,14 @@ View_Screen_To_World :: view_screen_to_world
 View_World_To_Screen :: view_world_to_screen
 Input_Mouse_Screen :: input_mouse_screen
 Input_Mouse_World :: input_mouse_world
+
+Layout_Stack_Index :: ui_layout_stack_index
+Layout_Paint_Skip :: ui_layout_paint_skip
+Layout_Hit_Skip :: ui_layout_hit_skip
+Layout_Clip_Rect :: ui_layout_clip_rect
+Top_Layer_Begin :: ui_top_layer_begin
+Top_Layer_End :: ui_top_layer_end
+Draw_Set_Stack_Index :: draw_set_stack_index
+Stop_Propagation :: stop_propagation
+Pointer_Hits :: pointer_hits
+Pointer_Is_Target :: pointer_is_target

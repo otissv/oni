@@ -39,6 +39,7 @@ ui_init :: proc() {
 Tears down widget storage, scope/style stacks, and layout state.
 */
 ui_shutdown :: proc() {
+	widget_ctx_sync()
 	if state.ui.widgets != nil {
 		clear(&state.ui.widgets)
 		delete(state.ui.widgets)
@@ -73,6 +74,7 @@ Starts a new UI frame and resets transient per-frame state.
 Clears scope/style stacks, layout tree, widget input, and auto ids.
 */
 ui_begin_frame :: proc() {
+	widget_ctx_sync()
 	ui_init()
 	state.ui.frame += 1
 	state.ui.pass = .Layout
@@ -96,7 +98,13 @@ ui_begin_frame :: proc() {
 
 	w_ctx.mouse_moved = false
 	w_ctx.tab_focus_changed = false
+	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+		widget_release_key(w_ctx.tab_focus_previous_id)
+	}
 	w_ctx.tab_focus_previous_id = {}
+	w_ctx.pointer_hit_valid = false
+	w_ctx.pointer_hit_ui_id = {}
+	w_ctx.pointer_propagation_stopped = false
 
 	clear_button_transients(&w_ctx.left_mouse)
 	clear_button_transients(&w_ctx.right_mouse)
@@ -117,6 +125,9 @@ ui_end_layout_pass :: proc() {
 	for id in state.ui.layout.id_to_node {
 		state.ui.layout_ids_snapshot[id] = true
 	}
+
+	layout_finalize_stack_order()
+	layout_resolve_pointer_hit()
 
 	widget_prune_focus()
 	widget_process_tab_navigation()

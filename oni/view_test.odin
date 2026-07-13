@@ -26,9 +26,11 @@ with_view_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer {
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	state.view = view_default()
 	body(t)
 }
@@ -40,8 +42,10 @@ with_nil_state :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	saved_state := state
 	state = nil
+	widget_ctx_sync()
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 	}
 	body(t)
 }
@@ -61,8 +65,10 @@ expect_view_unchanged_while_nil :: proc(
 	before := state.view
 	saved := state
 	state = nil
+	widget_ctx_sync()
 	body(t)
 	state = saved
+	widget_ctx_sync()
 
 	expect_close(t, state.view.zoom, before.zoom, loc = loc)
 	expect_vec2(t, state.view.pan, before.pan, loc = loc)
@@ -918,11 +924,13 @@ view_transform_rect_nil_state_returns_identity :: proc(t: ^testing.T) {
 			// Nil state: early return (space is SCREEN without state).
 			saved := state
 			state = nil
+			widget_ctx_sync()
 			expect_rect(t, view_transform_rect(r), r)
 			expect_vec2(t, view_transform_point({1, 2}), {1, 2})
 			expect_close(t, view_artboard_zoom(), 1)
 			expect_vec2(t, draw_space_to_logical({9, 8}), {9, 8})
 			state = saved
+			widget_ctx_sync()
 		},
 	)
 }

@@ -78,10 +78,12 @@ with_test_global_state :: proc(
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = test_state
+	widget_ctx_sync()
 	theme = nil
 	body(test_state, t)
 }
@@ -97,10 +99,12 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	test_state.ui.layout = layout_test_begin()
 	defer layout_test_end(&test_state.ui.layout)
@@ -180,6 +184,14 @@ layout_test_end :: proc(layout: ^Layout_State) {
 	layout.bounds_stack = nil
 	delete(layout.space_markers)
 	layout.space_markers = nil
+	delete(layout.paint_list_screen)
+	layout.paint_list_screen = nil
+	delete(layout.paint_list_artboard)
+	layout.paint_list_artboard = nil
+	delete(layout.top_layer_paint_list)
+	layout.top_layer_paint_list = nil
+	delete(layout.space_stack)
+	layout.space_stack = nil
 	delete(layout.id_to_node)
 	layout.id_to_node = nil
 }
@@ -2463,5 +2475,52 @@ layout_wrap_main_justify_end_offsets_line_items :: proc(t: ^testing.T) {
 		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
 		expect_rect(t, layout.nodes[a].rect, {120, 0, 40, 20})
 		expect_rect(t, layout.nodes[b].rect, {160, 0, 40, 20})
+	})
+}
+
+@(test)
+layout_flex_order_reorders_children_ascending :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 40},
+			{direction = .HORIZONTAL},
+		)
+		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 2})
+		b := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 0})
+		c := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 1})
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
+		expect_rect(t, layout.nodes[b].rect, {0, 0, 40, 20})
+		expect_rect(t, layout.nodes[c].rect, {40, 0, 40, 20})
+		expect_rect(t, layout.nodes[a].rect, {80, 0, 40, 20})
+		testing.expect_value(t, layout.nodes[root].child_indices[0], b)
+		testing.expect_value(t, layout.nodes[root].child_indices[1], c)
+		testing.expect_value(t, layout.nodes[root].child_indices[2], a)
+	})
+}
+
+@(test)
+layout_flex_order_stable_for_equal_values :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 40},
+			{direction = .HORIZONTAL},
+		)
+		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 1})
+		b := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 1})
+		c := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 0})
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
+		expect_rect(t, layout.nodes[c].rect, {0, 0, 40, 20})
+		expect_rect(t, layout.nodes[a].rect, {40, 0, 40, 20})
+		expect_rect(t, layout.nodes[b].rect, {80, 0, 40, 20})
 	})
 }

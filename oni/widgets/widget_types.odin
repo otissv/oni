@@ -1,7 +1,6 @@
 package widgets
 
 import o ".."
-import "core:fmt"
 import sdl "vendor:sdl3"
 
 /*
@@ -31,34 +30,21 @@ merge_state_event :: proc(
 Allocates the next auto-generated element id for widgets without an explicit id.
 */
 auto_element_id :: proc() -> o.Widget_ID {
-	idx := o.w_ctx.auto_element_index
-	o.w_ctx.auto_element_index += 1
-
-	id := fmt.tprintf("__auto_element__{0}", idx)
-
-	return id
+	return o.auto_element_id()
 }
 
 /*
 Maps a user-facing id string to its runtime element key when one is provided.
 */
 register_static_id :: proc(id: string, static_id: string) {
-	if id == "" do return
-
-	if o.w_ctx.static_ids == nil {
-		o.w_ctx.static_ids = make(map[string]o.Widget_ID)
-	}
-
-	o.w_ctx.static_ids[id] = static_id
+	o.register_static_id(id, static_id)
 }
 
 /*
 Resolves the runtime element key for a widget, auto-generating one when id is empty.
 */
 element_key :: proc(id: string) -> string {
-	key := auto_element_id()
-	register_static_id(id, key)
-	return key
+	return o.element_key(id)
 }
 
 /*
@@ -79,7 +65,7 @@ FocusElement :: proc(id: string) -> bool {
 	element_id, ok := GetElementById(id)
 	if !ok do return false
 
-	o.w_ctx.focused_id = element_id
+	o.widget_set_focused_id(element_id)
 	return true
 }
 
@@ -185,6 +171,7 @@ Translates an SDL event into widget input state on the shared context.
 Handles mouse motion, buttons, keyboard input, and window focus loss.
 */
 ProcessEvent :: proc(event: ^sdl.Event) {
+	o.widget_ctx_sync()
 	#partial switch event.type {
 	case .MOUSE_MOTION:
 		o.w_ctx.mouse_moved = true

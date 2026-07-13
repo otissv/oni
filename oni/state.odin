@@ -44,6 +44,7 @@ State :: struct {
 	fullscreen:          bool,
 	can_render:          bool,
 	ui:                  UI_State,
+	widget:              Widget_Context,
 	gamepad:             ^sdl.Gamepad,
 	gamepad_instance_id: sdl.JoystickID,
 	force_reload:        bool,
@@ -57,7 +58,16 @@ state: ^State
 theme: ^Theme
 
 /*
-Re-binds package-level state and theme globals to the given pointers.
+Keeps the package-level widget context pointer aligned with engine state.
+
+Call after assigning `state` directly (tests) or when entering UI entry points.
+*/
+widget_ctx_sync :: proc() {
+	w_ctx = state != nil ? &state.widget : nil
+}
+
+/*
+Re-binds package-level state, theme, and widget-context globals to the given pointers.
 
 Call after any operation that may change the persistent pointer, such as
 allocation, hot reload, or realloc.
@@ -65,4 +75,5 @@ allocation, hot reload, or realloc.
 bind :: proc(s: ^State, t: ^Theme) {
 	state = s
 	theme = t
+	widget_ctx_sync()
 }

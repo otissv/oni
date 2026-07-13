@@ -698,7 +698,8 @@ ui_end_layout_pass_clears_static_ids_for_draw_regen :: proc(t: ^testing.T) {
 			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
 			key := element_key("btn")
 			testing.expect_value(t, w_ctx.static_ids["btn"], key)
-			testing.expect_value(t, w_ctx.auto_element_index, u32(1))
+			testing.expect_value(t, key, "btn")
+			testing.expect_value(t, w_ctx.auto_element_index, u32(0))
 
 			ui_end_layout_pass()
 			testing.expect(t, len(w_ctx.static_ids) == 0)
@@ -706,7 +707,8 @@ ui_end_layout_pass_clears_static_ids_for_draw_regen :: proc(t: ^testing.T) {
 
 			key2 := element_key("btn")
 			testing.expect_value(t, w_ctx.static_ids["btn"], key2)
-			testing.expect_value(t, key2, "__auto_element__0")
+			testing.expect_value(t, key2, "btn")
+			testing.expect_value(t, w_ctx.auto_element_index, u32(0))
 		},
 	)
 }

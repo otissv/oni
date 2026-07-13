@@ -93,6 +93,7 @@ Table_Body :: proc(props: Table_Body_Props) {
 			layout_id,
 			cfg.id != "",
 			&frame_state,
+			config.visibility,
 		)
 
 		if ran_unmount {
@@ -127,6 +128,7 @@ Table_Body :: proc(props: Table_Body_Props) {
 		key,
 		was_focused,
 		config.tabbable,
+		layout_id,
 		rect,
 		config,
 	)
@@ -144,8 +146,6 @@ Table_Body :: proc(props: Table_Body_Props) {
 		}
 	}
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
-
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
@@ -156,4 +156,6 @@ Table_Body :: proc(props: Table_Body_Props) {
 	table_widget_draw_chrome(layout_id, .TABLE_BODY, rect, config, &frame_state, event)
 
 	o.Children(child, layout_id, config, frame_state)
+
+	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }

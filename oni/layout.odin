@@ -88,6 +88,13 @@ Layout_Node :: struct {
 	image_input:       Layout_Image_Input,
 	image:             Layout_Image,
 	collapsed_borders: Layout_Collapsed_Borders,
+	stack_index:       u32,
+	paint_skip:        bool,
+	hit_skip:          bool,
+	in_flex_flow:      bool,
+	clip_rect:         Rect,
+	has_clip:          bool,
+	space:             Draw_Space,
 }
 
 /*
@@ -105,12 +112,19 @@ Layout_Table_Tracks :: struct {
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
-	nodes:         [dynamic]Layout_Node,
-	node_stack:    [dynamic]int,
-	bounds_stack:  [dynamic]Rect,
-	space_markers: [dynamic]int,
-	id_to_node:    map[UI_Id]int,
-	table_tracks:  map[int]Layout_Table_Tracks,
+	nodes:                [dynamic]Layout_Node,
+	node_stack:           [dynamic]int,
+	bounds_stack:         [dynamic]Rect,
+	space_markers:        [dynamic]int,
+	id_to_node:           map[UI_Id]int,
+	table_tracks:         map[int]Layout_Table_Tracks,
+	paint_list_screen:    [dynamic]int,
+	paint_list_artboard:  [dynamic]int,
+	top_layer_paint_list: [dynamic]int,
+	current_space:        Draw_Space,
+	in_top_layer:         bool,
+	space_stack:          [dynamic]Draw_Space,
+	stack_counter:        u32,
 }
 
 @(private)
@@ -140,6 +154,13 @@ layout_reset :: proc() {
 	clear(&state.ui.layout.bounds_stack)
 	clear(&state.ui.layout.space_markers)
 	clear(&state.ui.layout.id_to_node)
+	clear(&state.ui.layout.paint_list_screen)
+	clear(&state.ui.layout.paint_list_artboard)
+	clear(&state.ui.layout.top_layer_paint_list)
+	clear(&state.ui.layout.space_stack)
+	state.ui.layout.current_space = .SCREEN
+	state.ui.layout.in_top_layer = false
+	state.ui.layout.stack_counter = 0
 }
 
 /*
@@ -156,6 +177,14 @@ layout_shutdown :: proc() {
 	state.ui.layout.bounds_stack = nil
 	delete(state.ui.layout.space_markers)
 	state.ui.layout.space_markers = nil
+	delete(state.ui.layout.paint_list_screen)
+	state.ui.layout.paint_list_screen = nil
+	delete(state.ui.layout.paint_list_artboard)
+	state.ui.layout.paint_list_artboard = nil
+	delete(state.ui.layout.top_layer_paint_list)
+	state.ui.layout.top_layer_paint_list = nil
+	delete(state.ui.layout.space_stack)
+	state.ui.layout.space_stack = nil
 }
 
 /*
@@ -317,6 +346,10 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, g
 
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) {
+			sizes[i] = {}
+			continue
+		}
 		sizes[i] = child.desired
 	}
 
@@ -872,6 +905,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	gap_cross := layout_config_gap_cross(node.config, info.is_horizontal)
 
 	if len(node.child_indices) > 0 {
+		layout_sort_children_by_order(node)
 
 		if info.is_wrap {
 			return layout_wrap_measure(node, info.is_horizontal, gap_main, gap_cross)
@@ -884,6 +918,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 
 		for child_index in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
+			if !layout_position_in_flex_flow(child.config.position) do continue
 			append(&child_nodes, child)
 			append(&child_sizes, child.desired)
 		}
@@ -893,10 +928,12 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 
 		main_sum: f32
 		cross_max: f32
+		sized_count := 0
 		for child, i in child_nodes {
 			child_main := info.is_horizontal ? child.config.width : child.config.height
 			if child.config.flex > 0 && !length_is_definite(child_main) do continue
 
+			sized_count += 1
 			if info.is_horizontal {
 				main_sum += child_sizes[i].x
 				cross_max = max(cross_max, child_sizes[i].y)
@@ -906,9 +943,10 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 			}
 		}
 
-		if len(node.child_indices) > 1 {
-			main_sum += gap_main * f32(len(node.child_indices) - 1)
+		if len(child_nodes) > 1 {
+			main_sum += gap_main * f32(len(child_nodes) - 1)
 		}
+		_ = sized_count
 
 		inset_w := padding.l + padding.r + border.l + border.r
 		inset_h := padding.t + padding.b + border.t + border.b
@@ -938,6 +976,28 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 }
 
 /*
+Stable-sorts flex children by resolved `order` (ascending). Equal orders keep
+source order. Skips table rows so column indices stay aligned with tracks.
+*/
+@(private)
+layout_sort_children_by_order :: proc(node: ^Layout_Node) {
+	n := len(node.child_indices)
+	if n < 2 do return
+	if node.kind == .TABLE_ROW do return
+
+	for i in 1 ..< n {
+		key := node.child_indices[i]
+		key_order := state.ui.layout.nodes[key].config.order
+		j := i - 1
+		for j >= 0 && state.ui.layout.nodes[node.child_indices[j]].config.order > key_order {
+			node.child_indices[j + 1] = node.child_indices[j]
+			j -= 1
+		}
+		node.child_indices[j + 1] = key
+	}
+}
+
+/*
 Creates a layout node, links it to the parent, and pushes it on the stack.
 */
 layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layout_Node {
@@ -949,13 +1009,21 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	padding, _ := resolve_padding_value(config.padding)
 	border, _ := resolve_border_value(config.border)
 
+	in_top := config.top_layer || state.ui.layout.in_top_layer
+	style := config.style
+	if in_top {
+		style.top_layer = true
+	}
+
 	node := Layout_Node {
-		ui_id   = ui_id,
-		kind    = config.kind,
-		config  = config.style,
-		padding = padding,
-		border  = border,
-		parent  = parent_index,
+		ui_id        = ui_id,
+		kind         = config.kind,
+		config       = style,
+		padding      = padding,
+		border       = border,
+		parent       = parent_index,
+		in_flex_flow = layout_position_in_flex_flow(style.position),
+		space        = state.ui.layout.current_space,
 	}
 	append(&state.ui.layout.nodes, node)
 	node_index := len(state.ui.layout.nodes) - 1
@@ -1069,6 +1137,7 @@ layout_child_main_size :: proc(
 Returns whether a child participates in main-axis flow layout.
 */
 layout_child_in_main_flow :: proc(child: ^Layout_Node, is_horizontal: bool) -> bool {
+	if !layout_position_in_flex_flow(child.config.position) do return false
 	self := child.config.self
 	if is_horizontal {
 		_, ok := resolve_justify_x(self.x)
@@ -1129,6 +1198,23 @@ Returns the layout node index for a node pointer in the current layout tree.
 */
 layout_node_index :: proc(node: ^Layout_Node) -> int {
 	return layout_node_index_in(&state.ui.layout, node)
+}
+
+/*
+Returns whether `ancestor_id` is a strict layout ancestor of `descendant_id`.
+*/
+layout_is_ancestor_of :: proc(ancestor_id: UI_Id, descendant_id: UI_Id) -> bool {
+	if ancestor_id == descendant_id do return false
+	idx, ok := state.ui.layout.id_to_node[descendant_id]
+	if !ok do return false
+
+	parent := state.ui.layout.nodes[idx].parent
+	for parent >= 0 {
+		node := &state.ui.layout.nodes[parent]
+		if node.ui_id == ancestor_id do return true
+		parent = node.parent
+	}
+	return false
 }
 
 /*
@@ -1700,6 +1786,18 @@ layout_position_child_rect :: proc(
 }
 
 /*
+Positions out-of-flow children of a node after in-flow flex placement.
+*/
+@(private)
+layout_position_out_of_flow_children :: proc(node: ^Layout_Node) {
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if layout_position_in_flex_flow(child.config.position) do continue
+		layout_place_out_of_flow(child, node)
+	}
+}
+
+/*
 Positions children in a wrap flex container.
 */
 layout_position_children_wrap :: proc(
@@ -1876,6 +1974,7 @@ layout_position_children_wrap :: proc(
 			size_index := line.start + i
 			child_index := node.child_indices[size_index]
 			child := &state.ui.layout.nodes[child_index]
+			if !layout_position_in_flex_flow(child.config.position) do continue
 			size := child_sizes[size_index]
 			main := layout_wrap_child_main(size, is_horizontal)
 			in_flow_child := layout_child_in_main_flow(child, is_horizontal)
@@ -1945,6 +2044,8 @@ layout_position_children_wrap :: proc(
 		line_cross_cursor += line_cross
 		if line_index + 1 < len(lines) do line_cross_cursor += gap_cross
 	}
+
+	layout_position_out_of_flow_children(node)
 }
 
 /*
@@ -1978,6 +2079,7 @@ Positions children in a non-wrap flex container.
 */
 layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
+	layout_sort_children_by_order(node)
 
 	if node.kind == .TABLE {
 		layout_table_prepare(layout_node_index(node))
@@ -1999,6 +2101,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 
 	flex_total: f32
 	fixed_total: f32
+	in_flow_count := 0
 
 	child_sizes: [dynamic]Vec2
 	defer delete(child_sizes)
@@ -2006,6 +2109,8 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
+		in_flow_count += 1
 		child_main := is_horizontal ? child.config.width : child.config.height
 
 		if child.config.flex > 0 && !length_is_definite(child_main) {
@@ -2016,8 +2121,8 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		}
 	}
 
-	if len(node.child_indices) > 1 {
-		fixed_total += gap_main * f32(len(node.child_indices) - 1)
+	if in_flow_count > 1 {
+		fixed_total += gap_main * f32(in_flow_count - 1)
 	}
 
 	remaining := max(0, main_available - fixed_total)
@@ -2127,6 +2232,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	flow_index := 0
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
 		child_justify := layout_merge_justify(justify, child.config.self)
 		size := child_sizes[i]
 
@@ -2214,12 +2320,28 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if node.kind == .TABLE {
 		layout_table_finalize(layout_node_index(node))
 	}
+
+	layout_position_out_of_flow_children(node)
 }
 
 /*
 Assigns a node's rect and recursively positions its children.
 */
 layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
+	kind := layout_position_kind(node.config.position)
+	if kind == .ABSOLUTE || kind == .FIXED {
+		cb := bounds
+		if kind == .FIXED {
+			space := node.space
+			if node.config.top_layer {
+				space = .SCREEN
+			}
+			cb = layout_space_bounds(space)
+		}
+		layout_place_against_containing_block(node, cb)
+		return
+	}
+
 	size := layout_resolve_node_size(node, bounds)
 
 	x := bounds.x
@@ -2273,6 +2395,8 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 Pushes layout bounds and records the node index for a new space.
 */
 layout_begin_space :: proc(space: Draw_Space) {
+	append(&state.ui.layout.space_stack, state.ui.layout.current_space)
+	state.ui.layout.current_space = space
 	append(&state.ui.layout.bounds_stack, layout_space_bounds(space))
 	append(&state.ui.layout.space_markers, len(state.ui.layout.nodes))
 }
@@ -2285,6 +2409,7 @@ layout_end_space :: proc() {
 
 	bounds := state.ui.layout.bounds_stack[len(state.ui.layout.bounds_stack) - 1]
 	marker := state.ui.layout.space_markers[len(state.ui.layout.space_markers) - 1]
+	space := state.ui.layout.current_space
 
 	ordered_remove(&state.ui.layout.bounds_stack, len(state.ui.layout.bounds_stack) - 1)
 	ordered_remove(&state.ui.layout.space_markers, len(state.ui.layout.space_markers) - 1)
@@ -2294,4 +2419,14 @@ layout_end_space :: proc() {
 		if node.parent >= 0 do continue
 		layout_solve(node, bounds)
 	}
+
+	if len(state.ui.layout.space_stack) > 0 {
+		state.ui.layout.current_space =
+			state.ui.layout.space_stack[len(state.ui.layout.space_stack) - 1]
+		ordered_remove(&state.ui.layout.space_stack, len(state.ui.layout.space_stack) - 1)
+	} else {
+		state.ui.layout.current_space = .SCREEN
+	}
+
+	_ = space
 }

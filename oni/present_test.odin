@@ -62,10 +62,12 @@ with_present_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = &test_theme
 	clear_test_hooks()
 	defer clear_test_hooks()

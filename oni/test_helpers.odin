@@ -42,7 +42,8 @@ with_ui_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	state = &test_state
 	theme = &test_theme
-	w_ctx = {}
+	w_ctx = &state.widget
+	state.widget = {}
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	state.view = view_default()
 	state.gpu_state.batch.vertex_capacity = 64 * 1024
@@ -57,6 +58,8 @@ with_ui_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(state.gpu_state.batch.vertices)
 		delete(state.gpu_state.batch.indices)
 		delete(state.gpu_state.batch.segments)
+		delete(state.gpu_state.batch.clip_stack)
+		delete(state.gpu_state.batch.space_stack)
 	}
 
 	ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))

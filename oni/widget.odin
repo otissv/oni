@@ -1,7 +1,75 @@
 package oni
 
 import "core:fmt"
+import "core:strings"
 
+
+AUTO_ELEMENT_ID_PREFIX :: "__auto_element__"
+
+/*
+Returns whether a widget identity string was allocated by the engine (auto id).
+
+User-facing config.id values are borrowed and must not be freed.
+*/
+@(private)
+widget_key_is_owned :: proc(key: string) -> bool {
+	return strings.has_prefix(key, AUTO_ELEMENT_ID_PREFIX)
+}
+
+/*
+Returns a key safe to store across frames.
+
+Auto-generated ids are cloned off the temp allocator; user ids are returned as-is.
+*/
+@(private)
+widget_retain_key :: proc(key: string) -> string {
+	if key == "" || !widget_key_is_owned(key) do return key
+	return strings.clone(key)
+}
+
+/*
+Frees a key previously retained for cross-frame storage.
+*/
+@(private)
+widget_release_key :: proc(key: string) {
+	if widget_key_is_owned(key) {
+		delete(key)
+	}
+}
+
+/*
+Sets keyboard focus, owning auto-generated ids across temp allocator wipes.
+*/
+widget_set_focused_id :: proc(id: Widget_ID) {
+	if w_ctx == nil do return
+	if w_ctx.focused_id_owned {
+		widget_release_key(w_ctx.focused_id)
+	}
+	if id == "" {
+		w_ctx.focused_id = {}
+		w_ctx.focused_id_owned = false
+		return
+	}
+	w_ctx.focused_id = widget_retain_key(id)
+	w_ctx.focused_id_owned = widget_key_is_owned(w_ctx.focused_id)
+}
+
+/*
+Records the auto-focus target so it is not re-applied every frame.
+*/
+widget_set_auto_focused_id :: proc(id: Widget_ID) {
+	if w_ctx == nil do return
+	if w_ctx.auto_focused_id_owned {
+		widget_release_key(w_ctx.auto_focused_id)
+	}
+	if id == "" {
+		w_ctx.auto_focused_id = {}
+		w_ctx.auto_focused_id_owned = false
+		return
+	}
+	w_ctx.auto_focused_id = widget_retain_key(id)
+	w_ctx.auto_focused_id_owned = widget_key_is_owned(w_ctx.auto_focused_id)
+}
 
 /*
 Appends an element to this frame's tab order in declaration order.
@@ -32,6 +100,22 @@ element_key_is_active :: proc(key: string) -> bool {
 	return false
 }
 
+@(private)
+widget_map_delete_key :: proc(m: ^map[string]bool, key: string) {
+	delete_key(m, key)
+	widget_release_key(key)
+}
+
+@(private)
+widget_map_clear_owned :: proc(m: ^map[string]bool) {
+	if m == nil || m^ == nil do return
+	for key in m^ {
+		widget_release_key(key)
+	}
+	delete(m^)
+	m^ = nil
+}
+
 /*
 Removes stale hover and pointer-down entries for elements no longer in the UI.
 */
@@ -44,7 +128,7 @@ widget_prune_element_maps :: proc() {
 			}
 		}
 		for key in remove_keys {
-			delete_key(&w_ctx.element_was_hovered, key)
+			widget_map_delete_key(&w_ctx.element_was_hovered, key)
 		}
 	}
 
@@ -56,7 +140,7 @@ widget_prune_element_maps :: proc() {
 			}
 		}
 		for key in remove_keys {
-			delete_key(&w_ctx.element_pointer_down, key)
+			widget_map_delete_key(&w_ctx.element_pointer_down, key)
 		}
 	}
 }
@@ -67,6 +151,8 @@ Releases heap-owned widget input maps.
 Call during UI shutdown.
 */
 widget_ctx_shutdown :: proc() {
+	if w_ctx == nil do return
+
 	if w_ctx.tab_order != nil {
 		delete(w_ctx.tab_order)
 		w_ctx.tab_order = nil
@@ -75,16 +161,20 @@ widget_ctx_shutdown :: proc() {
 		delete(w_ctx.static_ids)
 		w_ctx.static_ids = nil
 	}
-	if w_ctx.element_was_hovered != nil {
-		delete(w_ctx.element_was_hovered)
-		w_ctx.element_was_hovered = nil
+	widget_map_clear_owned(&w_ctx.element_was_hovered)
+	widget_map_clear_owned(&w_ctx.element_pointer_down)
+
+	if w_ctx.focused_id_owned {
+		widget_release_key(w_ctx.focused_id)
 	}
-	if w_ctx.element_pointer_down != nil {
-		delete(w_ctx.element_pointer_down)
-		w_ctx.element_pointer_down = nil
+	if w_ctx.auto_focused_id_owned {
+		widget_release_key(w_ctx.auto_focused_id)
+	}
+	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+		widget_release_key(w_ctx.tab_focus_previous_id)
 	}
 
-	w_ctx = {}
+	w_ctx^ = {}
 }
 
 /*
@@ -97,7 +187,7 @@ widget_prune_focus :: proc() {
 		if id == w_ctx.focused_id do return
 	}
 
-	w_ctx.focused_id = {}
+	widget_set_focused_id("")
 }
 
 /*
@@ -133,7 +223,12 @@ widget_focus_tab :: proc(reverse: bool) -> bool {
 	next_id := w_ctx.tab_order[next_idx]
 	if next_id == previous_id do return false
 
-	w_ctx.focused_id = next_id
+	// Keep previous_id alive for same-frame lost-focus checks; release at begin_frame.
+	w_ctx.focused_id_owned = false
+	widget_set_focused_id(next_id)
+	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+		widget_release_key(w_ctx.tab_focus_previous_id)
+	}
 	w_ctx.tab_focus_previous_id = previous_id
 	w_ctx.tab_focus_changed = true
 	return true
@@ -174,19 +269,19 @@ focus_prev :: proc() -> bool {
 Returns the next auto-generated element id for this frame.
 
 Ids are unique within a frame and reset at ui_begin_frame.
+Allocated on the temp allocator; retain with widget_retain_key before storing
+across free_all(temp).
 */
 auto_element_id :: proc() -> Widget_ID {
 	idx := w_ctx.auto_element_index
 	w_ctx.auto_element_index += 1
 
-	id := fmt.tprintf("__auto_element__{0}", idx)
-
-	return id
+	return fmt.tprintf("{0}{1}", AUTO_ELEMENT_ID_PREFIX, idx)
 }
 
 
 /*
-Maps a stable user id to the auto-generated key used this frame.
+Maps a stable user id to the runtime element key used this frame.
 
 Skipped when id is empty.
 */
@@ -201,13 +296,17 @@ register_static_id :: proc(id: string, static_id: string) {
 }
 
 /*
-Returns a frame-local key for an element and registers its static id mapping.
+Returns the runtime identity for an element.
+
+When id is non-empty it is used directly (stable across frames). Otherwise an
+auto id is allocated for this frame only.
 */
 element_key :: proc(id: string) -> string {
-	key := auto_element_id()
-	register_static_id(id, key)
-
-	return key
+	if id != "" {
+		register_static_id(id, id)
+		return id
+	}
+	return auto_element_id()
 }
 
 /*
@@ -261,6 +360,7 @@ Syncs mouse position and all button/key states for hit testing.
 */
 sync_widget_input :: proc() {
 	if state == nil do return
+	widget_ctx_sync()
 
 	new_x := state.input.mouse_x
 	new_y := state.input.mouse_y
@@ -300,6 +400,53 @@ pointer_over :: proc(rect: Rect, space: Draw_Space) -> bool {
 }
 
 /*
+Returns whether this layout id is hovered in the CSS sense.
+
+When a paint-list hit is resolved, the topmost hit and all of its layout
+ancestors are hovered. Otherwise falls back to geometry (and hit_skip).
+*/
+pointer_hits :: proc(layout_id: UI_Id, rect: Rect, space: Draw_Space) -> bool {
+	if w_ctx.pointer_hit_valid {
+		return pointer_hover_contains(layout_id)
+	}
+	if ui_layout_hit_skip(layout_id) do return false
+	return pointer_over(rect, space)
+}
+
+/*
+Returns whether this layout id is the topmost pointer hit target.
+*/
+pointer_is_target :: proc(layout_id: UI_Id) -> bool {
+	return w_ctx.pointer_hit_valid && layout_id == w_ctx.pointer_hit_ui_id
+}
+
+@(private)
+pointer_hover_contains :: proc(layout_id: UI_Id) -> bool {
+	if !w_ctx.pointer_hit_valid do return false
+	if layout_id == w_ctx.pointer_hit_ui_id do return true
+	return layout_is_ancestor_of(layout_id, w_ctx.pointer_hit_ui_id)
+}
+
+/*
+Stops remaining ancestor pointer-event handlers for the rest of this frame.
+
+IMGUI-style latch: call from a widget handler (e.g. on_click) to prevent
+parents that dispatch after Children from receiving bubbled pointer events.
+Enter/leave and keyboard handlers are unaffected.
+*/
+stop_propagation :: proc() {
+	if w_ctx == nil do return
+	w_ctx.pointer_propagation_stopped = true
+}
+
+/*
+Sets the batch draw stack index for subsequent geometry.
+*/
+draw_set_stack_index :: proc(stack_index: u32) {
+	batch_set_stack_index(stack_index)
+}
+
+/*
 Casts a typed widget state pointer to the generic Widget_Frame_State view.
 */
 to_ui_state :: proc(state: ^$S) -> Widget_Frame_State {
@@ -322,10 +469,14 @@ consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered,
 		w_ctx.element_was_hovered = make(map[string]bool)
 	}
 
-	was_hovered := w_ctx.element_was_hovered[element_id]
+	was_hovered, exists := w_ctx.element_was_hovered[element_id]
 	entered = hovered && !was_hovered
 	left = was_hovered && !hovered
-	w_ctx.element_was_hovered[element_id] = hovered
+	if !exists {
+		w_ctx.element_was_hovered[widget_retain_key(element_id)] = hovered
+	} else {
+		w_ctx.element_was_hovered[element_id] = hovered
+	}
 
 	return
 }
@@ -1086,12 +1237,20 @@ consume_pointer_click :: proc(
 	}
 
 	if hovered && left_pressed {
-		w_ctx.element_pointer_down[element_id] = true
+		if _, exists := w_ctx.element_pointer_down[element_id]; !exists {
+			w_ctx.element_pointer_down[widget_retain_key(element_id)] = true
+		} else {
+			w_ctx.element_pointer_down[element_id] = true
+		}
 	}
 
 	if left_released {
 		clicked = w_ctx.element_pointer_down[element_id] && hovered
-		w_ctx.element_pointer_down[element_id] = false
+		if _, exists := w_ctx.element_pointer_down[element_id]; !exists {
+			w_ctx.element_pointer_down[widget_retain_key(element_id)] = false
+		} else {
+			w_ctx.element_pointer_down[element_id] = false
+		}
 	}
 
 	return

@@ -112,6 +112,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 			layout_id,
 			config.id != "",
 			&frame_state,
+			style.visibility,
 		)
 
 		if ran_unmount {
@@ -151,6 +152,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		key,
 		was_focused,
 		style.tabbable,
+		layout_id,
 		layout_rect,
 		style,
 	)
@@ -168,8 +170,6 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		}
 	}
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
-
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
@@ -177,8 +177,14 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		props.on_focus(event)
 	}
 
+	// Leaf: dispatch before paint so early paint returns still deliver events.
+	// Parents dispatch after Children, so bubble order remains child → parent.
+	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
+
 	rgbaColor, color_ok := o.to_rgba(style.color, &frame_state, event)
 	if !color_ok do return {}
+
+	if o.ui_layout_paint_skip(layout_id) do return {}
 
 	laid := o.layout_text_result(layout_id)
 	if laid == nil do return {}

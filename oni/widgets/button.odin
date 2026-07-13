@@ -88,6 +88,7 @@ Button :: proc(props: Button_Props) {
 			layout_id,
 			cfg.id != "",
 			&frame_state,
+			config.visibility,
 		)
 
 		if ran_unmount {
@@ -122,6 +123,7 @@ Button :: proc(props: Button_Props) {
 		key,
 		was_focused,
 		config.tabbable,
+		layout_id,
 		rect,
 		config,
 	)
@@ -138,8 +140,6 @@ Button :: proc(props: Button_Props) {
 			props.on_blur(event)
 		}
 	}
-
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 
 	if should_auto_focus &&
 	   !was_focused &&
@@ -174,7 +174,11 @@ Button :: proc(props: Button_Props) {
 		radius = resolved_radius
 	}
 
-	o.Draw_Rectangle(rect, background, radius, border, border_color)
+	if !o.ui_layout_paint_skip(layout_id) {
+		o.Draw_Rectangle(rect, background, radius, border, border_color)
+	}
 
 	o.Children(child, layout_id, config, frame_state)
+
+	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }

@@ -88,6 +88,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 			layout_id,
 			cfg.id != "",
 			&frame_state,
+			config.visibility,
 		)
 
 		if ran_unmount {
@@ -120,6 +121,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		key,
 		was_focused,
 		config.tabbable,
+		layout_id,
 		rect,
 		config,
 	)
@@ -137,8 +139,6 @@ Rectangle :: proc(props: Rectangle_Props) {
 		}
 	}
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
-
 	if should_auto_focus &&
 	   !was_focused &&
 	   props.on_focus != nil &&
@@ -155,6 +155,8 @@ Rectangle :: proc(props: Rectangle_Props) {
 			layout_id = layout_id,
 		},
 	)
+
+	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }
 
 
@@ -203,7 +205,9 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		radius = resolved_radius
 	}
 
-	o.Draw_Rectangle(rect, background, radius, border, border_color)
+	if !o.ui_layout_paint_skip(layout_id) {
+		o.Draw_Rectangle(rect, background, radius, border, border_color)
+	}
 
 	o.Children(child, layout_id, config, frame_state^)
 }

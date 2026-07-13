@@ -104,6 +104,8 @@ Min_H :: F32
 
 Min_W :: F32
 
+Order :: F32
+
 overflow :: proc(value: oni.Overflow) -> oni.Cfg(oni.Overflow) {return cfg_value(value)}
 
 /*
@@ -180,9 +182,21 @@ Texture_Pos_Edges :: proc(value: oni.Texture_Pos) -> oni.Cfg(oni.Style_Texture_P
 
 Visibility :: proc(value: oni.Visibility) -> oni.Cfg(oni.Visibility) {return cfg_value(value)}
 
+Pointer_Events :: proc(
+	value: oni.Pointer_Events,
+) -> oni.Cfg(oni.Pointer_Events) {return cfg_value(value)}
+
+Top_Layer :: Bool
+
+Right :: F32
+
+Bottom :: F32
+
 /*
 Sets a width widget config field to an explicit value.
 */
 Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 
 Wrap :: proc(value: oni.Text_Wrap) -> oni.Cfg(oni.Text_Wrap) {return cfg_value(value)}
+
+Z_Index :: F32

@@ -76,11 +76,13 @@ with_runtime_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 		has_init_run_once = saved_init
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	has_init_run_once = false
 	runtime_test_reset_counters()
@@ -119,11 +121,13 @@ with_runtime_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 		has_init_run_once = saved_init
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	has_init_run_once = false
 	runtime_test_reset_counters()
@@ -154,11 +158,13 @@ with_runtime_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_init := has_init_run_once
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 		has_init_run_once = saved_init
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = &test_theme
 	has_init_run_once = false
 	runtime_test_reset_counters()
@@ -242,8 +248,10 @@ runtime_run_frame_nil_state_is_noop :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			saved := state
 			state = nil
+			widget_ctx_sync()
 			defer {
 				state = saved
+				widget_ctx_sync()
 			}
 
 			run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
@@ -386,10 +394,12 @@ runtime_init_window_only_creates_and_sets_running :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	state.running = false
 	if !init_window_only(runtime_test_window_cfg()) {
@@ -414,9 +424,11 @@ runtime_init_window_only_failure_clears_running :: proc(t: ^testing.T) {
 	saved_state := state
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	state.running = true
 	test_hook_create_window_fail = .Init
 	testing.expect(t, !init_window_only(runtime_test_window_cfg()))
@@ -435,9 +447,11 @@ runtime_init_window_only_window_create_failure_clears_running :: proc(t: ^testin
 	saved_state := state
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	state.running = true
 	test_hook_create_window_fail = .Window
 	testing.expect(t, !init_window_only(runtime_test_window_cfg()))
@@ -478,10 +492,12 @@ runtime_init_runtime_init_failure_clears_running :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	if !init_window_only(runtime_test_window_cfg()) {
 		testing.expectf(t, false, "init_window_only failed: %s", sdl.GetError())
@@ -507,10 +523,12 @@ runtime_init_runtime_on_ready_failure_clears_running :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	if !init_window_only(runtime_test_window_cfg()) {
 		testing.expectf(t, false, "init_window_only failed: %s", sdl.GetError())
@@ -536,10 +554,12 @@ runtime_init_runtime_success_with_nil_ready :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	if !init_window_only(runtime_test_window_cfg()) {
 		testing.expectf(t, false, "init_window_only failed: %s", sdl.GetError())
@@ -568,10 +588,12 @@ runtime_init_runtime_success_with_ok_ready :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	if !init_window_only(runtime_test_window_cfg()) {
 		testing.expectf(t, false, "init_window_only failed: %s", sdl.GetError())

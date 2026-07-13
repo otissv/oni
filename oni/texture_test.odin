@@ -23,10 +23,12 @@ with_texture_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	texture_init()
 	defer texture_shutdown()
@@ -57,10 +59,12 @@ with_texture_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	state.gpu = gpu
 	// gpu_create_white_texture uploads via state.gpu — must set state first.
@@ -213,10 +217,12 @@ texture_init_promotes_zeroed_white_atlas_to_invalid :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	// Zeroed Atlas_State has texture_id == TEXTURE_WHITE_ID (0) and width 0.
 	testing.expect_value(t, state.textures.atlas.texture_id, TEXTURE_WHITE_ID)
@@ -264,10 +270,12 @@ texture_shutdown_frees_paths_surfaces_and_records :: proc(t: ^testing.T) {
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	texture_init()
 

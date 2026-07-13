@@ -49,10 +49,12 @@ with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Hand
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	state.view = view_default()
@@ -560,8 +562,10 @@ font_atlas_reset_noop_when_atlas_uninitialized :: proc(t: ^testing.T) {
 	saved := state
 	defer {
 		state = saved
+		widget_ctx_sync()
 	}
 	state = &test_state
+	widget_ctx_sync()
 	texture_init()
 	defer texture_shutdown()
 
@@ -1246,8 +1250,10 @@ font_atlas_reset_skips_nil_surface_and_out_of_range_id :: proc(t: ^testing.T) {
 	saved := state
 	defer {
 		state = saved
+		widget_ctx_sync()
 	}
 	state = &test_state
+	widget_ctx_sync()
 	texture_init()
 	defer texture_shutdown()
 

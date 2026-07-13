@@ -22,11 +22,12 @@ draw_mode_f32 :: proc(mode: Draw_Mode) -> f32 {
 BATCH_INITIAL_VERT_CAPACITY :: 64 * 1024
 
 /*
-Identifies a draw batch by texture asset and active clip rectangle.
+Identifies a draw batch by texture asset, active clip rectangle, and stack index.
 */
 Batch_Key :: struct {
-	texture_id: Asset_Id,
-	clip:       Rect,
+	texture_id:  Asset_Id,
+	clip:        Rect,
+	stack_index: u32,
 }
 
 /*
@@ -49,6 +50,7 @@ Batch_State :: struct {
 	space_stack:     [dynamic]Draw_Space,
 	current_key:     Batch_Key,
 	has_current_key: bool,
+	current_stack:   u32,
 	vertex_buffer:   ^sdl.GPUBuffer,
 	index_buffer:    ^sdl.GPUBuffer,
 	vertex_capacity: u32,
@@ -166,6 +168,7 @@ batch_reset :: proc() {
 	clear(&state.gpu_state.batch.clip_stack)
 	clear(&state.gpu_state.batch.space_stack)
 	state.gpu_state.batch.has_current_key = false
+	state.gpu_state.batch.current_stack = 0
 }
 
 /*
@@ -216,20 +219,29 @@ batch_current_clip :: proc() -> Rect {
 }
 
 /*
-Starts a new batch segment when the texture or clip key changes.
+Sets the stack index applied to subsequent draw commands in this batch.
+*/
+batch_set_stack_index :: proc(stack_index: u32) {
+	state.gpu_state.batch.current_stack = stack_index
+}
+
+/*
+Starts a new batch segment when the texture, clip, or stack index key changes.
 
 Finalizes the previous segment's index count before appending a new one.
 */
 batch_check_key :: proc(texture_id: Asset_Id) {
 	clip := batch_current_clip()
 	key := Batch_Key {
-		texture_id = texture_id,
-		clip       = clip,
+		texture_id  = texture_id,
+		clip        = clip,
+		stack_index = state.gpu_state.batch.current_stack,
 	}
 
 	if state.gpu_state.batch.has_current_key &&
 	   state.gpu_state.batch.current_key.texture_id == key.texture_id &&
-	   state.gpu_state.batch.current_key.clip == key.clip {
+	   state.gpu_state.batch.current_key.clip == key.clip &&
+	   state.gpu_state.batch.current_key.stack_index == key.stack_index {
 		return
 	}
 
@@ -395,8 +407,9 @@ batch_push_axis_quad :: proc(
 }
 
 /*
-Finalizes the index count of the last open batch segment.
+Finalizes the index count of the last open batch segment, then sorts by stack index.
 
+Higher stack_index paints on top. Equal stack keeps submission order (first_index ascending).
 Call before upload or flush when recording is complete.
 */
 batch_finalize_segments :: proc() {
@@ -404,6 +417,21 @@ batch_finalize_segments :: proc() {
 		seg := state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1]
 		seg.index_count = u32(len(state.gpu_state.batch.indices)) - seg.first_index
 		state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1] = seg
+	}
+
+	segs := state.gpu_state.batch.segments[:]
+	n := len(segs)
+	for i in 1 ..< n {
+		key := segs[i]
+		j := i - 1
+		for j >= 0 &&
+		    (segs[j].key.stack_index > key.key.stack_index ||
+			    (segs[j].key.stack_index == key.key.stack_index &&
+					    segs[j].first_index > key.first_index)) {
+			segs[j + 1] = segs[j]
+			j -= 1
+		}
+		segs[j + 1] = key
 	}
 }
 

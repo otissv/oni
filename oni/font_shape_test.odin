@@ -35,10 +35,12 @@ with_font_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Handle, 
 	saved_theme := theme
 	defer {
 		state = saved_state
+		widget_ctx_sync()
 		theme = saved_theme
 	}
 
 	state = &test_state
+	widget_ctx_sync()
 	theme = nil
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	state.view = view_default()
