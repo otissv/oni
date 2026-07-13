@@ -6,19 +6,38 @@ import set "../../../oni/set"
 import w "../../../oni/widgets"
 
 @(private)
+Layout_Demo :: enum {
+	DIRECTION,
+	CONTENT_ALIGN,
+	ORDER,
+	Z_INDEX,
+	POSITION,
+	VISIBILITY,
+}
+
+@(private)
+demo: Layout_Demo = .DIRECTION
 direction: o.Direction_Layout = .HORIZONTAL
 layout_width: o.Width = .AUTO
 layout_height: o.Height = .AUTO
-content_align_demo: bool
 content_align_x: o.Justify_Align = .MAX_CONTENT
 content_align_y: o.Justify_Align = .START
 
 
 container := proc(state: w.Rectangle_State) {
-	if content_align_demo {
-		Layout_Content("layout-content")
-	} else {
+	switch demo {
+	case .DIRECTION:
 		Layout_1("layout-1", direction)
+	case .CONTENT_ALIGN:
+		Layout_Content("layout-content")
+	case .ORDER:
+		Layout_Order("layout-order")
+	case .Z_INDEX:
+		Layout_Z_Index("layout-z-index")
+	case .POSITION:
+		Layout_Position("layout-position")
+	case .VISIBILITY:
+		Layout_Visibility("layout-visibility")
 	}
 }
 
@@ -29,11 +48,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .HORIZONTAL
 			layout_width = .AUTO
 			layout_height = .AUTO
-			content_align_demo = false
-
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal"}})
@@ -46,10 +64,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .HORIZONTAL_REVERSE
 			layout_width = .AUTO
 			layout_height = .AUTO
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Reverse"}})
@@ -62,10 +80,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .HORIZONTAL_WRAP
 			layout_width = 400
 			layout_height = .AUTO
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap"}})
@@ -78,10 +96,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		radius = set.Radius(5),
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .HORIZONTAL_WRAP_REVERSE
 			layout_width = 400
 			layout_height = .AUTO
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap Reverse"}})
@@ -94,10 +112,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .VERTICAL
 			layout_width = .AUTO
 			layout_height = .AUTO
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical"}})
@@ -110,10 +128,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .VERTICAL_REVERSE
 			layout_width = .AUTO
 			layout_height = .AUTO
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical Reverse"}})
@@ -126,10 +144,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .VERTICAL_WRAP
 			layout_width = 280
 			layout_height = 400
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap"}})
@@ -142,10 +160,10 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
+			demo = .DIRECTION
 			direction = .VERTICAL_WRAP_REVERSE
 			layout_width = 280
 			layout_height = 400
-			content_align_demo = false
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical Wrap Reverse"}})
@@ -158,7 +176,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			content_align_demo = true
+			demo = .CONTENT_ALIGN
 			content_align_x = .MAX_CONTENT
 			content_align_y = .START
 			direction = .HORIZONTAL
@@ -176,7 +194,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			content_align_demo = true
+			demo = .CONTENT_ALIGN
 			content_align_x = .MIN_CONTENT
 			content_align_y = .START
 			direction = .HORIZONTAL
@@ -194,7 +212,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			content_align_demo = true
+			demo = .CONTENT_ALIGN
 			content_align_x = .START
 			content_align_y = .MAX_CONTENT
 			direction = .VERTICAL
@@ -212,7 +230,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			content_align_demo = true
+			demo = .CONTENT_ALIGN
 			content_align_x = .START
 			content_align_y = .MIN_CONTENT
 			direction = .VERTICAL
@@ -221,6 +239,58 @@ sidebar := proc(state: w.Rectangle_State) {
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Min Content Y"}})
+		},
+	})
+
+	ui.Button({
+		id = "order",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			demo = .ORDER
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "layout-order-nav", text = "Order"}})
+		},
+	})
+
+	ui.Button({
+		id = "z-index",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			demo = .Z_INDEX
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "layout-z-index-nav", text = "Z-Index"}})
+		},
+	})
+
+	ui.Button({
+		id = "position",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			demo = .POSITION
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "layout-position-nav", text = "Position"}})
+		},
+	})
+
+	ui.Button({
+		id = "visibility",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			demo = .VISIBILITY
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "layout-visibility-nav", text = "Visibility"}})
 		},
 	})
 }
@@ -358,6 +428,322 @@ Layout_Content :: proc(id: string) {
 				},
 				child = proc(_: w.Rectangle_State) {
 					w.Text({config = {id = "fixed-label", text = "fixed"}})
+				},
+			})
+		},
+	})
+}
+
+@(private)
+Layout_Order :: proc(id: string) {
+	// Source order A B C D; flex order rearranges to C B D A.
+	w.Rectangle({
+		config = {
+			id = id,
+			space = set.Space(.SCREEN),
+			direction = set.Direction(.HORIZONTAL),
+			gap_x = set.Gap_X(u16(8)),
+			padding = set.Padding(f32(20)),
+			background = set.Colors(o.theme.palette[.BACKGROUND]),
+			radius = set.Radius(10),
+			border = set.Border(f32(1)),
+			border_color = set.Colors(o.Color.YELLOW_500),
+		},
+		child = proc(_: w.Rectangle_State) {
+			w.Rectangle({
+				config = {
+					id = "order-a",
+					width = 100,
+					height = 100,
+					order = set.Order(3),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.DESTRUCTIVE]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "order-a-label", text = "A order=3"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "order-b",
+					width = 100,
+					height = 100,
+					order = set.Order(1),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.ACCENT]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "order-b-label", text = "B order=1"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "order-c",
+					width = 100,
+					height = 100,
+					order = set.Order(0),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.SUCCESS]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "order-c-label", text = "C order=0"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "order-d",
+					width = 100,
+					height = 100,
+					order = set.Order(2),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.INFO]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "order-d-label", text = "D order=2"}})
+				},
+			})
+		},
+	})
+}
+
+@(private)
+Layout_Z_Index :: proc(id: string) {
+	w.Rectangle({
+		config = {
+			id = id,
+			space = set.Space(.SCREEN),
+			width = set.Width(f32(360)),
+			height = set.Height(f32(260)),
+			padding = set.Padding(f32(20)),
+			background = set.Colors(o.theme.palette[.BACKGROUND]),
+			radius = set.Radius(10),
+			border = set.Border(f32(1)),
+			border_color = set.Colors(o.Color.YELLOW_500),
+		},
+		child = proc(_: w.Rectangle_State) {
+			w.Rectangle({
+				config = {
+					id = "z-back",
+					width = 140,
+					height = 140,
+					position = set.Position(.ABSOLUTE),
+					x = set.F32(40),
+					y = set.F32(40),
+					z_index = set.Z_Index(-1),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.DESTRUCTIVE]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "z-back-label", text = "z=-1"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "z-mid",
+					width = 140,
+					height = 140,
+					position = set.Position(.ABSOLUTE),
+					x = set.F32(90),
+					y = set.F32(70),
+					z_index = set.Z_Index(0),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.ACCENT]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "z-mid-label", text = "z=0"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "z-front",
+					width = 140,
+					height = 140,
+					position = set.Position(.ABSOLUTE),
+					x = set.F32(140),
+					y = set.F32(100),
+					z_index = set.Z_Index(2),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.SUCCESS]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "z-front-label", text = "z=2"}})
+				},
+			})
+		},
+	})
+}
+
+@(private)
+Layout_Position :: proc(id: string) {
+	w.Rectangle({
+		config = {
+			id = id,
+			space = set.Space(.SCREEN),
+			direction = set.Direction(.HORIZONTAL),
+			gap_x = set.Gap_X(u16(8)),
+			width = set.Width(f32(420)),
+			height = set.Height(f32(220)),
+			padding = set.Padding(f32(20)),
+			background = set.Colors(o.theme.palette[.BACKGROUND]),
+			radius = set.Radius(10),
+			border = set.Border(f32(1)),
+			border_color = set.Colors(o.Color.YELLOW_500),
+		},
+		child = proc(_: w.Rectangle_State) {
+			w.Rectangle({
+				config = {
+					id = "pos-relative",
+					width = 110,
+					height = 90,
+					position = set.Position(.RELATIVE),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.DESTRUCTIVE]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "pos-relative-label", text = "relative"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "pos-flow",
+					width = 110,
+					height = 90,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.ACCENT]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "pos-flow-label", text = "in flow"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "pos-absolute",
+					width = 120,
+					height = 80,
+					position = set.Position(.ABSOLUTE),
+					x = set.F32(160),
+					y = set.F32(120),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.SUCCESS]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "pos-absolute-label", text = "absolute"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "pos-fixed",
+					width = 100,
+					height = 60,
+					position = set.Position(.FIXED),
+					right = set.Right(24),
+					bottom = set.Bottom(24),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.INFO]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "pos-fixed-label", text = "fixed"}})
+				},
+			})
+		},
+	})
+}
+
+@(private)
+Layout_Visibility :: proc(id: string) {
+	// VISIBLE paints; HIDDEN keeps layout space; NONE is removed from the tree.
+	w.Rectangle({
+		config = {
+			id = id,
+			space = set.Space(.SCREEN),
+			direction = set.Direction(.HORIZONTAL),
+			gap_x = set.Gap_X(u16(8)),
+			padding = set.Padding(f32(20)),
+			background = set.Colors(o.theme.palette[.BACKGROUND]),
+			radius = set.Radius(10),
+			border = set.Border(f32(1)),
+			border_color = set.Colors(o.Color.YELLOW_500),
+		},
+		child = proc(_: w.Rectangle_State) {
+			w.Rectangle({
+				config = {
+					id = "vis-visible",
+					width = 100,
+					height = 100,
+					visibility = set.Visibility(.VISIBLE),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.DESTRUCTIVE]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "vis-visible-label", text = "VISIBLE"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "vis-hidden",
+					width = 100,
+					height = 100,
+					visibility = set.Visibility(.HIDDEN),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.ACCENT]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "vis-hidden-label", text = "HIDDEN"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "vis-none",
+					width = 100,
+					height = 100,
+					visibility = set.Visibility(.NONE),
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.SUCCESS]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "vis-none-label", text = "NONE"}})
+				},
+			})
+			w.Rectangle({
+				config = {
+					id = "vis-after",
+					width = 100,
+					height = 100,
+					padding = set.Padding(f32(8)),
+					background = set.Colors(o.theme.palette[.INFO]),
+					radius = set.Radius(8),
+					justify = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
+				},
+				child = proc(_: w.Rectangle_State) {
+					w.Text({config = {id = "vis-after-label", text = "after"}})
 				},
 			})
 		},

@@ -9,8 +9,20 @@ layout_stack_abs :: proc() -> Position {
 }
 
 @(private)
+layout_stack_fixed :: proc() -> Position {
+	p: Position = .FIXED
+	return p
+}
+
+@(private)
 layout_stack_hidden :: proc() -> Visibility {
 	v: Visibility = .HIDDEN
+	return v
+}
+
+@(private)
+layout_stack_none :: proc() -> Visibility {
+	v: Visibility = .NONE
 	return v
 }
 
@@ -216,6 +228,242 @@ layout_absolute_percent_width_vs_containing_block :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_fixed_places_against_space_bounds_not_parent :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					direction = .HORIZONTAL,
+					width = layout_len_fixed(800),
+					height = layout_len_fixed(600),
+				},
+			)
+			spacer := layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, width = layout_len_fixed(120), height = layout_len_fixed(80)},
+			)
+			layout_set_measure_size(spacer, {120, 80})
+			layout_pop_node()
+			_ = layout_push_node(
+				UI_Id(3),
+				{kind = .RECT, width = layout_len_fixed(200), height = layout_len_fixed(100)},
+			)
+			fixed := layout_push_node(
+				UI_Id(4),
+				{
+					kind = .RECT,
+					position = layout_stack_fixed(),
+					width = layout_len_fixed(40),
+					height = layout_len_fixed(30),
+					x = 20,
+					x_set = true,
+					y = 40,
+					y_set = true,
+				},
+			)
+			layout_set_measure_size(fixed, {40, 30})
+			layout_pop_node()
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+
+			parent_i := state.ui.layout.id_to_node[UI_Id(3)]
+			fixed_i := state.ui.layout.id_to_node[UI_Id(4)]
+			expect_close(t, state.ui.layout.nodes[parent_i].rect.x, 120)
+			got := state.ui.layout.nodes[fixed_i].rect
+			expect_close(t, got.x, 20)
+			expect_close(t, got.y, 40)
+			expect_close(t, got.w, 40)
+			expect_close(t, got.h, 30)
+			testing.expect(t, !state.ui.layout.nodes[fixed_i].in_flex_flow)
+		},
+	)
+}
+
+@(test)
+layout_fixed_right_pin_uses_space_width :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{kind = .RECT, width = layout_len_fixed(200), height = layout_len_fixed(100)},
+			)
+			fixed := layout_push_node(
+				UI_Id(2),
+				{
+					kind = .RECT,
+					position = layout_stack_fixed(),
+					width = layout_len_fixed(50),
+					height = layout_len_fixed(20),
+					right = 15,
+					right_set = true,
+					y = 10,
+					y_set = true,
+				},
+			)
+			layout_set_measure_size(fixed, {50, 20})
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+
+			got := state.ui.layout.nodes[state.ui.layout.id_to_node[UI_Id(2)]].rect
+			expect_close(t, got.x, 735)
+			expect_close(t, got.y, 10)
+			expect_close(t, got.w, 50)
+		},
+	)
+}
+
+@(test)
+layout_fixed_excluded_from_flex_gap :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					direction = .HORIZONTAL,
+					gap_x = 10,
+					width = layout_len_fixed(400),
+					height = layout_len_fixed(50),
+				},
+			)
+			a := layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, width = layout_len_fixed(100), height = layout_len_fixed(50)},
+			)
+			layout_set_measure_size(a, {100, 50})
+			layout_pop_node()
+			fixed := layout_push_node(
+				UI_Id(3),
+				{
+					kind = .RECT,
+					position = layout_stack_fixed(),
+					width = layout_len_fixed(100),
+					height = layout_len_fixed(50),
+					x = 5,
+					x_set = true,
+					y = 5,
+					y_set = true,
+				},
+			)
+			layout_set_measure_size(fixed, {100, 50})
+			layout_pop_node()
+			b := layout_push_node(
+				UI_Id(4),
+				{kind = .RECT, width = layout_len_fixed(100), height = layout_len_fixed(50)},
+			)
+			layout_set_measure_size(b, {100, 50})
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+
+			a_i := state.ui.layout.id_to_node[UI_Id(2)]
+			fixed_i := state.ui.layout.id_to_node[UI_Id(3)]
+			b_i := state.ui.layout.id_to_node[UI_Id(4)]
+			expect_close(t, state.ui.layout.nodes[a_i].rect.x, 0)
+			expect_close(t, state.ui.layout.nodes[b_i].rect.x, 110)
+			expect_close(t, state.ui.layout.nodes[fixed_i].rect.x, 5)
+			expect_close(t, state.ui.layout.nodes[fixed_i].rect.y, 5)
+			testing.expect(t, !state.ui.layout.nodes[fixed_i].in_flex_flow)
+		},
+	)
+}
+
+@(test)
+layout_absolute_vs_fixed_containing_block :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					direction = .HORIZONTAL,
+					width = layout_len_fixed(800),
+					height = layout_len_fixed(200),
+				},
+			)
+			spacer := layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			layout_set_measure_size(spacer, {100, 100})
+			layout_pop_node()
+			_ = layout_push_node(
+				UI_Id(3),
+				{kind = .RECT, width = layout_len_fixed(200), height = layout_len_fixed(100)},
+			)
+			abs := layout_push_node(
+				UI_Id(4),
+				{
+					kind = .RECT,
+					position = layout_stack_abs(),
+					width = layout_len_fixed(40),
+					height = layout_len_fixed(20),
+					x = 10,
+					x_set = true,
+					y = 15,
+					y_set = true,
+				},
+			)
+			layout_set_measure_size(abs, {40, 20})
+			layout_pop_node()
+			fixed := layout_push_node(
+				UI_Id(5),
+				{
+					kind = .RECT,
+					position = layout_stack_fixed(),
+					width = layout_len_fixed(40),
+					height = layout_len_fixed(20),
+					x = 10,
+					x_set = true,
+					y = 15,
+					y_set = true,
+				},
+			)
+			layout_set_measure_size(fixed, {40, 20})
+			layout_pop_node()
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+
+			abs_r := state.ui.layout.nodes[state.ui.layout.id_to_node[UI_Id(4)]].rect
+			fixed_r := state.ui.layout.nodes[state.ui.layout.id_to_node[UI_Id(5)]].rect
+			expect_close(t, abs_r.x, 110)
+			expect_close(t, abs_r.y, 15)
+			expect_close(t, fixed_r.x, 10)
+			expect_close(t, fixed_r.y, 15)
+		},
+	)
+}
+
+@(test)
 layout_hidden_keeps_flex_space_skips_hit :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
@@ -262,6 +510,43 @@ layout_hidden_keeps_flex_space_skips_hit :: proc(t: ^testing.T) {
 			w_ctx.mouse_y = 25
 			layout_resolve_pointer_hit()
 			testing.expect(t, !w_ctx.pointer_hit_valid || w_ctx.pointer_hit_ui_id != UI_Id(2))
+		},
+	)
+}
+
+@(private)
+layout_stack_none_nested_ran: bool
+
+@(test)
+layout_children_visibility_none_skips_nested_registration :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			frame, event := ui_test_frame_event()
+			none_cfg := resolve_widget_config(
+				{},
+				{
+					id = "none-parent",
+					visibility = {mode = .Value, value = layout_stack_none()},
+				},
+				&frame,
+				event,
+			)
+			layout_stack_none_nested_ran = false
+			Children(
+				proc(_: Widget_Frame_State) {
+					layout_stack_none_nested_ran = true
+				},
+				ui_id("none-parent"),
+				none_cfg,
+				frame,
+			)
+			testing.expect(t, !layout_stack_none_nested_ran)
+			testing.expect(t, !ui_has_layout_node(ui_id("none-parent")))
 		},
 	)
 }
