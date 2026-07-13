@@ -106,6 +106,8 @@ Min_W :: F32
 
 Order :: F32
 
+Opacity :: F32
+
 overflow :: proc(value: oni.Overflow) -> oni.Cfg(oni.Overflow) {return cfg_value(value)}
 
 /*

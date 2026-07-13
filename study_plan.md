@@ -683,7 +683,7 @@ Resolved into `Resolved_Widget_Style`; layout/draw consumption:
 - [   ] `Dim` extras ignored by resolvers — `grow`, breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
 - [   ] `aspect_ratio` — listed in `attributes.md`, **absent** from `Widget_Style`
 - [   ] Flex beyond grow — shrink / basis (full flexbox not required; document or implement)
-- [   ] Polish styles not in the model — margin, opacity, transform, box-shadow
+- [   ] Polish styles not in the model — margin, transform, box-shadow
 
 ### 13.2 Input & widgets
 

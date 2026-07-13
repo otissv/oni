@@ -23,6 +23,7 @@ with_batch_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.segments)
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
+		delete(test_state.gpu_state.batch.opacity_stack)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -180,6 +181,7 @@ batch_init_creates_gpu_buffers_and_destroy_clears :: proc(t: ^testing.T) {
 			append(&state.gpu_state.batch.segments, Batch_Segment{})
 			append(&state.gpu_state.batch.clip_stack, Rect{1, 2, 3, 4})
 			append(&state.gpu_state.batch.space_stack, Draw_Space.ARTBOARD)
+			append(&state.gpu_state.batch.opacity_stack, f32(0.5))
 			state.gpu_state.batch.has_current_key = true
 
 			batch_destroy()
@@ -193,6 +195,7 @@ batch_init_creates_gpu_buffers_and_destroy_clears :: proc(t: ^testing.T) {
 			testing.expect(t, state.gpu_state.batch.segments == nil)
 			testing.expect(t, state.gpu_state.batch.clip_stack == nil)
 			testing.expect(t, state.gpu_state.batch.space_stack == nil)
+			testing.expect(t, state.gpu_state.batch.opacity_stack == nil)
 
 			// Re-init after destroy for defer batch_destroy in env.
 			batch_init()
@@ -210,6 +213,7 @@ batch_reset_clears_cpu_state_keeps_capacity :: proc(t: ^testing.T) {
 			append(&state.gpu_state.batch.segments, Batch_Segment{first_index = 1})
 			append(&state.gpu_state.batch.clip_stack, Rect{0, 0, 10, 10})
 			append(&state.gpu_state.batch.space_stack, Draw_Space.SCREEN)
+			append(&state.gpu_state.batch.opacity_stack, f32(0.25))
 			state.gpu_state.batch.has_current_key = true
 			state.gpu_state.batch.current_key = {texture_id = Asset_Id(3)}
 
@@ -221,6 +225,7 @@ batch_reset_clears_cpu_state_keeps_capacity :: proc(t: ^testing.T) {
 			testing.expect_value(t, len(state.gpu_state.batch.segments), 0)
 			testing.expect_value(t, len(state.gpu_state.batch.clip_stack), 0)
 			testing.expect_value(t, len(state.gpu_state.batch.space_stack), 0)
+			testing.expect_value(t, len(state.gpu_state.batch.opacity_stack), 0)
 			testing.expect(t, !state.gpu_state.batch.has_current_key)
 			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, cap_v)
 			testing.expect_value(t, state.gpu_state.batch.index_capacity, cap_i)

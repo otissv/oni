@@ -145,7 +145,8 @@ texture_measure_size :: proc(
 /*
 Renders a fitted texture inside styled chrome with full pointer interaction.
 
-Runs layout on the layout pass and draws background, border, and image on draw.
+Layout owns measure, object-fit, and content/src/dst; draw paints chrome and the
+layout-owned image geometry only.
 */
 Image :: proc(props: Image_Props) {
 	cfg := props.config
@@ -303,12 +304,6 @@ Image :: proc(props: Image_Props) {
 		tint = resolved_tint
 	}
 
-	padding: o.Pd_px
-	if resolved_padding, padding_ok := o.resolve_padding(config.padding, &frame_state, event);
-	   padding_ok {
-		padding = resolved_padding
-	}
-
 	has_chrome :=
 		background.a > 0 ||
 		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0) ||
@@ -319,63 +314,17 @@ Image :: proc(props: Image_Props) {
 
 	paint := !o.ui_layout_paint_skip(layout_id)
 
+	o.Draw_Push_Opacity(config.opacity)
+	defer o.Draw_Pop_Opacity()
+
 	if paint && has_chrome {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	src := props.src
-	if src.w == 0 && src.h == 0 {
-		src_w, src_h := texture_src_size(props)
-		if src_w > 0 && src_h > 0 {
-			src = {0, 0, src_w, src_h}
-		}
-	}
-
-	content := o.layout_inner_rect(rect, border, padding)
-	container := content
-	if props.dst.w > 0 || props.dst.h > 0 {
-		container = props.dst
-		if container.w == 0 do container.w = content.w
-		if container.h == 0 do container.h = content.h
-		if container.x == 0 && container.y == 0 {
-			container.x = content.x
-			container.y = content.y
-		}
-	}
-
-	fit := o.Texture_Fit.FILL
-	if resolved_fit, fit_ok := o.resolve_texture_fit(config.texture_fit, &frame_state, event);
-	   fit_ok {
-		fit = resolved_fit
-	}
-
-	pos := o.Resolved_Texture_Pos{0.5, 0.5, 0, 0}
-	if resolved_pos, pos_ok := o.resolve_texture_pos(config.texture_pos, &frame_state, event);
-	   pos_ok {
-		pos = resolved_pos
-	}
-
-	dst := container
-	src, dst = o.texture_fit_rects(src, container, fit, pos)
-
 	if paint {
-		// Always clip to the content box so CONTAIN / SCALE_DOWN / NONE cannot paint outside.
-		o.draw_push_clip(content)
-		painted := o.rect_intersect(dst, content)
-		if painted.w > 0 && painted.h > 0 && src.w > 0 && src.h > 0 && dst.w > 0 && dst.h > 0 {
-			fx0 := (painted.x - dst.x) / dst.w
-			fy0 := (painted.y - dst.y) / dst.h
-			fx1 := fx0 + painted.w / dst.w
-			fy1 := fy0 + painted.h / dst.h
-			src_painted := o.Rect {
-				src.x + src.w * fx0,
-				src.y + src.h * fy0,
-				src.w * (fx1 - fx0),
-				src.h * (fy1 - fy0),
-			}
-			o.draw_texture(props.texture, src_painted, painted, tint, {}, radius)
+		if laid := o.layout_image_result(layout_id); laid != nil {
+			o.Draw_Texture_Fitted(props.texture, laid.src, laid.content, laid.dst, tint, radius)
 		}
-		o.draw_pop_clip()
 	}
 
 	o.Children(child, layout_id, config, frame_state)

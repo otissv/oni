@@ -1171,6 +1171,50 @@ style_resolve_order_and_z_index_callbacks :: proc(t: ^testing.T) {
 			unset := resolve_widget_config({}, {}, &frame, event)
 			expect_close(t, unset.order, 0)
 			expect_close(t, unset.z_index, 0)
+			expect_close(t, unset.opacity, 1)
+		},
+	)
+}
+
+@(test)
+style_resolve_opacity_defaults_clamps_and_inherits :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			frame, event := ui_test_frame_event()
+
+			unset := resolve_widget_config({}, {}, &frame, event)
+			expect_close(t, unset.opacity, 1)
+
+			half := resolve_widget_config(
+				{},
+				{opacity = {mode = .Value, value = f32(0.5)}},
+				&frame,
+				event,
+			)
+			expect_close(t, half.opacity, 0.5)
+
+			clamped := resolve_widget_config(
+				{},
+				{opacity = {mode = .Value, value = f32(1.5)}},
+				&frame,
+				event,
+			)
+			expect_close(t, clamped.opacity, 1)
+
+			ui_push_style(style_child_context(half))
+			defer ui_pop_style()
+
+			inherited := resolve_widget_config(
+				{},
+				{opacity = {mode = .Value, value = Inherit.INHERIT}},
+				&frame,
+				event,
+			)
+			expect_close(t, inherited.opacity, 0.5)
+
+			child_unset := resolve_widget_config({}, {}, &frame, event)
+			expect_close(t, child_unset.opacity, 1)
 		},
 	)
 }
@@ -1180,13 +1224,38 @@ style_merge_order_overrides_base :: proc(t: ^testing.T) {
 	base := Widget_Config {
 		order = {mode = .Value, value = f32(1)},
 		z_index = {mode = .Value, value = f32(2)},
+		opacity = {mode = .Value, value = f32(0.25)},
 	}
 	override := Widget_Config {
 		order = {mode = .Value, value = f32(9)},
 		z_index = {mode = .Value, value = f32(8)},
+		opacity = {mode = .Value, value = f32(0.75)},
 	}
 	merged := merge_widget_config(base, override)
 	expect_close(t, cfg_style_f32(merged.order), 9)
 	expect_close(t, cfg_style_f32(merged.z_index), 8)
+	expect_close(t, cfg_style_f32(merged.opacity), 0.75)
+}
+
+@(test)
+draw_opacity_stack_multiplies_like_css :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			expect_close(t, draw_effective_opacity(), 1)
+
+			draw_push_opacity(0.5)
+			defer draw_pop_opacity()
+			expect_close(t, draw_effective_opacity(), 0.5)
+
+			draw_push_opacity(0.5)
+			defer draw_pop_opacity()
+			expect_close(t, draw_effective_opacity(), 0.25)
+
+			draw_push_opacity(2)
+			defer draw_pop_opacity()
+			expect_close(t, draw_effective_opacity(), 0.25)
+		},
+	)
 }
 

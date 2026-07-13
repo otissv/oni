@@ -60,6 +60,7 @@ with_ui_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(state.gpu_state.batch.segments)
 		delete(state.gpu_state.batch.clip_stack)
 		delete(state.gpu_state.batch.space_stack)
+		delete(state.gpu_state.batch.opacity_stack)
 	}
 
 	ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))

@@ -24,6 +24,7 @@ with_gpu_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(test_state.gpu_state.batch.segments)
 		delete(test_state.gpu_state.batch.clip_stack)
 		delete(test_state.gpu_state.batch.space_stack)
+		delete(test_state.gpu_state.batch.opacity_stack)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme

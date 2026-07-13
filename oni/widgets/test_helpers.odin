@@ -68,6 +68,7 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		delete(o.state.gpu_state.batch.segments)
 		delete(o.state.gpu_state.batch.clip_stack)
 		delete(o.state.gpu_state.batch.space_stack)
+		delete(o.state.gpu_state.batch.opacity_stack)
 	}
 
 	// Root style required by resolve_widget_config / theme merges.
@@ -102,11 +103,13 @@ widget_test_end_frame :: proc() {
 	delete(o.state.gpu_state.batch.segments)
 	delete(o.state.gpu_state.batch.clip_stack)
 	delete(o.state.gpu_state.batch.space_stack)
+	delete(o.state.gpu_state.batch.opacity_stack)
 	o.state.gpu_state.batch.vertices = nil
 	o.state.gpu_state.batch.indices = nil
 	o.state.gpu_state.batch.segments = nil
 	o.state.gpu_state.batch.clip_stack = nil
 	o.state.gpu_state.batch.space_stack = nil
+	o.state.gpu_state.batch.opacity_stack = nil
 	o.state.gpu_state.batch.has_current_key = false
 }
 

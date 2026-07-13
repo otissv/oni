@@ -203,5 +203,8 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		}
 	}
 
+	o.Draw_Push_Opacity(style.opacity)
+	defer o.Draw_Pop_Opacity()
+
 	return o.font_draw_layout_text(laid, rgbaColor, deco_color)
 }

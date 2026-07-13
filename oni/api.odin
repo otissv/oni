@@ -41,6 +41,9 @@ Draw_Line :: draw_line
 Draw_Texture :: draw_texture
 Draw_Texture_Fitted :: draw_texture_fitted
 Draw_Atlas :: draw_atlas_region
+Draw_Push_Opacity :: draw_push_opacity
+Draw_Pop_Opacity :: draw_pop_opacity
+Draw_Effective_Opacity :: draw_effective_opacity
 
 Begin_Artboard :: begin_artboard
 End_Artboard :: end_artboard

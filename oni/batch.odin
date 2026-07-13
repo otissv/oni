@@ -48,6 +48,7 @@ Batch_State :: struct {
 	segments:        [dynamic]Batch_Segment,
 	clip_stack:      [dynamic]Rect,
 	space_stack:     [dynamic]Draw_Space,
+	opacity_stack:   [dynamic]f32,
 	current_key:     Batch_Key,
 	has_current_key: bool,
 	current_stack:   u32,
@@ -145,11 +146,13 @@ batch_destroy :: proc() {
 	delete(state.gpu_state.batch.segments)
 	delete(state.gpu_state.batch.clip_stack)
 	delete(state.gpu_state.batch.space_stack)
+	delete(state.gpu_state.batch.opacity_stack)
 	state.gpu_state.batch.vertices = nil
 	state.gpu_state.batch.indices = nil
 	state.gpu_state.batch.segments = nil
 	state.gpu_state.batch.clip_stack = nil
 	state.gpu_state.batch.space_stack = nil
+	state.gpu_state.batch.opacity_stack = nil
 
 	state.gpu_state.batch.vertex_capacity = 0
 	state.gpu_state.batch.index_capacity = 0
@@ -167,6 +170,7 @@ batch_reset :: proc() {
 	clear(&state.gpu_state.batch.segments)
 	clear(&state.gpu_state.batch.clip_stack)
 	clear(&state.gpu_state.batch.space_stack)
+	clear(&state.gpu_state.batch.opacity_stack)
 	state.gpu_state.batch.has_current_key = false
 	state.gpu_state.batch.current_stack = 0
 }
@@ -328,8 +332,11 @@ batch_push_quad :: proc(
 ) {
 	if !batch_ensure_capacity(4) do return
 
+	opacity := draw_effective_opacity()
 	tint := rgba_to_f32(color)
 	border_tint := rgba_to_f32(border_color)
+	tint[3] *= opacity
+	border_tint[3] *= opacity
 	base := u16(len(state.gpu_state.batch.vertices))
 
 	for i in 0 ..< 4 {

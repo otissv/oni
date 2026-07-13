@@ -83,11 +83,13 @@ with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Hand
 		delete(state.gpu_state.batch.segments)
 		delete(state.gpu_state.batch.clip_stack)
 		delete(state.gpu_state.batch.space_stack)
+		delete(state.gpu_state.batch.opacity_stack)
 		state.gpu_state.batch.vertices = nil
 		state.gpu_state.batch.indices = nil
 		state.gpu_state.batch.segments = nil
 		state.gpu_state.batch.clip_stack = nil
 		state.gpu_state.batch.space_stack = nil
+		state.gpu_state.batch.opacity_stack = nil
 	}
 
 	testing.expect(t, font_init())

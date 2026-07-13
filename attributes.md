@@ -30,6 +30,7 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `min-height` | `min_h` | |
 | `min-width` | `min_w` | |
 | `order` | `order` | Flex item order; optional `Cfg(Style_F32)`, default `0` |
+| `opacity` | `opacity` | `0`–`1` via `Cfg(Style_F32)`; default `1`; not inherited; nested values multiply like CSS group opacity |
 | `overflow` | `overflow` | `Auto`, `Scroll`, `Hidden` |
 | `overflow-x` | `overflow_x` | Clip when `Hidden`/`Scroll`; hit-test intersects clip |
 | `overflow-y` | `overflow_y` | Same as `overflow_x` |
@@ -255,7 +256,6 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 
 ### Visual effects
 
-- `opacity`
 - `mix-blend-mode`
 - `background-blend-mode`
 - `filter`

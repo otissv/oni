@@ -155,6 +155,41 @@ draw_pop_space :: proc() {
 }
 
 /*
+Pushes a local CSS opacity multiplier onto the draw opacity stack.
+
+Values are clamped to [0, 1]. Nested pushes multiply, matching CSS group opacity.
+*/
+draw_push_opacity :: proc(opacity: f32) {
+	if state == nil do return
+	append(&state.gpu_state.batch.opacity_stack, clamp_opacity(opacity))
+}
+
+/*
+Pops the top local opacity from the draw opacity stack.
+
+No-op when the opacity stack is empty.
+*/
+draw_pop_opacity :: proc() {
+	if state == nil || len(state.gpu_state.batch.opacity_stack) == 0 do return
+	ordered_remove(
+		&state.gpu_state.batch.opacity_stack,
+		len(state.gpu_state.batch.opacity_stack) - 1,
+	)
+}
+
+/*
+Returns the product of all opacity stack entries, or 1 when empty.
+*/
+draw_effective_opacity :: proc() -> f32 {
+	if state == nil || len(state.gpu_state.batch.opacity_stack) == 0 do return 1
+	opacity := f32(1)
+	for value in state.gpu_state.batch.opacity_stack {
+		opacity *= value
+	}
+	return clamp_opacity(opacity)
+}
+
+/*
 Enters artboard draw space with matching layout and root UI style.
 
 During the layout pass, also begins a nested artboard layout region.
@@ -345,11 +380,12 @@ draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 25
 }
 
 /*
-Draws a texture into the fitted image_dst rect, clipped to the content box.
+Draws a texture into layout-owned fitted image_dst, clipped to content.
 
-Paints only the intersection of image_dst and content so CONTAIN / SCALE_DOWN
-never overflow the widget, and NONE oversized sources are cropped to content.
-Corner radii are evaluated in content space so chrome rounding still applies.
+Expects content/src/dst from layout_image_result. Paints only the intersection of
+image_dst and content so CONTAIN / SCALE_DOWN never overflow the widget, and NONE
+oversized sources are cropped to content. Corner radii are evaluated in content
+space so chrome rounding still applies.
 */
 draw_texture_fitted :: proc(
 	texture: Texture_Handle,

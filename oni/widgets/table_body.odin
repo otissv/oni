@@ -153,6 +153,9 @@ Table_Body :: proc(props: Table_Body_Props) {
 		props.on_focus(event)
 	}
 
+	o.Draw_Push_Opacity(config.opacity)
+	defer o.Draw_Pop_Opacity()
+
 	table_widget_draw_chrome(layout_id, .TABLE_BODY, rect, config, &frame_state, event)
 
 	o.Children(child, layout_id, config, frame_state)

@@ -118,6 +118,19 @@ image_layout_registers_node_and_sets_image_input :: proc(t: ^testing.T) {
 				expect_close(t, node.image_input.src.w, 200)
 				expect_close(t, node.image_input.src.h, 100)
 				testing.expect(t, node.image_input.fit == .CONTAIN)
+				testing.expect(t, node.image.active)
+				expect_close(t, node.image.content.w, 100)
+				expect_close(t, node.image.content.h, 50)
+				// CONTAIN 200x100 into 100x50 → dst fills content
+				expect_close(t, node.image.dst.w, 100)
+				expect_close(t, node.image.dst.h, 50)
+			}
+
+			laid := o.layout_image_result(o.ui_id("photo"))
+			testing.expect(t, laid != nil)
+			if laid != nil {
+				expect_close(t, laid.dst.w, 100)
+				expect_close(t, laid.dst.h, 50)
 			}
 		},
 	)

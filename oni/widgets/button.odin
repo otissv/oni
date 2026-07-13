@@ -174,6 +174,9 @@ Button :: proc(props: Button_Props) {
 		radius = resolved_radius
 	}
 
+	o.Draw_Push_Opacity(config.opacity)
+	defer o.Draw_Pop_Opacity()
+
 	if !o.ui_layout_paint_skip(layout_id) {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}

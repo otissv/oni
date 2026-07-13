@@ -87,6 +87,13 @@ cfg_style_f32 :: proc(field: Cfg(Style_F32), default: f32 = 0) -> f32 {
 }
 
 /*
+Clamps opacity to the CSS range [0, 1].
+*/
+clamp_opacity :: proc(value: f32) -> f32 {
+	return clamp(value, 0, 1)
+}
+
+/*
 Resolves a Cfg field using unset or explicit value modes.
 
 Value-level `.INHERIT` returns parent. No Cfg-level inherit mode.
@@ -502,6 +509,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		position = .RELATIVE,
 		visibility = .VISIBLE,
 		pointer_events = .AUTO,
+		opacity = 1,
 		order = 0,
 		z_index = 0,
 	}
@@ -558,6 +566,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Style_F32, &result.bottom, override.bottom)
 	merge_cfg(Overflow, &result.overflow_x, override.overflow_x)
 	merge_cfg(Overflow, &result.overflow_y, override.overflow_y)
+	merge_cfg(Style_F32, &result.opacity, override.opacity)
 	merge_cfg(Visibility, &result.visibility, override.visibility)
 	merge_cfg(Style_F32, &result.z_index, override.z_index)
 	merge_cfg(Position, &result.position, override.position)
@@ -1121,6 +1130,9 @@ resolve_widget_config :: proc(
 			decl.overflow_y,
 			parent.overflow_y,
 			theme.overflow_y,
+		),
+		opacity               = clamp_opacity(
+			resolve_cfg_f32(decl.opacity, parent.opacity, theme.opacity, state, event),
 		),
 		visibility            = resolve_cfg(
 			Visibility,
