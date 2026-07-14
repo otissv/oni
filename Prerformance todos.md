@@ -1,5 +1,44 @@
 # Prerformance todos
 
+## Arenas
+There is **no** `mem.Arena` in the tree. The only arena-like path is Odin’s `context.temp_allocator`, and it’s used sparingly (`fmt.tprintf`, a few `clone_to_cstring`s, map-key sweeps). The host already `free_all`s temp once per loop after the frame.
+
+What should lean on arenas (or temp) harder:
+
+### 1. Layout solve scratch — clearest win
+`oni/layout.odin` is full of per-node, same-proc `[dynamic]` + `defer delete` noise during wrap/flex/table layout:
+
+- `layout_wrap_measure` / `layout_wrap_build_lines`
+- `layout_position_children_wrap` (`child_sizes`, `lines`, `line_cross_sizes`, `line_indices`, …)
+- non-wrap position path (`child_sizes`, `child_nodes`, `in_flow`, `main_positions`, …)
+- justify helpers (`sizes`, `indices`, `positions`)
+- `layout_table_collect_rows_in` DFS `stack`
+
+These never outlive the proc. They should be `context.temp_allocator` (or a layout scratch arena). Today they hit the tracking/default allocator every frame.
+
+### 2. Frame-scoped layout / text ownership — bigger redesign
+Also rebuilt every frame and wiped in `layout_reset` / `layout_text_release`:
+
+| What | Where |
+|------|--------|
+| Shaped glyphs / lines | `font_shape`, `font_make_shaped_line`, wrap helpers in `font_shaper.odin` |
+| Line origins, glyph paint quads, decoration strokes | `layout_text_position_*` |
+| `child_indices` per node | allocated on push, `delete`d in `layout_release_node_children` |
+| Table tracks (`rows`, col/row sizes, `cell_positions`) | `layout_table_prepare_in` |
+
+A **layout/frame arena** reset in `layout_reset` (instead of dozens of `delete`s) fits this lifetime. Putting them on the global temp allocator as-is is unsafe: temp is wiped at end of the host loop, but `layout_text_release` still `delete`s those pointers at the start of the next frame.
+
+Balance wrap is an especially bad heap churner: `font_shape_lines_balance` allocates trial soft-wraps and `font_destroy_shaped_lines`s them in a loop.
+
+### 3. Already fine / not arena candidates
+- **Batch** (`batch.odin`) — growing dynamics, cleared per frame; capacity reuse is enough.
+- **Persistent maps** (widgets, glyph cache, assets, static ids) — long-lived; keep general allocator.
+- **Tengu** timeline/keyframe `make(..., allocator)` — owned configs, not frame scratch.
+- Places that **already** use temp correctly: auto element ids, widget map pruning, cstring path clones in shaping/assets.
+
+**Bottom line:** the payoff is almost entirely in **layout + text shaping**. Start by routing layout-solve scratch to temp; step two is a dedicated frame arena reset from `layout_reset` for text/table/`child_indices` so you can stop per-object teardown.
+
+
 ## Pre-compute
 
 mmediate-mode rebuilds the UI tree every frame — the wins are caching stable intermediates, not skipping layout/draw.
