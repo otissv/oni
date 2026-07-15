@@ -85,6 +85,22 @@ text_refresh_merged :: proc(props: Text_Props, frame_state: ^Text_Merged_State) 
 	return widget_event(frame_state^)
 }
 
+@(private)
+text_refresh_merged_if_interaction_changed :: proc(
+	props: Text_Props,
+	frame_state: ^Text_Merged_State,
+	prev_fp: u8,
+) -> (
+	event: Text_Event,
+	fp: u8,
+) {
+	fp = widget_style_interaction_fp(frame_state)
+	if fp == prev_fp {
+		return widget_event(frame_state^), fp
+	}
+	return text_refresh_merged(props, frame_state), fp
+}
+
 /*
 Lays out and draws text. Layout owns wrap, size, and line positions; draw paints them.
 */
@@ -102,6 +118,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	}
 
 	event := text_refresh_merged(props, &frame_state)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	style := frame_state.style
 	handlers := widget_lifecycle_handlers(props, Text_Merged_State)
 	should_auto_focus := widget_should_auto_focus(style, key)
@@ -157,7 +174,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		style,
 	)
 
-	event = text_refresh_merged(props, &frame_state)
+	event, _ = text_refresh_merged_if_interaction_changed(props, &frame_state, style_fp)
 	style = frame_state.style
 
 	if widget_can_interact(handlers, &frame_state) {
@@ -181,7 +198,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	// Parents dispatch after Children, so bubble order remains child → parent.
 	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 
-	rgbaColor, color_ok := o.to_rgba(style.color, &frame_state, event)
+	rgbaColor, color_ok := o.style_color_rgba(style, &frame_state, event)
 	if !color_ok do return {}
 
 	if o.ui_layout_paint_skip(layout_id) do return {}
@@ -193,12 +210,12 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	#partial switch c in style.text_decoration_color {
 	case o.Color:
 		if c != .INHERIT {
-			if resolved, ok := o.to_rgba(style.text_decoration_color, &frame_state, event); ok {
+			if resolved, ok := o.style_text_decoration_color_rgba(style, &frame_state, event); ok {
 				deco_color = resolved
 			}
 		}
 	case:
-		if resolved, ok := o.to_rgba(style.text_decoration_color, &frame_state, event); ok {
+		if resolved, ok := o.style_text_decoration_color_rgba(style, &frame_state, event); ok {
 			deco_color = resolved
 		}
 	}

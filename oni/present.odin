@@ -8,13 +8,23 @@ Draw_Proc :: proc()
 /*
 Acquires the swapchain, records draw commands, and submits the GPU frame.
 
-Call once per frame after tick and UI layout; no-ops when rendering is
-unavailable or the draw batch is empty.
+Layout/draw record and deferred texture uploads run before WaitAndAcquire so CPU
+work overlaps the previous frame's present. Wait is the sync point before GPU
+buffer reuse (safe with the dual Batch_State ping-pong). Call once per frame after
+tick and UI; no-ops when rendering is unavailable.
 */
 present_frame :: proc(draw: Draw_Proc) {
 	if !state.can_render || state.window == nil || state.gpu == nil do return
 	if state.gpu_state.pipeline == nil do return
 	if theme == nil do return
+
+	// Record into the current CPU/GPU batch slot before waiting on the swapchain.
+	draw_record_begin(state.dpi)
+	if draw != nil do draw()
+	draw_record_end()
+
+	// Flush glyph atlas / texture reloads queued during draw before geometry upload.
+	_ = texture_uploads_flush(state.gpu)
 
 	cmd_buf := sdl.AcquireGPUCommandBuffer(state.gpu)
 	if test_hook_present_fail_acquire_cmd && cmd_buf != nil {
@@ -23,6 +33,7 @@ present_frame :: proc(draw: Draw_Proc) {
 	}
 	if cmd_buf == nil {
 		fmt.eprintln("SDL_AcquireGPUCommandBuffer failed:", sdl.GetError())
+		batch_reset()
 		return
 	}
 
@@ -44,6 +55,7 @@ present_frame :: proc(draw: Draw_Proc) {
 		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
 			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
 		}
+		batch_reset()
 		return
 	}
 
@@ -51,16 +63,13 @@ present_frame :: proc(draw: Draw_Proc) {
 		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
 			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
 		}
+		batch_reset()
 		return
 	}
 
-	draw_record_begin(state.dpi)
-	if draw != nil do draw()
-	draw_record_end()
-
 	// After a non-nil swapchain acquire, Cancel is illegal — always Submit.
 	uploaded := true
-	if len(state.gpu_state.batch.vertices) > 0 {
+	if len(batch_current().vertices) > 0 {
 		uploaded = batch_upload(cmd_buf)
 	}
 
@@ -98,4 +107,5 @@ present_frame :: proc(draw: Draw_Proc) {
 	}
 
 	batch_reset()
+	batch_flip()
 }

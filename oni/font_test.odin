@@ -59,8 +59,8 @@ with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Hand
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	state.view = view_default()
 	state.gpu = gpu
-	state.gpu_state.batch.vertex_capacity = 64 * 1024
-	state.gpu_state.batch.index_capacity = 64 * 1024 * 6
+	batch_current().vertex_capacity = 64 * 1024
+	batch_current().index_capacity = 64 * 1024 * 6
 
 	white := gpu_create_white_texture(gpu)
 	if white == nil {
@@ -78,18 +78,18 @@ with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Hand
 	texture_init()
 	defer texture_shutdown()
 	defer {
-		delete(state.gpu_state.batch.vertices)
-		delete(state.gpu_state.batch.indices)
-		delete(state.gpu_state.batch.segments)
-		delete(state.gpu_state.batch.clip_stack)
-		delete(state.gpu_state.batch.space_stack)
-		delete(state.gpu_state.batch.opacity_stack)
-		state.gpu_state.batch.vertices = nil
-		state.gpu_state.batch.indices = nil
-		state.gpu_state.batch.segments = nil
-		state.gpu_state.batch.clip_stack = nil
-		state.gpu_state.batch.space_stack = nil
-		state.gpu_state.batch.opacity_stack = nil
+		delete(batch_current().vertices)
+		delete(batch_current().indices)
+		delete(batch_current().segments)
+		delete(batch_current().clip_stack)
+		delete(batch_current().space_stack)
+		delete(batch_current().opacity_stack)
+		batch_current().vertices = nil
+		batch_current().indices = nil
+		batch_current().segments = nil
+		batch_current().clip_stack = nil
+		batch_current().space_stack = nil
+		batch_current().opacity_stack = nil
 	}
 
 	testing.expect(t, font_init())
@@ -349,6 +349,9 @@ font_copy_glyph_bitmap_unsupported_mode_leaves_surface_untouched :: proc(t: ^tes
 			defer sdl.DestroySurface(surface)
 
 			testing.expect(t, sdl.WriteSurfacePixel(surface, 0, 0, 1, 2, 3, 4))
+
+			sync.mutex_lock(&log_test_guard)
+			defer sync.mutex_unlock(&log_test_guard)
 
 			_ = os.make_directory_all("build")
 			path := "build/test_font_unsupported_pixel_mode.txt"
@@ -767,6 +770,29 @@ font_ensure_glyphs_from_paint_rasterizes_missing_and_skips_cached :: proc(t: ^te
 }
 
 @(test)
+font_ensure_glyphs_parallel_path_caches_many_unique_glyphs :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			// Enough distinct glyphs to trip FONT_GLYPH_PARALLEL_THRESHOLD.
+			shaped := font_shape(face, "ABCDEabcde", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= FONT_GLYPH_PARALLEL_THRESHOLD)
+
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+			for g in shaped {
+				_, found := state.fonts.glyph_cache[{face_id = handle.id, glyph_id = g.glyph_id}]
+				testing.expect(t, found)
+			}
+		},
+	)
+}
+
+@(test)
 font_rasterize_real_inter_glyph_has_positive_bearings_when_inked :: proc(t: ^testing.T) {
 	with_font_gpu_fixtures(
 		t,
@@ -847,11 +873,11 @@ font_draw_layout_text_draws_glyphs_and_decorations :: proc(t: ^testing.T) {
 				size               = {40, 16},
 			}
 
-			before_verts := len(state.gpu_state.batch.vertices)
+			before_verts := len(batch_current().vertices)
 			got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{255, 0, 0, 255})
 			expect_close(t, got.x, 40)
 			expect_close(t, got.y, 16)
-			testing.expect(t, len(state.gpu_state.batch.vertices) > before_verts)
+			testing.expect(t, len(batch_current().vertices) > before_verts)
 		},
 	)
 }
@@ -1286,11 +1312,11 @@ font_draw_layout_text_decorations_only_without_glyphs :: proc(t: ^testing.T) {
 				font               = handle,
 				size               = {20, 12},
 			}
-			before := len(state.gpu_state.batch.vertices)
+			before := len(batch_current().vertices)
 			got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{0, 0, 0, 255})
 			expect_close(t, got.x, 20)
 			expect_close(t, got.y, 12)
-			testing.expect(t, len(state.gpu_state.batch.vertices) > before)
+			testing.expect(t, len(batch_current().vertices) > before)
 		},
 	)
 }
@@ -1332,7 +1358,7 @@ font_draw_layout_text_re_ensures_deleted_glyph_before_paint :: proc(t: ^testing.
 			got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
 			expect_close(t, got.x, 20)
 			// Draw re-ensures the deleted glyph, so both glyph quads are emitted.
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), len(shaped) * 4)
+			testing.expect_value(t, len(batch_current().vertices), len(shaped) * 4)
 		},
 	)
 }
@@ -1362,9 +1388,9 @@ font_draw_layout_text_emits_quad_vertices_per_glyph :: proc(t: ^testing.T) {
 			}
 			batch_reset()
 			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), len(shaped) * 4)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), len(shaped) * 6)
-			testing.expect(t, len(state.gpu_state.batch.segments) >= 1)
+			testing.expect_value(t, len(batch_current().vertices), len(shaped) * 4)
+			testing.expect_value(t, len(batch_current().indices), len(shaped) * 6)
+			testing.expect(t, len(batch_current().segments) >= 1)
 		},
 	)
 }

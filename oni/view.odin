@@ -67,6 +67,8 @@ Sets the view zoom, clamped to configured limits.
 view_set_zoom :: proc(zoom: f32) {
 	if state == nil do return
 	state.view.zoom = view_clamp_zoom(zoom)
+	batch_invalidate_view_cache()
+	layout_invalidate_artboard_zoom()
 }
 
 /*
@@ -75,6 +77,7 @@ Sets the view pan offset in screen space.
 view_set_pan :: proc(pan: Vec2) {
 	if state == nil do return
 	state.view.pan = pan
+	batch_invalidate_view_cache()
 }
 
 /*
@@ -83,6 +86,7 @@ Adds a delta to the current view pan offset.
 view_pan_by :: proc(delta: Vec2) {
 	if state == nil do return
 	state.view.pan += delta
+	batch_invalidate_view_cache()
 }
 
 /*
@@ -114,6 +118,8 @@ view_zoom_at_screen :: proc(screen: Vec2, zoom: f32) {
 	state.view.zoom = view_clamp_zoom(zoom)
 	z := view_effective_zoom()
 	state.view.pan = screen - world * z
+	batch_invalidate_view_cache()
+	layout_invalidate_artboard_zoom()
 }
 
 /*
@@ -144,6 +150,8 @@ Resets zoom and pan to default view values.
 view_reset :: proc() {
 	if state == nil do return
 	state.view = view_default()
+	batch_invalidate_view_cache()
+	layout_invalidate_artboard_zoom()
 }
 
 /*
@@ -153,11 +161,12 @@ Returns the rect unchanged for screen-space drawing.
 */
 view_transform_rect :: proc(r: Rect) -> Rect {
 	// Nil state cannot be on the artboard space stack (`draw_current_space` is SCREEN).
-	if state == nil || draw_current_space() != .ARTBOARD do return r
-	z := view_effective_zoom()
+	if state == nil do return r
+	z, pan, space := batch_cached_view()
+	if space != .ARTBOARD do return r
 	return {
-		x = r.x * z + state.view.pan.x,
-		y = r.y * z + state.view.pan.y,
+		x = r.x * z + pan.x,
+		y = r.y * z + pan.y,
 		w = r.w * z,
 		h = r.h * z,
 	}

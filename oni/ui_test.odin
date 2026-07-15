@@ -136,7 +136,7 @@ ui_pass_layout_rect_and_presence_helpers :: proc(t: ^testing.T) {
 			missing := ui_layout_rect(UI_Id(123))
 			expect_rect(t, missing, {})
 
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 			idx := layout_test_append_node(&state.ui.layout, -1, .RECT)
 			state.ui.layout.nodes[idx].rect = {1, 2, 3, 4}

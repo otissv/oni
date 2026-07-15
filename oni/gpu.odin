@@ -30,14 +30,20 @@ GPU_Proj_UBO :: struct {
 }
 
 /*
-GPU rendering resources: pipeline, sampler, white texture, projection, and batch.
+GPU rendering resources: pipeline, sampler, white texture, projection, and batches.
+
+`batches` is ping-ponged via `batch_index` so CPU recording for frame N+1 can
+proceed while the GPU still reads frame N's vertex/index buffers. WaitAndAcquire
+remains the swapchain sync point; alternate slots avoid uploading into in-flight
+GPU buffers within the same present_frame.
 */
 GPU_State :: struct {
 	pipeline:      ^sdl.GPUGraphicsPipeline,
 	sampler:       ^sdl.GPUSampler,
 	white_texture: ^sdl.GPUTexture,
 	proj_mat:      matrix[4, 4]f32,
-	batch:         Batch_State,
+	batches:       [2]Batch_State,
+	batch_index:   int,
 }
 
 /*

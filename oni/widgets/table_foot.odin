@@ -82,6 +82,7 @@ Table_Foot :: proc(props: Table_Foot_Props) {
 	}
 
 	event := widget_refresh_merged(props, &frame_state, table_foot_theme_base)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
 	handlers := widget_lifecycle_handlers(props, Table_Foot_State)
@@ -133,7 +134,7 @@ Table_Foot :: proc(props: Table_Foot_Props) {
 		config,
 	)
 
-	event = widget_refresh_merged(props, &frame_state, table_foot_theme_base)
+	event, _ = widget_refresh_merged_if_interaction_changed(props, &frame_state, table_foot_theme_base, style_fp)
 	config = frame_state.config
 
 	if widget_can_interact(handlers, &frame_state) {

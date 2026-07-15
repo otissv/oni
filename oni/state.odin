@@ -23,6 +23,7 @@ UI_State :: struct {
 	layout:              Layout_State,
 	layout_ids_prev:     map[UI_Id]bool,
 	layout_ids_snapshot: map[UI_Id]bool,
+	label_crc:           map[string]u32,
 }
 
 /*
@@ -75,5 +76,6 @@ allocation, hot reload, or realloc.
 bind :: proc(s: ^State, t: ^Theme) {
 	state = s
 	theme = t
+	theme_widget_style_invalidate()
 	widget_ctx_sync()
 }

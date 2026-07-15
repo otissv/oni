@@ -18,12 +18,7 @@ with_batch_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -36,9 +31,9 @@ with_batch_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer clear_test_hooks()
 	state.view = view_default()
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1, drawable_w = 800, drawable_h = 600}
-	state.gpu_state.batch.dpi = state.dpi
-	state.gpu_state.batch.vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
-	state.gpu_state.batch.index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
+	batch_current().dpi = state.dpi
+	batch_current().vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
+	batch_current().index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
 	body(t)
 }
 
@@ -85,7 +80,7 @@ with_batch_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	state.gpu = gpu
 	state.view = view_default()
 	state.dpi = {logical_w = 800, logical_h = 600, scale = 1, drawable_w = 800, drawable_h = 600}
-	state.gpu_state.batch.dpi = state.dpi
+	batch_current().dpi = state.dpi
 
 	white := gpu_create_white_texture(gpu)
 	if white == nil {
@@ -167,35 +162,37 @@ batch_init_creates_gpu_buffers_and_destroy_clears :: proc(t: ^testing.T) {
 	with_batch_gpu_env(
 		t,
 		proc(t: ^testing.T) {
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, u32(BATCH_INITIAL_VERT_CAPACITY))
+			testing.expect_value(t, batch_current().vertex_capacity, u32(BATCH_INITIAL_VERT_CAPACITY))
 			testing.expect_value(
 				t,
-				state.gpu_state.batch.index_capacity,
+				batch_current().index_capacity,
 				u32(BATCH_INITIAL_VERT_CAPACITY * 6),
 			)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer != nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer != nil)
-
-			append(&state.gpu_state.batch.vertices, UI_Vertex{})
-			append(&state.gpu_state.batch.indices, u16(0))
-			append(&state.gpu_state.batch.segments, Batch_Segment{})
-			append(&state.gpu_state.batch.clip_stack, Rect{1, 2, 3, 4})
-			append(&state.gpu_state.batch.space_stack, Draw_Space.ARTBOARD)
-			append(&state.gpu_state.batch.opacity_stack, f32(0.5))
-			state.gpu_state.batch.has_current_key = true
+			testing.expect(t, batch_current().vertex_buffer != nil)
+			testing.expect(t, batch_current().index_buffer != nil)
+			// Dual ping-pong slots are both initialized.
+			testing.expect(t, state.gpu_state.batches[1].vertex_buffer != nil)
+			testing.expect(t, state.gpu_state.batches[1].index_buffer != nil)
+			testing.expect_value(t, state.gpu_state.batch_index, 0)
+			append(&batch_current().indices, u16(0))
+			append(&batch_current().segments, Batch_Segment{})
+			append(&batch_current().clip_stack, Rect{1, 2, 3, 4})
+			append(&batch_current().space_stack, Draw_Space.ARTBOARD)
+			append(&batch_current().opacity_stack, f32(0.5))
+			batch_current().has_current_key = true
 
 			batch_destroy()
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer == nil)
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, u32(0))
-			testing.expect_value(t, state.gpu_state.batch.index_capacity, u32(0))
-			testing.expect(t, !state.gpu_state.batch.has_current_key)
-			testing.expect(t, state.gpu_state.batch.vertices == nil)
-			testing.expect(t, state.gpu_state.batch.indices == nil)
-			testing.expect(t, state.gpu_state.batch.segments == nil)
-			testing.expect(t, state.gpu_state.batch.clip_stack == nil)
-			testing.expect(t, state.gpu_state.batch.space_stack == nil)
-			testing.expect(t, state.gpu_state.batch.opacity_stack == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+			testing.expect(t, batch_current().index_buffer == nil)
+			testing.expect_value(t, batch_current().vertex_capacity, u32(0))
+			testing.expect_value(t, batch_current().index_capacity, u32(0))
+			testing.expect(t, !batch_current().has_current_key)
+			testing.expect(t, batch_current().vertices == nil)
+			testing.expect(t, batch_current().indices == nil)
+			testing.expect(t, batch_current().segments == nil)
+			testing.expect(t, batch_current().clip_stack == nil)
+			testing.expect(t, batch_current().space_stack == nil)
+			testing.expect(t, batch_current().opacity_stack == nil)
 
 			// Re-init after destroy for defer batch_destroy in env.
 			batch_init()
@@ -208,27 +205,27 @@ batch_reset_clears_cpu_state_keeps_capacity :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.vertices, UI_Vertex{}, UI_Vertex{})
-			append(&state.gpu_state.batch.indices, u16(0), u16(1), u16(2))
-			append(&state.gpu_state.batch.segments, Batch_Segment{first_index = 1})
-			append(&state.gpu_state.batch.clip_stack, Rect{0, 0, 10, 10})
-			append(&state.gpu_state.batch.space_stack, Draw_Space.SCREEN)
-			append(&state.gpu_state.batch.opacity_stack, f32(0.25))
-			state.gpu_state.batch.has_current_key = true
-			state.gpu_state.batch.current_key = {texture_id = Asset_Id(3)}
+			append(&batch_current().vertices, UI_Vertex{}, UI_Vertex{})
+			append(&batch_current().indices, u16(0), u16(1), u16(2))
+			append(&batch_current().segments, Batch_Segment{first_index = 1})
+			append(&batch_current().clip_stack, Rect{0, 0, 10, 10})
+			append(&batch_current().space_stack, Draw_Space.SCREEN)
+			append(&batch_current().opacity_stack, f32(0.25))
+			batch_current().has_current_key = true
+			batch_current().current_key = {texture_id = Asset_Id(3)}
 
-			cap_v := state.gpu_state.batch.vertex_capacity
-			cap_i := state.gpu_state.batch.index_capacity
+			cap_v := batch_current().vertex_capacity
+			cap_i := batch_current().index_capacity
 			batch_reset()
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.clip_stack), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.space_stack), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.opacity_stack), 0)
-			testing.expect(t, !state.gpu_state.batch.has_current_key)
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, cap_v)
-			testing.expect_value(t, state.gpu_state.batch.index_capacity, cap_i)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
+			testing.expect_value(t, len(batch_current().segments), 0)
+			testing.expect_value(t, len(batch_current().clip_stack), 0)
+			testing.expect_value(t, len(batch_current().space_stack), 0)
+			testing.expect_value(t, len(batch_current().opacity_stack), 0)
+			testing.expect(t, !batch_current().has_current_key)
+			testing.expect_value(t, batch_current().vertex_capacity, cap_v)
+			testing.expect_value(t, batch_current().index_capacity, cap_i)
 		},
 	)
 }
@@ -238,12 +235,12 @@ batch_create_gpu_buffers_releases_previous :: proc(t: ^testing.T) {
 	with_batch_gpu_env(
 		t,
 		proc(t: ^testing.T) {
-			old_v := state.gpu_state.batch.vertex_buffer
-			old_i := state.gpu_state.batch.index_buffer
+			old_v := batch_current().vertex_buffer
+			old_i := batch_current().index_buffer
 			testing.expect(t, old_v != nil)
 			testing.expect(t, batch_create_gpu_buffers())
-			testing.expect(t, state.gpu_state.batch.vertex_buffer != nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer != nil)
+			testing.expect(t, batch_current().vertex_buffer != nil)
+			testing.expect(t, batch_current().index_buffer != nil)
 			// New allocations (pointers may or may not differ; ensure non-nil after recreate).
 			_ = old_v
 			_ = old_i
@@ -264,7 +261,7 @@ batch_ensure_capacity_within_limit_no_gpu :: proc(t: ^testing.T) {
 			testing.expect(t, batch_ensure_capacity(0))
 			testing.expect_value(
 				t,
-				state.gpu_state.batch.vertex_capacity,
+				batch_current().vertex_capacity,
 				u32(BATCH_INITIAL_VERT_CAPACITY),
 			)
 		},
@@ -276,10 +273,10 @@ batch_ensure_capacity_grow_fails_without_gpu :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			state.gpu_state.batch.vertex_capacity = 4
+			batch_current().vertex_capacity = 4
 			testing.expect(t, !batch_ensure_capacity(8))
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, u32(8))
-			testing.expect_value(t, state.gpu_state.batch.index_capacity, u32(48))
+			testing.expect_value(t, batch_current().vertex_capacity, u32(8))
+			testing.expect_value(t, batch_current().index_capacity, u32(48))
 		},
 	)
 }
@@ -289,19 +286,19 @@ batch_ensure_capacity_doubles_until_enough :: proc(t: ^testing.T) {
 	with_batch_gpu_env(
 		t,
 		proc(t: ^testing.T) {
-			state.gpu_state.batch.vertex_capacity = 8
-			state.gpu_state.batch.index_capacity = 48
+			batch_current().vertex_capacity = 8
+			batch_current().index_capacity = 48
 			testing.expect(t, batch_create_gpu_buffers())
 
 			// Need 40 verts with capacity 8 → doubles to 16, 32, 64.
 			testing.expect(t, batch_ensure_capacity(40))
-			testing.expect(t, state.gpu_state.batch.vertex_capacity >= 40)
+			testing.expect(t, batch_current().vertex_capacity >= 40)
 			testing.expect_value(
 				t,
-				state.gpu_state.batch.index_capacity,
-				state.gpu_state.batch.vertex_capacity * 6,
+				batch_current().index_capacity,
+				batch_current().vertex_capacity * 6,
 			)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer != nil)
+			testing.expect(t, batch_current().vertex_buffer != nil)
 		},
 	)
 }
@@ -326,16 +323,19 @@ batch_current_clip_uses_stack_top_intersected_with_viewport :: proc(t: ^testing.
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.clip_stack, Rect{-100, -100, 50, 50})
+			append(&batch_current().clip_stack, Rect{-100, -100, 50, 50})
+			batch_invalidate_clip_cache()
 			clip := batch_current_clip()
 			expect_rect(t, clip, {})
 
-			clear(&state.gpu_state.batch.clip_stack)
-			append(&state.gpu_state.batch.clip_stack, Rect{100, 100, 200, 150})
+			clear(&batch_current().clip_stack)
+			append(&batch_current().clip_stack, Rect{100, 100, 200, 150})
+			batch_invalidate_clip_cache()
 			clip = batch_current_clip()
 			expect_rect(t, clip, {100, 100, 200, 150})
 
-			append(&state.gpu_state.batch.clip_stack, Rect{700, 500, 200, 200})
+			append(&batch_current().clip_stack, Rect{700, 500, 200, 200})
+			batch_invalidate_clip_cache()
 			clip = batch_current_clip()
 			expect_rect(t, clip, {700, 500, 100, 100})
 		},
@@ -351,7 +351,8 @@ batch_current_clip_applies_artboard_view_transform :: proc(t: ^testing.T) {
 			state.view.pan = {10, 20}
 			draw_push_space(.ARTBOARD)
 			defer draw_pop_space()
-			append(&state.gpu_state.batch.clip_stack, Rect{0, 0, 100, 50})
+			append(&batch_current().clip_stack, Rect{0, 0, 100, 50})
+			batch_invalidate_clip_cache()
 			clip := batch_current_clip()
 			expect_rect(t, clip, {10, 20, 200, 100})
 		},
@@ -368,28 +369,28 @@ batch_check_key_creates_merges_and_splits_segments :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			batch_check_key(TEXTURE_WHITE_ID)
-			testing.expect(t, state.gpu_state.batch.has_current_key)
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 1)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].first_index, u32(0))
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(0))
+			testing.expect(t, batch_current().has_current_key)
+			testing.expect_value(t, len(batch_current().segments), 1)
+			testing.expect_value(t, batch_current().segments[0].first_index, u32(0))
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(0))
 
 			// Same key: no new segment
 			batch_check_key(TEXTURE_WHITE_ID)
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 1)
+			testing.expect_value(t, len(batch_current().segments), 1)
 
 			batch_push_indices(0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 6)
+			testing.expect_value(t, len(batch_current().indices), 6)
 
 			// Different texture: finalize previous and start new
 			batch_check_key(Asset_Id(1))
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 2)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(6))
-			testing.expect_value(t, state.gpu_state.batch.segments[1].first_index, u32(6))
-			testing.expect_value(t, state.gpu_state.batch.current_key.texture_id, Asset_Id(1))
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
+			testing.expect_value(t, batch_current().segments[1].first_index, u32(6))
+			testing.expect_value(t, batch_current().current_key.texture_id, Asset_Id(1))
 
 			batch_push_indices(4)
 			batch_finalize_segments()
-			testing.expect_value(t, state.gpu_state.batch.segments[1].index_count, u32(6))
+			testing.expect_value(t, batch_current().segments[1].index_count, u32(6))
 		},
 	)
 }
@@ -401,11 +402,12 @@ batch_check_key_splits_on_clip_change :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			batch_check_key(TEXTURE_WHITE_ID)
 			batch_push_indices(0)
-			append(&state.gpu_state.batch.clip_stack, Rect{10, 10, 50, 50})
+			append(&batch_current().clip_stack, Rect{10, 10, 50, 50})
+			batch_invalidate_clip_cache()
 			batch_check_key(TEXTURE_WHITE_ID)
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 2)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(6))
-			expect_rect(t, state.gpu_state.batch.segments[1].key.clip, {10, 10, 50, 50})
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
+			expect_rect(t, batch_current().segments[1].key.clip, {10, 10, 50, 50})
 		},
 	)
 }
@@ -428,10 +430,10 @@ batch_finalize_segments_sorts_by_stack_index :: proc(t: ^testing.T) {
 			batch_push_indices(8)
 
 			batch_finalize_segments()
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 3)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].key.stack_index, u32(1))
-			testing.expect_value(t, state.gpu_state.batch.segments[1].key.stack_index, u32(5))
-			testing.expect_value(t, state.gpu_state.batch.segments[2].key.stack_index, u32(9))
+			testing.expect_value(t, len(batch_current().segments), 3)
+			testing.expect_value(t, batch_current().segments[0].key.stack_index, u32(1))
+			testing.expect_value(t, batch_current().segments[1].key.stack_index, u32(5))
+			testing.expect_value(t, batch_current().segments[2].key.stack_index, u32(9))
 		},
 	)
 }
@@ -442,10 +444,10 @@ batch_finalize_segments_noop_without_key :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			batch_finalize_segments()
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 0)
-			state.gpu_state.batch.has_current_key = true
+			testing.expect_value(t, len(batch_current().segments), 0)
+			batch_current().has_current_key = true
 			batch_finalize_segments()
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 0)
+			testing.expect_value(t, len(batch_current().segments), 0)
 		},
 	)
 }
@@ -460,13 +462,13 @@ batch_push_indices_emits_two_triangles :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			batch_push_indices(10)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 6)
-			testing.expect_value(t, state.gpu_state.batch.indices[0], u16(10))
-			testing.expect_value(t, state.gpu_state.batch.indices[1], u16(11))
-			testing.expect_value(t, state.gpu_state.batch.indices[2], u16(12))
-			testing.expect_value(t, state.gpu_state.batch.indices[3], u16(10))
-			testing.expect_value(t, state.gpu_state.batch.indices[4], u16(12))
-			testing.expect_value(t, state.gpu_state.batch.indices[5], u16(13))
+			testing.expect_value(t, len(batch_current().indices), 6)
+			testing.expect_value(t, batch_current().indices[0], u16(10))
+			testing.expect_value(t, batch_current().indices[1], u16(11))
+			testing.expect_value(t, batch_current().indices[2], u16(12))
+			testing.expect_value(t, batch_current().indices[3], u16(10))
+			testing.expect_value(t, batch_current().indices[4], u16(12))
+			testing.expect_value(t, batch_current().indices[5], u16(13))
 		},
 	)
 }
@@ -485,11 +487,11 @@ batch_push_vertex_packs_params_and_border :: proc(t: ^testing.T) {
 				{10, 20},
 				{1, 2, 3, 4},
 				{t = 1, b = 2, l = 3, r = 4},
-				.Textured,
+				draw_mode_f32(.Textured),
 				true,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 1)
-			v := state.gpu_state.batch.vertices[0]
+			testing.expect_value(t, len(batch_current().vertices), 1)
+			v := batch_current().vertices[0]
 			expect_batch_vertex(
 				t,
 				v,
@@ -517,10 +519,10 @@ batch_push_vertex_packs_params_and_border :: proc(t: ^testing.T) {
 				{},
 				{},
 				{},
-				.Solid,
+				draw_mode_f32(.Solid),
 				false,
 			)
-			expect_close(t, state.gpu_state.batch.vertices[1].params[0], 0)
+			expect_close(t, batch_current().vertices[1].params[0], 0)
 		},
 	)
 }
@@ -544,20 +546,20 @@ batch_push_quad_emits_four_verts_and_six_indices :: proc(t: ^testing.T) {
 				{t = 2, b = 2, l = 2, r = 2},
 				.Solid,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 4)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 6)
+			testing.expect_value(t, len(batch_current().vertices), 4)
+			testing.expect_value(t, len(batch_current().indices), 6)
 			tint := rgba_to_f32({255, 128, 0, 255})
 			expect_batch_vertex(
 				t,
-				state.gpu_state.batch.vertices[0],
+				batch_current().vertices[0],
 				{0, 0},
 				{0, 0},
 				{0, 0},
 				tint,
 				.Solid,
 			)
-			expect_close(t, state.gpu_state.batch.vertices[2].pos[0], 10)
-			expect_close(t, state.gpu_state.batch.vertices[2].pos[1], 5)
+			expect_close(t, batch_current().vertices[2].pos[0], 10)
+			expect_close(t, batch_current().vertices[2].pos[1], 5)
 		},
 	)
 }
@@ -567,7 +569,7 @@ batch_push_quad_skips_when_capacity_grow_fails :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			state.gpu_state.batch.vertex_capacity = 2
+			batch_current().vertex_capacity = 2
 			batch_push_quad(
 				{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
 				{{0, 0}, {1, 0}, {1, 1}, {0, 1}},
@@ -579,8 +581,8 @@ batch_push_quad_skips_when_capacity_grow_fails :: proc(t: ^testing.T) {
 				{},
 				.Solid,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
 		},
 	)
 }
@@ -604,13 +606,13 @@ batch_push_axis_quad_solid_and_line :: proc(t: ^testing.T) {
 				{t = 1, b = 1, l = 1, r = 1},
 				.Solid,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 4)
-			v0 := state.gpu_state.batch.vertices[0]
+			testing.expect_value(t, len(batch_current().vertices), 4)
+			v0 := batch_current().vertices[0]
 			expect_close(t, v0.pos[0], 10)
 			expect_close(t, v0.pos[1], 20)
 			expect_close(t, v0.uv[0], 0)
 			expect_close(t, v0.local_uv[0], 0)
-			v2 := state.gpu_state.batch.vertices[2]
+			v2 := batch_current().vertices[2]
 			expect_close(t, v2.pos[0], 40)
 			expect_close(t, v2.pos[1], 60)
 			expect_close(t, v2.uv[0], 1)
@@ -628,8 +630,8 @@ batch_push_axis_quad_solid_and_line :: proc(t: ^testing.T) {
 				.Line,
 			)
 			// Line uses local UVs like Solid, not texture UVs.
-			expect_close(t, state.gpu_state.batch.vertices[0].uv[0], 0)
-			expect_close(t, state.gpu_state.batch.vertices[2].uv[0], 1)
+			expect_close(t, batch_current().vertices[0].uv[0], 0)
+			expect_close(t, batch_current().vertices[2].uv[0], 1)
 		},
 	)
 }
@@ -639,7 +641,8 @@ batch_push_axis_quad_textured_clips_and_adjusts_uvs :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.clip_stack, Rect{50, 50, 50, 50})
+			append(&batch_current().clip_stack, Rect{50, 50, 50, 50})
+			batch_invalidate_clip_cache()
 			batch_push_axis_quad(
 				{0, 0, 100, 100},
 				{0, 0, 1, 1},
@@ -650,10 +653,10 @@ batch_push_axis_quad_textured_clips_and_adjusts_uvs :: proc(t: ^testing.T) {
 				{},
 				.Textured,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 4)
+			testing.expect_value(t, len(batch_current().vertices), 4)
 			// Visible is [50,50,50,50]; UVs should be [0.5,0.5] → [1,1]
-			v0 := state.gpu_state.batch.vertices[0]
-			v2 := state.gpu_state.batch.vertices[2]
+			v0 := batch_current().vertices[0]
+			v2 := batch_current().vertices[2]
 			expect_close(t, v0.pos[0], 50)
 			expect_close(t, v0.pos[1], 50)
 			expect_close(t, v0.uv[0], 0.5)
@@ -673,7 +676,8 @@ batch_push_axis_quad_textured_fully_clipped_emits_nothing :: proc(t: ^testing.T)
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.clip_stack, Rect{200, 200, 10, 10})
+			append(&batch_current().clip_stack, Rect{200, 200, 10, 10})
+			batch_invalidate_clip_cache()
 			batch_push_axis_quad(
 				{0, 0, 50, 50},
 				{0, 0, 1, 1},
@@ -684,8 +688,8 @@ batch_push_axis_quad_textured_fully_clipped_emits_nothing :: proc(t: ^testing.T)
 				{},
 				.Textured_Rounded,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
 		},
 	)
 }
@@ -705,8 +709,8 @@ batch_push_axis_quad_textured_without_clip_uses_full_rect :: proc(t: ^testing.T)
 				{},
 				.Textured,
 			)
-			v0 := state.gpu_state.batch.vertices[0]
-			v2 := state.gpu_state.batch.vertices[2]
+			v0 := batch_current().vertices[0]
+			v2 := batch_current().vertices[2]
 			expect_close(t, v0.uv[0], 0.1)
 			expect_close(t, v0.uv[1], 0.2)
 			expect_close(t, v2.uv[0], 0.5)
@@ -734,8 +738,8 @@ batch_push_axis_quad_respects_artboard_transform :: proc(t: ^testing.T) {
 				{},
 				.Solid,
 			)
-			v0 := state.gpu_state.batch.vertices[0]
-			v2 := state.gpu_state.batch.vertices[2]
+			v0 := batch_current().vertices[0]
+			v2 := batch_current().vertices[2]
 			expect_close(t, v0.pos[0], 25) // 10*2+5
 			expect_close(t, v0.pos[1], 25)
 			expect_close(t, v2.pos[0], 45) // 20*2+5
@@ -841,8 +845,8 @@ batch_upload_nil_buffers_returns_false :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.vertices, UI_Vertex{})
-			append(&state.gpu_state.batch.indices, u16(0))
+			append(&batch_current().vertices, UI_Vertex{})
+			append(&batch_current().indices, u16(0))
 			testing.expect(t, !batch_upload(nil))
 		},
 	)
@@ -864,14 +868,14 @@ batch_upload_copies_vertices_and_indices :: proc(t: ^testing.T) {
 				{},
 				.Solid,
 			)
-			testing.expect(t, len(state.gpu_state.batch.vertices) == 4)
-			testing.expect(t, len(state.gpu_state.batch.indices) == 6)
+			testing.expect(t, len(batch_current().vertices) == 4)
+			testing.expect(t, len(batch_current().indices) == 6)
 
 			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
 			testing.expect(t, cmd != nil)
 			if cmd == nil do return
 			testing.expect(t, batch_upload(cmd))
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(6))
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
 			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
 		},
 	)
@@ -883,11 +887,11 @@ batch_flush_draws_early_returns :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			// No pipeline
-			append(&state.gpu_state.batch.segments, Batch_Segment{index_count = 6})
+			append(&batch_current().segments, Batch_Segment{index_count = 6})
 			batch_flush_draws()
 
 			state.gpu_state.pipeline = transmute(^sdl.GPUGraphicsPipeline)uintptr(1)
-			clear(&state.gpu_state.batch.segments)
+			clear(&batch_current().segments)
 			batch_flush_draws()
 			// Fake pipeline must not be used with real SDL calls; clear before env ends.
 			state.gpu_state.pipeline = nil
@@ -902,7 +906,7 @@ batch_flush_draws_skips_empty_and_missing_textures :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			// No pipeline → early return even with segments
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment {
 					key = {texture_id = INVALID_ASSET_ID, clip = {0, 0, 10, 10}},
 					first_index = 0,
@@ -915,13 +919,13 @@ batch_flush_draws_skips_empty_and_missing_textures :: proc(t: ^testing.T) {
 			// call into SDL. Cover skip paths by exercising the loop logic indirectly:
 			// zero index_count and missing texture are continued before bind/draw.
 			state.gpu_state.pipeline = nil
-			clear(&state.gpu_state.batch.segments)
+			clear(&batch_current().segments)
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment{index_count = 0, key = {texture_id = TEXTURE_WHITE_ID}},
 			)
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment {
 					index_count = 6,
 					key = {texture_id = INVALID_ASSET_ID, clip = {0, 0, 1, 1}},
@@ -953,8 +957,8 @@ batch_end_to_end_record_upload_with_white_texture_draw_path :: proc(t: ^testing.
 				.Solid,
 			)
 			batch_finalize_segments()
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 1)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(6))
+			testing.expect_value(t, len(batch_current().segments), 1)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
 
 			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
 			testing.expect(t, cmd != nil)
@@ -984,10 +988,10 @@ batch_ensure_capacity_exact_boundary_returns_true :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			state.gpu_state.batch.vertex_capacity = 4
+			batch_current().vertex_capacity = 4
 			// len=0 + extra=4 == capacity → still within limit
 			testing.expect(t, batch_ensure_capacity(4))
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, u32(4))
+			testing.expect_value(t, batch_current().vertex_capacity, u32(4))
 		},
 	)
 }
@@ -1009,8 +1013,8 @@ batch_push_quad_with_tex_clip_flag :: proc(t: ^testing.T) {
 				.Textured_Rounded,
 				true,
 			)
-			expect_close(t, state.gpu_state.batch.vertices[0].params[0], 1)
-			expect_close(t, state.gpu_state.batch.vertices[0].params[1], draw_mode_f32(.Textured_Rounded))
+			expect_close(t, batch_current().vertices[0].params[0], 1)
+			expect_close(t, batch_current().vertices[0].params[1], draw_mode_f32(.Textured_Rounded))
 		},
 	)
 }
@@ -1023,9 +1027,9 @@ batch_check_key_skips_finalize_when_no_indices_yet :: proc(t: ^testing.T) {
 			batch_check_key(TEXTURE_WHITE_ID)
 			// Switch key with empty indices: previous segment index_count stays 0
 			batch_check_key(Asset_Id(2))
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 2)
-			testing.expect_value(t, state.gpu_state.batch.segments[0].index_count, u32(0))
-			testing.expect_value(t, state.gpu_state.batch.segments[1].first_index, u32(0))
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(0))
+			testing.expect_value(t, batch_current().segments[1].first_index, u32(0))
 		},
 	)
 }
@@ -1079,9 +1083,9 @@ batch_flush_draws_full_pipeline_path :: proc(t: ^testing.T) {
 				return
 			}
 
-			state.gpu_state.batch.cmd = cmd
-			state.gpu_state.batch.pass = pass
-			state.gpu_state.batch.dpi = state.dpi
+			batch_current().cmd = cmd
+			batch_current().pass = pass
+			batch_current().dpi = state.dpi
 			batch_flush_draws()
 			sdl.EndGPURenderPass(pass)
 			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
@@ -1099,11 +1103,11 @@ batch_upload_verts_only_or_indices_only_returns_true_without_upload :: proc(t: ^
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.vertices, UI_Vertex{})
+			append(&batch_current().vertices, UI_Vertex{})
 			testing.expect(t, batch_upload(nil))
 
-			clear(&state.gpu_state.batch.vertices)
-			append(&state.gpu_state.batch.indices, u16(0))
+			clear(&batch_current().vertices)
+			append(&batch_current().indices, u16(0))
 			testing.expect(t, batch_upload(nil))
 		},
 	)
@@ -1116,8 +1120,8 @@ batch_create_gpu_buffers_vertex_failure_cleans_index :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			test_hook_batch_fail_vertex_buffer = true
 			testing.expect(t, !batch_create_gpu_buffers())
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+			testing.expect(t, batch_current().index_buffer == nil)
 			test_hook_batch_fail_vertex_buffer = false
 			testing.expect(t, batch_create_gpu_buffers())
 		},
@@ -1131,8 +1135,8 @@ batch_create_gpu_buffers_index_failure_cleans_vertex :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			test_hook_batch_fail_index_buffer = true
 			testing.expect(t, !batch_create_gpu_buffers())
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+			testing.expect(t, batch_current().index_buffer == nil)
 			test_hook_batch_fail_index_buffer = false
 			testing.expect(t, batch_create_gpu_buffers())
 		},
@@ -1147,8 +1151,8 @@ batch_create_gpu_buffers_both_failures_clean :: proc(t: ^testing.T) {
 			test_hook_batch_fail_vertex_buffer = true
 			test_hook_batch_fail_index_buffer = true
 			testing.expect(t, !batch_create_gpu_buffers())
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+			testing.expect(t, batch_current().index_buffer == nil)
 			test_hook_batch_fail_vertex_buffer = false
 			test_hook_batch_fail_index_buffer = false
 			testing.expect(t, batch_create_gpu_buffers())
@@ -1224,7 +1228,7 @@ batch_push_axis_quad_zero_size_textured_emits_nothing :: proc(t: ^testing.T) {
 				{},
 				.Textured,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 
 			batch_push_axis_quad(
 				{10, 10, 5, 0},
@@ -1236,7 +1240,7 @@ batch_push_axis_quad_zero_size_textured_emits_nothing :: proc(t: ^testing.T) {
 				{},
 				.Textured_Rounded,
 			)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -1275,20 +1279,20 @@ batch_flush_draws_skips_zero_and_missing_with_live_pipeline :: proc(t: ^testing.
 			}
 			testing.expect(t, batch_upload(cmd))
 
-			clear(&state.gpu_state.batch.segments)
+			clear(&batch_current().segments)
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment{index_count = 0, key = {texture_id = TEXTURE_WHITE_ID}},
 			)
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment {
 					index_count = 6,
 					key = {texture_id = INVALID_ASSET_ID, clip = {0, 0, 8, 8}},
 				},
 			)
 			append(
-				&state.gpu_state.batch.segments,
+				&batch_current().segments,
 				Batch_Segment {
 					index_count = 6,
 					first_index = 0,
@@ -1308,9 +1312,9 @@ batch_flush_draws_skips_zero_and_missing_with_live_pipeline :: proc(t: ^testing.
 				_ = sdl.SubmitGPUCommandBuffer(cmd)
 				return
 			}
-			state.gpu_state.batch.cmd = cmd
-			state.gpu_state.batch.pass = pass
-			state.gpu_state.batch.dpi = state.dpi
+			batch_current().cmd = cmd
+			batch_current().pass = pass
+			batch_current().dpi = state.dpi
 			batch_flush_draws()
 			sdl.EndGPURenderPass(pass)
 			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
@@ -1324,18 +1328,18 @@ batch_destroy_with_nil_gpu_clears_cpu_arrays :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.gpu_state.batch.vertices, UI_Vertex{})
-			append(&state.gpu_state.batch.indices, u16(1))
-			append(&state.gpu_state.batch.segments, Batch_Segment{})
-			append(&state.gpu_state.batch.clip_stack, Rect{})
-			append(&state.gpu_state.batch.space_stack, Draw_Space.SCREEN)
-			state.gpu_state.batch.vertex_capacity = 10
-			state.gpu_state.batch.has_current_key = true
+			append(&batch_current().vertices, UI_Vertex{})
+			append(&batch_current().indices, u16(1))
+			append(&batch_current().segments, Batch_Segment{})
+			append(&batch_current().clip_stack, Rect{})
+			append(&batch_current().space_stack, Draw_Space.SCREEN)
+			batch_current().vertex_capacity = 10
+			batch_current().has_current_key = true
 			testing.expect(t, state.gpu == nil)
 			batch_destroy()
-			testing.expect(t, state.gpu_state.batch.vertices == nil)
-			testing.expect_value(t, state.gpu_state.batch.vertex_capacity, u32(0))
-			testing.expect(t, !state.gpu_state.batch.has_current_key)
+			testing.expect(t, batch_current().vertices == nil)
+			testing.expect_value(t, batch_current().vertex_capacity, u32(0))
+			testing.expect(t, !batch_current().has_current_key)
 		},
 	)
 }

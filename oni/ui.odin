@@ -1,6 +1,7 @@
 package oni
 
 import "core:hash"
+import "core:strings"
 
 
 UI_Pass :: enum {
@@ -62,6 +63,13 @@ ui_shutdown :: proc() {
 	state.ui.layout_ids_prev = nil
 	delete(state.ui.layout_ids_snapshot)
 	state.ui.layout_ids_snapshot = nil
+	if state.ui.label_crc != nil {
+		for key in state.ui.label_crc {
+			delete(key)
+		}
+		delete(state.ui.label_crc)
+		state.ui.label_crc = nil
+	}
 	widget_ctx_shutdown()
 
 	state.ui.frame = 0
@@ -78,6 +86,7 @@ ui_begin_frame :: proc() {
 	ui_init()
 	state.ui.frame += 1
 	state.ui.pass = .Layout
+	theme_widget_style_invalidate()
 	clear(&state.ui.layout_ids_prev)
 	for id in state.ui.layout_ids_snapshot {
 		state.ui.layout_ids_prev[id] = true
@@ -244,10 +253,27 @@ ui_parent_hash :: proc() -> u64 {
 /*
 Derives a stable UI id from a label and the current parent scope.
 
-Combines a CRC32 of the label with the parent scope hash.
+Combines a CRC32 of the label with the parent scope hash. Label CRC32 values
+are memoized on first use so repeated ids avoid rehashing.
 */
 ui_id :: proc(label: string) -> UI_Id {
-	label_hash := u64(hash.crc32(transmute([]u8)label))
+	label_hash := ui_label_crc32(label)
 	parent := ui_parent_hash()
-	return UI_Id(label_hash ~ parent)
+	return UI_Id(u64(label_hash) ~ parent)
+}
+
+@(private)
+ui_label_crc32 :: proc(label: string) -> u32 {
+	if state == nil {
+		return hash.crc32(transmute([]u8)label)
+	}
+	if state.ui.label_crc == nil {
+		state.ui.label_crc = make(map[string]u32)
+	}
+	if cached, ok := state.ui.label_crc[label]; ok {
+		return cached
+	}
+	crc := hash.crc32(transmute([]u8)label)
+	state.ui.label_crc[strings.clone(label)] = crc
+	return crc
 }

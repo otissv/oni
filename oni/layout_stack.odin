@@ -330,10 +330,8 @@ layout_assign_stack :: proc(node_index: int, paint_list: ^[dynamic]int, ancestor
 	node.paint_skip = hidden
 	node.hit_skip = hidden || layout_pointer_events_none(node.config.pointer_events)
 
-	neg: [dynamic]int
-	pos: [dynamic]int
-	defer delete(neg)
-	defer delete(pos)
+	neg := make([dynamic]int, context.temp_allocator)
+	pos := make([dynamic]int, context.temp_allocator)
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
@@ -381,10 +379,8 @@ layout_finalize_stack_order :: proc() {
 	clear(&state.ui.layout.top_layer_paint_list)
 	state.ui.layout.stack_counter = 0
 
-	artboard_roots: [dynamic]int
-	screen_roots: [dynamic]int
-	defer delete(artboard_roots)
-	defer delete(screen_roots)
+	artboard_roots := make([dynamic]int, context.temp_allocator)
+	screen_roots := make([dynamic]int, context.temp_allocator)
 
 	for node_index in 0 ..< len(state.ui.layout.nodes) {
 		node := &state.ui.layout.nodes[node_index]
@@ -407,8 +403,7 @@ layout_finalize_stack_order :: proc() {
 		layout_assign_stack(root, &state.ui.layout.paint_list_screen, false)
 	}
 
-	top_roots: [dynamic]int
-	defer delete(top_roots)
+	top_roots := make([dynamic]int, context.temp_allocator)
 	for node_index in 0 ..< len(state.ui.layout.nodes) {
 		if !layout_is_top_layer_subtree_root(node_index) do continue
 		layout_resolve_clips(node_index, {}, false)

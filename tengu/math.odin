@@ -15,6 +15,79 @@ EASE_IN :: Bezier{0.42, 0.0, 1.0, 1.0}
 EASE_OUT :: Bezier{0.0, 0.0, 0.58, 1.0}
 EASE_IN_OUT :: Bezier{0.42, 0.0, 0.58, 1.0}
 
+BEZIER_EASE_LUT_SAMPLES :: 256
+
+@(private)
+Bezier_Ease_LUT :: struct {
+	y: [BEZIER_EASE_LUT_SAMPLES + 1]f32,
+}
+
+@(private)
+ease_lut_ready: bool
+@(private)
+ease_lut: Bezier_Ease_LUT
+@(private)
+ease_in_lut: Bezier_Ease_LUT
+@(private)
+ease_out_lut: Bezier_Ease_LUT
+@(private)
+ease_in_out_lut: Bezier_Ease_LUT
+
+@(private)
+bezier_ease_untabled :: proc(curve: Bezier, x: f32) -> f32 {
+	if x <= 0 do return 0
+	if x >= 1 do return 1
+	t := bezier_solve_t_for_x(curve, x)
+	return bezier_sample_1d({p1 = curve.y1, p2 = curve.y2, t = t})
+}
+
+@(private)
+bezier_ease_lut_build :: proc(curve: Bezier) -> Bezier_Ease_LUT {
+	lut: Bezier_Ease_LUT
+	denom := f32(BEZIER_EASE_LUT_SAMPLES)
+	for i in 0 ..= BEZIER_EASE_LUT_SAMPLES {
+		lut.y[i] = bezier_ease_untabled(curve, f32(i) / denom)
+	}
+	return lut
+}
+
+@(private)
+bezier_ease_luts_ensure :: proc() {
+	if ease_lut_ready do return
+	ease_lut = bezier_ease_lut_build(EASE)
+	ease_in_lut = bezier_ease_lut_build(EASE_IN)
+	ease_out_lut = bezier_ease_lut_build(EASE_OUT)
+	ease_in_out_lut = bezier_ease_lut_build(EASE_IN_OUT)
+	ease_lut_ready = true
+}
+
+@(private)
+bezier_ease_lut_sample :: proc(lut: Bezier_Ease_LUT, x: f32) -> f32 {
+	if x <= 0 do return 0
+	if x >= 1 do return 1
+	scaled := x * f32(BEZIER_EASE_LUT_SAMPLES)
+	i := int(scaled)
+	if i >= BEZIER_EASE_LUT_SAMPLES do return lut.y[BEZIER_EASE_LUT_SAMPLES]
+	frac := scaled - f32(i)
+	a := lut.y[i]
+	b := lut.y[i + 1]
+	return a + (b - a) * frac
+}
+
+@(private)
+bezier_curves_equal :: proc(a, b: Bezier) -> bool {
+	return a.x1 == b.x1 && a.y1 == b.y1 && a.x2 == b.x2 && a.y2 == b.y2
+}
+
+bezier_ease :: proc(curve: Bezier, x: f32) -> f32 {
+	bezier_ease_luts_ensure()
+	if bezier_curves_equal(curve, EASE) do return bezier_ease_lut_sample(ease_lut, x)
+	if bezier_curves_equal(curve, EASE_IN) do return bezier_ease_lut_sample(ease_in_lut, x)
+	if bezier_curves_equal(curve, EASE_OUT) do return bezier_ease_lut_sample(ease_out_lut, x)
+	if bezier_curves_equal(curve, EASE_IN_OUT) do return bezier_ease_lut_sample(ease_in_out_lut, x)
+	return bezier_ease_untabled(curve, x)
+}
+
 Ease :: enum {
 	LINEAR,
 	IN_SINE,
@@ -181,13 +254,6 @@ bezier_solve_t_for_x :: proc(curve: Bezier, x: f32) -> f32 {
 	}
 
 	return t
-}
-
-bezier_ease :: proc(curve: Bezier, x: f32) -> f32 {
-	if x <= 0 do return 0
-	if x >= 1 do return 1
-	t := bezier_solve_t_for_x(curve, x)
-	return bezier_sample_1d({p1 = curve.y1, p2 = curve.y2, t = t})
 }
 
 ease_out_bounce :: proc(t: f32) -> f32 {

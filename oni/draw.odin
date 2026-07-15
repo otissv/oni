@@ -55,7 +55,9 @@ Begins CPU-side draw recording for the current frame.
 Sets the batch DPI used when geometry is later uploaded and flushed.
 */
 draw_record_begin :: proc(dpi: Dpi_Info) {
-	state.gpu_state.batch.dpi = dpi
+	batch_current().dpi = dpi
+	batch_invalidate_clip_cache()
+	batch_invalidate_view_cache()
 }
 
 /*
@@ -73,9 +75,10 @@ Binds the active GPU command buffer and render pass for immediate drawing.
 Also stores DPI info used by subsequent flush and clip operations.
 */
 draw_begin :: proc(cmd: ^sdl.GPUCommandBuffer, pass: ^sdl.GPURenderPass, dpi: Dpi_Info) {
-	state.gpu_state.batch.cmd = cmd
-	state.gpu_state.batch.pass = pass
-	state.gpu_state.batch.dpi = dpi
+	batch_current().cmd = cmd
+	batch_current().pass = pass
+	batch_current().dpi = dpi
+	batch_invalidate_clip_cache()
 }
 
 /*
@@ -94,8 +97,8 @@ Call at the end of a GPU render pass before starting another pass.
 */
 draw_end :: proc() {
 	draw_flush()
-	state.gpu_state.batch.cmd = nil
-	state.gpu_state.batch.pass = nil
+	batch_current().cmd = nil
+	batch_current().pass = nil
 }
 
 /*
@@ -104,7 +107,8 @@ Pushes a clip rectangle onto the batch clip stack.
 Intersected clips from nested pushes constrain subsequent draw geometry.
 */
 draw_push_clip :: proc(r: Rect) {
-	append(&state.gpu_state.batch.clip_stack, r)
+	append(&batch_current().clip_stack, r)
+	batch_invalidate_clip_cache()
 }
 
 /*
@@ -113,11 +117,12 @@ Pops the top clip rectangle from the batch clip stack.
 No-op when the clip stack is empty.
 */
 draw_pop_clip :: proc() {
-	if len(state.gpu_state.batch.clip_stack) > 0 {
+	if len(batch_current().clip_stack) > 0 {
 		ordered_remove(
-			&state.gpu_state.batch.clip_stack,
-			len(state.gpu_state.batch.clip_stack) - 1,
+			&batch_current().clip_stack,
+			len(batch_current().clip_stack) - 1,
 		)
+		batch_invalidate_clip_cache()
 	}
 }
 
@@ -127,8 +132,8 @@ Returns the active draw coordinate space from the top of the space stack.
 Defaults to Screen when no space has been pushed.
 */
 draw_current_space :: proc() -> Draw_Space {
-	if state == nil || len(state.gpu_state.batch.space_stack) == 0 do return .SCREEN
-	return state.gpu_state.batch.space_stack[len(state.gpu_state.batch.space_stack) - 1]
+	if state == nil || len(batch_current().space_stack) == 0 do return .SCREEN
+	return batch_current().space_stack[len(batch_current().space_stack) - 1]
 }
 
 /*
@@ -137,7 +142,8 @@ Pushes a draw coordinate space onto the batch space stack.
 Used to switch between screen and artboard coordinate transforms.
 */
 draw_push_space :: proc(space: Draw_Space) {
-	append(&state.gpu_state.batch.space_stack, space)
+	append(&batch_current().space_stack, space)
+	batch_invalidate_view_cache()
 }
 
 /*
@@ -146,11 +152,12 @@ Pops the top draw coordinate space from the batch space stack.
 No-op when the space stack is empty.
 */
 draw_pop_space :: proc() {
-	if len(state.gpu_state.batch.space_stack) > 0 {
+	if len(batch_current().space_stack) > 0 {
 		ordered_remove(
-			&state.gpu_state.batch.space_stack,
-			len(state.gpu_state.batch.space_stack) - 1,
+			&batch_current().space_stack,
+			len(batch_current().space_stack) - 1,
 		)
+		batch_invalidate_view_cache()
 	}
 }
 
@@ -161,7 +168,15 @@ Values are clamped to [0, 1]. Nested pushes multiply, matching CSS group opacity
 */
 draw_push_opacity :: proc(opacity: f32) {
 	if state == nil do return
-	append(&state.gpu_state.batch.opacity_stack, clamp_opacity(opacity))
+	value := clamp_opacity(opacity)
+	if len(batch_current().opacity_stack) == 0 {
+		batch_current().cached_opacity = value
+	} else {
+		batch_current().cached_opacity = clamp_opacity(
+			batch_current().cached_opacity * value,
+		)
+	}
+	append(&batch_current().opacity_stack, value)
 }
 
 /*
@@ -170,23 +185,32 @@ Pops the top local opacity from the draw opacity stack.
 No-op when the opacity stack is empty.
 */
 draw_pop_opacity :: proc() {
-	if state == nil || len(state.gpu_state.batch.opacity_stack) == 0 do return
+	if state == nil || len(batch_current().opacity_stack) == 0 do return
+	top := batch_current().opacity_stack[len(batch_current().opacity_stack) - 1]
 	ordered_remove(
-		&state.gpu_state.batch.opacity_stack,
-		len(state.gpu_state.batch.opacity_stack) - 1,
+		&batch_current().opacity_stack,
+		len(batch_current().opacity_stack) - 1,
 	)
+	if top > 0 {
+		batch_current().cached_opacity = clamp_opacity(
+			batch_current().cached_opacity / top,
+		)
+	} else {
+		// Rebuild product when dividing by zero opacity is undefined.
+		opacity := f32(1)
+		for value in batch_current().opacity_stack {
+			opacity *= value
+		}
+		batch_current().cached_opacity = clamp_opacity(opacity)
+	}
 }
 
 /*
 Returns the product of all opacity stack entries, or 1 when empty.
 */
 draw_effective_opacity :: proc() -> f32 {
-	if state == nil || len(state.gpu_state.batch.opacity_stack) == 0 do return 1
-	opacity := f32(1)
-	for value in state.gpu_state.batch.opacity_stack {
-		opacity *= value
-	}
-	return clamp_opacity(opacity)
+	if state == nil || len(batch_current().opacity_stack) == 0 do return 1
+	return batch_current().cached_opacity
 }
 
 /*
@@ -268,7 +292,7 @@ draw_rect :: proc(
 		r = border.r * scale,
 	}
 
-	state.gpu_state.batch.dpi = state.dpi
+	batch_current().dpi = state.dpi
 	batch_check_key(TEXTURE_WHITE_ID)
 	batch_push_axis_quad(
 		r,
@@ -303,7 +327,7 @@ draw_line :: proc(a, b: Vec2, color: RGBA, thickness: f32) {
 	half_t := line_thickness * 0.5
 	perp := Vec2{-norm.y * half_t, norm.x * half_t}
 
-	state.gpu_state.batch.dpi = state.dpi
+	batch_current().dpi = state.dpi
 	batch_check_key(TEXTURE_WHITE_ID)
 
 	corners := [4]Vec2{a_screen + perp, b_screen + perp, b_screen - perp, a_screen - perp}
@@ -352,7 +376,7 @@ draw_texture :: proc(
 
 	uv := Rect{src.x / texture.w, src.y / texture.h, src.w / texture.w, src.h / texture.h}
 
-	state.gpu_state.batch.dpi = state.dpi
+	batch_current().dpi = state.dpi
 	batch_check_key(texture.id)
 	mode: Draw_Mode = .Textured
 	if has_radius || has_border do mode = .Textured_Rounded
@@ -452,7 +476,7 @@ draw_texture_fitted :: proc(
 	mode: Draw_Mode = .Textured
 	if has_radius do mode = .Textured_Rounded
 
-	state.gpu_state.batch.dpi = state.dpi
+	batch_current().dpi = state.dpi
 	batch_check_key(texture.id)
 	batch_push_quad(
 		corners_screen,

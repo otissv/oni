@@ -20,12 +20,7 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		delete(test_state.input.text_input)
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -62,12 +57,7 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		delete(test_state.input.text_input)
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -114,12 +104,7 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		delete(test_state.input.text_input)
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme

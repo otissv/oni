@@ -43,33 +43,87 @@ Batch_Segment :: struct {
 CPU-side vertex/index buffers, clip/space stacks, and GPU upload state for a frame.
 */
 Batch_State :: struct {
-	vertices:        [dynamic]UI_Vertex,
-	indices:         [dynamic]u16,
-	segments:        [dynamic]Batch_Segment,
-	clip_stack:      [dynamic]Rect,
-	space_stack:     [dynamic]Draw_Space,
-	opacity_stack:   [dynamic]f32,
-	current_key:     Batch_Key,
-	has_current_key: bool,
-	current_stack:   u32,
-	vertex_buffer:   ^sdl.GPUBuffer,
-	index_buffer:    ^sdl.GPUBuffer,
-	vertex_capacity: u32,
-	index_capacity:  u32,
-	cmd:             ^sdl.GPUCommandBuffer,
-	pass:            ^sdl.GPURenderPass,
-	dpi:             Dpi_Info,
+	vertices:            [dynamic]UI_Vertex,
+	indices:             [dynamic]u16,
+	segments:            [dynamic]Batch_Segment,
+	clip_stack:          [dynamic]Rect,
+	space_stack:         [dynamic]Draw_Space,
+	opacity_stack:       [dynamic]f32,
+	current_key:         Batch_Key,
+	has_current_key:     bool,
+	current_stack:       u32,
+	vertex_buffer:       ^sdl.GPUBuffer,
+	index_buffer:        ^sdl.GPUBuffer,
+	vertex_capacity:     u32,
+	index_capacity:      u32,
+	cmd:                 ^sdl.GPUCommandBuffer,
+	pass:                ^sdl.GPURenderPass,
+	dpi:                 Dpi_Info,
+	// Cached products / derived state; invalidated on push/pop / dpi / view change.
+	cached_opacity:      f32,
+	cached_clip:         Rect,
+	clip_cache_valid:    bool,
+	cached_space:        Draw_Space,
+	cached_view_zoom:    f32,
+	cached_view_pan:     Vec2,
+	view_cache_valid:    bool,
 }
 
 /*
-Initializes batch CPU buffers and allocates initial GPU vertex/index buffers.
+Returns the ping-pong Batch_State currently used for CPU recording / GPU upload.
+*/
+batch_current :: #force_inline proc() -> ^Batch_State {
+	return &state.gpu_state.batches[state.gpu_state.batch_index]
+}
 
-Uses BATCH_INITIAL_VERT_CAPACITY as the starting vertex capacity.
+/*
+Switches to the alternate batch slot after a successful submit.
+
+The next frame records into the other CPU/GPU buffers so work can proceed while
+the previous slot's GPU buffers may still be in flight.
+*/
+batch_flip :: proc() {
+	state.gpu_state.batch_index = 1 - state.gpu_state.batch_index
+}
+
+/*
+Destroys CPU dynamic arrays for every batch slot in `gpu_state`.
+
+Used by tests that tear down a State without going through `batch_destroy`.
+*/
+batch_delete_cpu_arrays :: proc(gpu_state: ^GPU_State) {
+	if gpu_state == nil do return
+	for &b in gpu_state.batches {
+		delete(b.vertices)
+		delete(b.indices)
+		delete(b.segments)
+		delete(b.clip_stack)
+		delete(b.space_stack)
+		delete(b.opacity_stack)
+		b.vertices = nil
+		b.indices = nil
+		b.segments = nil
+		b.clip_stack = nil
+		b.space_stack = nil
+		b.opacity_stack = nil
+	}
+}
+
+/*
+Initializes both ping-pong batch slots with CPU capacities and GPU VB/IB.
+
+Uses BATCH_INITIAL_VERT_CAPACITY as the starting vertex capacity. Leaves
+`batch_index` at 0 for the first frame.
 */
 batch_init :: proc() {
-	state.gpu_state.batch.vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
-	state.gpu_state.batch.index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
-	batch_create_gpu_buffers()
+	for i in 0 ..< len(state.gpu_state.batches) {
+		state.gpu_state.batch_index = i
+		b := batch_current()
+		b.vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
+		b.index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
+		batch_create_gpu_buffers()
+	}
+	state.gpu_state.batch_index = 0
 }
 
 /*
@@ -80,42 +134,37 @@ Releases existing buffers before allocation. Returns false on SDL failure.
 batch_create_gpu_buffers :: proc() -> bool {
 	if state.gpu == nil do return false
 
-	vertex_bytes := state.gpu_state.batch.vertex_capacity * u32(size_of(UI_Vertex))
-	index_bytes := state.gpu_state.batch.index_capacity * u32(size_of(u16))
+	b := batch_current()
+	vertex_bytes := b.vertex_capacity * u32(size_of(UI_Vertex))
+	index_bytes := b.index_capacity * u32(size_of(u16))
 
-	if state.gpu_state.batch.vertex_buffer != nil {
-		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
-		state.gpu_state.batch.vertex_buffer = nil
+	if b.vertex_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, b.vertex_buffer)
+		b.vertex_buffer = nil
 	}
-	if state.gpu_state.batch.index_buffer != nil {
-		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.index_buffer)
-		state.gpu_state.batch.index_buffer = nil
-	}
-
-	state.gpu_state.batch.vertex_buffer = sdl.CreateGPUBuffer(
-		state.gpu,
-		{usage = {.VERTEX}, size = vertex_bytes},
-	)
-	state.gpu_state.batch.index_buffer = sdl.CreateGPUBuffer(
-		state.gpu,
-		{usage = {.INDEX}, size = index_bytes},
-	)
-
-	if test_hook_batch_fail_vertex_buffer && state.gpu_state.batch.vertex_buffer != nil {
-		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
-		state.gpu_state.batch.vertex_buffer = nil
-	}
-	if test_hook_batch_fail_index_buffer && state.gpu_state.batch.index_buffer != nil {
-		sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.index_buffer)
-		state.gpu_state.batch.index_buffer = nil
+	if b.index_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, b.index_buffer)
+		b.index_buffer = nil
 	}
 
-	if state.gpu_state.batch.vertex_buffer == nil || state.gpu_state.batch.index_buffer == nil {
+	b.vertex_buffer = sdl.CreateGPUBuffer(state.gpu, {usage = {.VERTEX}, size = vertex_bytes})
+	b.index_buffer = sdl.CreateGPUBuffer(state.gpu, {usage = {.INDEX}, size = index_bytes})
+
+	if test_hook_batch_fail_vertex_buffer && b.vertex_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, b.vertex_buffer)
+		b.vertex_buffer = nil
+	}
+	if test_hook_batch_fail_index_buffer && b.index_buffer != nil {
+		sdl.ReleaseGPUBuffer(state.gpu, b.index_buffer)
+		b.index_buffer = nil
+	}
+
+	if b.vertex_buffer == nil || b.index_buffer == nil {
 		fmt.eprintln("SDL_CreateGPUBuffer failed:", sdl.GetError())
-		if state.gpu_state.batch.vertex_buffer != nil do sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
-		if state.gpu_state.batch.index_buffer != nil do sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.index_buffer)
-		state.gpu_state.batch.vertex_buffer = nil
-		state.gpu_state.batch.index_buffer = nil
+		if b.vertex_buffer != nil do sdl.ReleaseGPUBuffer(state.gpu, b.vertex_buffer)
+		if b.index_buffer != nil do sdl.ReleaseGPUBuffer(state.gpu, b.index_buffer)
+		b.vertex_buffer = nil
+		b.index_buffer = nil
 		return false
 	}
 
@@ -123,40 +172,48 @@ batch_create_gpu_buffers :: proc() -> bool {
 }
 
 /*
-Releases batch GPU buffers and frees all CPU-side dynamic arrays.
+Releases both ping-pong slots' GPU buffers and frees all CPU-side dynamic arrays.
 
 Safe to call when state is nil or the GPU device is already destroyed.
 */
 batch_destroy :: proc() {
 	if state == nil do return
 
-	if state.gpu != nil {
-		if state.gpu_state.batch.vertex_buffer != nil {
-			sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.vertex_buffer)
-			state.gpu_state.batch.vertex_buffer = nil
+	for i in 0 ..< len(state.gpu_state.batches) {
+		state.gpu_state.batch_index = i
+		b := batch_current()
+		if state.gpu != nil {
+			if b.vertex_buffer != nil {
+				sdl.ReleaseGPUBuffer(state.gpu, b.vertex_buffer)
+				b.vertex_buffer = nil
+			}
+			if b.index_buffer != nil {
+				sdl.ReleaseGPUBuffer(state.gpu, b.index_buffer)
+				b.index_buffer = nil
+			}
 		}
-		if state.gpu_state.batch.index_buffer != nil {
-			sdl.ReleaseGPUBuffer(state.gpu, state.gpu_state.batch.index_buffer)
-			state.gpu_state.batch.index_buffer = nil
-		}
+
+		delete(b.vertices)
+		delete(b.indices)
+		delete(b.segments)
+		delete(b.clip_stack)
+		delete(b.space_stack)
+		delete(b.opacity_stack)
+		b.vertices = nil
+		b.indices = nil
+		b.segments = nil
+		b.clip_stack = nil
+		b.space_stack = nil
+		b.opacity_stack = nil
+
+		b.vertex_capacity = 0
+		b.index_capacity = 0
+		b.has_current_key = false
+		b.cached_opacity = 1
+		b.clip_cache_valid = false
+		b.view_cache_valid = false
 	}
-
-	delete(state.gpu_state.batch.vertices)
-	delete(state.gpu_state.batch.indices)
-	delete(state.gpu_state.batch.segments)
-	delete(state.gpu_state.batch.clip_stack)
-	delete(state.gpu_state.batch.space_stack)
-	delete(state.gpu_state.batch.opacity_stack)
-	state.gpu_state.batch.vertices = nil
-	state.gpu_state.batch.indices = nil
-	state.gpu_state.batch.segments = nil
-	state.gpu_state.batch.clip_stack = nil
-	state.gpu_state.batch.space_stack = nil
-	state.gpu_state.batch.opacity_stack = nil
-
-	state.gpu_state.batch.vertex_capacity = 0
-	state.gpu_state.batch.index_capacity = 0
-	state.gpu_state.batch.has_current_key = false
+	state.gpu_state.batch_index = 0
 }
 
 /*
@@ -165,14 +222,56 @@ Clears recorded vertices, indices, segments, and stack state for a new frame.
 Does not release GPU buffers or change capacity.
 */
 batch_reset :: proc() {
-	clear(&state.gpu_state.batch.vertices)
-	clear(&state.gpu_state.batch.indices)
-	clear(&state.gpu_state.batch.segments)
-	clear(&state.gpu_state.batch.clip_stack)
-	clear(&state.gpu_state.batch.space_stack)
-	clear(&state.gpu_state.batch.opacity_stack)
-	state.gpu_state.batch.has_current_key = false
-	state.gpu_state.batch.current_stack = 0
+	clear(&batch_current().vertices)
+	clear(&batch_current().indices)
+	clear(&batch_current().segments)
+	clear(&batch_current().clip_stack)
+	clear(&batch_current().space_stack)
+	clear(&batch_current().opacity_stack)
+	batch_current().has_current_key = false
+	batch_current().current_stack = 0
+	batch_current().cached_opacity = 1
+	batch_current().clip_cache_valid = false
+	batch_current().view_cache_valid = false
+}
+
+/*
+Invalidates cached clip/view products used while recording draw commands.
+*/
+batch_invalidate_clip_cache :: proc() {
+	if state == nil do return
+	batch_current().clip_cache_valid = false
+}
+
+/*
+Invalidates cached artboard zoom/pan used by view transforms during recording.
+*/
+batch_invalidate_view_cache :: proc() {
+	if state == nil do return
+	batch_current().view_cache_valid = false
+	batch_current().clip_cache_valid = false
+}
+
+/*
+Refreshes and returns cached artboard zoom/pan for the current draw space.
+
+Screen space returns zoom 1 and zero pan without consulting the view.
+*/
+batch_cached_view :: proc() -> (zoom: f32, pan: Vec2, space: Draw_Space) {
+	space = draw_current_space()
+	if space != .ARTBOARD {
+		return 1, {}, space
+	}
+	if batch_current().view_cache_valid && batch_current().cached_space == space {
+		return batch_current().cached_view_zoom, batch_current().cached_view_pan, space
+	}
+	zoom = view_effective_zoom()
+	pan = state.view.pan
+	batch_current().cached_space = space
+	batch_current().cached_view_zoom = zoom
+	batch_current().cached_view_pan = pan
+	batch_current().view_cache_valid = true
+	return zoom, pan, space
 }
 
 /*
@@ -182,15 +281,15 @@ Doubles GPU buffer capacity until sufficient, recreating buffers as needed.
 Returns false if buffer recreation fails.
 */
 batch_ensure_capacity :: proc(extra_verts: int) -> bool {
-	needed := len(state.gpu_state.batch.vertices) + extra_verts
-	if u32(needed) <= state.gpu_state.batch.vertex_capacity do return true
+	needed := len(batch_current().vertices) + extra_verts
+	if u32(needed) <= batch_current().vertex_capacity do return true
 
-	new_cap := state.gpu_state.batch.vertex_capacity
+	new_cap := batch_current().vertex_capacity
 	for u32(needed) > new_cap {
 		new_cap *= 2
 	}
-	state.gpu_state.batch.vertex_capacity = new_cap
-	state.gpu_state.batch.index_capacity = new_cap * 6
+	batch_current().vertex_capacity = new_cap
+	batch_current().index_capacity = new_cap * 6
 	return batch_create_gpu_buffers()
 }
 
@@ -198,35 +297,43 @@ batch_ensure_capacity :: proc(extra_verts: int) -> bool {
 Returns the effective clip rect in screen space for the current draw batch.
 
 Uses the top of the clip stack intersected with the logical viewport, or the
-full viewport when no clip has been pushed.
+full viewport when no clip has been pushed. Result is cached until clip, space,
+DPI, or view transform inputs change.
 */
 batch_current_clip :: proc() -> Rect {
+	if batch_current().clip_cache_valid {
+		return batch_current().cached_clip
+	}
+
 	clip: Rect
-	if len(state.gpu_state.batch.clip_stack) == 0 {
+	if len(batch_current().clip_stack) == 0 {
 		clip = {
 			0,
 			0,
-			f32(state.gpu_state.batch.dpi.logical_w),
-			f32(state.gpu_state.batch.dpi.logical_h),
+			f32(batch_current().dpi.logical_w),
+			f32(batch_current().dpi.logical_h),
 		}
 	} else {
-		clip = state.gpu_state.batch.clip_stack[len(state.gpu_state.batch.clip_stack) - 1]
+		clip = batch_current().clip_stack[len(batch_current().clip_stack) - 1]
 	}
 	clip = view_transform_rect(clip)
 	viewport := Rect {
 		0,
 		0,
-		f32(state.gpu_state.batch.dpi.logical_w),
-		f32(state.gpu_state.batch.dpi.logical_h),
+		f32(batch_current().dpi.logical_w),
+		f32(batch_current().dpi.logical_h),
 	}
-	return rect_intersect(clip, viewport)
+	clip = rect_intersect(clip, viewport)
+	batch_current().cached_clip = clip
+	batch_current().clip_cache_valid = true
+	return clip
 }
 
 /*
 Sets the stack index applied to subsequent draw commands in this batch.
 */
 batch_set_stack_index :: proc(stack_index: u32) {
-	state.gpu_state.batch.current_stack = stack_index
+	batch_current().current_stack = stack_index
 }
 
 /*
@@ -239,28 +346,28 @@ batch_check_key :: proc(texture_id: Asset_Id) {
 	key := Batch_Key {
 		texture_id  = texture_id,
 		clip        = clip,
-		stack_index = state.gpu_state.batch.current_stack,
+		stack_index = batch_current().current_stack,
 	}
 
-	if state.gpu_state.batch.has_current_key &&
-	   state.gpu_state.batch.current_key.texture_id == key.texture_id &&
-	   state.gpu_state.batch.current_key.clip == key.clip &&
-	   state.gpu_state.batch.current_key.stack_index == key.stack_index {
+	if batch_current().has_current_key &&
+	   batch_current().current_key.texture_id == key.texture_id &&
+	   batch_current().current_key.clip == key.clip &&
+	   batch_current().current_key.stack_index == key.stack_index {
 		return
 	}
 
-	if state.gpu_state.batch.has_current_key && len(state.gpu_state.batch.indices) > 0 {
-		seg := state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1]
-		seg.index_count = u32(len(state.gpu_state.batch.indices)) - seg.first_index
-		state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1] = seg
+	if batch_current().has_current_key && len(batch_current().indices) > 0 {
+		seg := batch_current().segments[len(batch_current().segments) - 1]
+		seg.index_count = u32(len(batch_current().indices)) - seg.first_index
+		batch_current().segments[len(batch_current().segments) - 1] = seg
 	}
 
 	append(
-		&state.gpu_state.batch.segments,
-		Batch_Segment{key = key, first_index = u32(len(state.gpu_state.batch.indices))},
+		&batch_current().segments,
+		Batch_Segment{key = key, first_index = u32(len(batch_current().indices))},
 	)
-	state.gpu_state.batch.current_key = key
-	state.gpu_state.batch.has_current_key = true
+	batch_current().current_key = key
+	batch_current().has_current_key = true
 }
 
 /*
@@ -268,7 +375,7 @@ Appends two triangles (six indices) for a quad starting at vertex base.
 */
 batch_push_indices :: proc(base: u16) {
 	append(
-		&state.gpu_state.batch.indices,
+		&batch_current().indices,
 		base + 0,
 		base + 1,
 		base + 2,
@@ -292,13 +399,13 @@ batch_push_vertex :: proc(
 	rect_size: Vec2,
 	radii: [4]f32,
 	border: Bd_px,
-	mode: Draw_Mode,
+	mode_f32: f32,
 	tex_clip: bool = false,
 ) {
 	tex_clip_flag: f32 = 0
 	if tex_clip do tex_clip_flag = 1
 	append(
-		&state.gpu_state.batch.vertices,
+		&batch_current().vertices,
 		UI_Vertex {
 			pos = pos,
 			uv = uv,
@@ -307,7 +414,7 @@ batch_push_vertex :: proc(
 			border_color = border_color,
 			rect_size = rect_size,
 			radii = radii,
-			params = {tex_clip_flag, draw_mode_f32(mode)},
+			params = {tex_clip_flag, mode_f32},
 			border = {border.t, border.b, border.l, border.r},
 		},
 	)
@@ -337,7 +444,8 @@ batch_push_quad :: proc(
 	border_tint := rgba_to_f32(border_color)
 	tint[3] *= opacity
 	border_tint[3] *= opacity
-	base := u16(len(state.gpu_state.batch.vertices))
+	base := u16(len(batch_current().vertices))
+	mode_f32 := draw_mode_f32(mode)
 
 	for i in 0 ..< 4 {
 		batch_push_vertex(
@@ -349,7 +457,7 @@ batch_push_quad :: proc(
 			rect_size,
 			radii,
 			border,
-			mode,
+			mode_f32,
 			tex_clip,
 		)
 	}
@@ -414,19 +522,50 @@ batch_push_axis_quad :: proc(
 }
 
 /*
+Records multiple textured atlas quads that share one texture / clip / stack key.
+
+Checks the batch key once and ensures vertex capacity for all quads up front,
+so glyph runs avoid per-quad capacity growth and segment-key work.
+`srcs` are pixel-space rectangles in the texture; `dsts` are logical quads.
+*/
+batch_push_atlas_quads :: proc(
+	texture: Texture_Handle,
+	dsts: []Rect,
+	srcs: []Rect,
+	tint: RGBA,
+) {
+	n := len(dsts)
+	if n == 0 || len(srcs) != n do return
+	if texture.w <= 0 || texture.h <= 0 do return
+
+	batch_current().dpi = state.dpi
+	batch_check_key(texture.id)
+	if !batch_ensure_capacity(4 * n) do return
+
+	inv_w := 1 / texture.w
+	inv_h := 1 / texture.h
+	for i in 0 ..< n {
+		src := srcs[i]
+		dst := dsts[i]
+		uv := Rect{src.x * inv_w, src.y * inv_h, src.w * inv_w, src.h * inv_h}
+		batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured)
+	}
+}
+
+/*
 Finalizes the index count of the last open batch segment, then sorts by stack index.
 
 Higher stack_index paints on top. Equal stack keeps submission order (first_index ascending).
 Call before upload or flush when recording is complete.
 */
 batch_finalize_segments :: proc() {
-	if state.gpu_state.batch.has_current_key && len(state.gpu_state.batch.segments) > 0 {
-		seg := state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1]
-		seg.index_count = u32(len(state.gpu_state.batch.indices)) - seg.first_index
-		state.gpu_state.batch.segments[len(state.gpu_state.batch.segments) - 1] = seg
+	if batch_current().has_current_key && len(batch_current().segments) > 0 {
+		seg := batch_current().segments[len(batch_current().segments) - 1]
+		seg.index_count = u32(len(batch_current().indices)) - seg.first_index
+		batch_current().segments[len(batch_current().segments) - 1] = seg
 	}
 
-	segs := state.gpu_state.batch.segments[:]
+	segs := batch_current().segments[:]
 	n := len(segs)
 	for i in 1 ..< n {
 		key := segs[i]
@@ -449,13 +588,13 @@ Finalizes segments first. Returns true when there is nothing to upload or
 the copy succeeds; false on buffer or SDL transfer failure.
 */
 batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
-	if len(state.gpu_state.batch.vertices) == 0 || len(state.gpu_state.batch.indices) == 0 do return true
-	if state.gpu_state.batch.vertex_buffer == nil || state.gpu_state.batch.index_buffer == nil do return false
+	if len(batch_current().vertices) == 0 || len(batch_current().indices) == 0 do return true
+	if batch_current().vertex_buffer == nil || batch_current().index_buffer == nil do return false
 
 	batch_finalize_segments()
 
-	vertex_bytes := u32(len(state.gpu_state.batch.vertices) * size_of(UI_Vertex))
-	index_bytes := u32(len(state.gpu_state.batch.indices) * size_of(u16))
+	vertex_bytes := u32(len(batch_current().vertices) * size_of(UI_Vertex))
+	index_bytes := u32(len(batch_current().indices) * size_of(u16))
 
 	transfer_size := vertex_bytes + index_bytes
 	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = transfer_size})
@@ -482,21 +621,21 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	}
 
 	dst_bytes := cast([^]u8)mapped
-	mem.copy(dst_bytes, raw_data(state.gpu_state.batch.vertices), int(vertex_bytes))
-	mem.copy(dst_bytes[vertex_bytes:], raw_data(state.gpu_state.batch.indices), int(index_bytes))
+	mem.copy(dst_bytes, raw_data(batch_current().vertices), int(vertex_bytes))
+	mem.copy(dst_bytes[vertex_bytes:], raw_data(batch_current().indices), int(index_bytes))
 	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
 
 	copy_pass := sdl.BeginGPUCopyPass(cmd)
 	sdl.UploadToGPUBuffer(
 		copy_pass,
 		{transfer_buffer = transfer, offset = 0},
-		{buffer = state.gpu_state.batch.vertex_buffer, offset = 0, size = vertex_bytes},
+		{buffer = batch_current().vertex_buffer, offset = 0, size = vertex_bytes},
 		true,
 	)
 	sdl.UploadToGPUBuffer(
 		copy_pass,
 		{transfer_buffer = transfer, offset = vertex_bytes},
-		{buffer = state.gpu_state.batch.index_buffer, offset = 0, size = index_bytes},
+		{buffer = batch_current().index_buffer, offset = 0, size = index_bytes},
 		true,
 	)
 	sdl.EndGPUCopyPass(copy_pass)
@@ -540,27 +679,28 @@ segment. Skips segments with zero indices or missing GPU textures.
 */
 batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
-	if len(state.gpu_state.batch.segments) == 0 do return
+	if len(batch_current().segments) == 0 do return
 
 	ubo := GPU_Proj_UBO {
 		proj = state.gpu_state.proj_mat,
 	}
-	sdl.BindGPUGraphicsPipeline(state.gpu_state.batch.pass, state.gpu_state.pipeline)
-	sdl.PushGPUVertexUniformData(state.gpu_state.batch.cmd, 0, &ubo, u32(size_of(ubo)))
+	sdl.BindGPUGraphicsPipeline(batch_current().pass, state.gpu_state.pipeline)
+	sdl.PushGPUVertexUniformData(batch_current().cmd, 0, &ubo, u32(size_of(ubo)))
 
 	vertex_binding := sdl.GPUBufferBinding {
-		buffer = state.gpu_state.batch.vertex_buffer,
+		buffer = batch_current().vertex_buffer,
 		offset = 0,
 	}
 	index_binding := sdl.GPUBufferBinding {
-		buffer = state.gpu_state.batch.index_buffer,
+		buffer = batch_current().index_buffer,
 		offset = 0,
 	}
 
-	sdl.BindGPUVertexBuffers(state.gpu_state.batch.pass, 0, &vertex_binding, 1)
-	sdl.BindGPUIndexBuffer(state.gpu_state.batch.pass, index_binding, ._16BIT)
+	sdl.BindGPUVertexBuffers(batch_current().pass, 0, &vertex_binding, 1)
+	sdl.BindGPUIndexBuffer(batch_current().pass, index_binding, ._16BIT)
 
-	for seg in state.gpu_state.batch.segments {
+	sampler := state.gpu_state.sampler
+	for seg in batch_current().segments {
 		if seg.index_count == 0 do continue
 
 		tex := texture_get_gpu(seg.key.texture_id)
@@ -568,15 +708,15 @@ batch_flush_draws :: proc() {
 
 		binding := sdl.GPUTextureSamplerBinding {
 			texture = tex,
-			sampler = state.gpu_state.sampler,
+			sampler = sampler,
 		}
-		sdl.BindGPUFragmentSamplers(state.gpu_state.batch.pass, 0, &binding, 1)
+		sdl.BindGPUFragmentSamplers(batch_current().pass, 0, &binding, 1)
 
-		scissor := clip_to_scissor(seg.key.clip, state.gpu_state.batch.dpi)
-		sdl.SetGPUScissor(state.gpu_state.batch.pass, scissor)
+		scissor := clip_to_scissor(seg.key.clip, batch_current().dpi)
+		sdl.SetGPUScissor(batch_current().pass, scissor)
 
 		sdl.DrawGPUIndexedPrimitives(
-			state.gpu_state.batch.pass,
+			batch_current().pass,
 			seg.index_count,
 			1,
 			seg.first_index,

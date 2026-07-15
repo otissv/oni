@@ -93,18 +93,31 @@ build_shaders() {
 		exit 1
 	fi
 
+	local -a pids=()
 	local compiled=false
 
 	if [[ ! -f "$UI_SPV_FRAG" || "$UI_FRAG" -nt "$UI_SPV_FRAG" ]]; then
 		echo "Compiling ui.frag"
-		glslc "$UI_FRAG" -o "$UI_SPV_FRAG"
+		glslc "$UI_FRAG" -o "$UI_SPV_FRAG" &
+		pids+=($!)
 		compiled=true
 	fi
 
 	if [[ ! -f "$UI_SPV_VERT" || "$UI_VERT" -nt "$UI_SPV_VERT" ]]; then
 		echo "Compiling ui.vert"
-		glslc "$UI_VERT" -o "$UI_SPV_VERT"
+		glslc "$UI_VERT" -o "$UI_SPV_VERT" &
+		pids+=($!)
 		compiled=true
+	fi
+
+	local status=0
+	for pid in "${pids[@]+"${pids[@]}"}"; do
+		if ! wait "$pid"; then
+			status=1
+		fi
+	done
+	if ((status != 0)); then
+		return 1
 	fi
 
 	if [[ "$compiled" == false ]]; then
@@ -229,15 +242,27 @@ cmd="${1:-run}"
 
 case "$cmd" in
 run)
-	build_app
-
 	if is_app_running; then
+		if ! build_app; then
+			exit 1
+		fi
 		echo "Hot reloading... (app already running, PID $(app_pid))"
 		echo "No new window will open. Use './build_hot_reload.sh restart' for a fresh window."
 		exit 0
 	fi
 
-	build_host
+	# Fresh start: compile app and host in parallel after shaders (build_app embeds shader build).
+	build_app &
+	app_build_pid=$!
+	build_host &
+	host_build_pid=$!
+	app_status=0
+	host_status=0
+	wait "$app_build_pid" || app_status=$?
+	wait "$host_build_pid" || host_status=$?
+	if ((app_status != 0 || host_status != 0)); then
+		exit 1
+	fi
 	start_app
 	start_watch || true
 	echo ""
@@ -247,8 +272,17 @@ run)
 restart)
 	stop_watch
 	stop_app
-	build_app
-	build_host
+	build_app &
+	app_build_pid=$!
+	build_host &
+	host_build_pid=$!
+	app_status=0
+	host_status=0
+	wait "$app_build_pid" || app_status=$?
+	wait "$host_build_pid" || host_status=$?
+	if ((app_status != 0 || host_status != 0)); then
+		exit 1
+	fi
 	start_app
 	start_watch || true
 	echo ""

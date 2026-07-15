@@ -77,6 +77,22 @@ image_refresh_merged :: proc(props: Image_Props, frame_state: ^Image_State) -> I
 	return widget_event(frame_state^)
 }
 
+@(private)
+image_refresh_merged_if_interaction_changed :: proc(
+	props: Image_Props,
+	frame_state: ^Image_State,
+	prev_fp: u8,
+) -> (
+	event: Image_Event,
+	fp: u8,
+) {
+	fp = widget_style_interaction_fp(frame_state)
+	if fp == prev_fp {
+		return widget_event(frame_state^), fp
+	}
+	return image_refresh_merged(props, frame_state), fp
+}
+
 /*
 Resolves the intrinsic source size from props.src or the loaded texture handle.
 */
@@ -162,6 +178,7 @@ Image :: proc(props: Image_Props) {
 	}
 
 	event := image_refresh_merged(props, &frame_state)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
 	handlers := widget_lifecycle_handlers(props, Image_State)
@@ -251,7 +268,7 @@ Image :: proc(props: Image_Props) {
 		config,
 	)
 
-	event = image_refresh_merged(props, &frame_state)
+	event, _ = image_refresh_merged_if_interaction_changed(props, &frame_state, style_fp)
 	config = frame_state.config
 
 	if widget_can_interact(handlers, &frame_state) {

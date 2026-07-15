@@ -3,7 +3,35 @@ package oni
 import "core:c"
 import "core:math"
 import "core:mem"
+import "core:strings"
+import "core:thread"
 import sdl "vendor:sdl3"
+
+FONT_GLYPH_PARALLEL_THRESHOLD :: 4
+FONT_GLYPH_MAX_WORKERS :: 4
+
+/*
+Owned FreeType render result before serial atlas packing.
+*/
+Font_Glyph_Bitmap_Result :: struct {
+	glyph_id:  u32,
+	surface:   ^sdl.Surface,
+	bearing_x: f32,
+	bearing_y: f32,
+	ok:        bool,
+}
+
+/*
+Per-worker glyph subset for parallel FreeType rasterization.
+
+Each worker opens a temporary FT_Face (and FT_Library) so FreeType work never
+touches the engine face concurrently.
+*/
+Font_Glyph_Worker_Args :: struct {
+	face:      ^Font_Face,
+	glyph_ids: []u32,
+	results:   []Font_Glyph_Bitmap_Result,
+}
 
 /*
 Maps a named Font_Weights value to its CSS numeric weight.
@@ -98,7 +126,7 @@ font_resolve :: proc(
 
 	zoom: f32 = 1
 	if space == .ARTBOARD {
-		zoom = view_effective_zoom()
+		zoom = layout_artboard_zoom()
 	}
 
 	raster_size := max(size * zoom, 1)
@@ -151,25 +179,16 @@ font_atlas_reset :: proc() {
 /*
 Rasterizes and caches any glyphs from shaped lines that are not yet in the atlas.
 
-Ensures the atlas is initialized before packing missing glyphs.
+Ensures the atlas is initialized before packing missing glyphs. Large miss sets
+rasterize FreeType bitmaps in parallel, then pack into the atlas serially.
 */
 font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
 
-	all_cached := true
-	for glyph in glyphs {
-		key := Font_Glyph_Key {
-			face_id  = face_id,
-			glyph_id = glyph.glyph_id,
-		}
-		if key not_in state.fonts.glyph_cache {
-			all_cached = false
-			break
-		}
-	}
-	if all_cached do return true
-
-	if !texture_atlas_init() do return false
+	missing := make([dynamic]u32, 0, len(glyphs))
+	defer delete(missing)
+	seen: map[u32]struct{}
+	defer delete(seen)
 
 	for glyph in glyphs {
 		key := Font_Glyph_Key {
@@ -177,12 +196,290 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 			glyph_id = glyph.glyph_id,
 		}
 		if key in state.fonts.glyph_cache do continue
+		if glyph.glyph_id in seen do continue
+		seen[glyph.glyph_id] = {}
+		append(&missing, glyph.glyph_id)
+	}
+	if len(missing) == 0 do return true
+	if !texture_atlas_init() do return false
+	return font_rasterize_and_cache_missing(face, face_id, missing[:])
+}
 
-		entry, ok := font_rasterize_glyph(face, key.glyph_id)
-		if !ok do return false
-		state.fonts.glyph_cache[key] = entry
+/*
+Opens a temporary FreeType library + face matching `face` for worker rasterization.
+
+Caller must Done_Face then Done_FreeType. Does not use the engine FT_Library so
+New_Face/Load_Glyph stay off the shared face/library on other threads.
+*/
+font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft_face: FT_Face, ok: bool) {
+	if face == nil || len(face.path) == 0 do return {}, nil, false
+
+	if !ft_ok(Init_FreeType(&library)) {
+		log_error("FT_Init_FreeType failed for worker face")
+		return {}, nil, false
 	}
 
+	cpath := strings.clone_to_cstring(face.path)
+	if cpath == nil {
+		Done_FreeType(library)
+		return {}, nil, false
+	}
+	defer delete(cpath)
+
+	if !ft_ok(New_Face(library, cpath, 0, &ft_face)) {
+		log_errorf("FT_New_Face failed for worker face %q", face.path)
+		Done_FreeType(library)
+		return {}, nil, false
+	}
+
+	pixel_size := face.pixel_size
+	if pixel_size <= 0 do pixel_size = font_pixel_size(face.size_px)
+	if !ft_ok(Set_Pixel_Sizes(ft_face, c.uint(pixel_size), c.uint(pixel_size))) {
+		log_errorf("FT_Set_Pixel_Sizes failed for worker face %q", face.path)
+		Done_Face(ft_face)
+		Done_FreeType(library)
+		return {}, nil, false
+	}
+
+	mm: ^FT_MM_Var
+	if ft_ok(Get_MM_Var(ft_face, &mm)) && mm != nil && mm.num_axis > 0 {
+		defer Done_MM_Var(library, mm)
+		coords := make([]FT_Fixed, int(mm.num_axis))
+		defer delete(coords)
+		for i in 0 ..< int(mm.num_axis) {
+			coords[i] = mm.axis[i].def
+			tag := u32(mm.axis[i].tag)
+			if tag == FT_TAG_WGHT {
+				min_v := ft_fixed_to_f32(mm.axis[i].minimum)
+				max_v := ft_fixed_to_f32(mm.axis[i].maximum)
+				w := clamp(face.weight, min_v, max_v)
+				coords[i] = ft_fixed_from_f32(w)
+			} else if tag == FT_TAG_OPSZ {
+				min_v := ft_fixed_to_f32(mm.axis[i].minimum)
+				max_v := ft_fixed_to_f32(mm.axis[i].maximum)
+				opsz := clamp(face.size_px, min_v, max_v)
+				coords[i] = ft_fixed_from_f32(opsz)
+			}
+		}
+		if !ft_ok(Set_Var_Design_Coordinates(ft_face, c.uint(mm.num_axis), raw_data(coords))) {
+			log_errorf("FT_Set_Var_Design_Coordinates failed for worker face %q", face.path)
+			Done_Face(ft_face)
+			Done_FreeType(library)
+			return {}, nil, false
+		}
+	}
+
+	if face.fake_italic {
+		shear := FT_Matrix {
+			xx = 0x10000,
+			xy = 13933,
+			yx = 0,
+			yy = 0x10000,
+		}
+		Set_Transform(ft_face, &shear, nil)
+	} else {
+		Set_Transform(ft_face, nil, nil)
+	}
+
+	return library, ft_face, true
+}
+
+/*
+FT load/render + SDL surface copy. Does not touch the glyph atlas.
+*/
+font_rasterize_glyph_bitmap :: proc(
+	ft_face: FT_Face,
+	fake_bold: bool,
+	glyph_id: u32,
+) -> (
+	surface: ^sdl.Surface,
+	bearing_x: f32,
+	bearing_y: f32,
+	ok: bool,
+) {
+	if ft_face == nil do return nil, 0, 0, false
+
+	load_flags: c.int = fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_RENDER)
+	if !ft_ok(Load_Glyph(ft_face, c.uint(glyph_id), load_flags)) {
+		log_errorf("FT_Load_Glyph failed for glyph %d", glyph_id)
+		return nil, 0, 0, false
+	}
+
+	slot := ft_glyph_slot(ft_face)
+	if fake_bold {
+		GlyphSlot_Embolden(slot)
+	}
+
+	if ft_slot_format(slot) != .BITMAP {
+		if !ft_ok(Render_Glyph(slot, FT_RENDER_MODE_NORMAL)) {
+			log_errorf("FT_Render_Glyph failed for glyph %d", glyph_id)
+			return nil, 0, 0, false
+		}
+	}
+
+	bitmap := ft_slot_bitmap(slot)^
+	w := i32(bitmap.width)
+	h := i32(bitmap.rows)
+	bearing_x = f32(ft_slot_bitmap_left(slot))
+	bearing_y = f32(ft_slot_bitmap_top(slot))
+
+	if w <= 0 || h <= 0 {
+		surface = sdl.CreateSurface(1, 1, .RGBA8888)
+		if surface == nil do return nil, 0, 0, false
+		sdl.WriteSurfacePixel(surface, 0, 0, 0, 0, 0, 0)
+		return surface, 0, 0, true
+	}
+
+	surface = sdl.CreateSurface(w, h, .RGBA8888)
+	if surface == nil {
+		log_error("SDL_CreateSurface failed for glyph bitmap")
+		return nil, 0, 0, false
+	}
+	font_copy_glyph_bitmap(&bitmap, surface)
+	return surface, bearing_x, bearing_y, true
+}
+
+/*
+Packs a rasterized glyph surface into the atlas and returns the cache entry.
+*/
+font_pack_glyph_bitmap :: proc(
+	surface: ^sdl.Surface,
+	bearing_x: f32,
+	bearing_y: f32,
+	glyph_id: u32,
+) -> (
+	Font_Glyph_Entry,
+	bool,
+) {
+	if surface == nil do return {}, false
+	region, ok := texture_atlas_pack(surface)
+	if !ok {
+		log_errorf("texture_atlas_pack failed for glyph %d", glyph_id)
+		return {}, false
+	}
+	return Font_Glyph_Entry{region = region, bearing_x = bearing_x, bearing_y = bearing_y}, true
+}
+
+@(private)
+font_glyph_worker :: proc(args: ^Font_Glyph_Worker_Args) {
+	if args == nil || args.face == nil do return
+
+	library, ft_face, ok := font_open_temp_raster_face(args.face)
+	if !ok {
+		for i in 0 ..< len(args.glyph_ids) {
+			args.results[i] = Font_Glyph_Bitmap_Result {
+				glyph_id = args.glyph_ids[i],
+				ok       = false,
+			}
+		}
+		return
+	}
+	defer {
+		Done_Face(ft_face)
+		Done_FreeType(library)
+	}
+
+	for i in 0 ..< len(args.glyph_ids) {
+		gid := args.glyph_ids[i]
+		surface, bx, by, rok := font_rasterize_glyph_bitmap(ft_face, args.face.fake_bold, gid)
+		args.results[i] = Font_Glyph_Bitmap_Result {
+			glyph_id  = gid,
+			surface   = surface,
+			bearing_x = bx,
+			bearing_y = by,
+			ok        = rok,
+		}
+	}
+}
+
+/*
+Rasterizes missing glyph ids and inserts them into the glyph cache.
+
+Uses the serial FreeType path for small miss counts; larger sets fan out to
+temporary faces on worker threads, then pack into the atlas on this thread.
+*/
+font_rasterize_and_cache_missing :: proc(face: ^Font_Face, face_id: Asset_Id, missing: []u32) -> bool {
+	if len(missing) == 0 do return true
+
+	if len(missing) < FONT_GLYPH_PARALLEL_THRESHOLD {
+		for gid in missing {
+			entry, ok := font_rasterize_glyph(face, gid)
+			if !ok do return false
+			state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = gid}] = entry
+		}
+		return true
+	}
+
+	results := make([]Font_Glyph_Bitmap_Result, len(missing))
+	defer {
+		for &r in results {
+			if r.surface != nil {
+				sdl.DestroySurface(r.surface)
+				r.surface = nil
+			}
+		}
+		delete(results)
+	}
+
+	n_workers := min(FONT_GLYPH_MAX_WORKERS, len(missing))
+	worker_args := make([]Font_Glyph_Worker_Args, n_workers)
+	defer delete(worker_args)
+
+	base := 0
+	for w in 0 ..< n_workers {
+		remaining := len(missing) - base
+		chunks_left := n_workers - w
+		count := remaining / chunks_left
+		worker_args[w] = Font_Glyph_Worker_Args {
+			face      = face,
+			glyph_ids = missing[base:][:count],
+			results   = results[base:][:count],
+		}
+		base += count
+	}
+
+	threads := make([]^thread.Thread, n_workers)
+	defer {
+		for t in threads {
+			if t != nil do thread.destroy(t)
+		}
+		delete(threads)
+	}
+
+	for w in 0 ..< n_workers {
+		threads[w] = thread.create_and_start_with_poly_data(&worker_args[w], font_glyph_worker)
+		if threads[w] == nil {
+			// Finish any started workers, then fall back to serial for the whole set.
+			for j in 0 ..< w {
+				thread.join(threads[j])
+			}
+			for &r in results {
+				if r.surface != nil {
+					sdl.DestroySurface(r.surface)
+					r.surface = nil
+				}
+			}
+			for gid in missing {
+				entry, ok := font_rasterize_glyph(face, gid)
+				if !ok do return false
+				state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = gid}] = entry
+			}
+			return true
+		}
+	}
+
+	for w in 0 ..< n_workers {
+		thread.join(threads[w])
+	}
+
+	for &r in results {
+		if !r.ok || r.surface == nil do return false
+		entry, ok := font_pack_glyph_bitmap(r.surface, r.bearing_x, r.bearing_y, r.glyph_id)
+		if !ok do return false
+		state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = r.glyph_id}] = entry
+		sdl.DestroySurface(r.surface)
+		r.surface = nil
+	}
 	return true
 }
 
@@ -192,62 +489,11 @@ Rasterizes a single glyph via FreeType and packs it into the texture atlas.
 Applies synthetic embolden when the face instance requests fake bold.
 */
 font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Entry, bool) {
-	load_flags: c.int = face.fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_RENDER)
-	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), load_flags)) {
-		log_errorf("FT_Load_Glyph failed for glyph %d", glyph_id)
-		return {}, false
-	}
-
-	slot := ft_glyph_slot(face.ft_face)
-	if face.fake_bold {
-		GlyphSlot_Embolden(slot)
-	}
-
-	if ft_slot_format(slot) != .BITMAP {
-		if !ft_ok(Render_Glyph(slot, FT_RENDER_MODE_NORMAL)) {
-			log_errorf("FT_Render_Glyph failed for glyph %d", glyph_id)
-			return {}, false
-		}
-	}
-
-	bitmap := ft_slot_bitmap(slot)^
-	w := i32(bitmap.width)
-	h := i32(bitmap.rows)
-	if w <= 0 || h <= 0 {
-		region, ok := texture_atlas_alloc(1, 1)
-		if !ok do return {}, false
-
-		surface := sdl.CreateSurface(1, 1, .RGBA8888)
-		if surface == nil do return {}, false
-		defer sdl.DestroySurface(surface)
-
-		sdl.WriteSurfacePixel(surface, 0, 0, 0, 0, 0, 0)
-
-		if !texture_atlas_upload(region, surface) do return {}, false
-		return Font_Glyph_Entry{region = region}, true
-	}
-
-	surface := sdl.CreateSurface(w, h, .RGBA8888)
-	if surface == nil {
-		log_error("SDL_CreateSurface failed for glyph bitmap")
-		return {}, false
-	}
+	if face == nil || face.ft_face == nil do return {}, false
+	surface, bx, by, ok := font_rasterize_glyph_bitmap(face.ft_face, face.fake_bold, glyph_id)
+	if !ok do return {}, false
 	defer sdl.DestroySurface(surface)
-
-	font_copy_glyph_bitmap(&bitmap, surface)
-
-	region, ok := texture_atlas_pack(surface)
-	if !ok {
-		log_errorf("texture_atlas_pack failed for glyph %d", glyph_id)
-		return {}, false
-	}
-
-	return Font_Glyph_Entry {
-			region = region,
-			bearing_x = f32(ft_slot_bitmap_left(slot)),
-			bearing_y = f32(ft_slot_bitmap_top(slot)),
-		},
-		true
+	return font_pack_glyph_bitmap(surface, bx, by, glyph_id)
 }
 
 /*
@@ -364,16 +610,45 @@ font_draw_layout_text :: proc(
 	face := font_face_from_handle(laid.font)
 	if face == nil do return {}
 
+	face_id := laid.font.id
 	if len(laid.glyphs) > 0 {
-		if !font_ensure_glyphs_from_paint(face, laid.font.id, laid.glyphs) do return {}
-		for paint in laid.glyphs {
-			key := Font_Glyph_Key {
-				face_id  = laid.font.id,
-				glyph_id = paint.glyph_id,
+		if !font_ensure_glyphs_from_paint(face, face_id, laid.glyphs) do return {}
+
+		atlas := texture_handle(state.textures.atlas.texture_id)
+		use_atlas_batch := atlas.id != INVALID_ASSET_ID && atlas.w > 0 && atlas.h > 0
+		if use_atlas_batch {
+			dsts := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
+			srcs := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
+			for paint in laid.glyphs {
+				key := Font_Glyph_Key {
+					face_id  = face_id,
+					glyph_id = paint.glyph_id,
+				}
+				entry, ok := state.fonts.glyph_cache[key]
+				if !ok do continue
+				if entry.region.texture_id == atlas.id {
+					append(&dsts, paint.dst)
+					append(
+						&srcs,
+						Rect{entry.region.x, entry.region.y, entry.region.w, entry.region.h},
+					)
+				} else {
+					draw_atlas_region(entry.region, paint.dst, color)
+				}
 			}
-			entry, ok := state.fonts.glyph_cache[key]
-			if !ok do continue
-			draw_atlas_region(entry.region, paint.dst, color)
+			if len(dsts) > 0 {
+				batch_push_atlas_quads(atlas, dsts[:], srcs[:], color)
+			}
+		} else {
+			for paint in laid.glyphs {
+				key := Font_Glyph_Key {
+					face_id  = face_id,
+					glyph_id = paint.glyph_id,
+				}
+				entry, ok := state.fonts.glyph_cache[key]
+				if !ok do continue
+				draw_atlas_region(entry.region, paint.dst, color)
+			}
 		}
 	}
 
@@ -395,7 +670,13 @@ font_ensure_glyphs_from_paint :: proc(
 	glyphs: []Layout_Glyph_Paint,
 ) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
+	// Paint path always probes the atlas when glyphs are present (even if cached).
 	if !texture_atlas_init() do return false
+
+	missing := make([dynamic]u32, 0, len(glyphs))
+	defer delete(missing)
+	seen: map[u32]struct{}
+	defer delete(seen)
 
 	for paint in glyphs {
 		key := Font_Glyph_Key {
@@ -403,11 +684,10 @@ font_ensure_glyphs_from_paint :: proc(
 			glyph_id = paint.glyph_id,
 		}
 		if key in state.fonts.glyph_cache do continue
-
-		entry, ok := font_rasterize_glyph(face, key.glyph_id)
-		if !ok do return false
-		state.fonts.glyph_cache[key] = entry
+		if paint.glyph_id in seen do continue
+		seen[paint.glyph_id] = {}
+		append(&missing, paint.glyph_id)
 	}
-
-	return true
+	if len(missing) == 0 do return true
+	return font_rasterize_and_cache_missing(face, face_id, missing[:])
 }

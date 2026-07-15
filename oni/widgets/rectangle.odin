@@ -72,6 +72,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 	}
 
 	event := widget_refresh_merged(props, &frame_state, rect_theme_base)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
 	handlers := widget_lifecycle_handlers(props, Rectangle_State)
@@ -126,7 +127,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		config,
 	)
 
-	event = widget_refresh_merged(props, &frame_state, rect_theme_base)
+	event, _ = widget_refresh_merged_if_interaction_changed(props, &frame_state, rect_theme_base, style_fp)
 	config = frame_state.config
 
 	if widget_can_interact(handlers, &frame_state) {
@@ -180,7 +181,7 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 	config := frame_state.config
 
 	background: o.RGBA
-	if resolved_background, background_ok := o.to_rgba(config.background, frame_state, event);
+	if resolved_background, background_ok := o.style_background_rgba(config, frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
@@ -192,8 +193,8 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 	}
 
 	border_color: o.RGBA
-	if resolved_border_color, border_color_ok := o.to_rgba(
-		config.border_color,
+	if resolved_border_color, border_color_ok := o.style_border_color_rgba(
+		config,
 		frame_state,
 		event,
 	); border_color_ok {

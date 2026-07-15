@@ -216,10 +216,10 @@ font_shape_line_build_none_omits_newlines :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			lines := font_shape_line_build(face, "one\ntwo", 0, 0, .NONE, .LTR)
+			lines := font_shape_line_build(face, handle.id, "one\ntwo", 0, 0, 0, .NONE, .LTR)
 			defer font_destroy_shaped_lines(lines)
 			testing.expect_value(t, len(lines), 1)
 			testing.expect(t, lines[0].width > 0)
@@ -233,10 +233,10 @@ font_shape_line_build_newlines_hard_breaks :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			lines := font_shape_line_build(face, "one\ntwo\nthree", 0, 0, .NEWLINES, .LTR)
+			lines := font_shape_line_build(face, handle.id, "one\ntwo\nthree", 0, 0, 0, .NEWLINES, .LTR)
 			defer font_destroy_shaped_lines(lines)
 			testing.expect_value(t, len(lines), 3)
 			for line in lines {
@@ -253,15 +253,15 @@ font_shape_line_build_balance_soft_wraps_under_max_width :: proc(t: ^testing.T) 
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
 			text := "alpha beta gamma delta epsilon zeta eta theta"
-			wide := font_shape_line_build(face, text, 1000, 0, .BALANCE, .LTR)
+			wide := font_shape_line_build(face, handle.id, text, 1000, 0, 0, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(wide)
 			testing.expect_value(t, len(wide), 1)
 
-			narrow := font_shape_line_build(face, text, 80, 0, .BALANCE, .LTR)
+			narrow := font_shape_line_build(face, handle.id, text, 80, 0, 0, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(narrow)
 			testing.expect(t, len(narrow) >= 2)
 			for line in narrow {
@@ -283,10 +283,10 @@ font_shape_line_build_balance_zero_max_w_falls_back_to_newlines :: proc(t: ^test
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			lines := font_shape_line_build(face, "a\nb\nc", 0, 0, .BALANCE, .LTR)
+			lines := font_shape_line_build(face, handle.id, "a\nb\nc", 0, 0, 0, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(lines)
 			testing.expect_value(t, len(lines), 3)
 		},
@@ -299,11 +299,11 @@ font_shape_line_build_letter_spacing_increases_width :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			plain := font_shape_line_build(face, "ABCD", 0, 0, .NONE, .LTR)
-			spaced := font_shape_line_build(face, "ABCD", 0, 2, .NONE, .LTR)
+			plain := font_shape_line_build(face, handle.id, "ABCD", 0, 0, 0, .NONE, .LTR)
+			spaced := font_shape_line_build(face, handle.id, "ABCD", 0, 2, 0, .NONE, .LTR)
 			defer font_destroy_shaped_lines(plain)
 			defer font_destroy_shaped_lines(spaced)
 			testing.expect_value(t, len(plain), 1)
@@ -320,10 +320,10 @@ font_measure_lines_matches_line_count_and_max_width :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			lines := font_shape_line_build(face, "hello\nworld", 0, 0, .NEWLINES, .LTR)
+			lines := font_shape_line_build(face, handle.id, "hello\nworld", 0, 0, 0, .NEWLINES, .LTR)
 			defer font_destroy_shaped_lines(lines)
 			size := font_measure_lines(face, lines, 24, 1)
 			expect_close(t, size.y, 48)
@@ -460,7 +460,7 @@ font_shape_unicode_latin_and_cjk_clusters :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
+			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
 			cafe := font_shape(face, "café", .LTR)
@@ -477,7 +477,7 @@ font_shape_unicode_latin_and_cjk_clusters :: proc(t: ^testing.T) {
 			for g in cjk do cjk_w += g.x_advance
 			testing.expect(t, cjk_w > 0)
 
-			mixed := font_shape_line_build(face, "Hello 世界\nBonjour", 100, 0, .BALANCE, .LTR)
+			mixed := font_shape_line_build(face, handle.id, "Hello 世界\nBonjour", 100, 0, 0, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(mixed)
 			testing.expect(t, len(mixed) >= 2)
 		},

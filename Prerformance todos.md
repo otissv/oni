@@ -41,7 +41,7 @@ Balance wrap is an especially bad heap churner: `font_shape_lines_balance` alloc
 
 ## Pre-compute
 
-mmediate-mode rebuilds the UI tree every frame — the wins are caching stable intermediates, not skipping layout/draw.
+Immediate-mode rebuilds the UI tree every frame — the wins are caching stable intermediates, not skipping layout/draw.
 
 ### Already precomputed
 Shaders (glslc + #load), Tailwind palette, glyph atlas, font faces, texture path cache, ortho projection (on resize/DPI only), theme at init/reload, Tengu ease constants.
@@ -67,7 +67,6 @@ Hot-reload rebinds, DPI/window size, both UI passes, input-driven style procs, T
 
 ## Bulk/Batch
 Already batched strongly: GPU draw (oni/batch.odin) — quads merge by texture/clip/stack, one upload + segment draws per frame. Layout solves the whole tree; HarfBuzz shapes whole strings; Tengu already has parallel/sequence/timeline groups.
-
 ### Best batching opportunities:
 
 | Area	      | What’s per-item today	| Could batch |
@@ -143,3 +142,26 @@ font_draw_layout_text — laid.font.id rebuilt into every Font_Glyph_Key; hoist 
 
 ### Biggest wins: 
 cached opacity + clip in the batch, cached theme_widget_style, and skipping the second style resolve when interaction state is unchanged.
+
+
+## Cache-miss / separate-allocation patterns
+
+A few places, plus a lot of heap churn that isn’t really a cache.
+
+### True cache miss → work / alloc
+
+1. Glyph atlas (font_ensure_glyphs in oni/font.odin) — miss → FreeType rasterize + atlas pack/upload, then insert into glyph_cache. Called out in your performance notes as the main transfer-batching gap.
+
+2. Assets (assets_load_texture in oni/assets.odin) — miss → load surface, register texture, strings.clone(path) into the path map.
+
+3. Widget lifecycle (widget_lifecycle_entry in oni/widget.odin) — miss → insert an empty UI_Widget_Entry into the widgets map (map growth / entry alloc, long-lived).
+
+### Allocates every time (no shape cache)
+
+HarfBuzz shaping (font_shape in oni/font_shaper.odin) — rasters are cached; shapes are not. Every call does make([]Shaped_Glyph, n) (and wrap/balance paths allocate more). That’s the main “separate heap allocation per use” cost, not a miss of an existing cache.
+
+### Related (frame scratch, not a lookup miss)
+
+Layout wrap/flex/table in oni/layout.odin does many same-proc [dynamic] + defer delete allocations — separate heaps each frame, which is the arena section of Prerformance todos.md.
+
+So: glyph/asset/widget maps allocate (or heavier work) on miss; shaping and layout scratch allocate repeatedly with no hit path.

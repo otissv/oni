@@ -56,19 +56,14 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	o.state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
 	o.state.view = o.view_default()
 	// Allow draw_rect batching without a GPU device.
-	o.state.gpu_state.batch.vertex_capacity = 64 * 1024
-	o.state.gpu_state.batch.index_capacity = 64 * 1024 * 6
+	o.batch_current().vertex_capacity = 64 * 1024
+	o.batch_current().index_capacity = 64 * 1024 * 6
 
 	o.ui_init()
 	defer {
 		drain_style_stack()
 		o.ui_shutdown()
-		delete(o.state.gpu_state.batch.vertices)
-		delete(o.state.gpu_state.batch.indices)
-		delete(o.state.gpu_state.batch.segments)
-		delete(o.state.gpu_state.batch.clip_stack)
-		delete(o.state.gpu_state.batch.space_stack)
-		delete(o.state.gpu_state.batch.opacity_stack)
+		o.batch_delete_cpu_arrays(&o.state.gpu_state)
 	}
 
 	// Root style required by resolve_widget_config / theme merges.
@@ -98,19 +93,8 @@ widget_test_begin_draw :: proc() {
 @(private)
 widget_test_end_frame :: proc() {
 	o.ui_end_frame()
-	delete(o.state.gpu_state.batch.vertices)
-	delete(o.state.gpu_state.batch.indices)
-	delete(o.state.gpu_state.batch.segments)
-	delete(o.state.gpu_state.batch.clip_stack)
-	delete(o.state.gpu_state.batch.space_stack)
-	delete(o.state.gpu_state.batch.opacity_stack)
-	o.state.gpu_state.batch.vertices = nil
-	o.state.gpu_state.batch.indices = nil
-	o.state.gpu_state.batch.segments = nil
-	o.state.gpu_state.batch.clip_stack = nil
-	o.state.gpu_state.batch.space_stack = nil
-	o.state.gpu_state.batch.opacity_stack = nil
-	o.state.gpu_state.batch.has_current_key = false
+	o.batch_delete_cpu_arrays(&o.state.gpu_state)
+	o.batch_current().has_current_key = false
 }
 
 @(private)

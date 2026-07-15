@@ -41,6 +41,42 @@ widget_refresh_merged :: proc(
 	return widget_event(frame_state^)
 }
 
+/*
+Fingerprint of interaction bits that typically drive stateful style procs.
+
+Used to skip a second resolve_widget_config when Draw-pass interaction matches
+the fingerprint captured at the first merge this call.
+*/
+@(private)
+widget_style_interaction_fp :: proc(frame_state: ^$S) -> u8 {
+	fp: u8
+	if frame_state.is_hovered do fp |= 1
+	if frame_state.is_focused do fp |= 2
+	if frame_state.is_Pressed do fp |= 4
+	if frame_state.is_disabled do fp |= 8
+	return fp
+}
+
+/*
+Re-merges style only when interaction bits changed since `prev_fp`.
+*/
+@(private)
+widget_refresh_merged_if_interaction_changed :: proc(
+	props: $P,
+	frame_state: ^$S,
+	theme_base: proc(frame_state: ^S) -> o.Widget_Config,
+	prev_fp: u8,
+) -> (
+	event: o.Widget_Event(S),
+	fp: u8,
+) {
+	fp = widget_style_interaction_fp(frame_state)
+	if fp == prev_fp {
+		return widget_event(frame_state^), fp
+	}
+	return widget_refresh_merged(props, frame_state, theme_base), fp
+}
+
 @(private)
 widget_lifecycle_handlers :: proc(props: $P, $S: typeid) -> Widget_Lifecycle_Handlers(S) {
 	return {

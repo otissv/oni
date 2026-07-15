@@ -130,13 +130,9 @@ table_layout_collect_edge_candidates :: proc(
 	side: u8,
 	neighbor_index: int,
 	neighbor_side: u8,
-	pos: Table_Grid_Pos,
-	col_count: int,
 	candidates: ^[dynamic]Table_Border_Side,
 ) {
 	table_index, group_index, row_index := table_layout_cell_ancestors(layout, cell_index)
-	_ = pos
-	_ = col_count
 
 	table_layout_append_side_candidates(layout, cell_index, side, .CELL, cell_index, candidates)
 	// Row and row-group borders compete on every cell edge they touch, so an
@@ -202,22 +198,20 @@ table_layout_resolve_collapsed_borders :: proc(
 	pos, pos_ok := tracks.cell_positions[node_index]
 	if !pos_ok do return {}
 
-	candidates: [dynamic]Table_Border_Side
-	defer delete(candidates)
+	if tracks.collapsed_borders != nil {
+		if cached, ok := tracks.collapsed_borders[node_index]; ok {
+			cached.strips[0] = table_border_strip_rect(cell.rect, 't', cached.borders.t.width)
+			cached.strips[1] = table_border_strip_rect(cell.rect, 'b', cached.borders.b.width)
+			cached.strips[2] = table_border_strip_rect(cell.rect, 'l', cached.borders.l.width)
+			cached.strips[3] = table_border_strip_rect(cell.rect, 'r', cached.borders.r.width)
+			return cached
+		}
+	}
+
+	candidates := make([dynamic]Table_Border_Side, context.temp_allocator)
 
 	result: Layout_Collapsed_Borders
 	result.active = true
-
-	col_count := 0
-	if len(tracks.rows) > 0 {
-		row_index := tracks.rows[pos.row]
-		row := &layout.nodes[row_index]
-		for child_index in row.child_indices {
-			child := &layout.nodes[child_index]
-			if layout_node_is_table_cell(child.kind) do col_count += 1
-		}
-	}
-	row_count := len(tracks.rows)
 
 	neighbor_index, neighbor_side := table_layout_find_cell_neighbor(
 		layout,
@@ -233,8 +227,6 @@ table_layout_resolve_collapsed_borders :: proc(
 		't',
 		neighbor_index,
 		neighbor_side,
-		pos,
-		col_count,
 		&candidates,
 	)
 	result.borders.t = table_border_pick_winner(candidates[:])
@@ -254,21 +246,19 @@ table_layout_resolve_collapsed_borders :: proc(
 		'l',
 		neighbor_index,
 		neighbor_side,
-		pos,
-		col_count,
 		&candidates,
 	)
 	result.borders.l = table_border_pick_winner(candidates[:])
 	result.strips[2] = table_border_strip_rect(cell.rect, 'l', result.borders.l.width)
 
-	if pos.row + 1 == row_count {
-		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
-			layout,
-			tracks,
-			node_index,
-			pos,
-			'b',
-		)
+	neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
+		layout,
+		tracks,
+		node_index,
+		pos,
+		'b',
+	)
+	if neighbor_index < 0 {
 		clear(&candidates)
 		table_layout_collect_edge_candidates(
 			layout,
@@ -276,22 +266,20 @@ table_layout_resolve_collapsed_borders :: proc(
 			'b',
 			neighbor_index,
 			neighbor_side,
-			pos,
-			col_count,
 			&candidates,
 		)
 		result.borders.b = table_border_pick_winner(candidates[:])
 		result.strips[1] = table_border_strip_rect(cell.rect, 'b', result.borders.b.width)
 	}
 
-	if pos.col + 1 == col_count {
-		neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
-			layout,
-			tracks,
-			node_index,
-			pos,
-			'r',
-		)
+	neighbor_index, neighbor_side = table_layout_find_cell_neighbor(
+		layout,
+		tracks,
+		node_index,
+		pos,
+		'r',
+	)
+	if neighbor_index < 0 {
 		clear(&candidates)
 		table_layout_collect_edge_candidates(
 			layout,
@@ -299,14 +287,16 @@ table_layout_resolve_collapsed_borders :: proc(
 			'r',
 			neighbor_index,
 			neighbor_side,
-			pos,
-			col_count,
 			&candidates,
 		)
 		result.borders.r = table_border_pick_winner(candidates[:])
 		result.strips[3] = table_border_strip_rect(cell.rect, 'r', result.borders.r.width)
 	}
 
+	if tracks.collapsed_borders == nil {
+		tracks.collapsed_borders = make(map[int]Layout_Collapsed_Borders, layout_frame_allocator_for(layout))
+	}
+	tracks.collapsed_borders[node_index] = result
 	return result
 }
 
@@ -575,6 +565,7 @@ table_draw_collapsed_cell :: proc(
 		draw_rect(rect, background)
 	}
 
+	// Strips are already on Layout_Collapsed_Borders from layout; emit through the batch.
 	for side, i in sides {
 		color, color_ok := table_collapsed_border_color(side, state_ptr, event)
 		if !color_ok do continue

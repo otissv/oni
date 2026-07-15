@@ -24,7 +24,7 @@ with_view_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	saved_state := state
 	defer {
-		delete(test_state.gpu_state.batch.space_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 	}

@@ -37,7 +37,7 @@ layout_test_make_line :: proc(
 	advances: []f32,
 	direction: Text_Direction_Kind = .LTR,
 ) -> Shaped_Line {
-	glyphs := make([]Shaped_Glyph, len(glyph_ids))
+	glyphs := make([]Shaped_Glyph, len(glyph_ids), layout_frame_allocator())
 	width: f32
 	for id, i in glyph_ids {
 		adv := i < len(advances) ? advances[i] : 8
@@ -49,7 +49,7 @@ layout_test_make_line :: proc(
 
 @(private)
 layout_test_make_lines :: proc(lines: []Shaped_Line) -> []Shaped_Line {
-	out := make([]Shaped_Line, len(lines))
+	out := make([]Shaped_Line, len(lines), layout_frame_allocator())
 	for line, i in lines {
 		out[i] = line
 	}

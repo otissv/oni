@@ -47,11 +47,15 @@ dpi_sync :: proc() {
 		px_h = 0
 	}
 
+	prev_scale := state.dpi.scale
 	state.dpi.logical_w = log_w
 	state.dpi.logical_h = log_h
 	state.dpi.drawable_w = i32(px_w)
 	state.dpi.drawable_h = i32(px_h)
 	state.dpi.scale = log_w > 0 ? f32(px_w) / f32(log_w) : 1
+	if prev_scale != state.dpi.scale {
+		font_shape_cache_clear()
+	}
 	state.can_render = px_w > 0 && px_h > 0
 	gpu_update_projection(state.dpi)
 }

@@ -88,7 +88,23 @@ run_package() {
 	echo "    ${cmd[*]}"
 
 	# First pass: compile + run with Odin's tracking allocator (and optional ASan).
-	"${cmd[@]}"
+	# Odin's test runner may exit 0 even when tests fail — parse the summary.
+	local log
+	log="$(mktemp "${OUT_DIR}/run.XXXXXX.log")"
+	set +e
+	"${cmd[@]}" >"$log" 2>&1
+	local compile_status=$?
+	set -e
+	cat "$log"
+	if ((compile_status != 0)); then
+		rm -f "$log"
+		return "$compile_status"
+	fi
+	if grep -Eq 'tests? failed\.|[[:space:]][0-9]+ tests? failed' "$log"; then
+		rm -f "$log"
+		return 1
+	fi
+	rm -f "$log"
 
 	if $USE_VALGRIND; then
 		if ! command -v valgrind >/dev/null 2>&1; then
@@ -179,18 +195,57 @@ mkdir -p "$OUT_DIR"
 failed=()
 passed=()
 
-for pkg in "${PACKAGES[@]}"; do
-	if run_package "$pkg"; then
-		passed+=("$pkg")
+# Serial for ASAN/valgrind (exclusive process / cleaner diagnostics); otherwise run packages concurrently.
+if $USE_ASAN || $USE_VALGRIND || ((${#PACKAGES[@]} == 1)); then
+	for pkg in "${PACKAGES[@]}"; do
+		if run_package "$pkg"; then
+			passed+=("$pkg")
+			echo ""
+		else
+			status=$?
+			failed+=("$pkg")
+			echo ""
+			echo "FAILED: ${pkg} (exit ${status})"
+			echo ""
+		fi
+	done
+else
+	declare -A pids=()
+	declare -A statuses=()
+	log_dir="$(mktemp -d "${OUT_DIR}/logs.XXXXXX")"
+
+	for pkg in "${PACKAGES[@]}"; do
+		out_name="$(package_out_name "$pkg")"
+		log_file="${log_dir}/${out_name}.log"
+		(
+			if run_package "$pkg"; then
+				exit 0
+			else
+				exit $?
+			fi
+		) >"$log_file" 2>&1 &
+		pids["$pkg"]=$!
+	done
+
+	for pkg in "${PACKAGES[@]}"; do
+		pid="${pids[$pkg]}"
+		set +e
+		wait "$pid"
+		statuses["$pkg"]=$?
+		set -e
+		out_name="$(package_out_name "$pkg")"
+		cat "${log_dir}/${out_name}.log"
 		echo ""
-	else
-		status=$?
-		failed+=("$pkg")
-		echo ""
-		echo "FAILED: ${pkg} (exit ${status})"
-		echo ""
-	fi
-done
+		if ((statuses["$pkg"] == 0)); then
+			passed+=("$pkg")
+		else
+			failed+=("$pkg")
+			echo "FAILED: ${pkg} (exit ${statuses[$pkg]})"
+			echo ""
+		fi
+	done
+	rm -rf "$log_dir"
+fi
 
 echo "========================================"
 echo "Passed: ${#passed[@]}/${#PACKAGES[@]}"

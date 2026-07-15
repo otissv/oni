@@ -19,12 +19,7 @@ with_gpu_cpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -336,9 +331,9 @@ gpu_destroy_with_nil_gpu_skips_resource_release :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			state.gpu = nil
-			append(&state.gpu_state.batch.vertices, UI_Vertex{})
+			append(&batch_current().vertices, UI_Vertex{})
 			gpu_destroy()
-			testing.expect(t, state.gpu_state.batch.vertices == nil)
+			testing.expect(t, batch_current().vertices == nil)
 		},
 	)
 }
@@ -357,8 +352,8 @@ gpu_destroy_releases_pipeline_sampler_and_white_texture :: proc(t: ^testing.T) {
 			testing.expect(t, state.gpu_state.pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+			testing.expect(t, batch_current().index_buffer == nil)
 		},
 	)
 }
@@ -733,8 +728,8 @@ gpu_init_creates_pipeline_sampler_white_batch_and_projection :: proc(t: ^testing
 			testing.expect(t, state.gpu_state.pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer != nil)
-			testing.expect(t, state.gpu_state.batch.index_buffer != nil)
+			testing.expect(t, batch_current().vertex_buffer != nil)
+			testing.expect(t, batch_current().index_buffer != nil)
 			// Empty maps may compare equal to nil; prove assets_init ran via texture slot.
 			testing.expect_value(t, len(state.textures.records), 1)
 			want := linalg.matrix_ortho3d_f32(
@@ -777,7 +772,7 @@ gpu_init_pipeline_failure_leaves_state_clean :: proc(t: ^testing.T) {
 			testing.expect(t, state.gpu_state.pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
 		},
 	)
 }
@@ -792,7 +787,7 @@ gpu_init_sampler_failure_releases_pipeline :: proc(t: ^testing.T) {
 			testing.expect(t, state.gpu_state.pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
 		},
 	)
 }
@@ -807,7 +802,7 @@ gpu_init_white_texture_failure_releases_sampler_and_pipeline :: proc(t: ^testing
 			testing.expect(t, state.gpu_state.pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
-			testing.expect(t, state.gpu_state.batch.vertex_buffer == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
 		},
 	)
 }

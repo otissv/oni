@@ -22,7 +22,7 @@ table_widget_draw_chrome :: proc(
 	collapsed := o.table_layout_borders_collapsed_for_widget(layout_id, kind)
 
 	background: o.RGBA
-	if resolved_background, background_ok := o.to_rgba(config.background, frame_state, event);
+	if resolved_background, background_ok := o.style_background_rgba(config, frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
@@ -67,8 +67,8 @@ table_widget_draw_chrome :: proc(
 	}
 
 	border_color: o.RGBA
-	if resolved_border_color, border_color_ok := o.to_rgba(
-		config.border_color,
+	if resolved_border_color, border_color_ok := o.style_border_color_rgba(
+		config,
 		frame_state,
 		event,
 	); border_color_ok {

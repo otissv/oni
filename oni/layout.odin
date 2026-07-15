@@ -1,5 +1,8 @@
 package oni
 
+import "core:mem"
+
+LAYOUT_FRAME_ARENA_INITIAL :: 1 * mem.Megabyte
 
 /*
 Author text and optional wrap-width hint for leaf text measurement.
@@ -101,11 +104,13 @@ Layout_Node :: struct {
 Column widths and row heights computed for a table with TABLE_CELL alignment.
 */
 Layout_Table_Tracks :: struct {
-	rows:           [dynamic]int,
-	col_widths:     [dynamic]f32,
-	row_heights:    [dynamic]f32,
-	collapsed:      bool,
-	cell_positions: map[int]Table_Grid_Pos,
+	rows:                [dynamic]int,
+	col_widths:          [dynamic]f32,
+	row_heights:         [dynamic]f32,
+	col_count:           int,
+	collapsed:           bool,
+	cell_positions:      map[int]Table_Grid_Pos,
+	collapsed_borders:   map[int]Layout_Collapsed_Borders,
 }
 
 /*
@@ -125,13 +130,92 @@ Layout_State :: struct {
 	in_top_layer:         bool,
 	space_stack:          [dynamic]Draw_Space,
 	stack_counter:        u32,
+	frame_arena:          mem.Arena,
+	frame_backing:        [dynamic]byte,
+	// Artboard zoom captured once per layout frame / view change.
+	artboard_zoom:        f32,
+	artboard_zoom_valid:  bool,
+}
+
+/*
+True when a layout's frame arena has been initialized.
+*/
+layout_uses_frame_arena_in :: proc(layout: ^Layout_State) -> bool {
+	return layout != nil && layout.frame_arena.data != nil
+}
+
+/*
+True when the engine layout frame arena is active (arena-owned pointers must not be deleted).
+*/
+layout_uses_frame_arena :: proc() -> bool {
+	return state != nil && layout_uses_frame_arena_in(&state.ui.layout)
+}
+
+/*
+Allocator for frame-owned data on a specific layout state.
+*/
+layout_frame_allocator_for :: proc(layout: ^Layout_State) -> mem.Allocator {
+	if layout_uses_frame_arena_in(layout) {
+		return mem.arena_allocator(&layout.frame_arena)
+	}
+	return context.allocator
+}
+
+/*
+Returns the layout frame arena allocator when active, otherwise context.allocator.
+
+Shaped text and other frame-owned layout memory should allocate through this.
+*/
+layout_frame_allocator :: proc() -> mem.Allocator {
+	if state == nil do return context.allocator
+	return layout_frame_allocator_for(&state.ui.layout)
+}
+
+@(private)
+layout_frame_arena_ensure :: proc(layout: ^Layout_State) {
+	if layout.frame_arena.data != nil do return
+	if len(layout.frame_backing) == 0 {
+		resize(&layout.frame_backing, LAYOUT_FRAME_ARENA_INITIAL)
+	}
+	mem.arena_init(&layout.frame_arena, layout.frame_backing[:])
+}
+
+@(private)
+layout_frame_arena_reset :: proc(layout: ^Layout_State) {
+	layout_frame_arena_ensure(layout)
+	used := layout.frame_arena.peak_used
+	backing_len := len(layout.frame_backing)
+	if used > 0 && used > backing_len * 3 / 4 {
+		new_cap := max(backing_len * 2, used * 2)
+		resize(&layout.frame_backing, new_cap)
+		mem.arena_init(&layout.frame_arena, layout.frame_backing[:])
+	} else {
+		mem.arena_free_all(&layout.frame_arena)
+	}
+}
+
+@(private)
+layout_frame_arena_destroy :: proc(layout: ^Layout_State) {
+	delete(layout.frame_backing)
+	layout.frame_backing = nil
+	layout.frame_arena = {}
 }
 
 @(private)
 layout_release_node_children :: proc(layout: ^Layout_State) {
+	arena := layout_uses_frame_arena_in(layout)
 	for &node in layout.nodes {
-		delete(node.child_indices)
-		layout_text_release(&node)
+		if !arena {
+			delete(node.child_indices)
+			if len(node.text.lines) > 0 {
+				font_destroy_shaped_lines(node.text.lines)
+			}
+			delete(node.text.line_origins)
+			delete(node.text.glyphs)
+			delete(node.text.decoration_strokes)
+		}
+		node.child_indices = {}
+		node.text = {}
 	}
 }
 
@@ -141,26 +225,51 @@ Clears all layout nodes, stacks, and id-to-node mappings.
 Called at the start of each UI frame.
 */
 layout_reset :: proc() {
-	for _, tracks in state.ui.layout.table_tracks {
-		delete(tracks.rows)
-		delete(tracks.col_widths)
-		delete(tracks.row_heights)
-		delete(tracks.cell_positions)
+	layout := &state.ui.layout
+	// Frame-arena memory is reclaimed below; nil pointers without delete.
+	clear(&layout.table_tracks)
+	layout_release_node_children(layout)
+	clear(&layout.nodes)
+	clear(&layout.node_stack)
+	clear(&layout.bounds_stack)
+	clear(&layout.space_markers)
+	clear(&layout.id_to_node)
+	clear(&layout.paint_list_screen)
+	clear(&layout.paint_list_artboard)
+	clear(&layout.top_layer_paint_list)
+	clear(&layout.space_stack)
+	layout.current_space = .SCREEN
+	layout.in_top_layer = false
+	layout.stack_counter = 0
+	layout.artboard_zoom_valid = false
+	layout_frame_arena_reset(layout)
+}
+
+/*
+Returns effective artboard zoom for the current layout frame.
+
+Cached for the layout pass; invalidated in layout_reset and when the view zoom
+changes via layout_invalidate_artboard_zoom.
+*/
+layout_artboard_zoom :: proc() -> f32 {
+	if state == nil do return VIEW_ZOOM_DEFAULT
+	layout := &state.ui.layout
+	if layout.artboard_zoom_valid {
+		return layout.artboard_zoom
 	}
-	clear(&state.ui.layout.table_tracks)
-	layout_release_node_children(&state.ui.layout)
-	clear(&state.ui.layout.nodes)
-	clear(&state.ui.layout.node_stack)
-	clear(&state.ui.layout.bounds_stack)
-	clear(&state.ui.layout.space_markers)
-	clear(&state.ui.layout.id_to_node)
-	clear(&state.ui.layout.paint_list_screen)
-	clear(&state.ui.layout.paint_list_artboard)
-	clear(&state.ui.layout.top_layer_paint_list)
-	clear(&state.ui.layout.space_stack)
-	state.ui.layout.current_space = .SCREEN
-	state.ui.layout.in_top_layer = false
-	state.ui.layout.stack_counter = 0
+	zoom := view_effective_zoom()
+	if zoom <= 0 do zoom = 1
+	layout.artboard_zoom = zoom
+	layout.artboard_zoom_valid = true
+	return zoom
+}
+
+/*
+Invalidates the layout-pass artboard zoom cache after view transforms change.
+*/
+layout_invalidate_artboard_zoom :: proc() {
+	if state == nil do return
+	state.ui.layout.artboard_zoom_valid = false
 }
 
 /*
@@ -185,6 +294,7 @@ layout_shutdown :: proc() {
 	state.ui.layout.top_layer_paint_list = nil
 	delete(state.ui.layout.space_stack)
 	state.ui.layout.space_stack = nil
+	layout_frame_arena_destroy(&state.ui.layout)
 }
 
 /*
@@ -308,7 +418,7 @@ layout_wrap_build_lines :: proc(
 	gap: f32,
 	main_limit: f32,
 ) -> [dynamic]Layout_Wrap_Line {
-	lines: [dynamic]Layout_Wrap_Line
+	lines := make([dynamic]Layout_Wrap_Line, context.temp_allocator)
 	if len(sizes) == 0 do return lines
 
 	current: Layout_Wrap_Line
@@ -340,9 +450,7 @@ layout_wrap_build_lines :: proc(
 Measures a wrap container's natural size from child desired sizes.
 */
 layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, gap_cross: f32) -> Vec2 {
-	sizes: [dynamic]Vec2
-	defer delete(sizes)
-	resize(&sizes, len(node.child_indices))
+	sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
@@ -355,7 +463,6 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, g
 
 	main_limit := layout_wrap_main_limit_from_config(node, is_horizontal)
 	lines := layout_wrap_build_lines(sizes[:], is_horizontal, gap_main, main_limit)
-	defer delete(lines)
 
 	main_natural: f32
 	cross_sum: f32
@@ -463,15 +570,19 @@ layout_node_has_text :: proc(node: ^Layout_Node) -> bool {
 
 /*
 Frees shaped lines, origins, glyph quads, and decoration strokes owned by a layout node.
+
+When the layout frame arena is active, memory is arena-owned and only pointers are cleared.
 */
 layout_text_release :: proc(node: ^Layout_Node) {
 	if node == nil do return
-	if len(node.text.lines) > 0 {
-		font_destroy_shaped_lines(node.text.lines)
+	if !layout_uses_frame_arena() {
+		if len(node.text.lines) > 0 {
+			font_destroy_shaped_lines(node.text.lines)
+		}
+		delete(node.text.line_origins)
+		delete(node.text.glyphs)
+		delete(node.text.decoration_strokes)
 	}
-	delete(node.text.line_origins)
-	delete(node.text.glyphs)
-	delete(node.text.decoration_strokes)
 	node.text = {}
 }
 
@@ -517,9 +628,11 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	direction := text_direction_kind(config.text_direction)
 	lines := font_shape_line_build(
 		face,
+		resolved_font.id,
 		node.measure.text,
 		shape_max_w,
 		letter_spacing,
+		0,
 		wrap,
 		direction,
 	)
@@ -547,8 +660,10 @@ Computes per-line draw origins relative to node.rect using text-align.
 layout_text_position_lines :: proc(node: ^Layout_Node) {
 	if len(node.text.lines) == 0 do return
 
-	delete(node.text.line_origins)
-	origins := make([]Vec2, len(node.text.lines))
+	if !layout_uses_frame_arena() {
+		delete(node.text.line_origins)
+	}
+	origins := make([]Vec2, len(node.text.lines), layout_frame_allocator())
 
 	face := font_face_from_handle(node.text.font)
 	lh := font_text_line_height(face, node.text.line_height, node.text.layout_scale)
@@ -578,7 +693,9 @@ layout_text_position_lines :: proc(node: ^Layout_Node) {
 Builds absolute glyph paint quads from shaped lines and line origins.
 */
 layout_text_position_glyphs :: proc(node: ^Layout_Node) {
-	delete(node.text.glyphs)
+	if !layout_uses_frame_arena() {
+		delete(node.text.glyphs)
+	}
 	node.text.glyphs = nil
 
 	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
@@ -588,7 +705,8 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 	face_id := node.text.font.id
 	scale := node.text.layout_scale
-	glyphs: [dynamic]Layout_Glyph_Paint
+	ascent_scaled := face.ascent * scale
+	glyphs := make([dynamic]Layout_Glyph_Paint, layout_frame_allocator())
 
 	for line, i in node.text.lines {
 		if len(line.glyphs) == 0 do continue
@@ -596,7 +714,7 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 		origin := node.text.line_origins[i]
 		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
-		baseline_y := snap_logical(pos.y + face.ascent * scale)
+		baseline_y := snap_logical(pos.y + ascent_scaled)
 		pen_x := pos.x
 		if line.direction == .RTL {
 			pen_x = pos.x + line.width * scale
@@ -635,10 +753,7 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 		}
 	}
 
-	if len(glyphs) == 0 {
-		delete(glyphs)
-		return
-	}
+	if len(glyphs) == 0 do return
 	node.text.glyphs = glyphs[:]
 }
 
@@ -697,7 +812,9 @@ layout_text_append_decoration_stroke :: proc(
 Builds absolute decoration stroke segments from text style and line origins.
 */
 layout_text_position_decorations :: proc(node: ^Layout_Node) {
-	delete(node.text.decoration_strokes)
+	if !layout_uses_frame_arena() {
+		delete(node.text.decoration_strokes)
+	}
 	node.text.decoration_strokes = nil
 
 	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
@@ -710,7 +827,10 @@ layout_text_position_decorations :: proc(node: ^Layout_Node) {
 	if face == nil do return
 
 	scale := node.text.layout_scale
-	strokes: [dynamic]Layout_Decoration_Stroke
+	ascent_scaled := face.ascent * scale
+	underline_pos_scaled := face.underline_position * scale
+	line_through_offset := (face.ascent * 0.35) * scale
+	strokes := make([dynamic]Layout_Decoration_Stroke, layout_frame_allocator())
 
 	for line, i in node.text.lines {
 		width := line.width * scale
@@ -718,17 +838,17 @@ layout_text_position_decorations :: proc(node: ^Layout_Node) {
 
 		origin := node.text.line_origins[i]
 		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
-		baseline_y := pos.y + face.ascent * scale
+		baseline_y := pos.y + ascent_scaled
 		thickness := max(face.underline_thickness * scale, 1)
 		x0 := pos.x
 		x1 := pos.x + width
 
 		if .UNDERLINE in lines {
-			y := baseline_y - face.underline_position * scale
+			y := baseline_y - underline_pos_scaled
 			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
 		}
 		if .LINE_THROUGH in lines {
-			y := baseline_y - (face.ascent * 0.35) * scale
+			y := baseline_y - line_through_offset
 			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
 		}
 		if .OVERLINE in lines {
@@ -737,10 +857,7 @@ layout_text_position_decorations :: proc(node: ^Layout_Node) {
 		}
 	}
 
-	if len(strokes) == 0 {
-		delete(strokes)
-		return
-	}
+	if len(strokes) == 0 do return
 	node.text.decoration_strokes = strokes[:]
 }
 
@@ -860,6 +977,8 @@ Measures a leaf node's size from text or explicit dimensions.
 layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	config := node.config
 	size: Vec2
+	resolved_w := length_resolve(node.config.width, 0)
+	resolved_h := length_resolve(node.config.height, 0)
 
 	if layout_node_has_text(node) {
 		available_w := ui_style_current().content_w
@@ -867,8 +986,8 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 		layout_text_build(node, wrap_w)
 		size = node.text.size
 	} else {
-		width := length_resolve(node.config.width, 0)
-		height := length_resolve(node.config.height, 0)
+		width := resolved_w
+		height := resolved_h
 		if width <= 0 do width = node.desired.x
 		if height <= 0 do height = node.desired.y
 		if width <= 0 do width = config.min_w
@@ -880,13 +999,13 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	}
 
 	if length_is_definite(node.config.width) {
-		if width := length_resolve(node.config.width, 0); width > 0 {
-			size.x = layout_clamp_axis(width, config.min_w, config.max_w)
+		if resolved_w > 0 {
+			size.x = layout_clamp_axis(resolved_w, config.min_w, config.max_w)
 		}
 	}
 	if length_is_definite(node.config.height) {
-		if height := length_resolve(node.config.height, 0); height > 0 {
-			size.y = layout_clamp_axis(height, config.min_h, config.max_h)
+		if resolved_h > 0 {
+			size.y = layout_clamp_axis(resolved_h, config.min_h, config.max_h)
 		}
 	}
 
@@ -911,10 +1030,8 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 			return layout_wrap_measure(node, info.is_horizontal, gap_main, gap_cross)
 		}
 
-		child_sizes: [dynamic]Vec2
-		child_nodes: [dynamic]^Layout_Node
-		defer delete(child_sizes)
-		defer delete(child_nodes)
+		child_sizes := make([dynamic]Vec2, context.temp_allocator)
+		child_nodes := make([dynamic]^Layout_Node, context.temp_allocator)
 
 		for child_index in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
@@ -928,12 +1045,10 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 
 		main_sum: f32
 		cross_max: f32
-		sized_count := 0
 		for child, i in child_nodes {
 			child_main := info.is_horizontal ? child.config.width : child.config.height
 			if child.config.flex > 0 && !length_is_definite(child_main) do continue
 
-			sized_count += 1
 			if info.is_horizontal {
 				main_sum += child_sizes[i].x
 				cross_max = max(cross_max, child_sizes[i].y)
@@ -946,7 +1061,6 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 		if len(child_nodes) > 1 {
 			main_sum += gap_main * f32(len(child_nodes) - 1)
 		}
-		_ = sized_count
 
 		inset_w := padding.l + padding.r + border.l + border.r
 		inset_h := padding.t + padding.b + border.t + border.b
@@ -1016,14 +1130,15 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	}
 
 	node := Layout_Node {
-		ui_id        = ui_id,
-		kind         = config.kind,
-		config       = style,
-		padding      = padding,
-		border       = border,
-		parent       = parent_index,
-		in_flex_flow = layout_position_in_flex_flow(style.position),
-		space        = state.ui.layout.current_space,
+		ui_id         = ui_id,
+		kind          = config.kind,
+		config        = style,
+		padding       = padding,
+		border        = border,
+		parent        = parent_index,
+		child_indices = make([dynamic]int, layout_frame_allocator()),
+		in_flex_flow  = layout_position_in_flex_flow(style.position),
+		space         = state.ui.layout.current_space,
 	}
 	append(&state.ui.layout.nodes, node)
 	node_index := len(state.ui.layout.nodes) - 1
@@ -1291,9 +1406,8 @@ layout_table_cell_intrinsic_axis :: proc(cell: ^Layout_Node, horizontal: bool) -
 Collects TABLE_ROW node indices under a table in document order.
 */
 layout_table_collect_rows_in :: proc(layout: ^Layout_State, table_index: int) -> [dynamic]int {
-	rows: [dynamic]int
-	stack: [dynamic]int
-	defer delete(stack)
+	rows := make([dynamic]int, layout_frame_allocator_for(layout))
+	stack := make([dynamic]int, context.temp_allocator)
 
 	table := &layout.nodes[table_index]
 	for i := len(table.child_indices) - 1; i >= 0; i -= 1 {
@@ -1335,10 +1449,7 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 	if table.kind != .TABLE do return
 
 	rows := layout_table_collect_rows_in(layout, table_index)
-	if len(rows) == 0 {
-		delete(rows)
-		return
-	}
+	if len(rows) == 0 do return
 
 	uses_x := false
 	uses_y := false
@@ -1347,10 +1458,7 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 		uses_x ||= layout_justify_uses_TABLE_CELL_x(row.config.justify)
 		uses_y ||= layout_justify_uses_TABLE_CELL_y(row.config.justify)
 	}
-	if !uses_x && !uses_y {
-		delete(rows)
-		return
-	}
+	if !uses_x && !uses_y do return
 
 	col_count := 0
 	for row_index in rows {
@@ -1358,10 +1466,9 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 		col_count = max(col_count, len(row.child_indices))
 	}
 
-	col_widths: [dynamic]f32
-	row_heights: [dynamic]f32
-	resize(&col_widths, col_count)
-	resize(&row_heights, len(rows))
+	allocator := layout_frame_allocator_for(layout)
+	col_widths := make([dynamic]f32, col_count, allocator)
+	row_heights := make([dynamic]f32, len(rows), allocator)
 
 	if uses_x {
 		for col in 0 ..< col_count {
@@ -1392,19 +1499,13 @@ layout_table_prepare_in :: proc(layout: ^Layout_State, table_index: int) {
 		}
 	}
 
-	if existing, ok := &layout.table_tracks[table_index]; ok {
-		delete(existing.rows)
-		delete(existing.col_widths)
-		delete(existing.row_heights)
-		delete(existing.cell_positions)
-	}
-
 	layout.table_tracks[table_index] = Layout_Table_Tracks {
 		rows           = rows,
 		col_widths     = col_widths,
 		row_heights    = row_heights,
+		col_count      = col_count,
 		collapsed      = table_gaps_are_collapsed(table.config.gap_x, table.config.gap_y),
-		cell_positions = make(map[int]Table_Grid_Pos),
+		cell_positions = make(map[int]Table_Grid_Pos, allocator),
 	}
 }
 
@@ -1614,8 +1715,7 @@ layout_apply_content_align_sizes_indices :: proc(
 	if len(indices) == 0 do return
 
 	if align, ok := justify_align_from_x(justify.x); ok && justify_align_is_content(align) {
-		sizes: [dynamic]f32
-		defer delete(sizes)
+		sizes := make([dynamic]f32, context.temp_allocator)
 		for idx in indices {
 			append(&sizes, child_sizes[idx].x)
 		}
@@ -1636,8 +1736,7 @@ layout_apply_content_align_sizes_indices :: proc(
 	}
 
 	if align, ok := justify_align_from_y(justify.y); ok && justify_align_is_content(align) {
-		sizes: [dynamic]f32
-		defer delete(sizes)
+		sizes := make([dynamic]f32, context.temp_allocator)
 		for idx in indices {
 			append(&sizes, child_sizes[idx].y)
 		}
@@ -1666,9 +1765,7 @@ layout_apply_content_align_sizes :: proc(
 	children: []^Layout_Node,
 	child_sizes: []Vec2,
 ) {
-	indices: [dynamic]int
-	defer delete(indices)
-	resize(&indices, len(children))
+	indices := make([dynamic]int, len(children), context.temp_allocator)
 	for i in 0 ..< len(children) {
 		indices[i] = i
 	}
@@ -1698,7 +1795,7 @@ layout_space_positions :: proc(
 	sizes: []f32,
 	gap: f32,
 ) -> [dynamic]f32 {
-	positions: [dynamic]f32
+	positions := make([dynamic]f32, context.temp_allocator)
 	count := len(sizes)
 	if count == 0 do return positions
 
@@ -1814,9 +1911,7 @@ layout_position_children_wrap :: proc(
 	cross_available := is_horizontal ? content.h : content.w
 	main_limit := main_available
 
-	child_sizes: [dynamic]Vec2
-	defer delete(child_sizes)
-	resize(&child_sizes, len(node.child_indices))
+	child_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
@@ -1828,11 +1923,8 @@ layout_position_children_wrap :: proc(
 	}
 
 	lines := layout_wrap_build_lines(child_sizes[:], is_horizontal, gap_main, main_limit)
-	defer delete(lines)
 
-	line_cross_sizes: [dynamic]f32
-	defer delete(line_cross_sizes)
-	resize(&line_cross_sizes, len(lines))
+	line_cross_sizes := make([dynamic]f32, len(lines), context.temp_allocator)
 
 	for line, line_index in lines {
 		line_main_available := main_limit > 0 ? main_limit : line.main_sum
@@ -1858,7 +1950,12 @@ layout_position_children_wrap :: proc(
 			child_index := node.child_indices[line.start + i]
 			child := &state.ui.layout.nodes[child_index]
 			child_justify := layout_merge_justify(justify, child.config.self)
-			main := layout_child_main_size(child, is_horizontal, flex_unit, line_main_available)
+			main: f32
+			if flex_unit == 0 {
+				main = layout_wrap_child_main(child_sizes[line.start + i], is_horizontal)
+			} else {
+				main = layout_child_main_size(child, is_horizontal, flex_unit, line_main_available)
+			}
 			cross := layout_child_cross_size(child, is_horizontal, 0, child_justify)
 			size := is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 			layout_apply_definite_size(child, content, &size)
@@ -1873,7 +1970,12 @@ layout_position_children_wrap :: proc(
 			child_index := node.child_indices[size_index]
 			child := &state.ui.layout.nodes[child_index]
 			child_justify := layout_merge_justify(justify, child.config.self)
-			main := layout_child_main_size(child, is_horizontal, flex_unit, line_main_available)
+			main: f32
+			if flex_unit == 0 {
+				main = layout_wrap_child_main(child_sizes[size_index], is_horizontal)
+			} else {
+				main = layout_child_main_size(child, is_horizontal, flex_unit, line_main_available)
+			}
 			cross := layout_child_cross_size(
 				child,
 				is_horizontal,
@@ -1884,10 +1986,8 @@ layout_position_children_wrap :: proc(
 			layout_apply_definite_size(child, content, &child_sizes[size_index])
 		}
 
-		line_indices: [dynamic]int
-		defer delete(line_indices)
-		line_children: [dynamic]^Layout_Node
-		defer delete(line_children)
+		line_indices := make([dynamic]int, context.temp_allocator)
+		line_children := make([dynamic]^Layout_Node, context.temp_allocator)
 		for i in 0 ..< line.count {
 			size_index := line.start + i
 			append(&line_indices, size_index)
@@ -1927,8 +2027,7 @@ layout_position_children_wrap :: proc(
 		line_main_available := main_limit > 0 ? main_limit : line.main_sum
 		line_cross := line_cross_sizes[line_index]
 
-		in_flow: [dynamic]int
-		defer delete(in_flow)
+		in_flow := make([dynamic]int, context.temp_allocator)
 		for i in 0 ..< line.count {
 			child := &state.ui.layout.nodes[node.child_indices[line.start + i]]
 			if layout_child_in_main_flow(child, is_horizontal) {
@@ -1937,10 +2036,8 @@ layout_position_children_wrap :: proc(
 		}
 
 		main_positions: [dynamic]f32
-		defer delete(main_positions)
 		if main_space && len(in_flow) > 0 {
-			main_sizes: [dynamic]f32
-			defer delete(main_sizes)
+			main_sizes := make([dynamic]f32, context.temp_allocator)
 			for idx in in_flow {
 				append(&main_sizes, layout_wrap_child_main(child_sizes[idx], is_horizontal))
 			}
@@ -2089,6 +2186,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	info := layout_direction_info(direction)
 	if info.is_wrap {
 		layout_position_children_wrap(node, content, info)
+		layout_wrap_apply_auto_cross_size(node, info.is_horizontal)
 		return
 	}
 
@@ -2103,9 +2201,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	fixed_total: f32
 	in_flow_count := 0
 
-	child_sizes: [dynamic]Vec2
-	defer delete(child_sizes)
-	resize(&child_sizes, len(node.child_indices))
+	child_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
@@ -2163,16 +2259,13 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
 
-	child_nodes: [dynamic]^Layout_Node
-	defer delete(child_nodes)
-	resize(&child_nodes, len(node.child_indices))
+	child_nodes := make([dynamic]^Layout_Node, len(node.child_indices), context.temp_allocator)
 	for child_index, i in node.child_indices {
 		child_nodes[i] = &state.ui.layout.nodes[child_index]
 	}
 	layout_apply_content_align_sizes(justify, child_nodes[:], child_sizes[:])
 
-	in_flow: [dynamic]int
-	defer delete(in_flow)
+	in_flow := make([dynamic]int, context.temp_allocator)
 	for child_index, i in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
 		if layout_child_in_main_flow(child, is_horizontal) {
@@ -2187,10 +2280,8 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	cross_space := cross_align_ok && justify_align_is_space(cross_align)
 
 	main_positions: [dynamic]f32
-	defer delete(main_positions)
 	if main_space && len(in_flow) > 0 {
-		main_sizes: [dynamic]f32
-		defer delete(main_sizes)
+		main_sizes := make([dynamic]f32, context.temp_allocator)
 		for idx in in_flow {
 			size := child_sizes[idx]
 			append(&main_sizes, is_horizontal ? size.x : size.y)
@@ -2199,10 +2290,8 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	}
 
 	cross_positions: [dynamic]f32
-	defer delete(cross_positions)
 	if cross_space && len(in_flow) > 0 {
-		cross_sizes: [dynamic]f32
-		defer delete(cross_sizes)
+		cross_sizes := make([dynamic]f32, context.temp_allocator)
 		for idx in in_flow {
 			size := child_sizes[idx]
 			append(&cross_sizes, is_horizontal ? size.y : size.x)
@@ -2359,12 +2448,6 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 
 	if len(node.child_indices) > 0 {
 		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))
-		if layout_direction_is_wrap(node.config.direction) {
-			layout_wrap_apply_auto_cross_size(
-				node,
-				layout_direction_info(node.config.direction).is_horizontal,
-			)
-		}
 	}
 }
 
@@ -2383,8 +2466,7 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 	logical_h := f32(state.dpi.logical_h)
 
 	if space == .ARTBOARD {
-		zoom := view_effective_zoom()
-		if zoom <= 0 do zoom = 1
+		zoom := layout_artboard_zoom()
 		return {0, 0, logical_w / zoom, logical_h / zoom}
 	}
 

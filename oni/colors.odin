@@ -113,3 +113,91 @@ color_to_f32 :: proc(c: Colors) -> [4]f32 {
 
 	return rgba_to_f32(rgba)
 }
+
+colors_as_concrete_rgba :: proc(c: Colors) -> (rgba: RGBA, ok: bool) {
+	#partial switch v in c {
+	case RGBA:
+		return v, true
+	case Color:
+		if v == .INVALID || v == .INHERIT do return {}, false
+		return css_color_to_rgba(v), true
+	case Hex:
+		return to_rgba_color(v), true
+	case HSLA:
+		return to_rgba_color(v), true
+	case HWBA:
+		return to_rgba_color(v), true
+	case LCHA:
+		return to_rgba_color(v), true
+	case OKLCHA:
+		return to_rgba_color(v), true
+	}
+	return {}, false
+}
+
+/*
+Fills cached RGBA fields for concrete colors already fixed during resolve.
+
+Proc-valued and inherit colors are left unset so draw paths call to_rgba.
+*/
+style_cache_concrete_rgba :: proc(style: ^Resolved_Widget_Style) {
+	if style == nil do return
+	style.color_rgba, style.color_rgba_ok = colors_as_concrete_rgba(style.color)
+	style.background_rgba, style.background_rgba_ok = colors_as_concrete_rgba(style.background)
+	style.border_color_rgba, style.border_color_rgba_ok = colors_as_concrete_rgba(
+		style.border_color,
+	)
+	style.text_decoration_color_rgba, style.text_decoration_color_rgba_ok =
+		colors_as_concrete_rgba(style.text_decoration_color)
+}
+
+/*
+Returns cached RGBA when available, otherwise resolves via to_rgba.
+*/
+style_color_rgba :: proc(
+	config: Resolved_Widget_Config,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	RGBA,
+	bool,
+) {
+	if config.color_rgba_ok do return config.color_rgba, true
+	return to_rgba(config.color, state, event)
+}
+
+style_background_rgba :: proc(
+	config: Resolved_Widget_Config,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	RGBA,
+	bool,
+) {
+	if config.background_rgba_ok do return config.background_rgba, true
+	return to_rgba(config.background, state, event)
+}
+
+style_border_color_rgba :: proc(
+	config: Resolved_Widget_Config,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	RGBA,
+	bool,
+) {
+	if config.border_color_rgba_ok do return config.border_color_rgba, true
+	return to_rgba(config.border_color, state, event)
+}
+
+style_text_decoration_color_rgba :: proc(
+	config: Resolved_Widget_Config,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	RGBA,
+	bool,
+) {
+	if config.text_decoration_color_rgba_ok do return config.text_decoration_color_rgba, true
+	return to_rgba(config.text_decoration_color, state, event)
+}

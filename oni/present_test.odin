@@ -214,10 +214,10 @@ present_frame_clears_and_submits_empty_batch :: proc(t: ^testing.T) {
 			testing.expect(t, theme != nil)
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
-			testing.expect(t, state.gpu_state.batch.cmd == nil)
-			testing.expect(t, state.gpu_state.batch.pass == nil)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
+			testing.expect(t, batch_current().cmd == nil)
+			testing.expect(t, batch_current().pass == nil)
 		},
 	)
 }
@@ -230,9 +230,9 @@ present_frame_nil_draw_still_clears_and_submits :: proc(t: ^testing.T) {
 			present_test_draw_calls = 0
 			present_frame(nil)
 			testing.expect_value(t, present_test_draw_calls, 0)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect(t, state.gpu_state.batch.cmd == nil)
-			testing.expect(t, state.gpu_state.batch.pass == nil)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect(t, batch_current().cmd == nil)
+			testing.expect(t, batch_current().pass == nil)
 		},
 	)
 }
@@ -244,9 +244,9 @@ present_frame_uploads_geometry_and_resets_batch :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.segments), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
+			testing.expect_value(t, len(batch_current().segments), 0)
 		},
 	)
 }
@@ -256,10 +256,13 @@ present_frame_two_frames_in_a_row :: proc(t: ^testing.T) {
 	with_present_env(
 		t,
 		proc(t: ^testing.T) {
+			testing.expect_value(t, state.gpu_state.batch_index, 0)
 			present_frame(present_test_quad_draw)
+			testing.expect_value(t, state.gpu_state.batch_index, 1)
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 2)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, state.gpu_state.batch_index, 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -269,25 +272,28 @@ present_frame_two_frames_in_a_row :: proc(t: ^testing.T) {
 // ---------------------------------------------------------------------------
 
 @(test)
-present_frame_acquire_cmd_failure_skips_draw :: proc(t: ^testing.T) {
+present_frame_acquire_cmd_failure_cancels_and_resets_batch :: proc(t: ^testing.T) {
 	with_present_env(
 		t,
 		proc(t: ^testing.T) {
 			test_hook_present_fail_acquire_cmd = true
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			// Draw runs before acquire; failure still resets the recorded batch.
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
 
 @(test)
-present_frame_swapchain_failure_cancels_and_skips_draw :: proc(t: ^testing.T) {
+present_frame_swapchain_failure_cancels_and_resets_batch :: proc(t: ^testing.T) {
 	with_present_env(
 		t,
 		proc(t: ^testing.T) {
 			test_hook_present_fail_swapchain = true
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -300,19 +306,21 @@ present_frame_swapchain_failure_logs_cancel_failure :: proc(t: ^testing.T) {
 			test_hook_present_fail_swapchain = true
 			test_hook_present_fail_cancel = true
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
 
 @(test)
-present_frame_nil_swapchain_cancels_and_skips_draw :: proc(t: ^testing.T) {
+present_frame_nil_swapchain_cancels_and_resets_batch :: proc(t: ^testing.T) {
 	with_present_env(
 		t,
 		proc(t: ^testing.T) {
 			test_hook_present_nil_swapchain = true
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -325,7 +333,8 @@ present_frame_nil_swapchain_logs_cancel_failure :: proc(t: ^testing.T) {
 			test_hook_present_nil_swapchain = true
 			test_hook_present_fail_cancel = true
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -338,8 +347,8 @@ present_frame_batch_upload_failure_still_clears_and_resets :: proc(t: ^testing.T
 			test_hook_batch_upload_fail_transfer = true
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
 		},
 	)
 }
@@ -353,7 +362,7 @@ present_frame_batch_upload_failure_logs_submit_failure :: proc(t: ^testing.T) {
 			test_hook_present_fail_submit = true
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -366,9 +375,9 @@ present_frame_render_pass_failure_submits_and_resets :: proc(t: ^testing.T) {
 			test_hook_present_fail_render_pass = true
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect(t, state.gpu_state.batch.cmd == nil)
-			testing.expect(t, state.gpu_state.batch.pass == nil)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect(t, batch_current().cmd == nil)
+			testing.expect(t, batch_current().pass == nil)
 		},
 	)
 }
@@ -394,8 +403,8 @@ present_frame_submit_failure_still_resets_batch :: proc(t: ^testing.T) {
 			test_hook_present_fail_submit = true
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
-			testing.expect_value(t, len(state.gpu_state.batch.indices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
+			testing.expect_value(t, len(batch_current().indices), 0)
 		},
 	)
 }
@@ -408,10 +417,10 @@ present_frame_vertices_only_skips_failed_upload_path :: proc(t: ^testing.T) {
 			// draw adds verts without indices via direct append — upload returns true
 			present_frame(proc() {
 				present_test_draw_calls += 1
-				append(&state.gpu_state.batch.vertices, UI_Vertex{})
+				append(&batch_current().vertices, UI_Vertex{})
 			})
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -443,7 +452,9 @@ present_frame_real_swapchain_acquire_fails_when_window_unclaimed :: proc(t: ^tes
 
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			// Draw already ran; present path cancels/resets when Wait fails.
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -460,7 +471,8 @@ present_frame_real_cancel_after_unclaimed_acquire_failure :: proc(t: ^testing.T)
 			test_hook_present_fail_cancel = true
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }
@@ -472,13 +484,13 @@ present_frame_real_submit_after_unclaimed_then_reclaim_roundtrip :: proc(t: ^tes
 		proc(t: ^testing.T) {
 			sdl.ReleaseWindowFromGPUDevice(state.gpu, state.window)
 			present_frame(present_test_noop_draw)
-			testing.expect_value(t, present_test_draw_calls, 0)
+			testing.expect_value(t, present_test_draw_calls, 1)
 
 			testing.expect(t, present_test_reclaim_window(t))
 			present_test_draw_calls = 0
 			present_frame(present_test_quad_draw)
 			testing.expect_value(t, present_test_draw_calls, 1)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }

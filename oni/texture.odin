@@ -36,11 +36,25 @@ Atlas_State :: struct {
 }
 
 /*
+One deferred GPU texture upload: copies a sub-rect from a CPU surface into a GPU texture.
+
+`surface` is borrowed and must remain valid until `texture_uploads_flush`.
+Atlas glyph packs point at the shared atlas CPU surface with matching src/dst offsets.
+*/
+Pending_Upload :: struct {
+	texture:                    ^sdl.GPUTexture,
+	surface:                    ^sdl.Surface,
+	dst_x, dst_y, dst_w, dst_h: i32,
+	src_x, src_y:               i32,
+}
+
+/*
 All texture records plus the shared glyph/image atlas state.
 */
 Texture_State :: struct {
-	records: [dynamic]Texture_Record,
-	atlas:   Atlas_State,
+	records:         [dynamic]Texture_Record,
+	atlas:           Atlas_State,
+	pending_uploads: [dynamic]Pending_Upload,
 }
 
 /*
@@ -65,6 +79,10 @@ Also shuts down the atlas and clears the records array.
 texture_shutdown :: proc() {
 	texture_atlas_shutdown()
 
+	clear(&state.textures.pending_uploads)
+	delete(state.textures.pending_uploads)
+	state.textures.pending_uploads = nil
+
 	for entry, i in state.textures.records {
 		if i > 0 && entry.gpu != nil && state.gpu != nil {
 			sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
@@ -87,6 +105,9 @@ Releases GPU textures for all records while keeping CPU surfaces intact.
 Used before device teardown or hot reload so surfaces can be re-uploaded later.
 */
 texture_release_gpu :: proc() {
+	// Drop pending uploads first — they hold pointers to GPU textures about to be released.
+	clear(&state.textures.pending_uploads)
+
 	if state.gpu == nil do return
 
 	for &entry in state.textures.records {
@@ -101,15 +122,18 @@ texture_release_gpu :: proc() {
 Re-uploads every record surface to the GPU and rebuilds the atlas texture.
 
 Call after the GPU device is recreated, such as during hot reload.
+Queues all record uploads and submits them in one flush before the atlas rebuild pass.
 */
 texture_reload_gpu :: proc() {
 	if state.gpu == nil do return
 
 	for &entry in state.textures.records[1:] {
 		if entry.surface != nil {
-			texture_upload_record(&entry) or_continue
+			texture_upload_record(&entry, true) or_continue
 		}
 	}
+	// Flush before atlas rebuild so pending refs stay valid (rebuild recreates the GPU texture).
+	_ = texture_uploads_flush(state.gpu)
 
 	if state.textures.atlas.texture_id != INVALID_ASSET_ID {
 		texture_atlas_rebuild_gpu()
@@ -185,8 +209,10 @@ surface_row_to_gpu_rgba :: proc(dst, src: []u8, pixels: int) {
 Creates or replaces the GPU texture for a single texture record from its surface.
 
 Releases any existing GPU texture on the record before uploading.
+When `deferred` is true, the pixel copy is queued for `texture_uploads_flush`
+instead of submitting immediately.
 */
-texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
+texture_upload_record :: proc(entry: ^Texture_Record, deferred := false) -> bool {
 	if state.gpu == nil || entry.surface == nil do return false
 
 	w := entry.surface.w
@@ -215,7 +241,13 @@ texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 		return false
 	}
 
-	if !texture_upload_surface(state.gpu, texture, entry.surface, 0, 0, w, h) {
+	ok: bool
+	if deferred {
+		ok = texture_upload_surface_deferred(state.gpu, texture, entry.surface, 0, 0, w, h)
+	} else {
+		ok = texture_upload_surface(state.gpu, texture, entry.surface, 0, 0, w, h)
+	}
+	if !ok {
 		sdl.ReleaseGPUTexture(state.gpu, texture)
 		return false
 	}
@@ -227,27 +259,33 @@ texture_upload_record :: proc(entry: ^Texture_Record) -> bool {
 }
 
 /*
-Uploads a sub-rectangle of a surface into a GPU texture via a transfer buffer.
-
-Converts the source to RGBA8888, swizzles to GPU byte order, and submits a copy pass.
+Resolves a surface to RGBA8888 for upload, returning whether the result is owned.
 */
-texture_upload_surface :: proc(
-	gpu: ^sdl.GPUDevice,
-	texture: ^sdl.GPUTexture,
-	surface: ^sdl.Surface,
-	dst_x, dst_y, dst_w, dst_h: i32,
-) -> bool {
-	if gpu == nil || texture == nil || surface == nil do return false
-	if dst_w <= 0 || dst_h <= 0 do return false
-
-	row_bytes := u32(dst_w * 4)
-	byte_size := row_bytes * u32(dst_h)
-	transfer := sdl.CreateGPUTransferBuffer(gpu, {usage = .UPLOAD, size = byte_size})
-	if transfer == nil {
-		log_errorf("SDL_CreateGPUTransferBuffer failed: %s", sdl.GetError())
-		return false
+@(private)
+texture_surface_as_rgba8888 :: proc(surface: ^sdl.Surface) -> (converted: ^sdl.Surface, owned: bool) {
+	if surface == nil do return nil, false
+	if surface.format == .RGBA8888 do return surface, false
+	converted = sdl.ConvertSurface(surface, .RGBA8888)
+	if converted == nil {
+		log_errorf("SDL_ConvertSurface failed: %s", sdl.GetError())
+		return nil, false
 	}
-	defer sdl.ReleaseGPUTransferBuffer(gpu, transfer)
+	return converted, converted != surface
+}
+
+/*
+Fills a mapped transfer buffer with a sub-rect of a surface in GPU R8G8B8A8 order.
+*/
+@(private)
+texture_fill_transfer_from_surface :: proc(
+	gpu: ^sdl.GPUDevice,
+	transfer: ^sdl.GPUTransferBuffer,
+	surface: ^sdl.Surface,
+	src_x, src_y, copy_w, copy_h: i32,
+) -> bool {
+	if gpu == nil || transfer == nil || surface == nil do return false
+	if copy_w <= 0 || copy_h <= 0 do return false
+	if src_x < 0 || src_y < 0 do return false
 
 	mapped := sdl.MapGPUTransferBuffer(gpu, transfer, false)
 	if mapped == nil {
@@ -255,28 +293,190 @@ texture_upload_surface :: proc(
 		return false
 	}
 
-	converted := sdl.ConvertSurface(surface, .RGBA8888)
+	converted, owned := texture_surface_as_rgba8888(surface)
 	if converted == nil {
-		log_errorf("SDL_ConvertSurface failed: %s", sdl.GetError())
 		sdl.UnmapGPUTransferBuffer(gpu, transfer)
 		return false
 	}
-	defer if converted != surface do sdl.DestroySurface(converted)
+	defer if owned do sdl.DestroySurface(converted)
 
+	row_bytes := u32(copy_w * 4)
 	src_pitch := u32(converted.pitch)
 	dst := cast([^]u8)mapped
 	src := cast([^]u8)converted.pixels
-	copy_h := min(dst_h, converted.h)
-	copy_w := min(dst_w, converted.w)
-	copy_row_bytes := u32(copy_w * 4)
 
-	for row in 0 ..< copy_h {
+	avail_w := converted.w - src_x
+	avail_h := converted.h - src_y
+	if avail_w <= 0 || avail_h <= 0 {
+		sdl.UnmapGPUTransferBuffer(gpu, transfer)
+		return false
+	}
+	use_w := min(copy_w, avail_w)
+	use_h := min(copy_h, avail_h)
+	use_row_bytes := u32(use_w * 4)
+
+	for row in 0 ..< use_h {
 		row_u := u32(row)
 		dst_row := dst[row_u * row_bytes:]
-		src_row := src[row_u * src_pitch:]
-		surface_row_to_gpu_rgba(dst_row[:copy_row_bytes], src_row[:copy_row_bytes], int(copy_w))
+		src_row := src[u32(src_y + row) * src_pitch + u32(src_x) * 4:]
+		surface_row_to_gpu_rgba(dst_row[:use_row_bytes], src_row[:use_row_bytes], int(use_w))
 	}
 	sdl.UnmapGPUTransferBuffer(gpu, transfer)
+	return true
+}
+
+/*
+Creates a transfer buffer sized for a w×h RGBA upload and fills it from a surface region.
+*/
+@(private)
+texture_create_filled_transfer :: proc(
+	gpu: ^sdl.GPUDevice,
+	surface: ^sdl.Surface,
+	src_x, src_y, w, h: i32,
+) -> ^sdl.GPUTransferBuffer {
+	if gpu == nil || surface == nil || w <= 0 || h <= 0 do return nil
+
+	row_bytes := u32(w * 4)
+	byte_size := row_bytes * u32(h)
+	transfer := sdl.CreateGPUTransferBuffer(gpu, {usage = .UPLOAD, size = byte_size})
+	if transfer == nil {
+		log_errorf("SDL_CreateGPUTransferBuffer failed: %s", sdl.GetError())
+		return nil
+	}
+	if !texture_fill_transfer_from_surface(gpu, transfer, surface, src_x, src_y, w, h) {
+		sdl.ReleaseGPUTransferBuffer(gpu, transfer)
+		return nil
+	}
+	return transfer
+}
+
+/*
+Queues a surface sub-rect for GPU upload without acquiring a command buffer.
+
+Call `texture_uploads_flush` to submit all pending uploads in one copy pass.
+*/
+texture_upload_surface_deferred :: proc(
+	gpu: ^sdl.GPUDevice,
+	texture: ^sdl.GPUTexture,
+	surface: ^sdl.Surface,
+	dst_x, dst_y, dst_w, dst_h: i32,
+	src_x: i32 = 0,
+	src_y: i32 = 0,
+) -> bool {
+	if gpu == nil || texture == nil || surface == nil do return false
+	if dst_w <= 0 || dst_h <= 0 do return false
+
+	append(
+		&state.textures.pending_uploads,
+		Pending_Upload {
+			texture = texture,
+			surface = surface,
+			dst_x = dst_x,
+			dst_y = dst_y,
+			dst_w = dst_w,
+			dst_h = dst_h,
+			src_x = src_x,
+			src_y = src_y,
+		},
+	)
+	return true
+}
+
+/*
+Submits all pending texture uploads in a single command buffer / copy pass.
+
+Clears the queue on success or failure. Transfers are always released.
+*/
+texture_uploads_flush :: proc(gpu: ^sdl.GPUDevice) -> bool {
+	uploads := state.textures.pending_uploads[:]
+	if len(uploads) == 0 do return true
+	defer clear(&state.textures.pending_uploads)
+
+	if gpu == nil do return false
+
+	transfers := make([dynamic]^sdl.GPUTransferBuffer, 0, len(uploads))
+	defer {
+		for t in transfers {
+			if t != nil do sdl.ReleaseGPUTransferBuffer(gpu, t)
+		}
+		delete(transfers)
+	}
+
+	for upload in uploads {
+		transfer := texture_create_filled_transfer(
+			gpu,
+			upload.surface,
+			upload.src_x,
+			upload.src_y,
+			upload.dst_w,
+			upload.dst_h,
+		)
+		if transfer == nil do return false
+		append(&transfers, transfer)
+	}
+
+	cmd := sdl.AcquireGPUCommandBuffer(gpu)
+	if cmd == nil {
+		log_errorf("SDL_AcquireGPUCommandBuffer failed: %s", sdl.GetError())
+		return false
+	}
+
+	copy_pass := sdl.BeginGPUCopyPass(cmd)
+	for i in 0 ..< len(uploads) {
+		upload := uploads[i]
+		sdl.UploadToGPUTexture(
+			copy_pass,
+			{
+				transfer_buffer = transfers[i],
+				offset = 0,
+				pixels_per_row = u32(upload.dst_w),
+				rows_per_layer = u32(upload.dst_h),
+			},
+			{
+				texture = upload.texture,
+				mip_level = 0,
+				layer = 0,
+				x = u32(upload.dst_x),
+				y = u32(upload.dst_y),
+				z = 0,
+				w = u32(upload.dst_w),
+				h = u32(upload.dst_h),
+				d = 1,
+			},
+			false,
+		)
+	}
+	sdl.EndGPUCopyPass(copy_pass)
+
+	if !sdl.SubmitGPUCommandBuffer(cmd) {
+		log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
+		return false
+	}
+
+	return true
+}
+
+/*
+Uploads a sub-rectangle of a surface into a GPU texture via a transfer buffer.
+
+Converts the source to RGBA8888, swizzles to GPU byte order, and submits a copy pass.
+Immediate path used by tests and non-deferred callers; prefers `texture_upload_surface_deferred`
++ flush for atlas packs and hot-reload batches.
+*/
+texture_upload_surface :: proc(
+	gpu: ^sdl.GPUDevice,
+	texture: ^sdl.GPUTexture,
+	surface: ^sdl.Surface,
+	dst_x, dst_y, dst_w, dst_h: i32,
+	src_x: i32 = 0,
+	src_y: i32 = 0,
+) -> bool {
+	if gpu == nil || texture == nil || surface == nil do return false
+	if dst_w <= 0 || dst_h <= 0 do return false
+
+	transfer := texture_create_filled_transfer(gpu, surface, src_x, src_y, dst_w, dst_h)
+	if transfer == nil do return false
+	defer sdl.ReleaseGPUTransferBuffer(gpu, transfer)
 
 	cmd := sdl.AcquireGPUCommandBuffer(gpu)
 	if cmd == nil {
@@ -476,7 +676,8 @@ texture_atlas_alloc :: proc(w, h: i32) -> (Atlas_Region, bool) {
 /*
 Uploads a surface into an allocated atlas region on both GPU and CPU backing.
 
-Also copies pixels into the atlas CPU surface so it can be rebuilt after reload.
+Copies pixels into the atlas CPU surface first, then queues a deferred GPU upload
+of that region from the shared atlas surface (flushed in present / reload).
 */
 texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> bool {
 	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return false
@@ -493,30 +694,41 @@ texture_atlas_upload :: proc(region: Atlas_Region, surface: ^sdl.Surface) -> boo
 	dst_w := i32(region.w)
 	dst_h := i32(region.h)
 
-	if !texture_upload_surface(state.gpu, entry.gpu, surface, dst_x, dst_y, dst_w, dst_h) {
-		return false
-	}
+	// Validate / convert before mutating the CPU atlas so bad formats fail cleanly.
+	converted, owned := texture_surface_as_rgba8888(surface)
+	if converted == nil do return false
+	defer if owned do sdl.DestroySurface(converted)
 
 	atlas_surface := entry.surface
 	if atlas_surface != nil {
-		converted := sdl.ConvertSurface(surface, .RGBA8888)
-		if converted != nil {
-			defer if converted != surface do sdl.DestroySurface(converted)
-			src_pitch := converted.pitch
-			dst_pitch := atlas_surface.pitch
-			src := cast([^]u8)converted.pixels
-			dst := cast([^]u8)atlas_surface.pixels
-			copy_w := min(dst_w, converted.w)
-			copy_h := min(dst_h, converted.h)
-			for row in 0 ..< copy_h {
-				src_off := row * src_pitch
-				dst_off := (dst_y + row) * dst_pitch + dst_x * 4
-				copy(dst[dst_off:dst_off + copy_w * 4], src[src_off:src_off + copy_w * 4])
-			}
+		src_pitch := converted.pitch
+		dst_pitch := atlas_surface.pitch
+		src := cast([^]u8)converted.pixels
+		dst := cast([^]u8)atlas_surface.pixels
+		copy_w := min(dst_w, converted.w)
+		copy_h := min(dst_h, converted.h)
+		for row in 0 ..< copy_h {
+			src_off := row * src_pitch
+			dst_off := (dst_y + row) * dst_pitch + dst_x * 4
+			copy(dst[dst_off:dst_off + copy_w * 4], src[src_off:src_off + copy_w * 4])
 		}
+
+		// GPU copy of the packed region from the long-lived atlas CPU surface.
+		return texture_upload_surface_deferred(
+			state.gpu,
+			entry.gpu,
+			atlas_surface,
+			dst_x,
+			dst_y,
+			dst_w,
+			dst_h,
+			dst_x,
+			dst_y,
+		)
 	}
 
-	return true
+	// No CPU atlas — upload the converted source immediately (tests / edge cases).
+	return texture_upload_surface(state.gpu, entry.gpu, converted, dst_x, dst_y, dst_w, dst_h)
 }
 
 /*

@@ -16,14 +16,24 @@ log_capture_counter: int
 @(private)
 log_test_explicit_loc: runtime.Source_Code_Location
 
-@(private)
-log_test_stderr_before: ^os.File
+/*
+Captures stderr for body under log_test_guard.
 
+All tests that swap os.stderr must go through this (or hold log_test_guard)
+so concurrent odin test workers do not race on the process-global handle.
+*/
 @(private)
 with_captured_stderr :: proc(t: ^testing.T, body: proc(t: ^testing.T)) -> string {
 	sync.mutex_lock(&log_test_guard)
 	defer sync.mutex_unlock(&log_test_guard)
+	return with_captured_stderr_locked(t, body)
+}
 
+/*
+Same as with_captured_stderr but requires log_test_guard already held.
+*/
+@(private)
+with_captured_stderr_locked :: proc(t: ^testing.T, body: proc(t: ^testing.T)) -> string {
 	_ = os.make_directory_all("build")
 	log_capture_counter += 1
 	path := fmt.tprintf("build/test_log_capture_%d.txt", log_capture_counter)
@@ -320,16 +330,20 @@ log_format_with_zero_args_is_literal :: proc(t: ^testing.T) {
 
 @(test)
 log_capture_restores_stderr :: proc(t: ^testing.T) {
-	log_test_stderr_before = os.stderr
-	out := with_captured_stderr(
+	// Snapshot before/after under the same lock as the stderr swap so parallel
+	// test workers cannot observe another capture's temporary handle.
+	sync.mutex_lock(&log_test_guard)
+	defer sync.mutex_unlock(&log_test_guard)
+
+	before := os.stderr
+	out := with_captured_stderr_locked(
 		t,
 		proc(t: ^testing.T) {
-			testing.expect(t, os.stderr != log_test_stderr_before)
 			log("temp")
 		},
 	)
 	defer delete(out)
-	testing.expect(t, os.stderr == log_test_stderr_before)
+	testing.expect(t, os.stderr == before)
 	testing.expect(t, strings.contains(out, "temp"))
 }
 

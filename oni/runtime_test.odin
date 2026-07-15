@@ -70,12 +70,7 @@ with_runtime_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_init := has_init_run_once
 	defer {
 		delete(test_state.input.text_input)
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -116,12 +111,7 @@ with_runtime_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_init := has_init_run_once
 	defer {
 		delete(test_state.input.text_input)
-		delete(test_state.gpu_state.batch.vertices)
-		delete(test_state.gpu_state.batch.indices)
-		delete(test_state.gpu_state.batch.segments)
-		delete(test_state.gpu_state.batch.clip_stack)
-		delete(test_state.gpu_state.batch.space_stack)
-		delete(test_state.gpu_state.batch.opacity_stack)
+		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -310,7 +300,7 @@ runtime_run_frame_nil_draw_still_completes :: proc(t: ^testing.T) {
 			testing.expect_value(t, runtime_test_init_calls, 1)
 			testing.expect_value(t, runtime_test_draw_calls, 0)
 			testing.expect(t, has_init_run_once)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), 0)
+			testing.expect_value(t, len(batch_current().vertices), 0)
 		},
 	)
 }

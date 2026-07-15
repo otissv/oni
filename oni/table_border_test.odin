@@ -239,7 +239,7 @@ table_borders_collapsed_for_widget_respects_gaps_and_caption :: proc(t: ^testing
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			table := layout_test_append_node(
@@ -327,8 +327,6 @@ table_collect_edge_candidates_includes_hierarchy :: proc(t: ^testing.T) {
 		't',
 		-1,
 		0,
-		{},
-		1,
 		&candidates,
 	)
 	testing.expect(t, len(candidates) >= 3)
@@ -343,7 +341,7 @@ table_collapsed_border_color_fallback :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			node := layout_test_append_node(
@@ -387,7 +385,7 @@ table_descendant_outer_radius_all_corners_and_non_table :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			table := layout_test_append_node(&state.ui.layout, -1, .TABLE)
@@ -530,8 +528,6 @@ table_collect_edge_candidates_internal_excludes_table_includes_neighbor :: proc(
 		'r',
 		right,
 		'l',
-		{row = 0, col = 0},
-		2,
 		&candidates,
 	)
 
@@ -815,7 +811,7 @@ table_descendant_outer_radius_tr_bl_zero_and_asymmetric :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			table := layout_test_append_node(&state.ui.layout, -1, .TABLE)
@@ -873,7 +869,7 @@ table_collapsed_border_color_transparent_and_oob_order :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			cfg: Resolved_Widget_Style
@@ -908,7 +904,7 @@ table_draw_border_strip_and_collapsed_cell_paths :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			cfg: Resolved_Widget_Style
@@ -916,18 +912,18 @@ table_draw_border_strip_and_collapsed_cell_paths :: proc(t: ^testing.T) {
 			node := layout_test_append_node(&state.ui.layout, -1, .TABLE_CELL, {}, {}, cfg)
 			frame, event := ui_test_frame_event()
 
-			before := len(state.gpu_state.batch.vertices)
+			before := len(batch_current().vertices)
 			table_draw_border_strip({}, {0, 0, 0, 255})
 			table_draw_border_strip({0, 0, 10, 2}, {0, 0, 0, 0})
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), before)
+			testing.expect_value(t, len(batch_current().vertices), before)
 
 			table_draw_border_strip({0, 0, 10, 2}, {0, 0, 0, 255})
-			testing.expect(t, len(state.gpu_state.batch.vertices) > before)
+			testing.expect(t, len(batch_current().vertices) > before)
 
 			inactive := Layout_Collapsed_Borders{}
-			before_inactive := len(state.gpu_state.batch.vertices)
+			before_inactive := len(batch_current().vertices)
 			table_draw_collapsed_cell({0, 0, 40, 20}, {255, 0, 0, 255}, inactive, {}, &frame, event)
-			testing.expect_value(t, len(state.gpu_state.batch.vertices), before_inactive)
+			testing.expect_value(t, len(batch_current().vertices), before_inactive)
 
 			side := Table_Border_Side{width = 2, source = .CELL, order = node}
 			collapsed := Layout_Collapsed_Borders {
@@ -935,7 +931,7 @@ table_draw_border_strip_and_collapsed_cell_paths :: proc(t: ^testing.T) {
 				borders = {t = side, b = side, l = side, r = side},
 				strips  = {{0, 0, 40, 2}, {0, 18, 40, 2}, {0, 0, 2, 20}, {38, 0, 2, 20}},
 			}
-			before_draw := len(state.gpu_state.batch.vertices)
+			before_draw := len(batch_current().vertices)
 			table_draw_collapsed_cell(
 				{0, 0, 40, 20},
 				{255, 0, 0, 128},
@@ -944,10 +940,10 @@ table_draw_border_strip_and_collapsed_cell_paths :: proc(t: ^testing.T) {
 				&frame,
 				event,
 			)
-			testing.expect(t, len(state.gpu_state.batch.vertices) > before_draw)
+			testing.expect(t, len(batch_current().vertices) > before_draw)
 
 			// Rounded path: fill+border quad plus straight-side strips.
-			before_round := len(state.gpu_state.batch.vertices)
+			before_round := len(batch_current().vertices)
 			table_draw_collapsed_cell(
 				{0, 0, 40, 20},
 				{0, 255, 0, 255},
@@ -956,7 +952,7 @@ table_draw_border_strip_and_collapsed_cell_paths :: proc(t: ^testing.T) {
 				&frame,
 				event,
 			)
-			testing.expect(t, len(state.gpu_state.batch.vertices) > before_round)
+			testing.expect(t, len(batch_current().vertices) > before_round)
 		},
 	)
 }
@@ -966,7 +962,7 @@ table_borders_collapsed_for_widget_gap_y_and_non_table :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&state.ui.layout)
 			defer layout_test_end(&state.ui.layout)
 
 			plain := layout_test_append_node(&state.ui.layout, -1, .RECT)

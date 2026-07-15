@@ -1,7 +1,9 @@
 package oni
 
 import "core:c"
+import "core:hash"
 import "core:math"
+import "core:mem"
 import "core:strings"
 
 /*
@@ -21,6 +23,30 @@ Shaped_Line :: struct {
 	glyphs:    []Shaped_Glyph,
 	width:     f32,
 	direction: Text_Direction_Kind,
+}
+
+/*
+Lookup key for the persistent shaped-text cache.
+
+`wrap_width` and spacing use exact f32 bit patterns so float equality is bit-exact.
+*/
+Font_Shape_Cache_Key :: struct {
+	face_id:             Asset_Id,
+	text_hash:           u32,
+	text_len:            int,
+	letter_spacing_bits: u32,
+	word_spacing_bits:   u32,
+	wrap_mode:           Text_Wrap_Kind,
+	wrap_width_bits:     u32,
+	direction:           Text_Direction_Kind,
+}
+
+/*
+Cache-owned shaped lines plus the source text for collision checks.
+*/
+Font_Shape_Cache_Entry :: struct {
+	text:  string,
+	lines: []Shaped_Line,
 }
 
 /*
@@ -84,10 +110,12 @@ Font_Family :: struct {
 Font subsystem: FreeType library, families, face instances, and glyph cache.
 */
 Font_State :: struct {
-	library:     FT_Library,
-	families:    [dynamic]Font_Family,
-	faces:       [dynamic]Font_Face,
-	glyph_cache: map[Font_Glyph_Key]Font_Glyph_Entry,
+	library:           FT_Library,
+	families:          [dynamic]Font_Family,
+	faces:             [dynamic]Font_Face,
+	glyph_cache:       map[Font_Glyph_Key]Font_Glyph_Entry,
+	shape_cache:       map[Font_Shape_Cache_Key]Font_Shape_Cache_Entry,
+	shape_cache_dpi:   f32,
 }
 
 /*
@@ -127,6 +155,7 @@ Safe to call during engine teardown after drawing has stopped.
 font_shutdown :: proc() {
 	font_destroy_faces()
 	font_destroy_families()
+	font_shape_cache_destroy()
 
 	if state.fonts.library != nil {
 		Done_FreeType(state.fonts.library)
@@ -560,6 +589,7 @@ font_destroy_faces :: proc() {
 		delete_key(&state.fonts.glyph_cache, key)
 	}
 	clear(&state.fonts.glyph_cache)
+	font_shape_cache_clear()
 }
 
 /*
@@ -662,7 +692,7 @@ font_shape :: proc(
 	positions := buffer_get_glyph_positions(buffer, &pos_len)
 	n := int(min(glyph_len, pos_len))
 
-	glyphs := make([]Shaped_Glyph, n)
+	glyphs := make([]Shaped_Glyph, n, layout_frame_allocator())
 	for i in 0 ..< n {
 		glyphs[i] = {
 			glyph_id  = u32(infos[i].codepoint),
@@ -742,7 +772,7 @@ font_make_shaped_line :: proc(
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
 ) -> Shaped_Line {
-	line_glyphs := make([]Shaped_Glyph, len(glyphs))
+	line_glyphs := make([]Shaped_Glyph, len(glyphs), layout_frame_allocator())
 	copy(line_glyphs, glyphs)
 	if letter_spacing != 0 && len(line_glyphs) > 1 {
 		for i in 0 ..< len(line_glyphs) - 1 {
@@ -763,16 +793,29 @@ NONE: single line (newlines omitted).
 NEWLINES: hard breaks only.
 BALANCE: soft-wrap at max_w, then rebalance line lengths.
 
-Returns owned Shaped_Line slices; free with font_destroy_shaped_lines.
+Results are cloned into the layout frame arena when active so callers share simple
+ownership with other layout frame data. Persistent copies live in the shape cache.
+When the frame arena is inactive, returned lines are heap-owned and must be freed
+with font_destroy_shaped_lines.
 */
 font_shape_line_build :: proc(
 	face: ^Font_Face,
+	face_id: Asset_Id,
 	text: string,
 	max_w: f32,
 	letter_spacing: f32,
+	word_spacing: f32,
 	wrap: Text_Wrap_Kind,
 	direction: Text_Direction_Kind,
 ) -> []Shaped_Line {
+	if face == nil || len(text) == 0 do return nil
+
+	font_shape_cache_ensure_dpi()
+	key := font_shape_cache_key(face_id, text, letter_spacing, word_spacing, wrap, max_w, direction)
+	if cached, ok := font_shape_cache_lookup(key, text); ok {
+		return font_clone_shaped_lines(cached, layout_frame_allocator())
+	}
+
 	shaped := font_shape(face, text, direction)
 	if len(shaped) == 0 do return nil
 
@@ -785,8 +828,130 @@ font_shape_line_build :: proc(
 	case .BALANCE:
 		result = font_shape_lines_balance(text, shaped, max_w, direction, letter_spacing)
 	}
-	delete(shaped)
+	if !layout_uses_frame_arena() {
+		delete(shaped)
+	}
+	if len(result) == 0 do return nil
+
+	font_shape_cache_insert(key, text, result)
 	return result
+}
+
+/*
+Deep-copies shaped lines into the given allocator.
+*/
+font_clone_shaped_lines :: proc(lines: []Shaped_Line, allocator: mem.Allocator) -> []Shaped_Line {
+	if len(lines) == 0 do return nil
+	out := make([]Shaped_Line, len(lines), allocator)
+	for line, i in lines {
+		glyphs := make([]Shaped_Glyph, len(line.glyphs), allocator)
+		copy(glyphs, line.glyphs)
+		out[i] = {
+			glyphs    = glyphs,
+			width     = line.width,
+			direction = line.direction,
+		}
+	}
+	return out
+}
+
+@(private)
+font_shape_cache_key :: proc(
+	face_id: Asset_Id,
+	text: string,
+	letter_spacing: f32,
+	word_spacing: f32,
+	wrap: Text_Wrap_Kind,
+	max_w: f32,
+	direction: Text_Direction_Kind,
+) -> Font_Shape_Cache_Key {
+	return Font_Shape_Cache_Key {
+		face_id = face_id,
+		text_hash = hash.crc32(transmute([]u8)text),
+		text_len = len(text),
+		letter_spacing_bits = transmute(u32)letter_spacing,
+		word_spacing_bits = transmute(u32)word_spacing,
+		wrap_mode = wrap,
+		wrap_width_bits = transmute(u32)max_w,
+		direction = direction,
+	}
+}
+
+@(private)
+font_shape_cache_ensure :: proc() {
+	if state == nil do return
+	if state.fonts.shape_cache == nil {
+		state.fonts.shape_cache = make(map[Font_Shape_Cache_Key]Font_Shape_Cache_Entry)
+	}
+}
+
+/*
+Drops all shape-cache entries. Safe under tracking allocator when every insert
+cloned its own text and line buffers.
+*/
+font_shape_cache_clear :: proc() {
+	if state == nil || state.fonts.shape_cache == nil do return
+	for _, entry in state.fonts.shape_cache {
+		delete(entry.text)
+		font_destroy_shaped_lines(entry.lines)
+	}
+	clear(&state.fonts.shape_cache)
+	state.fonts.shape_cache_dpi = 0
+}
+
+font_shape_cache_destroy :: proc() {
+	font_shape_cache_clear()
+	if state == nil || state.fonts.shape_cache == nil do return
+	delete(state.fonts.shape_cache)
+	state.fonts.shape_cache = nil
+}
+
+@(private)
+font_shape_cache_ensure_dpi :: proc() {
+	if state == nil do return
+	scale := state.dpi.scale
+	if state.fonts.shape_cache != nil && state.fonts.shape_cache_dpi != 0 && state.fonts.shape_cache_dpi != scale {
+		font_shape_cache_clear()
+	}
+	font_shape_cache_ensure()
+	state.fonts.shape_cache_dpi = scale
+}
+
+@(private)
+font_shape_cache_lookup :: proc(
+	key: Font_Shape_Cache_Key,
+	text: string,
+) -> (
+	[]Shaped_Line,
+	bool,
+) {
+	if state == nil || state.fonts.shape_cache == nil do return nil, false
+	entry, ok := state.fonts.shape_cache[key]
+	if !ok do return nil, false
+	if entry.text != text do return nil, false
+	return entry.lines, true
+}
+
+/*
+Inserts a general-allocator clone of lines into the shape cache.
+
+`source` may be frame-arena or heap owned; the cache always takes its own copy.
+*/
+@(private)
+font_shape_cache_insert :: proc(key: Font_Shape_Cache_Key, text: string, source: []Shaped_Line) {
+	if state == nil || len(source) == 0 do return
+	font_shape_cache_ensure()
+	if existing, ok := state.fonts.shape_cache[key]; ok {
+		delete(existing.text)
+		font_destroy_shaped_lines(existing.lines)
+		delete_key(&state.fonts.shape_cache, key)
+	}
+	cloned := font_clone_shaped_lines(source, context.allocator)
+	if len(cloned) == 0 do return
+	state.fonts.shape_cache[key] = Font_Shape_Cache_Entry {
+		text  = strings.clone(text),
+		lines = cloned,
+	}
 }
 
 /*
@@ -799,8 +964,7 @@ font_shape_lines_none :: proc(
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
 ) -> []Shaped_Line {
-	kept := make([dynamic]Shaped_Glyph)
-	defer delete(kept)
+	kept := make([dynamic]Shaped_Glyph, context.temp_allocator)
 
 	for glyph in shaped {
 		if font_is_newline_cluster(text, glyph.cluster) do continue
@@ -808,7 +972,7 @@ font_shape_lines_none :: proc(
 	}
 	if len(kept) == 0 do return nil
 
-	lines := make([]Shaped_Line, 1)
+	lines := make([]Shaped_Line, 1, layout_frame_allocator())
 	lines[0] = font_make_shaped_line(kept[:], direction, letter_spacing)
 	return lines
 }
@@ -823,7 +987,7 @@ font_shape_lines_newlines :: proc(
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
 ) -> []Shaped_Line {
-	lines := make([dynamic]Shaped_Line)
+	lines := make([dynamic]Shaped_Line, layout_frame_allocator())
 	line_start := 0
 
 	for i in 0 ..< len(shaped) {
@@ -844,6 +1008,9 @@ font_shape_lines_newlines :: proc(
 
 /*
 Soft-wraps at max_w with newline breaks, then balances line lengths when possible.
+
+Trial soft-wraps allocate from the layout frame arena when active so the binary
+search does not make/destroy heap repeatedly.
 */
 @(private)
 font_shape_lines_balance :: proc(
@@ -865,16 +1032,21 @@ font_shape_lines_balance :: proc(
 	hi := max_w
 	if lo >= hi do return lines
 
+	arena := layout_uses_frame_arena()
 	best := lines
 	for _ in 0 ..< 16 {
 		mid := (lo + hi) * 0.5
 		trial := font_shape_lines_soft_wrap(text, shaped, mid, direction, letter_spacing)
 		if len(trial) > target_count {
-			font_destroy_shaped_lines(trial)
+			if !arena {
+				font_destroy_shaped_lines(trial)
+			}
 			lo = mid
 			continue
 		}
-		font_destroy_shaped_lines(best)
+		if !arena {
+			font_destroy_shaped_lines(best)
+		}
 		best = trial
 		hi = mid
 	}
@@ -922,7 +1094,7 @@ font_shape_lines_soft_wrap :: proc(
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
 ) -> []Shaped_Line {
-	lines := make([dynamic]Shaped_Line)
+	lines := make([dynamic]Shaped_Line, layout_frame_allocator())
 	line_start := 0
 	line_width: f32 = 0
 	line_glyphs := 0

@@ -77,6 +77,7 @@ Button :: proc(props: Button_Props) {
 	}
 
 	event := widget_refresh_merged(props, &frame_state, button_theme_base)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
 	handlers := widget_lifecycle_handlers(props, Button_State)
@@ -128,7 +129,7 @@ Button :: proc(props: Button_Props) {
 		config,
 	)
 
-	event = widget_refresh_merged(props, &frame_state, button_theme_base)
+	event, _ = widget_refresh_merged_if_interaction_changed(props, &frame_state, button_theme_base, style_fp)
 	config = frame_state.config
 
 	if widget_can_interact(handlers, &frame_state) {
@@ -149,7 +150,7 @@ Button :: proc(props: Button_Props) {
 	}
 
 	background: o.RGBA
-	if resolved_background, background_ok := o.to_rgba(config.background, &frame_state, event);
+	if resolved_background, background_ok := o.style_background_rgba(config, &frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
@@ -161,8 +162,8 @@ Button :: proc(props: Button_Props) {
 	}
 
 	border_color: o.RGBA
-	if resolved_border_color, border_color_ok := o.to_rgba(
-		config.border_color,
+	if resolved_border_color, border_color_ok := o.style_border_color_rgba(
+		config,
 		&frame_state,
 		event,
 	); border_color_ok {

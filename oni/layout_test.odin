@@ -113,10 +113,26 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 
 @(private)
 layout_test_begin :: proc() -> Layout_State {
-	return Layout_State {
+	layout := Layout_State {
 		table_tracks = make(map[int]Layout_Table_Tracks),
 		id_to_node = make(map[UI_Id]int),
 	}
+	layout_frame_arena_ensure(&layout)
+	return layout
+}
+
+/*
+Ensures maps and the frame arena on an existing layout state (e.g. state.ui.layout).
+*/
+@(private)
+layout_test_prepare :: proc(layout: ^Layout_State) {
+	if layout.id_to_node == nil {
+		layout.id_to_node = make(map[UI_Id]int)
+	}
+	if layout.table_tracks == nil {
+		layout.table_tracks = make(map[int]Layout_Table_Tracks)
+	}
+	layout_frame_arena_ensure(layout)
 }
 
 @(private)
@@ -143,6 +159,7 @@ layout_test_append_node :: proc(
 			padding = padding,
 			border = border,
 			parent = parent,
+			child_indices = make([dynamic]int, layout_frame_allocator_for(layout)),
 		},
 	)
 	node_index := len(layout.nodes) - 1
@@ -165,11 +182,17 @@ layout_test_set_insets :: proc(
 
 @(private)
 layout_test_end :: proc(layout: ^Layout_State) {
-	for _, tracks in layout.table_tracks {
-		delete(tracks.rows)
-		delete(tracks.col_widths)
-		delete(tracks.row_heights)
-		delete(tracks.cell_positions)
+	if layout_uses_frame_arena_in(layout) {
+		clear(&layout.table_tracks)
+	} else {
+		for _, tracks in layout.table_tracks {
+			delete(tracks.rows)
+			delete(tracks.col_widths)
+			delete(tracks.row_heights)
+			delete(tracks.cell_positions)
+			delete(tracks.collapsed_borders)
+		}
+		clear(&layout.table_tracks)
 	}
 	delete(layout.table_tracks)
 	layout.table_tracks = nil
@@ -194,6 +217,7 @@ layout_test_end :: proc(layout: ^Layout_State) {
 	layout.space_stack = nil
 	delete(layout.id_to_node)
 	layout.id_to_node = nil
+	layout_frame_arena_destroy(layout)
 }
 
 @(test)
@@ -223,7 +247,6 @@ layout_table_collect_rows_preserves_table_order :: proc(t: ^testing.T) {
 	body_row := layout_test_append_node(&layout, body, .TABLE_ROW)
 
 	rows := layout_table_collect_rows_in(&layout, table)
-	defer delete(rows)
 
 	testing.expect_value(t, len(rows), 2)
 	testing.expect_value(t, rows[0], head_row)
@@ -415,9 +438,8 @@ layout_table_cell_y_only_keeps_cell_widths :: proc(t: ^testing.T) {
 layout_nested_table_solve_equalizes_heading_and_cell_widths :: proc(t: ^testing.T) {
 	test_state: State
 	with_test_global_state(&test_state, proc(test_state: ^State, t: ^testing.T) {
+			test_state.ui.layout = layout_test_begin()
 			defer layout_test_end(&test_state.ui.layout)
-
-			test_state.ui.layout.table_tracks = make(map[int]Layout_Table_Tracks)
 
 			layout := &test_state.ui.layout
 			root := layout_test_append_node(
@@ -903,9 +925,8 @@ table_descendant_outer_radius_matches_shared_corners :: proc(t: ^testing.T) {
 	test_state: State
 
 	with_test_global_state(&test_state, proc(test_state: ^State, t: ^testing.T) {
-			_ = layout_test_begin()
+			layout_test_prepare(&test_state.ui.layout)
 			defer layout_test_end(&test_state.ui.layout)
-			test_state.ui.layout.table_tracks = make(map[int]Layout_Table_Tracks)
 
 			table := layout_test_append_node(&test_state.ui.layout, -1, .TABLE)
 			head := layout_test_append_node(&test_state.ui.layout, table, .TABLE_HEAD)
