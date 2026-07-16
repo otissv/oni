@@ -190,6 +190,8 @@ Pointer_Events :: proc(
 
 Top_Layer :: Bool
 
+Accepts_Text_Input :: proc(value: bool = true) -> bool {return value}
+
 Right :: F32
 
 Bottom :: F32

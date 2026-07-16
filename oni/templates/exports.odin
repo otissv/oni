@@ -8,7 +8,8 @@ import "core:mem"
 App-local state kept alongside the oni engine in persistent memory.
 */
 Global_State :: struct {
-	theme: oni.Theme,
+	theme:          oni.Theme,
+	shortcuts_path: string,
 }
 
 /*
@@ -50,20 +51,31 @@ ensure_persistent :: proc() {
 
 /*
 Per-frame app update passed to oni.Run_Frame.
-
-Handles mouse-wheel zoom around the cursor in screen space.
 */
 app_tick :: proc(dt: f32) {
 	_ = dt
+}
 
-	if persistent.engine.input.mouse_wheel_y == 0 do return
-
-	mouse := oni.Input_Mouse_Screen()
-	factor := ZOOM_WHEEL_STEP
-	if persistent.engine.input.mouse_wheel_y < 0 {
-		factor = 1 / ZOOM_WHEEL_STEP
+register_shortcuts :: proc() {
+	oni.Shortcut_Set_Reload_Hook(rebind_app_shortcuts)
+	rebind_app_shortcuts()
+	path := persistent.app.shortcuts_path
+	if path == "" {
+		path = oni.SHORTCUT_DEFAULT_BINDINGS_PATH
 	}
-	oni.View_Zoom_By_Screen(mouse, factor)
+	_ = oni.Shortcut_Load_Bindings(path, true)
+}
+
+rebind_app_shortcuts :: proc() {
+	// Register app Shortcut_Register_Action handlers here.
+}
+
+save_shortcuts :: proc() {
+	path := persistent.app.shortcuts_path
+	if path == "" {
+		path = oni.SHORTCUT_DEFAULT_BINDINGS_PATH
+	}
+	_ = oni.Shortcut_Save_Bindings(path)
 }
 
 /*
@@ -119,6 +131,7 @@ app_init :: proc() {
 
 	if !oni.Init_Runtime(proc() -> bool {
 		persistent.app.theme = build_theme()
+		register_shortcuts()
 		return true
 	}) {
 		persistent.engine.running = false
@@ -158,6 +171,7 @@ Exported hot-reload entry point called when the host exits.
 app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
+	save_shortcuts()
 	oni.Shutdown()
 	free(persistent)
 	persistent = nil

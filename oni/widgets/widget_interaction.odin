@@ -105,9 +105,18 @@ widget_handle_interaction :: proc(
 	o.draw_set_stack_index(o.ui_layout_stack_index(layout_id))
 	frame_state.is_hovered = o.pointer_hits(layout_id, rect, config.space)
 	frame_state.is_pointer_target = o.pointer_is_target(layout_id)
-	frame_state.is_left_clicked = frame_state.is_hovered && o.w_ctx.left_mouse.pressed
-	frame_state.is_right_clicked = frame_state.is_hovered && o.w_ctx.right_mouse.pressed
-	frame_state.is_middle_clicked = frame_state.is_hovered && o.w_ctx.middle_mouse.pressed
+	frame_state.is_left_clicked =
+		frame_state.is_hovered &&
+		o.w_ctx.left_mouse.pressed &&
+		!o.shortcut_mouse_consumed(sdl.BUTTON_LEFT)
+	frame_state.is_right_clicked =
+		frame_state.is_hovered &&
+		o.w_ctx.right_mouse.pressed &&
+		!o.shortcut_mouse_consumed(sdl.BUTTON_RIGHT)
+	frame_state.is_middle_clicked =
+		frame_state.is_hovered &&
+		o.w_ctx.middle_mouse.pressed &&
+		!o.shortcut_mouse_consumed(sdl.BUTTON_MIDDLE)
 	frame_state.is_left_released = frame_state.is_hovered && o.w_ctx.left_mouse.released
 	frame_state.is_right_released = frame_state.is_hovered && o.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && o.w_ctx.left_mouse.down
@@ -159,7 +168,11 @@ widget_dispatch_events :: proc(
 		props.on_mouse_move(event)
 	}
 
-	if propagate && state.is_hovered && o.w_ctx.right_mouse.pressed && props.on_contextmenu != nil {
+	if propagate &&
+	   state.is_hovered &&
+	   o.w_ctx.right_mouse.pressed &&
+	   !o.shortcut_mouse_consumed(sdl.BUTTON_RIGHT) &&
+	   props.on_contextmenu != nil {
 		props.on_contextmenu(widget_event(state, mouse_button = sdl.BUTTON_RIGHT))
 	}
 
@@ -172,13 +185,13 @@ widget_dispatch_events :: proc(
 	}
 
 	if propagate && state.is_hovered && props.on_mouse_pressed != nil {
-		if o.w_ctx.left_mouse.pressed {
+		if o.w_ctx.left_mouse.pressed && !o.shortcut_mouse_consumed(sdl.BUTTON_LEFT) {
 			props.on_mouse_pressed(widget_event(state, mouse_button = sdl.BUTTON_LEFT))
 		}
-		if o.w_ctx.right_mouse.pressed {
+		if o.w_ctx.right_mouse.pressed && !o.shortcut_mouse_consumed(sdl.BUTTON_RIGHT) {
 			props.on_mouse_pressed(widget_event(state, mouse_button = sdl.BUTTON_RIGHT))
 		}
-		if o.w_ctx.middle_mouse.pressed {
+		if o.w_ctx.middle_mouse.pressed && !o.shortcut_mouse_consumed(sdl.BUTTON_MIDDLE) {
 			props.on_mouse_pressed(widget_event(state, mouse_button = sdl.BUTTON_MIDDLE))
 		}
 	}
@@ -219,10 +232,10 @@ widget_dispatch_events :: proc(
 		enter_key := o.w_ctx.keys[int(sdl.Scancode.RETURN)]
 		space_key := o.w_ctx.keys[int(sdl.Scancode.SPACE)]
 
-		if enter_key.pressed {
+		if enter_key.pressed && !o.shortcut_key_consumed(.RETURN) {
 			clicked = true
 			click_event.key = o.Scancode(sdl.Scancode.RETURN)
-		} else if space_key.pressed {
+		} else if space_key.pressed && !o.shortcut_key_consumed(.SPACE) {
 			clicked = true
 			click_event.key = o.Scancode(sdl.Scancode.SPACE)
 		}
@@ -237,6 +250,7 @@ widget_dispatch_events :: proc(
 
 	if state.is_focused {
 		for scancode in 0 ..< o.KEY_COUNT {
+			if o.shortcut_key_consumed(o.Scancode(scancode)) do continue
 			key_frame_state := o.w_ctx.keys[scancode]
 			key_event := widget_event(state, key = o.Scancode(scancode))
 

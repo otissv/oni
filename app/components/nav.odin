@@ -81,6 +81,18 @@ Nav :: proc() {
 					w.Text({config = {id = "Components-nav-button", text = "Components"}})
 				},
 			})
+
+			ui.Button({
+				id = "nav-shortcuts-button",
+				variant = .GHOST,
+				radius = set.Radius(5),
+				on_click = proc(_: ui.Button_Event) {
+					g.app.Route = .Shortcuts
+				},
+				child = proc(_: ui.Button_state) {
+					w.Text({config = {id = "shortcuts-nav-button", text = "Shortcuts"}})
+				},
+			})
 		},
 	})
 }

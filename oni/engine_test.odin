@@ -19,6 +19,7 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		shortcut_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -56,6 +57,7 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		shortcut_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -103,6 +105,7 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		shortcut_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -802,6 +805,22 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}},
 			)
 			poll_events()
+			// Escape is not bound by default; apps opt into app.quit.
+			engine_test_dispatch_shortcuts()
+			testing.expect(t, state.running)
+
+			shortcut_bind(SHORTCUT_APP_QUIT, {key = .ESCAPE})
+			state.input.keys_down[int(sdl.Scancode.ESCAPE)] = false
+			for &key in w_ctx.keys {
+				clear_key_transients(&key)
+			}
+			sync_widget_input()
+			engine_test_push(
+				t,
+				{key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}},
+			)
+			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, !state.running)
 
 			state.running = true
@@ -810,6 +829,7 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .F5, key = sdl.K_F5}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_reload)
 
 			engine_test_push(
@@ -817,16 +837,20 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .F6, key = sdl.K_F6}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_restart)
 
 			// Keycode-only F5/F6 paths (scancode may differ from switch cases).
 			state.force_reload = false
 			state.force_restart = false
+			state.input.keys_down[int(sdl.Scancode.F5)] = false
+			state.input.keys_down[int(sdl.Scancode.F6)] = false
 			engine_test_push(
 				t,
 				{key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F5}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_reload)
 
 			engine_test_push(
@@ -834,9 +858,39 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F6}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_restart)
 		},
 	)
+}
+
+/*
+Pumps edge-detected keys and runs shortcut_process once (for poll_events tests).
+*/
+@(private)
+engine_test_dispatch_shortcuts :: proc() {
+	shortcut_install_defaults()
+	// Release then re-apply keys_down so held keys produce pressed edges.
+	saved: [KEY_COUNT]bool
+	for i in 0 ..< KEY_COUNT {
+		saved[i] = state.input.keys_down[i]
+		state.input.keys_down[i] = false
+	}
+	for &key in w_ctx.keys {
+		clear_key_transients(&key)
+	}
+	sync_widget_input()
+	for i in 0 ..< KEY_COUNT {
+		state.input.keys_down[i] = saved[i]
+	}
+	for &key in w_ctx.keys {
+		clear_key_transients(&key)
+	}
+	sync_widget_input()
+	state.shortcuts.processed = false
+	state.shortcuts.consumed_keys = {}
+	state.shortcuts.consumed_wheel = false
+	shortcut_process()
 }
 
 @(test)
@@ -860,6 +914,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom > before_zoom)
 
 			zoomed := state.view.zoom
@@ -874,6 +929,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom < zoomed)
 
 			engine_test_push(
@@ -887,6 +943,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
 			expect_vec2(t, state.view.pan, {})
 
@@ -897,6 +954,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .EQUALS, mod = {}}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, 2)
 
 			// Keypad variants
@@ -911,6 +969,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom > 2)
 
 			engine_test_push(
@@ -924,6 +983,8 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
+			testing.expect(t, state.view.zoom < 2.5)
 
 			engine_test_push(
 				t,
@@ -936,6 +997,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
 		},
 	)
@@ -1170,7 +1232,7 @@ engine_poll_events_gamepad_axis_button_and_remove :: proc(t: ^testing.T) {
 			poll_events()
 			testing.expect(t, !state.input.gamepad.dpad_up)
 
-			// START toggles fullscreen only when a window exists — with nil window, flag stays false.
+			// START fullscreen is a shortcut default; without dispatch, flag stays false.
 			engine_test_push(
 				t,
 				{
@@ -1288,6 +1350,7 @@ engine_poll_events_f11_toggles_fullscreen :: proc(t: ^testing.T) {
 				{key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			// May fail on some WMs; only assert when SDL accepted the change.
 			if state.fullscreen != was {
 				engine_test_push(
@@ -1295,6 +1358,7 @@ engine_poll_events_f11_toggles_fullscreen :: proc(t: ^testing.T) {
 					{key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}},
 				)
 				poll_events()
+				engine_test_dispatch_shortcuts()
 				testing.expect_value(t, state.fullscreen, was)
 			}
 		},
@@ -1319,7 +1383,11 @@ engine_poll_events_gamepad_start_toggles_fullscreen_with_window :: proc(t: ^test
 				},
 			)
 			poll_events()
+			engine_test_dispatch_shortcuts()
 			if state.fullscreen != was {
+				// Need rising edge again: release then press.
+				state.input.gamepad.buttons_down[int(sdl.GamepadButton.START)] = false
+				state.shortcuts.gamepad_prev[int(sdl.GamepadButton.START)] = false
 				engine_test_push(
 					t,
 					{
@@ -1331,6 +1399,7 @@ engine_poll_events_gamepad_start_toggles_fullscreen_with_window :: proc(t: ^test
 					},
 				)
 				poll_events()
+				engine_test_dispatch_shortcuts()
 				testing.expect_value(t, state.fullscreen, was)
 			}
 		},
@@ -1657,25 +1726,33 @@ engine_poll_reload_keys_rising_edge_sets_force_flags :: proc(t: ^testing.T) {
 			state.reload_keys_prev = {}
 			state.force_reload = false
 			state.force_restart = false
+			state.input.keys_down[int(sdl.Scancode.F5)] = false
+			state.input.keys_down[int(sdl.Scancode.F6)] = false
 
 			poll_reload_keys()
-			testing.expect(t, !state.force_reload)
-			testing.expect(t, !state.force_restart)
+			testing.expect(t, !state.input.keys_down[int(sdl.Scancode.F5)])
+			testing.expect(t, !state.input.keys_down[int(sdl.Scancode.F6)])
 
 			test_hook_keyboard_f5 = true
 			test_hook_keyboard_f6 = true
 			poll_reload_keys()
-			testing.expect(t, state.force_reload)
-			testing.expect(t, state.force_restart)
+			testing.expect(t, state.input.keys_down[int(sdl.Scancode.F5)])
+			testing.expect(t, state.input.keys_down[int(sdl.Scancode.F6)])
 			testing.expect(t, state.reload_keys_prev.f5)
 			testing.expect(t, state.reload_keys_prev.f6)
 
-			// Held: no re-trigger
+			engine_test_dispatch_shortcuts()
+			testing.expect(t, state.force_reload)
+			testing.expect(t, state.force_restart)
+
+			// Held: no re-trigger of key edge via poll_reload_keys
 			state.force_reload = false
 			state.force_restart = false
+			state.input.keys_down[int(sdl.Scancode.F5)] = false
+			state.input.keys_down[int(sdl.Scancode.F6)] = false
 			poll_reload_keys()
-			testing.expect(t, !state.force_reload)
-			testing.expect(t, !state.force_restart)
+			testing.expect(t, !state.input.keys_down[int(sdl.Scancode.F5)])
+			testing.expect(t, !state.input.keys_down[int(sdl.Scancode.F6)])
 
 			// Release then press again
 			test_hook_keyboard_f5 = false
@@ -1684,6 +1761,8 @@ engine_poll_reload_keys_rising_edge_sets_force_flags :: proc(t: ^testing.T) {
 			testing.expect(t, !state.reload_keys_prev.f5)
 			test_hook_keyboard_f5 = true
 			poll_reload_keys()
+			testing.expect(t, state.input.keys_down[int(sdl.Scancode.F5)])
+			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_reload)
 		},
 	)
@@ -1765,6 +1844,7 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	testing.expect_value(t, dst.ui.frame, u64(7))
 	testing.expect(t, dst.gamepad == src.gamepad)
 	testing.expect_value(t, dst.gamepad_instance_id, sdl.JoystickID(99))
+	testing.expect(t, dst.shortcuts.defaults_installed == src.shortcuts.defaults_installed)
 	testing.expect_value(t, len(dst.input.text_input), 0)
 	testing.expect(t, !dst.force_reload)
 	testing.expect(t, !dst.force_restart)

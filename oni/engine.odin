@@ -175,8 +175,8 @@ frame_time :: proc() -> f64 {
 /*
 Polls SDL events and updates input, view, gamepad, and running state.
 
-Handles quit, keyboard shortcuts (F5/F6 reload, F11 fullscreen, ctrl zoom),
-mouse pan/zoom, window resize, and gamepad connect/disconnect.
+Handles quit, keyboard input, mouse pan, window resize, and gamepad
+connect/disconnect. App/view/host shortcuts are dispatched via shortcut_process.
 */
 poll_events :: proc() {
 	event: sdl.Event
@@ -200,32 +200,17 @@ poll_events :: proc() {
 			}
 
 			#partial switch event.key.scancode {
-			case .ESCAPE:
-				state.running = false
 			case .F5:
-				state.force_reload = true
+				state.input.keys_down[int(sdl.Scancode.F5)] = true
 			case .F6:
-				state.force_restart = true
-			case .F11:
-				toggle_fullscreen()
-			case .EQUALS, .KP_PLUS:
-				if state.input.modifiers.ctrl {
-					view_zoom_in_screen(input_mouse_screen())
-				}
-			case .MINUS, .KP_MINUS:
-				if state.input.modifiers.ctrl {
-					view_zoom_out_screen(input_mouse_screen())
-				}
-			case ._0, .KP_0:
-				if state.input.modifiers.ctrl {
-					view_reset()
-				}
+				state.input.keys_down[int(sdl.Scancode.F6)] = true
 			}
 
+			// Keycode fallback when scancode is unavailable (host reload chords).
 			if event.key.key == sdl.K_F5 {
-				state.force_reload = true
+				state.input.keys_down[int(sdl.Scancode.F5)] = true
 			} else if event.key.key == sdl.K_F6 {
-				state.force_restart = true
+				state.input.keys_down[int(sdl.Scancode.F6)] = true
 			}
 
 		case .KEY_UP:
@@ -300,10 +285,6 @@ poll_events :: proc() {
 			if event.gbutton.which == state.gamepad_instance_id {
 				button := sdl.GamepadButton(event.gbutton.button)
 				gamepad_set_button(button, true)
-
-				if button == .START {
-					toggle_fullscreen()
-				}
 			}
 
 		case .GAMEPAD_BUTTON_UP:
@@ -329,10 +310,10 @@ poll_events :: proc() {
 }
 
 /*
-Edge-detects F5/F6 held on the keyboard for reload/restart flags.
+Edge-detects F5/F6 held on the keyboard into key state for host reload shortcuts.
 
 Catches keys missed by KEY_DOWN when focus or timing differs; updates
-reload_keys_prev for the next frame.
+reload_keys_prev for the next frame. Actions fire via shortcut_process.
 */
 poll_reload_keys :: proc() {
 	f5_down, f6_down: bool
@@ -347,10 +328,10 @@ poll_reload_keys :: proc() {
 	}
 
 	if f5_down && !state.reload_keys_prev.f5 {
-		state.force_reload = true
+		state.input.keys_down[int(sdl.Scancode.F5)] = true
 	}
 	if f6_down && !state.reload_keys_prev.f6 {
-		state.force_restart = true
+		state.input.keys_down[int(sdl.Scancode.F6)] = true
 	}
 
 	state.reload_keys_prev.f5 = f5_down
@@ -495,6 +476,7 @@ init :: proc() -> bool {
 		return false
 	}
 	ui_init()
+	shortcut_install_defaults()
 	reset_input_state()
 	dpi_sync()
 	return true
@@ -572,6 +554,7 @@ Reloads shaders/pipeline and re-syncs DPI; SDL window and device persist.
 on_hot_reload :: proc() {
 	gpu_reload()
 	dpi_sync()
+	shortcut_rebind_builtin_actions()
 }
 
 /*
@@ -657,6 +640,7 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.last_counter = src.last_counter
 	dst.running = src.running
 	dst.ui = src.ui
+	dst.shortcuts = src.shortcuts
 	dst.gamepad = src.gamepad
 	dst.gamepad_instance_id = src.gamepad_instance_id
 }

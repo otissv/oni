@@ -570,6 +570,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Text_Align, &result.align, override.align)
 	merge_cfg(Style_Bool, &result.auto_focus, override.auto_focus)
 	merge_cfg(Style_Bool, &result.tabbable, override.tabbable)
+	if override.accepts_text_input do result.accepts_text_input = true
 	merge_cfg(Colors, &result.background, override.background)
 	merge_cfg(Border, &result.border, override.border)
 	merge_cfg(Colors, &result.border_color, override.border_color)
@@ -1210,6 +1211,7 @@ resolve_widget_config :: proc(
 			theme.texture_pos,
 		),
 		tabbable              = resolve_cfg_bool(decl.tabbable, parent.tabbable, theme.tabbable),
+		accepts_text_input    = decl.accepts_text_input,
 	}
 
 	resolved := Resolved_Widget_Config {

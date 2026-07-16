@@ -1,6 +1,7 @@
 package app
 
 import o "../oni"
+import docs "./docs"
 import g "./globlas"
 import "core:fmt"
 import "core:mem"
@@ -46,20 +47,51 @@ ensure_persistent :: proc() {
 
 /*
 Per-frame app update passed to o.Run_Frame.
-
-Handles mouse-wheel zoom around the cursor in screen space.
 */
 app_tick :: proc(dt: f32) {
 	g.app.frame_dt = dt
+}
 
-	if persistent.engine.input.mouse_wheel_y == 0 do return
-
-	mouse := o.Input_Mouse_Screen()
-	factor := ZOOM_WHEEL_STEP
-	if persistent.engine.input.mouse_wheel_y < 0 {
-		factor = 1 / ZOOM_WHEEL_STEP
+/*
+Registers the hot-reload hook and loads the user bindings table (first init).
+*/
+register_shortcuts :: proc() {
+	o.Shortcut_Set_Reload_Hook(rebind_app_shortcuts)
+	rebind_app_shortcuts()
+	path := g.app.shortcuts_path
+	if path == "" {
+		path = o.SHORTCUT_DEFAULT_BINDINGS_PATH
 	}
-	o.View_Zoom_By_Screen(mouse, factor)
+	_ = o.Shortcut_Load_Bindings(path, true)
+}
+
+/*
+Re-registers app-owned shortcut action procs after a DLL swap.
+
+Does not reload bindings from disk (in-memory table survives in Persistent).
+*/
+rebind_app_shortcuts :: proc() {
+	o.Shortcut_Register_Action("demo.ping", demo_ping_action)
+	o.Shortcut_Set_Action_Label("demo.ping", "Demo Ping")
+	_ = o.Shortcut_Bind("demo.ping", {key = .P, ctrl = true})
+}
+
+@(private)
+demo_ping_action :: proc(event: ^o.Shortcut_Event) {
+	_ = event
+	docs.shortcuts_demo_ping()
+}
+
+/*
+Persists the bindings table to disk.
+*/
+save_shortcuts :: proc() {
+	if g.app == nil do return
+	path := g.app.shortcuts_path
+	if path == "" {
+		path = o.SHORTCUT_DEFAULT_BINDINGS_PATH
+	}
+	_ = o.Shortcut_Save_Bindings(path)
 }
 
 /*
@@ -116,6 +148,7 @@ app_init :: proc() {
 
 	if !o.Init_Runtime(proc() -> bool {
 		persistent.app.theme = build_theme()
+		register_shortcuts()
 		return true
 	}) {
 		persistent.engine.running = false
@@ -156,6 +189,7 @@ Exported hot-reload entry point called when the host exits.
 app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
+	save_shortcuts()
 	o.Shutdown()
 	free(persistent)
 	persistent = nil

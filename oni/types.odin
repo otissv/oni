@@ -267,6 +267,7 @@ Widget_Config :: struct {
 	self:                  Cfg(Justify),
 	space:                 Cfg(Style_Space),
 	tabbable:              Cfg(Style_Bool),
+	accepts_text_input:    bool, // not styled; set true on text fields
 	text_decoration:       Cfg(Text_Decoration),
 	text_decoration_color: Cfg(Colors),
 	text_decoration_style: Cfg(Text_Decoration_Style),
@@ -347,6 +348,7 @@ Resolved_Widget_Style :: struct {
 	texture_pos:               Style_Texture_Pos,
 	tabbable:                  bool,
 	top_layer:                 bool,
+	accepts_text_input:        bool,
 }
 
 /*

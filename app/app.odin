@@ -38,6 +38,8 @@ main_ui :: proc() {
 				docs.home_route()
 			case .Widgets:
 				docs.widgets_route()
+			case .Shortcuts:
+				docs.shortcuts_route()
 			}
 		},
 	})

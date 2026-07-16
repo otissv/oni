@@ -1167,6 +1167,12 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 
 	append(&state.ui.layout.node_stack, node_index)
 	state.ui.layout.id_to_node[ui_id] = node_index
+	if config.id != "" {
+		shortcut_note_kind(config.id, config.kind)
+		if config.accepts_text_input {
+			shortcut_note_text_input(config.id)
+		}
+	}
 	return &state.ui.layout.nodes[node_index]
 }
 

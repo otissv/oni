@@ -70,6 +70,7 @@ ui_shutdown :: proc() {
 		delete(state.ui.label_crc)
 		state.ui.label_crc = nil
 	}
+	shortcut_shutdown()
 	widget_ctx_shutdown()
 
 	state.ui.frame = 0
@@ -123,6 +124,7 @@ ui_begin_frame :: proc() {
 		clear_key_transients(&key)
 	}
 
+	shortcut_begin_frame()
 	sync_widget_input()
 }
 
@@ -140,6 +142,7 @@ ui_end_layout_pass :: proc() {
 
 	widget_prune_focus()
 	widget_process_tab_navigation()
+	shortcut_process()
 
 	w_ctx.auto_element_index = 0
 	if w_ctx.static_ids != nil {

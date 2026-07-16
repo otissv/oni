@@ -9,6 +9,7 @@ Routes :: enum {
 	Artboard,
 	Widgets,
 	Components,
+	Shortcuts,
 }
 
 /*
@@ -22,6 +23,7 @@ Global_State :: struct {
 	image_texture: o.Texture_Handle,
 	frame_dt:      f32,
 	Route:         Routes,
+	shortcuts_path: string,
 }
 
 app: ^Global_State

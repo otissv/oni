@@ -249,6 +249,7 @@ widget_process_tab_navigation :: proc() {
 	}
 
 	widget_focus_tab(reverse)
+	shortcut_consume_key(.TAB)
 }
 
 /*
