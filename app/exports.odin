@@ -1,8 +1,8 @@
 package app
 
 import o "../oni"
-import docs "./docs"
 import g "./globlas"
+import w "../oni/widgets"
 import "core:fmt"
 import "core:mem"
 
@@ -71,15 +71,7 @@ Re-registers app-owned shortcut action procs after a DLL swap.
 Does not reload bindings from disk (in-memory table survives in Persistent).
 */
 rebind_app_shortcuts :: proc() {
-	o.Shortcut_Register_Action("demo.ping", demo_ping_action)
-	o.Shortcut_Set_Action_Label("demo.ping", "Demo Ping")
-	_ = o.Shortcut_Bind("demo.ping", {key = .P, ctrl = true})
-}
-
-@(private)
-demo_ping_action :: proc(event: ^o.Shortcut_Event) {
-	_ = event
-	docs.shortcuts_demo_ping()
+	// Register app Shortcut_Register_Action handlers here.
 }
 
 /*
@@ -113,6 +105,7 @@ Clears app-local state and rebuilds the default theme.
 Engine state is preserved; used after realloc failure and full restarts.
 */
 reset_app_state :: proc() {
+	w.Shortcuts_Table_Session_Destroy(&persistent.app.shortcuts_table)
 	persistent.app = {}
 	persistent.app.theme = build_theme()
 	persistent.app.Route = .Widgets
@@ -190,6 +183,7 @@ app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
 	save_shortcuts()
+	w.Shortcuts_Table_Session_Destroy(&persistent.app.shortcuts_table)
 	o.Shutdown()
 	free(persistent)
 	persistent = nil

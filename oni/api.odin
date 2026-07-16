@@ -112,6 +112,10 @@ Shortcut_Capture_Take :: shortcut_capture_take
 Shortcut_Collect_Conflicts :: shortcut_collect_conflicts
 Shortcut_Binding_Count :: shortcut_binding_count
 Shortcut_Binding_Get :: shortcut_binding_get
+Shortcut_Remove_Binding_At :: shortcut_remove_binding_at
+Shortcut_Set_Binding_Enabled_At :: shortcut_set_binding_enabled_at
+Shortcut_List_Actions :: shortcut_list_actions
+Shortcut_Free_Action_List :: shortcut_free_action_list
 Shortcut_List_Bindings :: shortcut_list_bindings
 Shortcut_Free_Binding_List :: shortcut_free_binding_list
 Shortcut_Format_Scancode :: shortcut_format_scancode

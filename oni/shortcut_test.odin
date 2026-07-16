@@ -107,7 +107,7 @@ shortcut_sequence_g_then_s :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			shortcut_test_flag = false
 			shortcut_register_action("goto.save", shortcut_test_action_set_flag)
-			shortcut_bind_sequence("goto.save", {.G, .S})
+			shortcut_bind_sequence({id = "goto.save", keys = {.G, .S}, enabled = true})
 
 			shortcut_test_press(.G)
 			testing.expect(t, !shortcut_test_flag)
@@ -267,7 +267,9 @@ shortcut_wheel_and_mouse_respect_modifiers :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			shortcut_test_flag = false
 			shortcut_register_action("zoom.ctrl", shortcut_test_action_set_flag)
-			shortcut_bind_wheel("zoom.ctrl", 1, {ctrl = true})
+			shortcut_bind_wheel(
+				{id = "zoom.ctrl", wheel_sign = 1, chord = {ctrl = true}, enabled = true},
+			)
 
 			state.input.mouse_wheel_y = 1
 			state.input.modifiers = {}
@@ -293,7 +295,14 @@ shortcut_wheel_and_mouse_respect_modifiers :: proc(t: ^testing.T) {
 			shortcut_begin_frame()
 			shortcut_test_flag = false
 			shortcut_register_action("ctx.right", shortcut_test_action_set_flag)
-			shortcut_bind_mouse("ctx.right", sdl.BUTTON_RIGHT, {shift = true})
+			shortcut_bind_mouse(
+				{
+					id = "ctx.right",
+					button = sdl.BUTTON_RIGHT,
+					chord = {shift = true},
+					enabled = true,
+				},
+			)
 
 			w_ctx.right_mouse = {}
 			state.input.modifiers = {shift = true}
@@ -404,14 +413,73 @@ shortcut_import_rejects_bad_line_without_clearing :: proc(t: ^testing.T) {
 }
 
 @(test)
+shortcut_remove_and_set_enabled_at :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			shortcut_register_action("a", shortcut_test_action_set_flag)
+			shortcut_register_action("b", shortcut_test_action_set_flag)
+			testing.expect(t, shortcut_bind("a", {key = .A}))
+			testing.expect(t, shortcut_bind("b", {key = .B}))
+			n := shortcut_binding_count()
+			testing.expect(t, n >= 2)
+
+			idx_b := -1
+			for i in 0 ..< shortcut_binding_count() {
+				b, ok := shortcut_binding_get(i)
+				if ok && b.id == "b" {
+					idx_b = i
+					break
+				}
+			}
+			testing.expect(t, idx_b >= 0)
+			testing.expect(t, shortcut_set_binding_enabled_at(idx_b, false))
+			b, ok := shortcut_binding_get(idx_b)
+			testing.expect(t, ok && !b.enabled)
+
+			testing.expect(t, shortcut_remove_binding_at(idx_b))
+			testing.expect_value(t, shortcut_binding_count(), n - 1)
+			testing.expect(t, !shortcut_remove_binding_at(999))
+			testing.expect(t, !shortcut_set_binding_enabled_at(-1, true))
+		},
+	)
+}
+
+@(test)
+shortcut_list_actions_sorted :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			shortcut_register_action("z.action", shortcut_test_action_set_flag)
+			shortcut_register_action("a.action", shortcut_test_action_set_flag)
+			list := shortcut_list_actions(context.temp_allocator)
+			defer shortcut_free_action_list(list, context.temp_allocator)
+			testing.expect(t, len(list) >= 2)
+			found_a := false
+			found_z := false
+			prev := ""
+			for id in list {
+				if prev != "" {
+					testing.expect(t, prev <= id)
+				}
+				prev = id
+				if id == "a.action" do found_a = true
+				if id == "z.action" do found_z = true
+			}
+			testing.expect(t, found_a && found_z)
+		},
+	)
+}
+
+@(test)
 shortcut_unbind_mouse_sequence_gamepad :: proc(t: ^testing.T) {
 	with_engine_env(
 		t,
 		proc(t: ^testing.T) {
 			shortcut_register_action("m", shortcut_test_action_set_flag)
-			shortcut_bind_mouse("m", sdl.BUTTON_LEFT)
-			shortcut_bind_sequence("m", {.G, .H})
-			shortcut_bind_gamepad("m", .SOUTH)
+			shortcut_bind_mouse({id = "m", button = sdl.BUTTON_LEFT, enabled = true})
+			shortcut_bind_sequence({id = "m", keys = {.G, .H}, enabled = true})
+			shortcut_bind_gamepad({id = "m", button = .SOUTH, enabled = true})
 			testing.expect(t, shortcut_binding_count() >= 3)
 			shortcut_unbind_mouse("m", sdl.BUTTON_LEFT)
 			shortcut_unbind_sequence("m", {.G, .H})
@@ -479,7 +547,7 @@ shortcut_sequence_timeout_resets :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			shortcut_test_flag = false
 			shortcut_register_action("seq", shortcut_test_action_set_flag)
-			shortcut_bind_sequence("seq", {.G, .S})
+			shortcut_bind_sequence({id = "seq", keys = {.G, .S}, enabled = true})
 			shortcut_test_press(.G)
 			testing.expect(t, !shortcut_test_flag)
 			for _ in 0 ..< int(SHORTCUT_SEQUENCE_TIMEOUT_FRAMES) {
@@ -498,7 +566,9 @@ shortcut_friendly_format_roundtrip :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			shortcut_register_action("demo.ping", shortcut_test_action_set_flag)
 			shortcut_bind("demo.ping", {key = .P, ctrl = true})
-			_ = shortcut_bind_wheel("view.zoom_in", 1) // user wheel; builtins are not exported
+			_ = shortcut_bind_wheel(
+				{id = "view.zoom_in", wheel_sign = 1, enabled = true},
+			) // user wheel; builtins are not exported
 			shortcut_set_enabled("demo.ping", false)
 
 			data := shortcut_export_bindings(context.temp_allocator)

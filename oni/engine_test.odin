@@ -866,6 +866,10 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 
 /*
 Pumps edge-detected keys and runs shortcut_process once (for poll_events tests).
+
+Clears key/gamepad consumption like shortcut_begin_frame, then treats currently
+held keys as a one-shot press edge. Keys are released afterwards so successive
+poll_events presses do not stack and fire multiple chords in one dispatch.
 */
 @(private)
 engine_test_dispatch_shortcuts :: proc() {
@@ -890,7 +894,13 @@ engine_test_dispatch_shortcuts :: proc() {
 	state.shortcuts.processed = false
 	state.shortcuts.consumed_keys = {}
 	state.shortcuts.consumed_wheel = false
+	state.shortcuts.consumed_mouse = {}
+	state.shortcuts.consumed_gamepad = {}
 	shortcut_process()
+	// One-shot: do not leave keys held for the next dispatch.
+	for i in 0 ..< KEY_COUNT {
+		state.input.keys_down[i] = false
+	}
 }
 
 @(test)

@@ -2,6 +2,7 @@ package oni
 
 import "core:fmt"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import sdl "vendor:sdl3"
 
@@ -22,6 +23,55 @@ shortcut_binding_get :: proc(index: int) -> (binding: Shortcut_Binding, ok: bool
 	if state == nil do return {}, false
 	if index < 0 || index >= len(state.shortcuts.bindings) do return {}, false
 	return state.shortcuts.bindings[index], true
+}
+
+/*
+Removes the binding at index. Returns false if the index is out of range.
+*/
+shortcut_remove_binding_at :: proc(index: int) -> bool {
+	if state == nil do return false
+	if index < 0 || index >= len(state.shortcuts.bindings) do return false
+	shortcut_free_binding(&state.shortcuts.bindings[index])
+	ordered_remove(&state.shortcuts.bindings, index)
+	return true
+}
+
+/*
+Sets `enabled` on the binding at index. Returns false if the index is out of range.
+*/
+shortcut_set_binding_enabled_at :: proc(index: int, enabled: bool) -> bool {
+	if state == nil do return false
+	if index < 0 || index >= len(state.shortcuts.bindings) do return false
+	state.shortcuts.bindings[index].enabled = enabled
+	return true
+}
+
+/*
+Allocates a snapshot of registered action ids (sorted).
+
+Caller owns the slice and each string; free with Shortcut_Free_Action_List.
+*/
+shortcut_list_actions :: proc(allocator := context.allocator) -> []string {
+	if state == nil || state.shortcuts.actions == nil do return nil
+	n := len(state.shortcuts.actions)
+	out := make([]string, n, allocator)
+	i := 0
+	for id in state.shortcuts.actions {
+		out[i] = strings.clone(id, allocator)
+		i += 1
+	}
+	slice.sort_by(out, proc(a, b: string) -> bool { return a < b })
+	return out
+}
+
+/*
+Frees a slice from Shortcut_List_Actions.
+*/
+shortcut_free_action_list :: proc(list: []string, allocator := context.allocator) {
+	for id in list {
+		if id != "" do delete(id, allocator)
+	}
+	delete(list, allocator)
 }
 
 /*
@@ -87,7 +137,10 @@ shortcut_format_chord :: proc(chord: Shortcut_Chord, allocator := context.alloca
 /*
 Formats a binding trigger for a bindings-table row (UPPER_SNAKE tokens).
 */
-shortcut_format_binding :: proc(binding: Shortcut_Binding, allocator := context.allocator) -> string {
+shortcut_format_binding :: proc(
+	binding: Shortcut_Binding,
+	allocator := context.allocator,
+) -> string {
 	return shortcut_format_trigger_token(binding, allocator)
 }
 

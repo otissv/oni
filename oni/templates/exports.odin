@@ -1,6 +1,7 @@
 package app
 
 import oni "../oni"
+import w "../oni/widgets"
 import "core:fmt"
 import "core:mem"
 
@@ -8,8 +9,9 @@ import "core:mem"
 App-local state kept alongside the oni engine in persistent memory.
 */
 Global_State :: struct {
-	theme:          oni.Theme,
-	shortcuts_path: string,
+	theme:           oni.Theme,
+	shortcuts_path:  string,
+	shortcuts_table: w.Shortcuts_Table_Session,
 }
 
 /*
@@ -97,6 +99,7 @@ Clears app-local state and rebuilds the default theme.
 Engine state is preserved; used after realloc failure and full restarts.
 */
 reset_app_state :: proc() {
+	w.Shortcuts_Table_Session_Destroy(&persistent.app.shortcuts_table)
 	persistent.app = {}
 	persistent.app.theme = build_theme()
 }
@@ -172,6 +175,7 @@ app_shutdown :: proc() {
 	if persistent == nil do return
 	bind()
 	save_shortcuts()
+	w.Shortcuts_Table_Session_Destroy(&persistent.app.shortcuts_table)
 	oni.Shutdown()
 	free(persistent)
 	persistent = nil

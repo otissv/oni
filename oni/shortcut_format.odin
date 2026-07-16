@@ -755,40 +755,76 @@ shortcut_remove_trigger_matches :: proc(row: Shortcut_Parsed_Binding) {
 
 @(private)
 shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
-	opts := Shortcut_Bind_Opts {
-		scope      = row.scope,
-		scope_key  = row.scope_key,
-		scope_kind = row.scope_kind,
-		priority   = row.priority,
-		disabled   = !row.enabled,
-		source     = .User,
-	}
 	switch row.trigger {
 	case .Key:
 		return shortcut_bind_key(
-			row.id,
-			row.chord,
-			row.scope,
-			row.scope_key,
-			row.scope_kind,
-			row.priority,
-			row.enabled,
-			.User,
+			{
+				id = row.id,
+				chord = row.chord,
+				scope = row.scope,
+				scope_key = row.scope_key,
+				scope_kind = row.scope_kind,
+				priority = row.priority,
+				enabled = row.enabled,
+				source = .User,
+			},
 		)
 	case .Wheel_Y:
-		return shortcut_bind_wheel_src(row.id, row.wheel_sign, row.chord, opts, .User)
+		return shortcut_bind_wheel(
+			{
+				id = row.id,
+				wheel_sign = row.wheel_sign,
+				chord = row.chord,
+				scope = row.scope,
+				scope_key = row.scope_key,
+				scope_kind = row.scope_kind,
+				priority = row.priority,
+				enabled = row.enabled,
+				source = .User,
+			},
+		)
 	case .Mouse_Button:
-		return shortcut_bind_mouse_src(row.id, row.mouse_button, row.chord, opts, .User)
+		return shortcut_bind_mouse(
+			{
+				id = row.id,
+				button = row.mouse_button,
+				chord = row.chord,
+				scope = row.scope,
+				scope_key = row.scope_key,
+				scope_kind = row.scope_kind,
+				priority = row.priority,
+				enabled = row.enabled,
+				source = .User,
+			},
+		)
 	case .Sequence:
 		seq := row.sequence
 		keys := seq[:row.sequence_len]
-		return shortcut_bind_sequence_src(row.id, keys, row.chord, opts, .User)
+		return shortcut_bind_sequence(
+			{
+				id = row.id,
+				keys = keys,
+				chord = row.chord,
+				scope = row.scope,
+				scope_key = row.scope_key,
+				scope_kind = row.scope_kind,
+				priority = row.priority,
+				enabled = row.enabled,
+				source = .User,
+			},
+		)
 	case .Gamepad:
-		return shortcut_bind_gamepad_src(
-			row.id,
-			sdl.GamepadButton(row.gamepad_button),
-			opts,
-			.User,
+		return shortcut_bind_gamepad(
+			{
+				id = row.id,
+				button = sdl.GamepadButton(row.gamepad_button),
+				scope = row.scope,
+				scope_key = row.scope_key,
+				scope_kind = row.scope_kind,
+				priority = row.priority,
+				enabled = row.enabled,
+				source = .User,
+			},
 		)
 	}
 	return false
