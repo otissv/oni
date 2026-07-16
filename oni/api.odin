@@ -49,6 +49,8 @@ Begin_Artboard :: begin_artboard
 End_Artboard :: end_artboard
 Begin_Screen :: draw_push_screen
 End_Screen :: draw_pop_screen
+Popover_Begin :: begin_popover
+Popover_End :: end_popover
 Render :: render
 
 Load_Texture :: assets_load_texture
@@ -129,8 +131,6 @@ Layout_Stack_Index :: ui_layout_stack_index
 Layout_Paint_Skip :: ui_layout_paint_skip
 Layout_Hit_Skip :: ui_layout_hit_skip
 Layout_Clip_Rect :: ui_layout_clip_rect
-Top_Layer_Begin :: ui_top_layer_begin
-Top_Layer_End :: ui_top_layer_end
 Draw_Set_Stack_Index :: draw_set_stack_index
 Stop_Propagation :: stop_propagation
 Pointer_Hits :: pointer_hits

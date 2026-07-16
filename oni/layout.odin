@@ -125,9 +125,8 @@ Layout_State :: struct {
 	table_tracks:         map[int]Layout_Table_Tracks,
 	paint_list_screen:    [dynamic]int,
 	paint_list_artboard:  [dynamic]int,
-	top_layer_paint_list: [dynamic]int,
+	paint_list_popover:   [dynamic]int,
 	current_space:        Draw_Space,
-	in_top_layer:         bool,
 	space_stack:          [dynamic]Draw_Space,
 	stack_counter:        u32,
 	frame_arena:          mem.Arena,
@@ -236,10 +235,9 @@ layout_reset :: proc() {
 	clear(&layout.id_to_node)
 	clear(&layout.paint_list_screen)
 	clear(&layout.paint_list_artboard)
-	clear(&layout.top_layer_paint_list)
+	clear(&layout.paint_list_popover)
 	clear(&layout.space_stack)
 	layout.current_space = .SCREEN
-	layout.in_top_layer = false
 	layout.stack_counter = 0
 	layout.artboard_zoom_valid = false
 	layout_frame_arena_reset(layout)
@@ -290,8 +288,8 @@ layout_shutdown :: proc() {
 	state.ui.layout.paint_list_screen = nil
 	delete(state.ui.layout.paint_list_artboard)
 	state.ui.layout.paint_list_artboard = nil
-	delete(state.ui.layout.top_layer_paint_list)
-	state.ui.layout.top_layer_paint_list = nil
+	delete(state.ui.layout.paint_list_popover)
+	state.ui.layout.paint_list_popover = nil
 	delete(state.ui.layout.space_stack)
 	state.ui.layout.space_stack = nil
 	layout_frame_arena_destroy(&state.ui.layout)
@@ -1123,10 +1121,17 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	padding, _ := resolve_padding_value(config.padding)
 	border, _ := resolve_border_value(config.border)
 
-	in_top := config.top_layer || state.ui.layout.in_top_layer
+	space := state.ui.layout.current_space
+	if config.space == .POPOVER {
+		space = .POPOVER
+	}
+	if parent_index >= 0 && state.ui.layout.nodes[parent_index].space == .POPOVER {
+		space = .POPOVER
+	}
+
 	style := config.style
-	if in_top {
-		style.top_layer = true
+	if space == .POPOVER {
+		style.space = .POPOVER
 	}
 
 	node := Layout_Node {
@@ -1138,7 +1143,7 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 		parent        = parent_index,
 		child_indices = make([dynamic]int, layout_frame_allocator()),
 		in_flex_flow  = layout_position_in_flex_flow(style.position),
-		space         = state.ui.layout.current_space,
+		space         = space,
 	}
 	append(&state.ui.layout.nodes, node)
 	node_index := len(state.ui.layout.nodes) - 1
@@ -2427,11 +2432,7 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 	if kind == .ABSOLUTE || kind == .FIXED {
 		cb := bounds
 		if kind == .FIXED {
-			space := node.space
-			if node.config.top_layer {
-				space = .SCREEN
-			}
-			cb = layout_space_bounds(space)
+			cb = layout_space_bounds(node.space)
 		}
 		layout_place_against_containing_block(node, cb)
 		return
@@ -2465,7 +2466,7 @@ layout_solve :: proc(root: ^Layout_Node, bounds: Rect) {
 }
 
 /*
-Returns layout bounds for screen or artboard draw space.
+Returns layout bounds for screen, popover, or artboard draw space.
 */
 layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 	logical_w := f32(state.dpi.logical_w)
@@ -2476,6 +2477,7 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 		return {0, 0, logical_w / zoom, logical_h / zoom}
 	}
 
+	// SCREEN and POPOVER share logical viewport bounds.
 	return {0, 0, logical_w, logical_h}
 }
 

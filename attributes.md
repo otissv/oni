@@ -49,9 +49,9 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Balance` — not full `white-space` |
 | `z-index` | `z_index` | Local stacking context; layout builds paint/hit `stack_index` (default `0`) |
 
-Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard vs screen), `top_layer` (modal/popup paint/hit above screen+artboard).
+Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard, screen, or popover — popover paints/hits above screen+artboard with its own stacking context).
 
-**Stacking:** Layout owns order. Negative-z children paint under parent chrome; then parent; then non-negative children. Sorted by `(z_index, order, source)`. Draw tags `stack_index` only. Hit order: top layer → screen → artboard.
+**Stacking:** Layout owns order. Paint lists: artboard → screen → popover. Negative-z children paint under parent chrome; then parent; then non-negative children. Sorted by `(z_index, order, source)` within each stacking context. Each popover root is its own stacking context. Draw tags `stack_index` only. Hit order: popover → screen → artboard.
 
 ---
 

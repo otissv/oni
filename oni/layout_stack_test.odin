@@ -634,7 +634,7 @@ layout_overflow_clip_excludes_outside_hits :: proc(t: ^testing.T) {
 }
 
 @(test)
-layout_top_layer_above_screen_for_hit :: proc(t: ^testing.T) {
+layout_popover_above_screen_for_hit :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
@@ -651,9 +651,13 @@ layout_top_layer_above_screen_for_hit :: proc(t: ^testing.T) {
 			layout_pop_node()
 			b := layout_push_node(
 				UI_Id(2),
-				{kind = .RECT, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+				{
+					kind = .RECT,
+					space = .POPOVER,
+					width = layout_len_fixed(100),
+					height = layout_len_fixed(100),
+				},
 			)
-			b.config.top_layer = true
 			layout_set_measure_size(b, {100, 100})
 			layout_pop_node()
 			layout_end_space()
@@ -670,6 +674,69 @@ layout_top_layer_above_screen_for_hit :: proc(t: ^testing.T) {
 			w_ctx.mouse_y = 50
 			layout_resolve_pointer_hit()
 			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(2))
+		},
+	)
+}
+
+@(test)
+layout_popover_z_index_within_stacking_context :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					space = .POPOVER,
+					width = layout_len_fixed(200),
+					height = layout_len_fixed(200),
+				},
+			)
+			back := layout_push_node(
+				UI_Id(2),
+				{kind = .RECT, z_index = 1, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			back.config.position = layout_stack_abs()
+			back.config.x = 0
+			back.config.x_set = true
+			back.config.y = 0
+			back.config.y_set = true
+			layout_set_measure_size(back, {100, 100})
+			layout_pop_node()
+			front := layout_push_node(
+				UI_Id(3),
+				{kind = .RECT, z_index = 5, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			front.config.position = layout_stack_abs()
+			front.config.x = 0
+			front.config.x_set = true
+			front.config.y = 0
+			front.config.y_set = true
+			layout_set_measure_size(front, {100, 100})
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+			layout_finalize_stack_order()
+
+			back_i := state.ui.layout.id_to_node[UI_Id(2)]
+			front_i := state.ui.layout.id_to_node[UI_Id(3)]
+			testing.expect(t, state.ui.layout.nodes[back_i].space == .POPOVER)
+			testing.expect(t, state.ui.layout.nodes[front_i].space == .POPOVER)
+			testing.expect(
+				t,
+				state.ui.layout.nodes[back_i].stack_index <
+					state.ui.layout.nodes[front_i].stack_index,
+			)
+
+			w_ctx.mouse_x = 50
+			w_ctx.mouse_y = 50
+			layout_resolve_pointer_hit()
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(3))
 		},
 	)
 }

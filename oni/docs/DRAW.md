@@ -105,6 +105,7 @@ Leaf [`Text`](oni/widgets/text.odin#L107) dispatches events **before** paint so 
 |-------|------------|---------------|-------------------|
 | `.SCREEN` | [`draw_push_screen`](oni/draw.odin#L245) | Window logical size | Identity |
 | `.ARTBOARD` | [`begin_artboard`](oni/draw.odin#L221) | Content area ÷ zoom | [`view_transform_rect`](oni/view.odin#L162) / [`view_transform_point`](oni/view.odin#L180) |
+| `.POPOVER` | [`begin_popover`](oni/draw.odin) | Window logical size | Identity (paints/hits above screen + artboard) |
 
 | Proc | Role |
 |------|------|
@@ -114,6 +115,8 @@ Leaf [`Text`](oni/widgets/text.odin#L107) dispatches events **before** paint so 
 | [`End_Screen`](oni/api.odin#L51) → [`draw_pop_screen`](oni/draw.odin#L257) | Pop screen |
 | [`Begin_Artboard`](oni/api.odin#L48) → [`begin_artboard`](oni/draw.odin#L221) | Artboard space + layout region |
 | [`End_Artboard`](oni/api.odin#L49) → [`end_artboard`](oni/draw.odin#L234) | Pop artboard |
+| [`Popover_Begin`](oni/api.odin) → [`begin_popover`](oni/draw.odin) | Popover overlay space + layout region |
+| [`Popover_End`](oni/api.odin) → [`end_popover`](oni/draw.odin) | Pop popover |
 | [`view_artboard_zoom`](oni/view.odin#L188) | Scale radii / borders / line thickness on artboard |
 | [`draw_space_to_logical`](oni/view.odin#L200) | Screen point → artboard logical (rounded UV local space) |
 | [`screen_to_logical`](oni/draw.odin#L11) / [`logical_to_screen`](oni/draw.odin#L22) | DPI pixel ↔ logical (input / hit helpers) |
@@ -298,7 +301,7 @@ Draw pass updates hover/focus and dispatches events (not layout).
 | `UI_Vertex` | [oni/gpu.odin](oni/gpu.odin#L13) | pos, uv, local_uv, colors, radii, border, mode params |
 | `Batch_State` / `Batch_Key` / `Batch_Segment` | [oni/batch.odin](oni/batch.odin#L27) | CPU record + segment metadata |
 | `GPU_State` / `GPU_Proj_UBO` | [oni/gpu.odin](oni/gpu.odin#L28) | Pipeline, sampler, projection, ping-pong batches |
-| `Draw_Space` | [oni/types.odin](oni/types.odin#L867) | `.SCREEN` vs `.ARTBOARD` |
+| `Draw_Space` | [oni/types.odin](oni/types.odin#L867) | `.SCREEN`, `.ARTBOARD`, `.POPOVER` |
 | `Texture_Handle` / `Atlas_Region` | [oni/types.odin](oni/types.odin#L915) | Bitmap sources for `draw_texture` |
 | `View` | [oni/view.odin](oni/view.odin#L8) | Artboard camera zoom/pan/clamps |
 | `Layout_Glyph_Paint` / `Layout_Decoration_Stroke` | [oni/layout.odin](oni/layout.odin#L18) | Layout-owned text paint inputs |
@@ -334,7 +337,7 @@ Recording / GPU bridge: [`draw_record_begin`](oni/draw.odin#L57), [`draw_record_
 
 Stacks: [`draw_push_clip`](oni/draw.odin#L109), [`draw_pop_clip`](oni/draw.odin#L119), [`draw_current_space`](oni/draw.odin#L134), [`draw_push_space`](oni/draw.odin#L144), [`draw_pop_space`](oni/draw.odin#L154), [`draw_push_opacity`](oni/draw.odin#L169), [`draw_pop_opacity`](oni/draw.odin#L187), [`draw_effective_opacity`](oni/draw.odin#L211).
 
-Spaces: [`begin_artboard`](oni/draw.odin#L221), [`end_artboard`](oni/draw.odin#L234), [`draw_push_screen`](oni/draw.odin#L245), [`draw_pop_screen`](oni/draw.odin#L257).
+Spaces: [`begin_artboard`](oni/draw.odin#L221), [`end_artboard`](oni/draw.odin#L234), [`draw_push_screen`](oni/draw.odin#L245), [`draw_pop_screen`](oni/draw.odin#L257), [`begin_popover`](oni/draw.odin), [`end_popover`](oni/draw.odin).
 
 Primitives: [`draw_rect`](oni/draw.odin#L269), [`draw_line`](oni/draw.odin#L315), [`draw_texture`](oni/draw.odin#L344), [`draw_atlas_region`](oni/draw.odin#L400), [`draw_texture_fitted`](oni/draw.odin#L414).
 

@@ -679,7 +679,7 @@ Resolved into `Resolved_Widget_Style`; layout/draw consumption:
 - [ * ] `visibility` — HIDDEN keeps layout (empty paint/hit); NONE removes subtree
 - [ * ] `z_index` / `order` — layout paint lists + `stack_index`; draw tags stack only
 - [ * ] `pointer_events` — NONE skips hit, still paints
-- [ * ] `top_layer` — paint/hit above screen and artboard
+- [ * ] `popover` (`Draw_Space.POPOVER`) — paint/hit above screen and artboard
 - [   ] `Dim` extras ignored by resolvers — `grow`, breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
 - [   ] `aspect_ratio` — listed in `attributes.md`, **absent** from `Widget_Style`
 - [   ] Flex beyond grow — shrink / basis (full flexbox not required; document or implement)

@@ -211,8 +211,8 @@ layout_test_end :: proc(layout: ^Layout_State) {
 	layout.paint_list_screen = nil
 	delete(layout.paint_list_artboard)
 	layout.paint_list_artboard = nil
-	delete(layout.top_layer_paint_list)
-	layout.top_layer_paint_list = nil
+	delete(layout.paint_list_popover)
+	layout.paint_list_popover = nil
 	delete(layout.space_stack)
 	layout.space_stack = nil
 	delete(layout.id_to_node)

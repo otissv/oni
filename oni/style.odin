@@ -601,7 +601,6 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Colors, &result.text_decoration_color, override.text_decoration_color)
 	merge_cfg(Text_Decoration_Style, &result.text_decoration_style, override.text_decoration_style)
 	merge_cfg(Text_Direction, &result.text_direction, override.text_direction)
-	merge_cfg(Style_Bool, &result.top_layer, override.top_layer)
 	if cfg_width_is_set(override.width) do result.width = override.width
 	merge_cfg(Text_Wrap, &result.wrap, override.wrap)
 	merge_cfg(Style_F32, &result.x, override.x)
@@ -1141,7 +1140,6 @@ resolve_widget_config :: proc(
 			parent.text_direction,
 			theme.text_direction,
 		),
-		top_layer             = resolve_cfg_bool(decl.top_layer, parent.top_layer, theme.top_layer),
 		width                 = resolve_length_from_width(
 			decl.width,
 			parent_ctx.content_w,

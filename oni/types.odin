@@ -274,7 +274,6 @@ Widget_Config :: struct {
 	text_direction:        Cfg(Text_Direction),
 	texture_fit:           Cfg(Style_Texture_Fit),
 	texture_pos:           Cfg(Style_Texture_Pos),
-	top_layer:             Cfg(Style_Bool),
 	visibility:            Cfg(Visibility),
 	width:                 Width,
 	wrap:                  Cfg(Text_Wrap),
@@ -347,7 +346,6 @@ Resolved_Widget_Style :: struct {
 	texture_fit:               Style_Texture_Fit,
 	texture_pos:               Style_Texture_Pos,
 	tabbable:                  bool,
-	top_layer:                 bool,
 	accepts_text_input:        bool,
 }
 
@@ -869,6 +867,7 @@ Rect :: struct {
 Draw_Space :: enum {
 	ARTBOARD,
 	SCREEN,
+	POPOVER, // screen-coordinate overlay; paints/hits above screen + artboard
 }
 
 /*

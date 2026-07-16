@@ -1,81 +1,81 @@
 package widgets
 
 import o ".."
+import set "../set"
 
 /*
-Rectangle widget configuration extending Widget_Config.
+Popover widget configuration extending Widget_Config.
+
+`space` is always forced to `.POPOVER` by the widget; user overrides are ignored.
 */
-Rectangle_Config :: o.Widget_Config
+Popover_Config :: o.Widget_Config
 
 /*
-Rectangle widget per-frame interaction frame_state merged with its fully resolved style config.
+Popover widget per-frame interaction frame_state merged with its fully resolved style config.
 */
-Rectangle_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
+Popover_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 
 /*
-Rectangle widget event snapshot with frame_state and optional input metadata.
+Popover widget event snapshot with frame_state and optional input metadata.
 */
-Rectangle_Event :: o.Widget_Event(Rectangle_State)
+Popover_Event :: o.Widget_Event(Popover_State)
 
 /*
-Rectangle widget props: config, child callback, and input event handlers.
+Popover widget props: config, child callback, and input event handlers.
 */
-Rectangle_Props :: struct {
-	config:                       Rectangle_Config,
-	child:                        proc(frame_state: Rectangle_State),
+Popover_Props :: struct {
+	config:                       Popover_Config,
+	child:                        proc(frame_state: Popover_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
-	on_mount:                     proc(frame_state: Rectangle_State) -> o.Mount,
-	on_unmount:                   proc(frame_state: Rectangle_State) -> o.Mount,
-	on_focus:                     proc(event: Rectangle_Event),
-	on_blur:                      proc(event: Rectangle_Event),
-	on_mouse_enter:               proc(event: Rectangle_Event),
-	on_mouse_leave:               proc(event: Rectangle_Event),
-	on_mouse_pressed:             proc(event: Rectangle_Event),
-	on_mouse_down:                proc(event: Rectangle_Event),
-	on_mouse_released:            proc(event: Rectangle_Event),
-	on_mouse_move:                proc(event: Rectangle_Event),
-	on_click:                     proc(event: Rectangle_Event),
-	on_contextmenu:               proc(event: Rectangle_Event),
-	on_key_pressed:               proc(event: Rectangle_Event),
-	on_key_down:                  proc(event: Rectangle_Event),
-	on_key_released:              proc(event: Rectangle_Event),
+	on_mount:                     proc(frame_state: Popover_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Popover_State) -> o.Mount,
+	on_focus:                     proc(event: Popover_Event),
+	on_blur:                      proc(event: Popover_Event),
+	on_mouse_enter:               proc(event: Popover_Event),
+	on_mouse_leave:               proc(event: Popover_Event),
+	on_mouse_pressed:             proc(event: Popover_Event),
+	on_mouse_down:                proc(event: Popover_Event),
+	on_mouse_released:            proc(event: Popover_Event),
+	on_mouse_move:                proc(event: Popover_Event),
+	on_click:                     proc(event: Popover_Event),
+	on_contextmenu:               proc(event: Popover_Event),
+	on_key_pressed:               proc(event: Popover_Event),
+	on_key_down:                  proc(event: Popover_Event),
+	on_key_released:              proc(event: Popover_Event),
 }
 
 /*
-Returns the default rectangle theme config, muted when the widget is disabled.
+Returns the default popover theme config; always uses `.POPOVER` space.
 */
-rect_theme_base :: proc(frame_state: ^Rectangle_State) -> Rectangle_Config {
-	color := o.Color.FOREGROUND
-
-	if frame_state.is_disabled {
-		color = o.Color.MUTED
-	}
-
-	return Rectangle_Config{kind = .RECT}
+popover_theme_base :: proc(frame_state: ^Popover_State) -> Popover_Config {
+	_ = frame_state
+	return Popover_Config{kind = .RECT, space = set.Space(.POPOVER)}
 }
 
 /*
-Renders a styled rectangle container with full pointer and keyboard interaction.
+Renders a styled popover container that always lays out/draws in `.POPOVER` space.
 
 Runs layout on the layout pass and draws chrome plus children on the draw pass.
 */
-Rectangle :: proc(props: Rectangle_Props) {
+Popover :: proc(props: Popover_Props) {
+	props := props
+	props.config.space = set.Space(.POPOVER)
 	cfg := props.config
 	key := o.element_key(cfg.id)
 
 	was_focused := widget_is_focused(key)
 
-	frame_state := Rectangle_State {
+	frame_state := Popover_State {
 		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 	}
 
-	event := widget_refresh_merged(props, &frame_state, rect_theme_base)
+	event := widget_refresh_merged(props, &frame_state, popover_theme_base)
 	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
-	handlers := widget_lifecycle_handlers(props, Rectangle_State)
+	handlers := widget_lifecycle_handlers(props, Popover_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
 
 	layout_label := cfg.id != "" ? cfg.id : key
@@ -93,7 +93,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		)
 
 		if ran_unmount {
-			event = widget_refresh_merged(props, &frame_state, rect_theme_base)
+			event = widget_refresh_merged(props, &frame_state, popover_theme_base)
 			config = frame_state.config
 			should_auto_focus = widget_should_auto_focus(config, key)
 		}
@@ -130,7 +130,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 	event, _ = widget_refresh_merged_if_interaction_changed(
 		props,
 		&frame_state,
-		rect_theme_base,
+		popover_theme_base,
 		style_fp,
 	)
 	config = frame_state.config
@@ -152,7 +152,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		props.on_focus(event)
 	}
 
-	draw_widget_rectangle(
+	draw_widget_popover(
 		{
 			frame_state = &frame_state,
 			event = event,
@@ -165,18 +165,17 @@ Rectangle :: proc(props: Rectangle_Props) {
 	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }
 
-
 @(private)
-Draw_Widget_Rectangle :: struct {
-	frame_state: ^Rectangle_State,
-	event:       Rectangle_Event,
+Draw_Widget_Popover :: struct {
+	frame_state: ^Popover_State,
+	event:       Popover_Event,
 	rect:        o.Rect,
-	child:       proc(frame_state: Rectangle_State),
+	child:       proc(frame_state: Popover_State),
 	layout_id:   o.UI_Id,
 }
 
 @(private)
-draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
+draw_widget_popover :: proc(props: Draw_Widget_Popover) {
 	child := props.child
 	event := props.event
 	frame_state := props.frame_state

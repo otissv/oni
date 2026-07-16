@@ -91,9 +91,9 @@ Layout-owned transient data (child index lists, shaped text lines, glyph quads, 
 
 When the arena is active, [`layout_reset`](oni/layout.odin#L227) clears node vectors/maps and resets the arena instead of deleting each child list and text buffer. Arena backing grows when peak use exceeds 75% of capacity.
 
-## Spaces (Screen / Artboard)
+## Spaces (Screen / Artboard / Popover)
 
-A **space** is a layout region tied to a draw space (`.SCREEN` or `.ARTBOARD`).
+A **space** is a layout region tied to a draw space (`.SCREEN`, `.ARTBOARD`, or `.POPOVER`).
 
 | Proc | Role |
 |------|------|
@@ -101,10 +101,14 @@ A **space** is a layout region tied to a draw space (`.SCREEN` or `.ARTBOARD`).
 | [`End_Screen`](oni/api.odin#L51) → [`draw_pop_screen`](oni/draw.odin#L257) | Leave screen; Layout → [`layout_end_space`](oni/layout.odin#L2489) |
 | [`Begin_Artboard`](oni/api.odin#L48) → [`begin_artboard`](oni/draw.odin#L221) | Same for artboard (zoom-scaled bounds) |
 | [`End_Artboard`](oni/api.odin#L49) → [`end_artboard`](oni/draw.odin#L234) | End artboard space + solve |
+| [`Popover_Begin`](oni/api.odin) → [`begin_popover`](oni/draw.odin) | Popover overlay space (screen coords; paints above screen/artboard) |
+| [`Popover_End`](oni/api.odin) → [`end_popover`](oni/draw.odin) | End popover space + solve |
 | [`layout_space_bounds`](oni/layout.odin#L2464) | Logical bounds; artboard divides by cached zoom |
 | [`layout_artboard_zoom`](oni/layout.odin#L254) | Effective artboard zoom, cached per layout pass |
 | [`layout_invalidate_artboard_zoom`](oni/layout.odin#L270) | Drop zoom cache after view transform changes |
 | [`style_root`](oni/style.odin#L1228) | Root style context for the space |
+
+Widgets can also opt into popover with `space = set.Space(.POPOVER)` without a begin/end scope.
 
 [`layout_begin_space`](oni/layout.odin#L2479) records a node-index marker. [`layout_end_space`](oni/layout.odin#L2489) solves every node since that marker with `parent == -1` against the space bounds.
 
@@ -227,7 +231,7 @@ layout_end_space
 |------|------------------|-------|
 | RELATIVE / STICKY | In flex flow | Sticky clamps into clip |
 | ABSOLUTE | Parent padding box | Pins: `x` / `y` / `right` / `bottom` |
-| FIXED | Space bounds (`top_layer` → SCREEN) | Same pins; out of flex gap |
+| FIXED | Space bounds (popover uses viewport) | Same pins; out of flex gap |
 
 | Proc | Role |
 |------|------|
@@ -252,15 +256,15 @@ After a builder’s layout tree is solved, [`ui_end_layout_pass`](oni/ui.odin#L1
 1. [`layout_finalize_stack_order`](oni/layout_stack.odin#L376) — clips, paint lists, `stack_index`
 2. [`layout_resolve_pointer_hit`](oni/layout_stack.odin#L466) — topmost hittable under pointer
 
-Paint list order: artboard roots → screen roots → top-layer roots. Within siblings: negative `z` under parent chrome, then parent, then non-negative `z`; tie-break `order` then node index. Hit test walks paint lists front-to-back: top layer → screen → artboard.
+Paint list order: artboard roots → screen roots → popover roots. Within siblings: negative `z` under parent chrome, then parent, then non-negative `z`; tie-break `order` then node index. Each popover root is its own stacking context. Hit test walks paint lists front-to-back: popover → screen → artboard.
 
 | Proc | Role |
 |------|------|
 | [`layout_assign_stack`](oni/layout_stack.odin#L327) | Assign stack indices into a paint list |
-| [`layout_is_top_layer_subtree_root`](oni/layout_stack.odin#L290) | Top-layer root detection |
+| [`layout_is_popover_subtree_root`](oni/layout_stack.odin#L290) | Popover root detection |
 | [`layout_stack_child_less`](oni/layout_stack.odin#L298) / [`layout_sort_stack_children`](oni/layout_stack.odin#L311) | Sibling sort |
 | [`layout_hit_point_in_node`](oni/layout_stack.odin#L433) / [`layout_hit_test_list`](oni/layout_stack.odin#L445) | Hit helpers |
-| [`ui_top_layer_begin`](oni/layout_stack.odin#L112) / [`ui_top_layer_end`](oni/layout_stack.odin#L121) | Modal layer scope |
+| [`begin_popover`](oni/draw.odin) / [`end_popover`](oni/draw.odin) | Popover space scope (`Popover_Begin` / `End`) |
 | [`ui_layout_stack_index`](oni/layout_stack.odin#L130) | Draw query |
 | [`ui_layout_paint_skip`](oni/layout_stack.odin#L140) / [`ui_layout_hit_skip`](oni/layout_stack.odin#L150) | Skip flags |
 | [`ui_layout_clip_rect`](oni/layout_stack.odin#L160) | Clip query |
@@ -327,7 +331,7 @@ Shaped text, glyph quads, and decoration strokes live in arena-owned slices on `
 | `Layout_Table_Tracks` | [oni/layout.odin](oni/layout.odin#L106) | Shared col/row sizes, cell positions, collapsed borders |
 | `Resolved_Widget_Style` / `Resolved_Widget_Config` | [oni/types.odin](oni/types.odin#L287) | Concrete style for layout |
 | `Length` / `Direction_Layout` / `Justify_Pos` / `Position` | [oni/types.odin](oni/types.odin#L224) | Sizing, direction, justify, position |
-| `Draw_Space` / `Rect` | [oni/types.odin](oni/types.odin#L863) | SCREEN vs ARTBOARD; logical rect |
+| `Draw_Space` / `Rect` | [oni/types.odin](oni/types.odin#L863) | SCREEN / ARTBOARD / POPOVER; logical rect |
 | `Style_Context` | [oni/types.odin](oni/types.odin#L364) | Style + content_w/h for percent/text wrap |
 | `Layout_Position_Kind` | [oni/layout_stack.odin](oni/layout_stack.odin#L8) | Resolved position mode |
 
@@ -381,4 +385,4 @@ Justify / place / solve: [`layout_main_justify_align`](oni/layout.odin#L1616), [
 
 ## Complete proc index (`oni/layout_stack.odin`)
 
-[`layout_position_kind`](oni/layout_stack.odin#L31), [`layout_visibility_is_none`](oni/layout_stack.odin#L45), [`layout_visibility_is_hidden`](oni/layout_stack.odin#L53), [`layout_pointer_events_none`](oni/layout_stack.odin#L61), [`layout_overflow_clips`](oni/layout_stack.odin#L69), [`layout_overflow_is_scrollport`](oni/layout_stack.odin#L78), [`layout_padding_box`](oni/layout_stack.odin#L87), [`layout_clip_box`](oni/layout_stack.odin#L97), [`layout_position_in_flex_flow`](oni/layout_stack.odin#L104), [`ui_top_layer_begin`](oni/layout_stack.odin#L112), [`ui_top_layer_end`](oni/layout_stack.odin#L121), [`ui_layout_stack_index`](oni/layout_stack.odin#L130), [`ui_layout_paint_skip`](oni/layout_stack.odin#L140), [`ui_layout_hit_skip`](oni/layout_stack.odin#L150), [`ui_layout_clip_rect`](oni/layout_stack.odin#L160), [`layout_place_against_containing_block`](oni/layout_stack.odin#L172), [`layout_place_out_of_flow`](oni/layout_stack.odin#L231), [`layout_resolve_clips`](oni/layout_stack.odin#L249), [`layout_is_top_layer_subtree_root`](oni/layout_stack.odin#L290), [`layout_stack_child_less`](oni/layout_stack.odin#L298), [`layout_sort_stack_children`](oni/layout_stack.odin#L311), [`layout_assign_stack`](oni/layout_stack.odin#L327), [`layout_finalize_stack_order`](oni/layout_stack.odin#L376), [`layout_hit_point_in_node`](oni/layout_stack.odin#L433), [`layout_hit_test_list`](oni/layout_stack.odin#L445), [`layout_resolve_pointer_hit`](oni/layout_stack.odin#L466).
+[`layout_position_kind`](oni/layout_stack.odin#L31), [`layout_visibility_is_none`](oni/layout_stack.odin#L45), [`layout_visibility_is_hidden`](oni/layout_stack.odin#L53), [`layout_pointer_events_none`](oni/layout_stack.odin#L61), [`layout_overflow_clips`](oni/layout_stack.odin#L69), [`layout_overflow_is_scrollport`](oni/layout_stack.odin#L78), [`layout_padding_box`](oni/layout_stack.odin#L87), [`layout_clip_box`](oni/layout_stack.odin#L97), [`layout_position_in_flex_flow`](oni/layout_stack.odin#L104), [`ui_layout_stack_index`](oni/layout_stack.odin#L130), [`ui_layout_paint_skip`](oni/layout_stack.odin#L140), [`ui_layout_hit_skip`](oni/layout_stack.odin#L150), [`ui_layout_clip_rect`](oni/layout_stack.odin#L160), [`layout_place_against_containing_block`](oni/layout_stack.odin#L172), [`layout_place_out_of_flow`](oni/layout_stack.odin#L231), [`layout_resolve_clips`](oni/layout_stack.odin#L249), [`layout_is_popover_subtree_root`](oni/layout_stack.odin#L290), [`layout_stack_child_less`](oni/layout_stack.odin#L298), [`layout_sort_stack_children`](oni/layout_stack.odin#L311), [`layout_assign_stack`](oni/layout_stack.odin#L327), [`layout_finalize_stack_order`](oni/layout_stack.odin#L376), [`layout_hit_point_in_node`](oni/layout_stack.odin#L433), [`layout_hit_test_list`](oni/layout_stack.odin#L445), [`layout_resolve_pointer_hit`](oni/layout_stack.odin#L466).

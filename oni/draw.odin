@@ -139,7 +139,7 @@ draw_current_space :: proc() -> Draw_Space {
 /*
 Pushes a draw coordinate space onto the batch space stack.
 
-Used to switch between screen and artboard coordinate transforms.
+Used to switch between screen, artboard, and popover coordinate transforms.
 */
 draw_push_space :: proc(space: Draw_Space) {
 	append(&batch_current().space_stack, space)
@@ -255,6 +255,31 @@ Leaves screen draw space and restores the previous layout and style state.
 During the layout pass, ends the nested screen layout region first.
 */
 draw_pop_screen :: proc() {
+	if ui_pass() == .Layout do layout_end_space()
+	ui_pop_style()
+	draw_pop_space()
+}
+
+/*
+Enters popover draw space with matching layout and root UI style.
+
+Popover uses screen coordinates and paints/hits above screen and artboard.
+Each popover root is its own stacking context (z_index is local to the subtree).
+During the layout pass, also begins a nested popover layout region.
+*/
+begin_popover :: proc() {
+	draw_push_space(.POPOVER)
+	bounds := layout_space_bounds(.POPOVER)
+	ui_push_style(style_root(.POPOVER, bounds))
+	if ui_pass() == .Layout do layout_begin_space(.POPOVER)
+}
+
+/*
+Leaves popover draw space and restores the previous layout and style state.
+
+During the layout pass, ends the nested popover layout region first.
+*/
+end_popover :: proc() {
 	if ui_pass() == .Layout do layout_end_space()
 	ui_pop_style()
 	draw_pop_space()

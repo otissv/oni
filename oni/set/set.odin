@@ -188,8 +188,6 @@ Pointer_Events :: proc(
 	value: oni.Pointer_Events,
 ) -> oni.Cfg(oni.Pointer_Events) {return cfg_value(value)}
 
-Top_Layer :: Bool
-
 Accepts_Text_Input :: proc(value: bool = true) -> bool {return value}
 
 Right :: F32
