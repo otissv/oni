@@ -1,7 +1,7 @@
-package widgets_route
+package oni_docs
 
-import set "../../../oni/set"
-import w "../../../oni/widgets"
+import set "../../oni/set"
+import w "../../oni/widgets"
 
 
 WidgetText :: proc() {

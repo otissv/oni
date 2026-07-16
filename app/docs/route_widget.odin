@@ -1,46 +1,48 @@
-package widgets_route
+package oni_docs
 
-import ui "../../../app/ui"
-import o "../../../oni"
-import set "../../../oni/set"
-import w "../../../oni/widgets"
+import ui "../../app/ui"
+import o "../../oni"
+import set "../../oni/set"
+import w "../../oni/widgets"
 
 
 @(private)
 Sidebar_Widgets_options :: enum {
-	BUTTON,
-	IMAGE,
-	RECTANGLE,
-	TEXT,
-	TABLE,
+	WIDGET_BUTTON,
+	WIDGET_IMAGE,
+	WIDGET_RECTANGLE,
+	WIDGET_TEXT,
+	WIDGET_TABLE,
 }
 
 @(private)
-active_widget_option: Sidebar_Widgets_options = .TABLE
+active_widget_option: Sidebar_Widgets_options = .WIDGET_TABLE
 
-container := proc(state: w.Rectangle_State) {
+
+widget_container := proc(state: w.Rectangle_State) {
 	switch active_widget_option {
-	case .RECTANGLE:
+	// Widgets
+	case .WIDGET_RECTANGLE:
 		Widget_Rectangle()
-	case .TABLE:
+	case .WIDGET_TABLE:
 		Widget_Table()
-	case .IMAGE:
+	case .WIDGET_IMAGE:
 		Widget_Image()
-	case .BUTTON:
+	case .WIDGET_BUTTON:
 		Widget_Button()
-	case .TEXT:
+	case .WIDGET_TEXT:
 		WidgetText()
 	}
 }
 
-sidebar := proc(state: w.Rectangle_State) {
+widget_sidebar := proc(state: w.Rectangle_State) {
 	ui.Button({
 		id = "widget_sidebar_button_rect",
 		variant = .GHOST,
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .RECTANGLE
+			active_widget_option = .WIDGET_RECTANGLE
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "widget_sidebar_button_rect_text", text = "Rectangle"}})
@@ -53,7 +55,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .BUTTON
+			active_widget_option = .WIDGET_BUTTON
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "widget_sidebar_button_button_text", text = "Button"}})
@@ -67,7 +69,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .IMAGE
+			active_widget_option = .WIDGET_IMAGE
 
 		},
 		child = proc(_: ui.Button_state) {
@@ -81,7 +83,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .TABLE
+			active_widget_option = .WIDGET_TABLE
 
 		},
 		child = proc(_: ui.Button_state) {
@@ -95,7 +97,7 @@ sidebar := proc(state: w.Rectangle_State) {
 		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 		radius = set.Radius(5),
 		on_click = proc(_: ui.Button_Event) {
-			active_widget_option = .TEXT
+			active_widget_option = .WIDGET_TEXT
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "widget_sidebar_button_text_text", text = "Text"}})

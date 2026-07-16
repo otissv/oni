@@ -4,8 +4,8 @@ import o "../oni"
 import set "../oni/set"
 import w "../oni/widgets"
 import c "./components"
+import docs "./docs"
 import g "./globlas"
-import r "./routes"
 
 
 @(init)
@@ -15,7 +15,7 @@ register_init :: proc "contextless" () {
 
 @(private)
 run_init :: proc() {
-	r.routes_init()
+	docs.routes_init()
 }
 
 
@@ -29,15 +29,15 @@ main_ui :: proc() {
 		child = proc(state: w.Rectangle_State) {
 			#partial switch g.app.Route {
 			case .Artboard:
-				r.artboard_route()
+				docs.artboard_route()
 			case .About:
-				r.about_route()
+				docs.about_route()
 			case .Layout:
-				r.layout_route()
+				docs.layout_route()
 			case .Home:
-				r.home_route()
+				docs.home_route()
 			case .Widgets:
-				r.widgets_route()
+				docs.widgets_route()
 			}
 		},
 	})

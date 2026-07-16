@@ -1,8 +1,8 @@
-package widgets_route
+package oni_docs
 
-import o "../../../oni"
-import set "../../../oni/set"
-import w "../../../oni/widgets"
+import o "../../oni"
+import set "../../oni/set"
+import w "../../oni/widgets"
 
 Widget_Table :: proc() {
 	w.Table({

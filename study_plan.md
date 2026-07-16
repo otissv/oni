@@ -18,7 +18,7 @@ For a general renderer for **2D games + desktop UI + editor/tools**, learn in th
 
 ## 1. Odin + SDL3 basics first, no custom GPU yet
 
-  Use Odin’s official vendor package docs so you know what you are importing; Odin lists `vendor:sdl3`, `vendor:sdl3/image`, and `vendor:sdl3/ttf`. 
+  Use Odin’s official vendor package oni_docs so you know what you are importing; Odin lists `vendor:sdl3`, `vendor:sdl3/image`, and `vendor:sdl3/ttf`. 
 
   Focus on:
   - [ * ]  Opening a window and basic SDL render + vsync

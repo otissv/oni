@@ -14,10 +14,9 @@ Label_Size :: enum {
 
 
 Label_Props :: struct {
-	id:    string,
-	text:  string,
-	size:  Label_Size,
-	theme: ^o.Theme,
+	using _: w.Text_Config,
+	size:    Label_Size,
+	theme:   ^o.Theme,
 }
 
 Label :: proc(props: Label_Props) {
@@ -33,17 +32,8 @@ Label :: proc(props: Label_Props) {
 	case .Icon:
 		font_size = set.F32(14)
 	}
+	config := props
+	config.font_size = font_size
 
-	w.Text(
-		{
-			config = {
-				id = props.id,
-				text = props.text,
-				font = set.Font(props.theme.font_heading),
-				color = set.Colors(o.theme.palette[.FOREGROUND]),
-				font_size = font_size,
-				line_height = set.F32(0),
-			},
-		},
-	)
+	w.Text({config = config})
 }

@@ -1,10 +1,8 @@
-package routes
+package oni_docs
 
 import o "../../oni"
 import c "../components"
 import g "../globlas"
-import layouts "./layouts"
-import widgets "./widgets"
 
 
 routes_init :: proc() {
@@ -13,10 +11,10 @@ routes_init :: proc() {
 }
 
 widgets_route :: proc() {
-	c.View("widget_view", widgets.sidebar, widgets.container)
+	c.View("widget_view", widget_sidebar, widget_container)
 }
 
 
 layout_route :: proc() {
-	c.View("layout_view", layouts.sidebar, layouts.container)
+	c.View("layout_view", layout_sidebar, layout_container)
 }

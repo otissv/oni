@@ -1,4 +1,4 @@
-package routes
+package oni_docs
 
 import ui "../../app/ui"
 import o "../../oni"

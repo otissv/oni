@@ -1,4 +1,4 @@
-package routes
+package oni_docs
 
 import o "../../oni"
 import set "../../oni/set"

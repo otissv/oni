@@ -1,9 +1,9 @@
-package widgets_route
+package oni_docs
 
-import o "../../../oni"
-import set "../../../oni/set"
-import w "../../../oni/widgets"
-import g "../../globlas"
+import o "../../oni"
+import set "../../oni/set"
+import w "../../oni/widgets"
+import g "../globlas"
 
 
 Widget_Image :: proc() {

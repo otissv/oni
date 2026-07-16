@@ -1,14 +1,14 @@
-package widgets_route
+package oni_docs
 
-import o "../../../oni"
-import set "../../../oni/set"
-import w "../../../oni/widgets"
+import o "../../oni"
+import set "../../oni/set"
+import w "../../oni/widgets"
 
 Widget_Rectangle :: proc() {
 	w.Rectangle(
 		{
 			config = {
-				id = "rectalgel1_widget",
+				id = "rectangle1_widget",
 				height = set.Height(400),
 				width = set.Width(400),
 				direction = set.Direction(.VERTICAL),
