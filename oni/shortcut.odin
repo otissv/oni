@@ -19,7 +19,7 @@ SHORTCUT_APP_QUIT :: "app.quit"
 SHORTCUT_HOST_RELOAD :: "host.reload"
 SHORTCUT_HOST_RESTART :: "host.restart"
 
-SHORTCUT_CONTEXT_TOP_LAYER :: "top_layer"
+SHORTCUT_CONTEXT_POPOVER :: "popover"
 SHORTCUT_SEQUENCE_MAX :: 4
 SHORTCUT_SEQUENCE_TIMEOUT_FRAMES :: u32(45)
 SHORTCUT_MOUSE_BUTTON_COUNT :: 8
@@ -30,7 +30,7 @@ When a binding is eligible to fire.
 */
 Shortcut_Scope :: enum u8 {
 	Global,
-	Context, // scope_key on context stack (or auto top_layer)
+	Context, // scope_key on context stack (or auto popover)
 	Focused_Id, // focused widget id == scope_key
 	Focused_Any, // any focused widget
 	Focused_Kind, // focused widget's Widget_Kind == scope_kind
@@ -865,85 +865,7 @@ shortcut_install_defaults :: proc() {
 	shortcut_register_builtin_actions()
 	if state.shortcuts.defaults_installed do return
 
-	shortcut_bind_key(
-		SHORTCUT_VIEW_ZOOM_IN,
-		{key = .EQUALS, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	shortcut_bind_key(
-		SHORTCUT_VIEW_ZOOM_IN,
-		{key = .KP_PLUS, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	_ = shortcut_bind_wheel_src(SHORTCUT_VIEW_ZOOM_IN, 1, {ctrl = true}, {}, .Builtin)
-
-	shortcut_bind_key(
-		SHORTCUT_VIEW_ZOOM_OUT,
-		{key = .MINUS, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	shortcut_bind_key(
-		SHORTCUT_VIEW_ZOOM_OUT,
-		{key = .KP_MINUS, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	_ = shortcut_bind_wheel_src(SHORTCUT_VIEW_ZOOM_OUT, -1, {ctrl = true}, {}, .Builtin)
-
-	shortcut_bind_key(
-		SHORTCUT_VIEW_RESET,
-		{key = ._0, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	shortcut_bind_key(
-		SHORTCUT_VIEW_RESET,
-		{key = .KP_0, ctrl = true},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-
-	shortcut_bind_key(
-		SHORTCUT_WINDOW_TOGGLE_FULLSCREEN,
-		{key = .F11},
-		.Global,
-		"",
-		{},
-		0,
-		true,
-		.Builtin,
-	)
-	_ = shortcut_bind_gamepad_src(SHORTCUT_WINDOW_TOGGLE_FULLSCREEN, .START, {}, .Builtin)
-
-	shortcut_bind_key(SHORTCUT_HOST_RELOAD, {key = .F5}, .Global, "", {}, 0, true, .Builtin)
-	shortcut_bind_key(SHORTCUT_HOST_RESTART, {key = .F6}, .Global, "", {}, 0, true, .Builtin)
+	shortcut_defaults()
 
 	// app.quit action is registered; Escape is not bound by default.
 	state.shortcuts.defaults_installed = true
@@ -1136,46 +1058,7 @@ shortcut_parse_scope :: proc(s: string) -> Shortcut_Scope {
 	case "global", "":
 		return .Global
 	}
-	// Legacy PascalCase headers
-	switch s {
-	case "Context":
-		return .Context
-	case "Focused_Id":
-		return .Focused_Id
-	case "Focused_Any":
-		return .Focused_Any
-	case "Focused_Kind":
-		return .Focused_Kind
-	}
 	return .Global
-}
-
-@(private)
-shortcut_parse_source :: proc(s: string) -> Shortcut_Source {
-	switch strings.to_lower(s, context.temp_allocator) {
-	case "user":
-		return .User
-	case "builtin", "built-in", "default":
-		return .Builtin
-	}
-	return .Builtin
-}
-
-@(private)
-shortcut_scope_name :: proc(scope: Shortcut_Scope) -> string {
-	switch scope {
-	case .Context:
-		return "Context"
-	case .Focused_Id:
-		return "Focused_Id"
-	case .Focused_Any:
-		return "Focused_Any"
-	case .Focused_Kind:
-		return "Focused_Kind"
-	case .Global:
-		return "Global"
-	}
-	return "Global"
 }
 
 @(private)
@@ -1500,9 +1383,9 @@ shortcut_focused_kind :: proc(focused_id: string) -> Widget_Kind {
 }
 
 @(private)
-shortcut_top_layer_active :: proc() -> bool {
+shortcut_popover_active :: proc() -> bool {
 	if state == nil do return false
-	return len(state.ui.layout.top_layer_paint_list) > 0
+	return len(state.ui.layout.paint_list_popover) > 0
 }
 
 @(private)
@@ -1585,7 +1468,7 @@ shortcut_scope_matches :: proc(
 		return true
 	case .Context:
 		if b.scope_key == "" do return false
-		if b.scope_key == SHORTCUT_CONTEXT_TOP_LAYER && shortcut_top_layer_active() {
+		if b.scope_key == SHORTCUT_CONTEXT_POPOVER && shortcut_popover_active() {
 			return true
 		}
 		for ctx in state.shortcuts.contexts {

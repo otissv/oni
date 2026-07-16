@@ -394,10 +394,10 @@ shortcut_import_rejects_bad_line_without_clearing :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			shortcut_bind("keep", {key = .K})
 			before := shortcut_binding_count()
-			bad := "oni-shortcuts\t2\nKEY\tbroken\n"
+			bad := "NOT_A_VALID_BINDING\n"
 			err := shortcut_import_bindings_ex(bad, true)
 			testing.expect(t, !err.ok)
-			testing.expect(t, err.line > 1)
+			testing.expect(t, err.line >= 1)
 			testing.expect_value(t, shortcut_binding_count(), before)
 		},
 	)
@@ -502,7 +502,7 @@ shortcut_friendly_format_roundtrip :: proc(t: ^testing.T) {
 			shortcut_set_enabled("demo.ping", false)
 
 			data := shortcut_export_bindings(context.temp_allocator)
-			testing.expect(t, strings.contains(data, "oni-shortcuts 3"))
+			testing.expect(t, !strings.contains(data, "oni-shortcuts"))
 			testing.expect(t, strings.contains(data, "CTRL+P = demo.ping"))
 			testing.expect(t, strings.contains(data, "enabled = false"))
 			testing.expect(t, strings.contains(data, "WHEEL+UP = view.zoom_in"))
@@ -534,12 +534,12 @@ shortcut_friendly_format_roundtrip :: proc(t: ^testing.T) {
 }
 
 @(test)
-shortcut_friendly_parse_mod_wheel_and_legacy :: proc(t: ^testing.T) {
+shortcut_friendly_parse_mod_wheel_and_gamepad :: proc(t: ^testing.T) {
 	with_engine_env(
 		t,
 		proc(t: ^testing.T) {
 			friendly :=
-				"oni-shortcuts 3\nMOD+WHEEL+UP = view.zoom_in { enabled = false }\nCTRL+EQUAL = view.zoom_in\nGAMEPAD_START = window.toggle_fullscreen\n"
+				"MOD+WHEEL+UP = view.zoom_in { enabled = false }\nCTRL+EQUAL = view.zoom_in\nGAMEPAD_START = window.toggle_fullscreen\n"
 			testing.expect(t, shortcut_import_bindings(friendly, true))
 
 			mod_wheel := false
@@ -564,10 +564,6 @@ shortcut_friendly_parse_mod_wheel_and_legacy :: proc(t: ^testing.T) {
 			testing.expect(t, mod_wheel)
 			testing.expect(t, equals)
 			testing.expect(t, gamepad)
-
-			legacy := "oni-shortcuts\t2\nKEY\ta\t4\ttrue\tfalse\tfalse\tfalse\tGlobal\t\t0\ttrue\tuser\t0\n"
-			shortcut_register_action("a", shortcut_test_action_set_flag)
-			testing.expect(t, shortcut_import_bindings(legacy, true))
 		},
 	)
 }
@@ -591,7 +587,7 @@ shortcut_config_overrides_builtin_trigger :: proc(t: ^testing.T) {
 			}
 			testing.expect(t, before_builtin)
 
-			friendly := "oni-shortcuts 3\nCTRL+WHEEL+UP = demo.ping\n"
+			friendly := "CTRL+WHEEL+UP = demo.ping\n"
 			shortcut_register_action("demo.ping", shortcut_test_action_set_flag)
 			testing.expect(t, shortcut_import_bindings(friendly, true))
 
