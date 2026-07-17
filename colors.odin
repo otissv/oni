@@ -1,6 +1,6 @@
 package oni
 
-import col "../colors"
+import col "libs:colors"
 
 Color :: col.Color
 RGBA :: col.RGBA

@@ -243,7 +243,7 @@ App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
 - [x] Wrap modes + letter-spacing; HarfBuzz clusters
 - [x] Explicit `Text_Direction` (LTR/RTL)
 - [ ] `theme_light()` / `theme_dark()` presets + runtime switch demo
-- [ ] Optional Noto Arabic / CJK fallback families in `assets/fonts/`
+- [ ] Optional Noto Arabic / CJK fallback families in `fixtures/fonts/`
 - [ ] Demo routes proving Arabic RTL, mixed EN+AR, and CJK wrap samples
 
 

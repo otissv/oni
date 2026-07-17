@@ -7,7 +7,7 @@ import "core:sync"
 import "core:testing"
 import sdl "vendor:sdl3"
 
-PIXEL_BOLD_FONT_FIXTURE :: "assets/fonts/PixelOperator8-Bold.ttf"
+PIXEL_BOLD_FONT_FIXTURE :: "fixtures/fonts/PixelOperator8-Bold.ttf"
 
 @(private)
 font_test_read_pixel :: proc(surface: ^sdl.Surface, x, y: c.int) -> (r, g, b, a: u8, ok: bool) {
@@ -16,7 +16,10 @@ font_test_read_pixel :: proc(surface: ^sdl.Surface, x, y: c.int) -> (r, g, b, a:
 }
 
 @(private)
-with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Handle, t: ^testing.T)) {
+with_font_gpu_fixtures :: proc(
+	t: ^testing.T,
+	body: proc(inter, pixel: Font_Handle, t: ^testing.T),
+) {
 	if !font_fixture_available() {
 		testing.expectf(
 			t,
@@ -56,7 +59,11 @@ with_font_gpu_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Hand
 	state = &test_state
 	widget_ctx_sync()
 	theme = nil
-	state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+	state.dpi = {
+		logical_w = 800,
+		logical_h = 600,
+		scale     = 1,
+	}
 	state.view = view_default()
 	state.gpu = gpu
 	batch_current().vertex_capacity = 64 * 1024
@@ -226,44 +233,41 @@ font_measure_lines_nil_empty_and_scaled :: proc(t: ^testing.T) {
 
 @(test)
 font_copy_glyph_bitmap_gray_writes_white_with_alpha :: proc(t: ^testing.T) {
-	with_sdl_video(
-		t,
-		proc(t: ^testing.T) {
-			alphas := [4]u8{0, 64, 128, 255}
-			bitmap := FT_Bitmap {
-				rows       = 2,
-				width      = 2,
-				pitch      = 2,
-				buffer     = raw_data(alphas[:]),
-				pixel_mode = FT_PIXEL_MODE_GRAY,
-			}
-			surface := sdl.CreateSurface(2, 2, .RGBA8888)
-			testing.expect(t, surface != nil)
-			if surface == nil do return
-			defer sdl.DestroySurface(surface)
+	with_sdl_video(t, proc(t: ^testing.T) {
+		alphas := [4]u8{0, 64, 128, 255}
+		bitmap := FT_Bitmap {
+			rows       = 2,
+			width      = 2,
+			pitch      = 2,
+			buffer     = raw_data(alphas[:]),
+			pixel_mode = FT_PIXEL_MODE_GRAY,
+		}
+		surface := sdl.CreateSurface(2, 2, .RGBA8888)
+		testing.expect(t, surface != nil)
+		if surface == nil do return
+		defer sdl.DestroySurface(surface)
 
-			font_copy_glyph_bitmap(&bitmap, surface)
+		font_copy_glyph_bitmap(&bitmap, surface)
 
-			r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
-			testing.expect(t, ok)
-			testing.expect_value(t, r, u8(255))
-			testing.expect_value(t, g, u8(255))
-			testing.expect_value(t, b, u8(255))
-			testing.expect_value(t, a, u8(0))
+		r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
+		testing.expect(t, ok)
+		testing.expect_value(t, r, u8(255))
+		testing.expect_value(t, g, u8(255))
+		testing.expect_value(t, b, u8(255))
+		testing.expect_value(t, a, u8(0))
 
-			_, _, _, a, ok = font_test_read_pixel(surface, 1, 0)
-			testing.expect(t, ok)
-			testing.expect_value(t, a, u8(64))
+		_, _, _, a, ok = font_test_read_pixel(surface, 1, 0)
+		testing.expect(t, ok)
+		testing.expect_value(t, a, u8(64))
 
-			_, _, _, a, ok = font_test_read_pixel(surface, 0, 1)
-			testing.expect(t, ok)
-			testing.expect_value(t, a, u8(128))
+		_, _, _, a, ok = font_test_read_pixel(surface, 0, 1)
+		testing.expect(t, ok)
+		testing.expect_value(t, a, u8(128))
 
-			_, _, _, a, ok = font_test_read_pixel(surface, 1, 1)
-			testing.expect(t, ok)
-			testing.expect_value(t, a, u8(255))
-		},
-	)
+		_, _, _, a, ok = font_test_read_pixel(surface, 1, 1)
+		testing.expect(t, ok)
+		testing.expect_value(t, a, u8(255))
+	})
 }
 
 @(test)
@@ -332,53 +336,50 @@ font_copy_glyph_bitmap_bgra_swizzles_to_rgba_write :: proc(t: ^testing.T) {
 
 @(test)
 font_copy_glyph_bitmap_unsupported_mode_leaves_surface_untouched :: proc(t: ^testing.T) {
-	with_sdl_video(
-		t,
-		proc(t: ^testing.T) {
-			src := [1]u8{255}
-			bitmap := FT_Bitmap {
-				rows       = 1,
-				width      = 1,
-				pitch      = 1,
-				buffer     = raw_data(src[:]),
-				pixel_mode = 99,
-			}
-			surface := sdl.CreateSurface(1, 1, .RGBA8888)
-			testing.expect(t, surface != nil)
-			if surface == nil do return
-			defer sdl.DestroySurface(surface)
+	with_sdl_video(t, proc(t: ^testing.T) {
+		src := [1]u8{255}
+		bitmap := FT_Bitmap {
+			rows       = 1,
+			width      = 1,
+			pitch      = 1,
+			buffer     = raw_data(src[:]),
+			pixel_mode = 99,
+		}
+		surface := sdl.CreateSurface(1, 1, .RGBA8888)
+		testing.expect(t, surface != nil)
+		if surface == nil do return
+		defer sdl.DestroySurface(surface)
 
-			testing.expect(t, sdl.WriteSurfacePixel(surface, 0, 0, 1, 2, 3, 4))
+		testing.expect(t, sdl.WriteSurfacePixel(surface, 0, 0, 1, 2, 3, 4))
 
-			sync.mutex_lock(&log_test_guard)
-			defer sync.mutex_unlock(&log_test_guard)
+		sync.mutex_lock(&log_test_guard)
+		defer sync.mutex_unlock(&log_test_guard)
 
-			_ = os.make_directory_all("build")
-			path := "build/test_font_unsupported_pixel_mode.txt"
-			_ = os.remove(path)
-			file, err := os.open(path, {.Write, .Create, .Trunc})
-			testing.expectf(t, err == nil, "open capture: %v", err)
-			if err != nil do return
-			old := os.stderr
-			os.stderr = file
-			font_copy_glyph_bitmap(&bitmap, surface)
-			os.flush(file)
-			os.stderr = old
-			os.close(file)
+		_ = os.make_directory_all("build")
+		path := "build/test_font_unsupported_pixel_mode.txt"
+		_ = os.remove(path)
+		file, err := os.open(path, {.Write, .Create, .Trunc})
+		testing.expectf(t, err == nil, "open capture: %v", err)
+		if err != nil do return
+		old := os.stderr
+		os.stderr = file
+		font_copy_glyph_bitmap(&bitmap, surface)
+		os.flush(file)
+		os.stderr = old
+		os.close(file)
 
-			data, read_err := os.read_entire_file(path, context.allocator)
-			testing.expect(t, read_err == nil)
-			defer delete(data)
-			testing.expect(t, strings.contains(string(data), "Unsupported glyph pixel mode"))
+		data, read_err := os.read_entire_file(path, context.allocator)
+		testing.expect(t, read_err == nil)
+		defer delete(data)
+		testing.expect(t, strings.contains(string(data), "Unsupported glyph pixel mode"))
 
-			r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
-			testing.expect(t, ok)
-			testing.expect_value(t, r, u8(1))
-			testing.expect_value(t, g, u8(2))
-			testing.expect_value(t, b, u8(3))
-			testing.expect_value(t, a, u8(4))
-		},
-	)
+		r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
+		testing.expect(t, ok)
+		testing.expect_value(t, r, u8(1))
+		testing.expect_value(t, g, u8(2))
+		testing.expect_value(t, b, u8(3))
+		testing.expect_value(t, a, u8(4))
+	})
 }
 
 @(test)
@@ -418,52 +419,46 @@ font_copy_glyph_bitmap_gray_respects_pitch_padding :: proc(t: ^testing.T) {
 
 @(test)
 font_resolve_rejects_invalid_family_handle :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = inter
-			_ = pixel
-			_, scale, ok := font_resolve({id = Asset_Id(9999), size_px = 16}, 16, .SCREEN)
-			testing.expect(t, !ok)
-			expect_close(t, scale, 1)
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		_, scale, ok := font_resolve({id = Asset_Id(9999), size_px = 16}, 16, .SCREEN)
+		testing.expect(t, !ok)
+		expect_close(t, scale, 1)
+	})
 }
 
 @(test)
 font_resolve_defaults_size_from_handle_then_sixteen :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			sized := font_with_size(inter, 22)
-			handle, _, ok := font_resolve(sized, 0, .SCREEN)
-			testing.expect(t, ok)
-			face := font_face_from_handle(handle)
-			testing.expect(t, face != nil)
-			expect_close(t, face.size_px, 22)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		sized := font_with_size(inter, 22)
+		handle, _, ok := font_resolve(sized, 0, .SCREEN)
+		testing.expect(t, ok)
+		face := font_face_from_handle(handle)
+		testing.expect(t, face != nil)
+		expect_close(t, face.size_px, 22)
 
-			bare := Font_Handle{id = inter.id, size_px = 0}
-			handle2, _, ok2 := font_resolve(bare, 0, .SCREEN)
-			testing.expect(t, ok2)
-			face2 := font_face_from_handle(handle2)
-			testing.expect(t, face2 != nil)
-			expect_close(t, face2.size_px, 16)
-		},
-	)
+		bare := Font_Handle {
+			id      = inter.id,
+			size_px = 0,
+		}
+		handle2, _, ok2 := font_resolve(bare, 0, .SCREEN)
+		testing.expect(t, ok2)
+		face2 := font_face_from_handle(handle2)
+		testing.expect(t, face2 != nil)
+		expect_close(t, face2.size_px, 16)
+	})
 }
 
 @(test)
 font_resolve_screen_layout_scale_is_one :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			_, scale, ok := font_resolve(inter, 16, .SCREEN)
-			testing.expect(t, ok)
-			expect_close(t, scale, 1)
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		_, scale, ok := font_resolve(inter, 16, .SCREEN)
+		testing.expect(t, ok)
+		expect_close(t, scale, 1)
+	})
 }
 
 @(test)
@@ -493,67 +488,55 @@ font_resolve_artboard_applies_zoom_and_inverse_layout_scale :: proc(t: ^testing.
 
 @(test)
 font_resolve_caches_identical_instances :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			a, _, aok := font_resolve(inter, 16, .SCREEN, .Normal, .NORMAL)
-			b, _, bok := font_resolve(inter, 16, .SCREEN, .Normal, .NORMAL)
-			testing.expect(t, aok && bok)
-			testing.expect_value(t, a.id, b.id)
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		a, _, aok := font_resolve(inter, 16, .SCREEN, .Normal, .NORMAL)
+		b, _, bok := font_resolve(inter, 16, .SCREEN, .Normal, .NORMAL)
+		testing.expect(t, aok && bok)
+		testing.expect_value(t, a.id, b.id)
+	})
 }
 
 @(test)
 font_resolve_italic_and_numeric_weight :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			italic, _, iok := font_resolve(inter, 16, .SCREEN, .Normal, .ITALIC)
-			testing.expect(t, iok)
-			iface := font_face_from_handle(italic)
-			testing.expect(t, iface != nil)
-			testing.expect(t, iface.style == .ITALIC || iface.fake_italic)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		italic, _, iok := font_resolve(inter, 16, .SCREEN, .Normal, .ITALIC)
+		testing.expect(t, iok)
+		iface := font_face_from_handle(italic)
+		testing.expect(t, iface != nil)
+		testing.expect(t, iface.style == .ITALIC || iface.fake_italic)
 
-			heavy, _, hok := font_resolve(inter, 16, .SCREEN, f32(850), .NORMAL)
-			testing.expect(t, hok)
-			hface := font_face_from_handle(heavy)
-			testing.expect(t, hface != nil)
-			testing.expect(t, hface.weight >= 800 || hface.fake_bold)
-		},
-	)
+		heavy, _, hok := font_resolve(inter, 16, .SCREEN, f32(850), .NORMAL)
+		testing.expect(t, hok)
+		hface := font_face_from_handle(heavy)
+		testing.expect(t, hface != nil)
+		testing.expect(t, hface.weight >= 800 || hface.fake_bold)
+	})
 }
 
 @(test)
 font_resolve_static_pixel_fake_bold_when_heavier_than_source :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = inter
-			bold, _, ok := font_resolve(pixel, 8, .SCREEN, .Bold, .NORMAL)
-			testing.expect(t, ok)
-			face := font_face_from_handle(bold)
-			testing.expect(t, face != nil)
-			testing.expect(t, face.fake_bold)
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		bold, _, ok := font_resolve(pixel, 8, .SCREEN, .Bold, .NORMAL)
+		testing.expect(t, ok)
+		face := font_face_from_handle(bold)
+		testing.expect(t, face != nil)
+		testing.expect(t, face.fake_bold)
+	})
 }
 
 @(test)
 font_resolve_fake_italic_when_family_lacks_italic_source :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = inter
-			italic, _, ok := font_resolve(pixel, 8, .SCREEN, .Normal, .ITALIC)
-			testing.expect(t, ok)
-			face := font_face_from_handle(italic)
-			testing.expect(t, face != nil)
-			testing.expect(t, face.fake_italic)
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		italic, _, ok := font_resolve(pixel, 8, .SCREEN, .Normal, .ITALIC)
+		testing.expect(t, ok)
+		face := font_face_from_handle(italic)
+		testing.expect(t, face != nil)
+		testing.expect(t, face.fake_italic)
+	})
 }
 
 // --- font_atlas_reset ---
@@ -716,57 +699,54 @@ font_rasterize_glyph_space_uses_empty_placeholder_region :: proc(t: ^testing.T) 
 
 @(test)
 font_rasterize_glyph_fake_bold_path_succeeds :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = inter
-			handle, _, ok := font_resolve(pixel, 8, .SCREEN, .Bold, .NORMAL)
-			testing.expect(t, ok)
-			face := font_face_from_handle(handle)
-			testing.expect(t, face != nil && face.fake_bold)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		handle, _, ok := font_resolve(pixel, 8, .SCREEN, .Bold, .NORMAL)
+		testing.expect(t, ok)
+		face := font_face_from_handle(handle)
+		testing.expect(t, face != nil && face.fake_bold)
 
-			shaped := font_shape(face, "W", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) >= 1)
+		shaped := font_shape(face, "W", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 1)
 
-			entry, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
-			testing.expect(t, rok)
-			testing.expect(t, entry.region.w > 0)
-			testing.expect(t, entry.region.h > 0)
-		},
-	)
+		entry, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
+		testing.expect(t, rok)
+		testing.expect(t, entry.region.w > 0)
+		testing.expect(t, entry.region.h > 0)
+	})
 }
 
 @(test)
 font_ensure_glyphs_from_paint_rasterizes_missing_and_skips_cached :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
 
-			shaped := font_shape(face, "xy", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) >= 2)
+		shaped := font_shape(face, "xy", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 2)
 
-			paints := make([]Layout_Glyph_Paint, len(shaped))
-			defer delete(paints)
-			for g, i in shaped {
-				paints[i] = {glyph_id = g.glyph_id, dst = {f32(i * 8), 0, 8, 10}}
+		paints := make([]Layout_Glyph_Paint, len(shaped))
+		defer delete(paints)
+		for g, i in shaped {
+			paints[i] = {
+				glyph_id = g.glyph_id,
+				dst      = {f32(i * 8), 0, 8, 10},
 			}
+		}
 
-			testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
-			for g in shaped {
-				_, found := state.fonts.glyph_cache[{face_id = handle.id, glyph_id = g.glyph_id}]
-				testing.expect(t, found)
-			}
+		testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
+		for g in shaped {
+			_, found := state.fonts.glyph_cache[{face_id = handle.id, glyph_id = g.glyph_id}]
+			testing.expect(t, found)
+		}
 
-			count := len(state.fonts.glyph_cache)
-			testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
-			testing.expect_value(t, len(state.fonts.glyph_cache), count)
-		},
-	)
+		count := len(state.fonts.glyph_cache)
+		testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
+		testing.expect_value(t, len(state.fonts.glyph_cache), count)
+	})
 }
 
 @(test)
@@ -794,23 +774,20 @@ font_ensure_glyphs_parallel_path_caches_many_unique_glyphs :: proc(t: ^testing.T
 
 @(test)
 font_rasterize_real_inter_glyph_has_positive_bearings_when_inked :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, _, ok := font_test_face(inter, 24)
-			testing.expect(t, ok)
-			shaped := font_shape(face, "H", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) == 1)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 24)
+		testing.expect(t, ok)
+		shaped := font_shape(face, "H", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) == 1)
 
-			entry, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
-			testing.expect(t, rok)
-			testing.expect(t, entry.region.w > 1)
-			testing.expect(t, entry.region.h > 1)
-			testing.expect(t, entry.bearing_y > 0)
-		},
-	)
+		entry, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
+		testing.expect(t, rok)
+		testing.expect(t, entry.region.w > 1)
+		testing.expect(t, entry.region.h > 1)
+		testing.expect(t, entry.bearing_y > 0)
+	})
 }
 
 // --- font_draw_layout_text ---
@@ -833,7 +810,10 @@ font_draw_layout_text_early_returns :: proc(t: ^testing.T) {
 
 			laid.lines = []Shaped_Line{{width = 1}}
 			// Invalid face id → nil face → empty return without drawing.
-			laid.font = {id = Asset_Id(9999), size_px = 16}
+			laid.font = {
+				id      = Asset_Id(9999),
+				size_px = 16,
+			}
 			size = font_draw_layout_text(&laid, white)
 			expect_close(t, size.x, 0)
 			expect_close(t, size.y, 0)
@@ -843,43 +823,41 @@ font_draw_layout_text_early_returns :: proc(t: ^testing.T) {
 
 @(test)
 font_draw_layout_text_draws_glyphs_and_decorations :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
 
-			shaped := font_shape(face, "Hi", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) >= 2)
-			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+		shaped := font_shape(face, "Hi", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 2)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
 
-			paints := make([]Layout_Glyph_Paint, len(shaped))
-			defer delete(paints)
-			for g, i in shaped {
-				paints[i] = {glyph_id = g.glyph_id, dst = {10 + f32(i) * 8, 20, 8, 12}}
+		paints := make([]Layout_Glyph_Paint, len(shaped))
+		defer delete(paints)
+		for g, i in shaped {
+			paints[i] = {
+				glyph_id = g.glyph_id,
+				dst      = {10 + f32(i) * 8, 20, 8, 12},
 			}
+		}
 
-			strokes := []Layout_Decoration_Stroke {
-				{a = {10, 34}, b = {40, 34}, thickness = 1},
-			}
-			lines := []Shaped_Line{{glyphs = shaped, width = 20, direction = .LTR}}
-			laid := Layout_Text {
-				lines              = lines,
-				glyphs             = paints,
-				decoration_strokes = strokes,
-				font               = handle,
-				size               = {40, 16},
-			}
+		strokes := []Layout_Decoration_Stroke{{a = {10, 34}, b = {40, 34}, thickness = 1}}
+		lines := []Shaped_Line{{glyphs = shaped, width = 20, direction = .LTR}}
+		laid := Layout_Text {
+			lines              = lines,
+			glyphs             = paints,
+			decoration_strokes = strokes,
+			font               = handle,
+			size               = {40, 16},
+		}
 
-			before_verts := len(batch_current().vertices)
-			got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{255, 0, 0, 255})
-			expect_close(t, got.x, 40)
-			expect_close(t, got.y, 16)
-			testing.expect(t, len(batch_current().vertices) > before_verts)
-		},
-	)
+		before_verts := len(batch_current().vertices)
+		got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{255, 0, 0, 255})
+		expect_close(t, got.x, 40)
+		expect_close(t, got.y, 16)
+		testing.expect(t, len(batch_current().vertices) > before_verts)
+	})
 }
 
 @(test)
@@ -964,7 +942,10 @@ font_reload_faces_resets_atlas_and_recreates_families :: proc(t: ^testing.T) {
 			testing.expect(t, len(state.fonts.families) >= 1)
 
 			// Re-resolve after reload.
-			re_inter := Font_Handle{id = Asset_Id(0), size_px = 16}
+			re_inter := Font_Handle {
+				id      = Asset_Id(0),
+				size_px = 16,
+			}
 			// Family order preserved: first registered family is InterGpuTest.
 			found := false
 			for family, i in state.fonts.families {
@@ -987,31 +968,28 @@ font_pixel_bold_fixture_registers_when_present :: proc(t: ^testing.T) {
 		testing.expectf(t, false, "missing %s", PIXEL_BOLD_FONT_FIXTURE)
 		return
 	}
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = inter
-			_ = pixel
-			bold_family, ok := font_register_family(
-				"PixelBoldTest",
-				{
-					{path = PIXEL_FONT_FIXTURE, style = .NORMAL, weight = .Normal},
-					{path = PIXEL_BOLD_FONT_FIXTURE, style = .NORMAL, weight = .Bold},
-				},
-			)
-			testing.expect(t, ok)
-			bold_family = font_with_size(bold_family, 8)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		bold_family, ok := font_register_family(
+			"PixelBoldTest",
+			{
+				{path = PIXEL_FONT_FIXTURE, style = .NORMAL, weight = .Normal},
+				{path = PIXEL_BOLD_FONT_FIXTURE, style = .NORMAL, weight = .Bold},
+			},
+		)
+		testing.expect(t, ok)
+		bold_family = font_with_size(bold_family, 8)
 
-			normal, _, nok := font_resolve(bold_family, 8, .SCREEN, .Normal, .NORMAL)
-			bold, _, bok := font_resolve(bold_family, 8, .SCREEN, .Bold, .NORMAL)
-			testing.expect(t, nok && bok)
-			nface := font_face_from_handle(normal)
-			bface := font_face_from_handle(bold)
-			testing.expect(t, nface != nil && bface != nil)
-			testing.expect(t, !bface.fake_bold)
-			testing.expect(t, nface.path != bface.path)
-		},
-	)
+		normal, _, nok := font_resolve(bold_family, 8, .SCREEN, .Normal, .NORMAL)
+		bold, _, bok := font_resolve(bold_family, 8, .SCREEN, .Bold, .NORMAL)
+		testing.expect(t, nok && bok)
+		nface := font_face_from_handle(normal)
+		bface := font_face_from_handle(bold)
+		testing.expect(t, nface != nil && bface != nil)
+		testing.expect(t, !bface.fake_bold)
+		testing.expect(t, nface.path != bface.path)
+	})
 }
 
 // --- Gap coverage: failure paths, negative pitch, zoom edges, draw variants ---
@@ -1112,28 +1090,37 @@ font_copy_glyph_bitmap_negative_pitch_mono_and_bgra :: proc(t: ^testing.T) {
 
 @(test)
 font_copy_glyph_bitmap_zero_dims_or_nil_buffer_is_noop :: proc(t: ^testing.T) {
-	with_sdl_video(
-		t,
-		proc(t: ^testing.T) {
-			surface := sdl.CreateSurface(1, 1, .RGBA8888)
-			testing.expect(t, surface != nil)
-			if surface == nil do return
-			defer sdl.DestroySurface(surface)
-			testing.expect(t, sdl.WriteSurfacePixel(surface, 0, 0, 9, 8, 7, 6))
+	with_sdl_video(t, proc(t: ^testing.T) {
+		surface := sdl.CreateSurface(1, 1, .RGBA8888)
+		testing.expect(t, surface != nil)
+		if surface == nil do return
+		defer sdl.DestroySurface(surface)
+		testing.expect(t, sdl.WriteSurfacePixel(surface, 0, 0, 9, 8, 7, 6))
 
-			empty := FT_Bitmap{rows = 0, width = 1, pitch = 1, buffer = nil, pixel_mode = FT_PIXEL_MODE_GRAY}
-			font_copy_glyph_bitmap(&empty, surface)
-			nil_buf := FT_Bitmap{rows = 1, width = 1, pitch = 1, buffer = nil, pixel_mode = FT_PIXEL_MODE_GRAY}
-			font_copy_glyph_bitmap(&nil_buf, surface)
+		empty := FT_Bitmap {
+			rows       = 0,
+			width      = 1,
+			pitch      = 1,
+			buffer     = nil,
+			pixel_mode = FT_PIXEL_MODE_GRAY,
+		}
+		font_copy_glyph_bitmap(&empty, surface)
+		nil_buf := FT_Bitmap {
+			rows       = 1,
+			width      = 1,
+			pitch      = 1,
+			buffer     = nil,
+			pixel_mode = FT_PIXEL_MODE_GRAY,
+		}
+		font_copy_glyph_bitmap(&nil_buf, surface)
 
-			r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
-			testing.expect(t, ok)
-			testing.expect_value(t, r, u8(9))
-			testing.expect_value(t, g, u8(8))
-			testing.expect_value(t, b, u8(7))
-			testing.expect_value(t, a, u8(6))
-		},
-	)
+		r, g, b, a, ok := font_test_read_pixel(surface, 0, 0)
+		testing.expect(t, ok)
+		testing.expect_value(t, r, u8(9))
+		testing.expect_value(t, g, u8(8))
+		testing.expect_value(t, b, u8(7))
+		testing.expect_value(t, a, u8(6))
+	})
 }
 
 @(test)
@@ -1155,65 +1142,59 @@ font_bitmap_row_positive_and_negative_pitch :: proc(t: ^testing.T) {
 
 @(test)
 font_resolve_artboard_zoom_clamps_and_tiny_logical_size :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			view_set_zoom(VIEW_ZOOM_MAX)
-			handle, scale, ok := font_resolve(inter, 16, .ARTBOARD)
-			testing.expect(t, ok)
-			z := view_effective_zoom()
-			expect_close(t, scale, 1 / z)
-			testing.expect(t, handle.size_px >= 16 * z - 1)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		view_set_zoom(VIEW_ZOOM_MAX)
+		handle, scale, ok := font_resolve(inter, 16, .ARTBOARD)
+		testing.expect(t, ok)
+		z := view_effective_zoom()
+		expect_close(t, scale, 1 / z)
+		testing.expect(t, handle.size_px >= 16 * z - 1)
 
-			view_set_zoom(VIEW_ZOOM_MIN)
-			_, scale_min, ok_min := font_resolve(inter, 16, .ARTBOARD)
-			testing.expect(t, ok_min)
-			zmin := view_effective_zoom()
-			expect_close(t, scale_min, 1 / zmin)
+		view_set_zoom(VIEW_ZOOM_MIN)
+		_, scale_min, ok_min := font_resolve(inter, 16, .ARTBOARD)
+		testing.expect(t, ok_min)
+		zmin := view_effective_zoom()
+		expect_close(t, scale_min, 1 / zmin)
 
-			tiny, _, tok := font_resolve(inter, 0.25, .SCREEN)
-			testing.expect(t, tok)
-			tface := font_face_from_handle(tiny)
-			testing.expect(t, tface != nil)
-			testing.expect(t, tface.pixel_size >= 1)
+		tiny, _, tok := font_resolve(inter, 0.25, .SCREEN)
+		testing.expect(t, tok)
+		tface := font_face_from_handle(tiny)
+		testing.expect(t, tface != nil)
+		testing.expect(t, tface.pixel_size >= 1)
 
-			view_set_zoom(1)
-		},
-	)
+		view_set_zoom(1)
+	})
 }
 
 @(test)
 font_ensure_glyphs_fails_without_gpu_when_uncached :: proc(t: ^testing.T) {
-	with_font_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			shaped := font_shape(face, "Z", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) >= 1)
-			for g in shaped {
-				delete_key(&state.fonts.glyph_cache, Font_Glyph_Key{face_id = handle.id, glyph_id = g.glyph_id})
-			}
-			testing.expect(t, !font_ensure_glyphs(face, handle.id, shaped))
-		},
-	)
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		shaped := font_shape(face, "Z", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 1)
+		for g in shaped {
+			delete_key(
+				&state.fonts.glyph_cache,
+				Font_Glyph_Key{face_id = handle.id, glyph_id = g.glyph_id},
+			)
+		}
+		testing.expect(t, !font_ensure_glyphs(face, handle.id, shaped))
+	})
 }
 
 @(test)
 font_rasterize_glyph_rejects_out_of_range_glyph_id :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			_, rok := font_rasterize_glyph(face, 0x7FFFFFFF)
-			testing.expect(t, !rok)
-		},
-	)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		_, rok := font_rasterize_glyph(face, 0x7FFFFFFF)
+		testing.expect(t, !rok)
+	})
 }
 
 @(test)
@@ -1248,25 +1229,22 @@ font_rasterize_glyph_fails_when_atlas_is_full :: proc(t: ^testing.T) {
 
 @(test)
 font_rasterize_empty_glyph_fails_when_placeholder_cannot_alloc :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, _, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			testing.expect(t, texture_atlas_init(8))
-			for {
-				_, aok := texture_atlas_alloc(1, 1)
-				if !aok do break
-			}
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		testing.expect(t, texture_atlas_init(8))
+		for {
+			_, aok := texture_atlas_alloc(1, 1)
+			if !aok do break
+		}
 
-			shaped := font_shape(face, " ", .LTR)
-			defer delete(shaped)
-			testing.expect(t, len(shaped) >= 1)
-			_, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
-			testing.expect(t, !rok)
-		},
-	)
+		shaped := font_shape(face, " ", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 1)
+		_, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
+		testing.expect(t, !rok)
+	})
 }
 
 @(test)
@@ -1298,27 +1276,26 @@ font_atlas_reset_skips_nil_surface_and_out_of_range_id :: proc(t: ^testing.T) {
 
 @(test)
 font_draw_layout_text_decorations_only_without_glyphs :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			_, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		_, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
 
-			laid := Layout_Text {
-				lines              = []Shaped_Line{{width = 20}},
-				glyphs             = {},
-				decoration_strokes = []Layout_Decoration_Stroke{{a = {0, 0}, b = {20, 0}, thickness = 2}},
-				font               = handle,
-				size               = {20, 12},
-			}
-			before := len(batch_current().vertices)
-			got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{0, 0, 0, 255})
-			expect_close(t, got.x, 20)
-			expect_close(t, got.y, 12)
-			testing.expect(t, len(batch_current().vertices) > before)
-		},
-	)
+		laid := Layout_Text {
+			lines              = []Shaped_Line{{width = 20}},
+			glyphs             = {},
+			decoration_strokes = []Layout_Decoration_Stroke {
+				{a = {0, 0}, b = {20, 0}, thickness = 2},
+			},
+			font               = handle,
+			size               = {20, 12},
+		}
+		before := len(batch_current().vertices)
+		got := font_draw_layout_text(&laid, RGBA{255, 255, 255, 255}, RGBA{0, 0, 0, 255})
+		expect_close(t, got.x, 20)
+		expect_close(t, got.y, 12)
+		testing.expect(t, len(batch_current().vertices) > before)
+	})
 }
 
 @(test)
@@ -1340,7 +1317,10 @@ font_draw_layout_text_re_ensures_deleted_glyph_before_paint :: proc(t: ^testing.
 			paints := make([]Layout_Glyph_Paint, len(shaped))
 			defer delete(paints)
 			for g, i in shaped {
-				paints[i] = {glyph_id = g.glyph_id, dst = {f32(i) * 10, 0, 8, 10}}
+				paints[i] = {
+					glyph_id = g.glyph_id,
+					dst      = {f32(i) * 10, 0, 8, 10},
+				}
 			}
 			testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
 			delete_key(
@@ -1365,60 +1345,54 @@ font_draw_layout_text_re_ensures_deleted_glyph_before_paint :: proc(t: ^testing.
 
 @(test)
 font_draw_layout_text_emits_quad_vertices_per_glyph :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			shaped := font_shape(face, "Hi", .LTR)
-			defer delete(shaped)
-			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		shaped := font_shape(face, "Hi", .LTR)
+		defer delete(shaped)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
 
-			paints := make([]Layout_Glyph_Paint, len(shaped))
-			defer delete(paints)
-			for g, i in shaped {
-				paints[i] = {glyph_id = g.glyph_id, dst = {f32(i) * 8, 4, 7, 9}}
+		paints := make([]Layout_Glyph_Paint, len(shaped))
+		defer delete(paints)
+		for g, i in shaped {
+			paints[i] = {
+				glyph_id = g.glyph_id,
+				dst      = {f32(i) * 8, 4, 7, 9},
 			}
-			laid := Layout_Text {
-				lines  = []Shaped_Line{{width = 16}},
-				glyphs = paints,
-				font   = handle,
-				size   = {16, 12},
-			}
-			batch_reset()
-			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
-			testing.expect_value(t, len(batch_current().vertices), len(shaped) * 4)
-			testing.expect_value(t, len(batch_current().indices), len(shaped) * 6)
-			testing.expect(t, len(batch_current().segments) >= 1)
-		},
-	)
+		}
+		laid := Layout_Text {
+			lines  = []Shaped_Line{{width = 16}},
+			glyphs = paints,
+			font   = handle,
+			size   = {16, 12},
+		}
+		batch_reset()
+		_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
+		testing.expect_value(t, len(batch_current().vertices), len(shaped) * 4)
+		testing.expect_value(t, len(batch_current().indices), len(shaped) * 6)
+		testing.expect(t, len(batch_current().segments) >= 1)
+	})
 }
 
 @(test)
 font_ensure_glyphs_from_paint_returns_false_when_rasterize_fails :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			paints := []Layout_Glyph_Paint{{glyph_id = 0x7FFFFFFF, dst = {0, 0, 1, 1}}}
-			testing.expect(t, !font_ensure_glyphs_from_paint(face, handle.id, paints))
-		},
-	)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		paints := []Layout_Glyph_Paint{{glyph_id = 0x7FFFFFFF, dst = {0, 0, 1, 1}}}
+		testing.expect(t, !font_ensure_glyphs_from_paint(face, handle.id, paints))
+	})
 }
 
 @(test)
 font_ensure_glyphs_returns_false_when_rasterize_fails :: proc(t: ^testing.T) {
-	with_font_gpu_fixtures(
-		t,
-		proc(inter, pixel: Font_Handle, t: ^testing.T) {
-			_ = pixel
-			face, handle, ok := font_test_face(inter, 16)
-			testing.expect(t, ok)
-			glyphs := []Shaped_Glyph{{glyph_id = 0x7FFFFFFF}}
-			testing.expect(t, !font_ensure_glyphs(face, handle.id, glyphs))
-		},
-	)
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		glyphs := []Shaped_Glyph{{glyph_id = 0x7FFFFFFF}}
+		testing.expect(t, !font_ensure_glyphs(face, handle.id, glyphs))
+	})
 }

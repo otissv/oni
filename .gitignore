@@ -1,4 +1,7 @@
 build/
+oni
+colors
+tengu
 game_hot_reload
 .vscode/
 sdl3

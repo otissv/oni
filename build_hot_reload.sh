@@ -1,16 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$ROOT"
+# Oni owns build + hot reload. The consumer owns main.odin, app/, and assets/.
+#
+# Typical layout:
+#   <project>/
+#     main.odin          # hot-reload host (import oni "./oni")
+#     app/               # hot-reload DLL sources
+#     assets/
+#     oni/               # this framework (or clone/submodule)
+#       build_hot_reload.sh
+#       libs/
+#       shaders/
+#
+# Run from anywhere:
+#   ./oni/build_hot_reload.sh run
+# Override project root if oni is not a direct child of the project:
+#   ONI_PROJECT_ROOT=/path/to/project ./oni/build_hot_reload.sh run
 
-ONI_DIR="oni"
-OUT_DIR="build/hot_reload"
-HOST_EXE="game_hot_reload"
-WATCH_PID_FILE="build/hot_reload/.watch.pid"
-BUILD_LOCK_FILE="build/hot_reload/.build.lock"
+ONI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SHADER_DIR="${ONI_DIR}/shaders"
+if [[ -n "${ONI_PROJECT_ROOT:-}" ]]; then
+	PROJECT_ROOT="$(cd "$ONI_PROJECT_ROOT" && pwd)"
+else
+	PROJECT_ROOT="$(cd "$ONI_ROOT/.." && pwd)"
+fi
+
+# shellcheck source=odin_collections.sh
+source "${ONI_ROOT}/odin_collections.sh"
+
+OUT_DIR="${PROJECT_ROOT}/build/hot_reload"
+HOST_EXE="${PROJECT_ROOT}/game_hot_reload"
+WATCH_PID_FILE="${OUT_DIR}/.watch.pid"
+BUILD_LOCK_FILE="${OUT_DIR}/.build.lock"
+
+SHADER_DIR="${ONI_ROOT}/shaders"
 UI_FRAG="${SHADER_DIR}/ui.frag"
 UI_VERT="${SHADER_DIR}/ui.vert"
 UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
@@ -47,6 +71,27 @@ has_sdl3_image() {
 	[[ "$libs" == *libSDL3_image* ]]
 }
 
+check_project_layout() {
+	local missing=()
+
+	if [[ ! -f "${PROJECT_ROOT}/main.odin" ]]; then
+		missing+=("main.odin (hot-reload host; see oni/templates/main.odin)")
+	fi
+	if [[ ! -d "${PROJECT_ROOT}/app" ]]; then
+		missing+=("app/ (copy from oni/templates/app/)")
+	fi
+
+	if ((${#missing[@]} > 0)); then
+		echo "Project root: ${PROJECT_ROOT}"
+		echo "Missing consumer files (Oni is a framework — the user project owns these):"
+		for dep in "${missing[@]}"; do
+			echo "  - ${dep}"
+		done
+		echo "Set ONI_PROJECT_ROOT if the project root is not the parent of oni/."
+		return 1
+	fi
+}
+
 check_build_deps() {
 	local missing=()
 
@@ -79,12 +124,12 @@ check_build_deps() {
 
 is_app_running() {
 	local pid
-	pid="$(pgrep -x "$HOST_EXE" 2>/dev/null | head -1)"
+	pid="$(pgrep -x "$(basename "$HOST_EXE")" 2>/dev/null | head -1)"
 	[[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
 app_pid() {
-	pgrep -x "$HOST_EXE" 2>/dev/null | head -1
+	pgrep -x "$(basename "$HOST_EXE")" 2>/dev/null | head -1
 }
 
 build_shaders() {
@@ -129,6 +174,7 @@ build_app_locked() {
 	mkdir -p "$OUT_DIR"
 
 	check_build_deps || return 1
+	check_project_layout || return 1
 	build_shaders
 	echo "Compiling app${LIB_EXT}"
 
@@ -138,7 +184,10 @@ build_app_locked() {
 	}
 	trap cleanup_staging RETURN
 
-	odin build app -build-mode:dll "${ODIN_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/app${LIB_EXT}"
+	(
+		cd "$PROJECT_ROOT"
+		odin build app -build-mode:dll "${ODIN_FLAGS[@]}" "${ODIN_COLLECTION_FLAGS[@]}" "${FONT_LIBS[@]}" -out:"${staging}/app${LIB_EXT}"
+	)
 	mv -f "${staging}/app${LIB_EXT}" "${OUT_DIR}/app${LIB_EXT}"
 
 	rm -f "${OUT_DIR}"/app_tmp-*.o "${OUT_DIR}"/app_test-*.o "${OUT_DIR}"/game*.so "${OUT_DIR}"/game*.dll "${OUT_DIR}"/game*.dylib 2>/dev/null || true
@@ -162,8 +211,12 @@ build_app() {
 
 build_host() {
 	check_build_deps || return 1
-	echo "Building ${HOST_EXE}"
-	odin build . "${ODIN_FLAGS[@]}" -out:"${HOST_EXE}"
+	check_project_layout || return 1
+	echo "Building $(basename "$HOST_EXE")"
+	(
+		cd "$PROJECT_ROOT"
+		odin build . "${ODIN_FLAGS[@]}" "${ODIN_COLLECTION_FLAGS[@]}" -out:"$HOST_EXE"
+	)
 }
 
 start_app() {
@@ -177,17 +230,20 @@ start_app() {
 	fi
 
 	mkdir -p "$OUT_DIR"
-	echo "Starting ${HOST_EXE}"
-	nohup ./"$HOST_EXE" >>"${OUT_DIR}/app.log" 2>&1 &
-	disown -h $! 2>/dev/null || true
-	echo "App PID $!"
+	echo "Starting $(basename "$HOST_EXE") (cwd ${PROJECT_ROOT})"
+	(
+		cd "$PROJECT_ROOT"
+		nohup ./$(basename "$HOST_EXE") >>"${OUT_DIR}/app.log" 2>&1 &
+		disown -h $! 2>/dev/null || true
+		echo "App PID $!"
+	)
 	echo "Log: ${OUT_DIR}/app.log"
 }
 
 stop_app() {
 	if is_app_running; then
-		pkill -x "$HOST_EXE"
-		echo "Stopped ${HOST_EXE}"
+		pkill -x "$(basename "$HOST_EXE")"
+		echo "Stopped $(basename "$HOST_EXE")"
 	else
 		echo "App is not running"
 	fi
@@ -218,19 +274,28 @@ start_watch() {
 		fi
 	fi
 
-	echo "Watching ${ONI_DIR}, colors/, and app/ for changes (save to auto-rebuild)"
+	echo "Watching app/, main.odin, and oni/ for changes (save to auto-rebuild)"
 	(
-		while inotifywait \
+		cd "$PROJECT_ROOT"
+		while path="$(inotifywait \
 			-e close_write,move_self,create \
-			-r "${ONI_DIR}" colors app \
-			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$)' \
-			--format '%w%f' > /dev/null; do
+			-r app "$ONI_ROOT" main.odin \
+			--exclude '(\.spv\.(frag|vert)$|/\.watch\.pid$|/\.build\.lock$|/build/|/fixtures/)' \
+			--format '%w%f')"; do
+			if [[ "$path" == *main.odin ]]; then
+				if build_host; then
+					echo "Host rebuilt. Restart the window (./oni/build_hot_reload.sh restart) to pick it up."
+				else
+					echo "Host rebuild failed."
+				fi
+				continue
+			fi
 			if build_app; then
 				if is_app_running; then
 					echo "Hot reloading..."
 				fi
 			else
-				echo "Build failed — app.so unchanged. Fix compile errors and save again, or press F5 in the app window to reload."
+				echo "Build failed — app${LIB_EXT} unchanged. Fix compile errors and save again, or press F5 in the app window to reload."
 			fi
 		done
 	) &
@@ -239,15 +304,15 @@ start_watch() {
 }
 
 cmd="${1:-run}"
-
 case "$cmd" in
 run)
+	check_project_layout || exit 1
 	if is_app_running; then
 		if ! build_app; then
 			exit 1
 		fi
 		echo "Hot reloading... (app already running, PID $(app_pid))"
-		echo "No new window will open. Use './build_hot_reload.sh restart' for a fresh window."
+		echo "No new window will open. Use './oni/build_hot_reload.sh restart' for a fresh window."
 		exit 0
 	fi
 
@@ -266,10 +331,11 @@ run)
 	start_app
 	start_watch || true
 	echo ""
-	echo "Save ${ONI_DIR}, colors/, or app/ sources to auto-rebuild. F5/F6 reload in the app window."
+	echo "Save app/, oni/, or main.odin to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 restart)
+	check_project_layout || exit 1
 	stop_watch
 	stop_app
 	build_app &
@@ -286,10 +352,11 @@ restart)
 	start_app
 	start_watch || true
 	echo ""
-	echo "Restarted. Save ${ONI_DIR}, colors/, or app/ sources to auto-rebuild. F5/F6 reload in the app window."
+	echo "Restarted. Save app/, oni/, or main.odin to auto-rebuild. F5/F6 reload in the app window."
 	;;
 
 build)
+	check_project_layout || exit 1
 	if ! build_app; then
 		exit 1
 	fi
@@ -299,13 +366,14 @@ build)
 	;;
 
 watch)
+	check_project_layout || exit 1
 	start_watch
 	;;
 
 stop)
 	stop_watch
 	stop_app
-	pkill -f './build_hot_reload.sh' 2>/dev/null || true
+	pkill -f 'build_hot_reload.sh' 2>/dev/null || true
 	rm -f "$BUILD_LOCK_FILE"
 	echo "Stopped app, watcher, and build lock"
 	;;
@@ -317,6 +385,10 @@ stop)
 	echo "  build    Rebuild app${LIB_EXT} only"
 	echo "  watch    Start auto-rebuild watcher"
 	echo "  stop     Stop app and watcher"
+	echo ""
+	echo "Project root: ${PROJECT_ROOT}"
+	echo "Framework:    ${ONI_ROOT}"
+	echo "Override with ONI_PROJECT_ROOT if needed."
 	exit 1
 	;;
 esac

@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+# shellcheck source=odin_collections.sh
+source "${ROOT}/odin_collections.sh"
+
 OUT_DIR="build/test"
 ODIN_FLAGS=(-vet -strict-style -debug -keep-executable)
 FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
@@ -14,10 +17,12 @@ TEST_DEFINES=(
 	-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
 )
 
-# Packages with @(test) coverage.
+# Packages with @(test) coverage (friendly names → source paths under repo root).
 ALL_PACKAGES=(
+	colors
+	tengu
 	oni
-	oni/widgets
+	widgets
 )
 
 USE_ASAN=false
@@ -32,7 +37,7 @@ Usage: $0 [options] [package...]
 Run all (or selected) package tests with debug info and leak detection.
 
 Packages (default: all):
- oni  oni/widgets
+  colors  tengu  oni  widgets
 
 Options:
   --asan              Enable AddressSanitizer (-sanitize:address) and leak detection
@@ -50,30 +55,46 @@ Binaries are kept under ${OUT_DIR}/ for post-mortem debugging.
 Examples:
   $0
   $0 oni
+  $0 colors tengu
   $0 --asan oni
   $0 --report-memory --asan
-  $0 --valgrind oni
+  $0 --valgrind widgets
 EOF
+}
+
+# Map friendly package names to odin test paths.
+package_path() {
+	case "$1" in
+	colors) echo "libs/colors" ;;
+	tengu) echo "libs/tengu" ;;
+	oni) echo "." ;;
+	widgets) echo "widgets" ;;
+	*)
+		echo "error: unknown package: $1" >&2
+		return 1
+		;;
+	esac
 }
 
 needs_font_libs() {
 	case "$1" in
-	oni | oni/widgets) return 0 ;;
+	oni | widgets) return 0 ;;
 	*) return 1 ;;
 	esac
 }
 
 package_out_name() {
-	local pkg="$1"
-	echo "${pkg##*/}"
+	echo "$1"
 }
 
 run_package() {
 	local pkg="$1"
+	local pkg_path
+	pkg_path="$(package_path "$pkg")"
 	local out_name
 	out_name="$(package_out_name "$pkg")"
 	local out_path="${OUT_DIR}/${out_name}"
-	local -a cmd=(odin test "$pkg" "${ODIN_FLAGS[@]}" "${TEST_DEFINES[@]}" -out:"$out_path")
+	local -a cmd=(odin test "$pkg_path" "${ODIN_FLAGS[@]}" "${ODIN_COLLECTION_FLAGS[@]}" "${TEST_DEFINES[@]}" -out:"$out_path")
 
 	if needs_font_libs "$pkg"; then
 		cmd+=("${FONT_LIBS[@]}")
@@ -82,7 +103,7 @@ run_package() {
 		cmd+=(-sanitize:address)
 	fi
 
-	echo "==> Testing ${pkg}"
+	echo "==> Testing ${pkg} (${pkg_path})"
 	echo "    ${cmd[*]}"
 
 	# First pass: compile + run with Odin's tracking allocator (and optional ASan).
