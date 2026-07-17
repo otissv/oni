@@ -16,10 +16,8 @@ TEST_DEFINES=(
 
 # Packages with @(test) coverage.
 ALL_PACKAGES=(
-	colors
 	oni
 	oni/widgets
-	tengu
 )
 
 USE_ASAN=false
@@ -34,7 +32,7 @@ Usage: $0 [options] [package...]
 Run all (or selected) package tests with debug info and leak detection.
 
 Packages (default: all):
-  colors  oni  oni/widgets  tengu
+ oni  oni/widgets
 
 Options:
   --asan              Enable AddressSanitizer (-sanitize:address) and leak detection
@@ -51,10 +49,10 @@ Binaries are kept under ${OUT_DIR}/ for post-mortem debugging.
 
 Examples:
   $0
-  $0 colors tengu
+  $0 oni
   $0 --asan oni
   $0 --report-memory --asan
-  $0 --valgrind colors
+  $0 --valgrind oni
 EOF
 }
 
