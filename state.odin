@@ -12,6 +12,24 @@ UI_Widget_Entry :: struct {
 }
 
 /*
+Cross-frame scrollport metrics used for AUTO scrollbar visibility and APIs.
+*/
+Scrollport_Metrics :: struct {
+	content_size:  Vec2,
+	viewport_size: Vec2,
+	scroll:        Vec2,
+	max_scroll:    Vec2,
+}
+
+/*
+Scrollbar thumb-drag latch kept across frames while the pointer is held.
+*/
+Scroll_Bar_Drag :: struct {
+	active:     bool,
+	grab_offset: f32,
+}
+
+/*
 Per-frame UI bookkeeping: pass, scope/style stacks, widgets, and layout.
 */
 UI_State :: struct {
@@ -24,6 +42,8 @@ UI_State :: struct {
 	layout_ids_prev:     map[UI_Id]bool,
 	layout_ids_snapshot: map[UI_Id]bool,
 	label_crc:           map[string]u32,
+	scrollports:         map[UI_Id]Scrollport_Metrics,
+	scroll_bar_drags:    map[UI_Id]Scroll_Bar_Drag,
 }
 
 /*

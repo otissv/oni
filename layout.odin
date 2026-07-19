@@ -98,6 +98,10 @@ Layout_Node :: struct {
 	clip_rect:         Rect,
 	has_clip:          bool,
 	space:             Draw_Space,
+	content_size:      Vec2,
+	viewport_size:     Vec2,
+	scroll:            Vec2,
+	max_scroll:        Vec2,
 }
 
 /*
@@ -2154,6 +2158,7 @@ layout_position_children_wrap :: proc(
 	}
 
 	layout_position_out_of_flow_children(node)
+	layout_finalize_scrollport(node, content)
 }
 
 /*
@@ -2422,6 +2427,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	}
 
 	layout_position_out_of_flow_children(node)
+	layout_finalize_scrollport(node, content)
 }
 
 /*

@@ -27,6 +27,8 @@ Rectangle_Props :: struct {
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Rectangle_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Rectangle_State) -> o.Mount,
+	on_scroll:                    proc(scroll_x, scroll_y: f32),
+	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Rectangle_Event),
 	on_blur:                      proc(event: Rectangle_Event),
 	on_mouse_enter:               proc(event: Rectangle_Event),
@@ -105,7 +107,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			o.Children(child, layout_id, config, frame_state)
+			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
 		}
 
 		return
@@ -126,6 +128,17 @@ Rectangle :: proc(props: Rectangle_Props) {
 		rect,
 		config,
 	)
+	widget_handle_scroll_wheel(
+		layout_id,
+		config,
+		frame_state.is_hovered,
+		key,
+		props.on_scroll,
+	)
+	scroll := o.widget_scroll_get(key)
+	config.scroll_x = scroll.x
+	config.scroll_y = scroll.y
+	frame_state.config = config
 
 	event, _ = widget_refresh_merged_if_interaction_changed(
 		props,
@@ -159,6 +172,10 @@ Rectangle :: proc(props: Rectangle_Props) {
 			rect = rect,
 			child = child,
 			layout_id = layout_id,
+			element_id = key,
+			author = props.config,
+			on_scroll = props.on_scroll,
+			scroll_bar = props.scroll_bar,
 		},
 	)
 
@@ -173,6 +190,10 @@ Draw_Widget_Rectangle :: struct {
 	rect:        o.Rect,
 	child:       proc(frame_state: Rectangle_State),
 	layout_id:   o.UI_Id,
+	element_id:  string,
+	author:      o.Widget_Config,
+	on_scroll:   proc(scroll_x, scroll_y: f32),
+	scroll_bar:  Scroll_Bar_Style,
 }
 
 @(private)
@@ -218,5 +239,15 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	o.Children(child, layout_id, config, frame_state^)
+	widget_children(
+		child,
+		layout_id,
+		config,
+		frame_state^,
+		props.element_id,
+		props.author,
+		props.on_scroll,
+		props.scroll_bar,
+		frame_state.is_hovered,
+	)
 }

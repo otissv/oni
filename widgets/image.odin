@@ -23,6 +23,8 @@ Image_Props :: struct {
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Image_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Image_State) -> o.Mount,
+	on_scroll:                     proc(scroll_x, scroll_y: f32),
+	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Image_Event),
 	on_blur:                      proc(event: Image_Event),
 	on_mouse_enter:               proc(event: Image_Event),
@@ -209,6 +211,9 @@ Image :: proc(props: Image_Props) {
 
 		widget_register_tab_order(key, config.tabbable, can_interact)
 
+		o.widget_scroll_apply(key, props.config, &config)
+		frame_state.config = config
+
 		o.ui_push_scope(layout_id)
 		node := o.layout_push_node(layout_id, config)
 
@@ -241,7 +246,27 @@ Image :: proc(props: Image_Props) {
 
 		o.ui_push_style(o.style_child_context(config))
 
-		if child != nil do child(frame_state)
+		if o.style_is_scrollport(config.overflow_x, config.overflow_y) {
+			entry := o.widget_scroll_ensure(key)
+			widget_scroll_push(
+				{
+					layout_id = layout_id,
+					parent_id = config.id != "" ? config.id : key,
+					element_id = key,
+					overflow_x = config.overflow_x,
+					overflow_y = config.overflow_y,
+					scroll = entry,
+					style = props.scroll_bar,
+					hovered = frame_state.is_hovered,
+					on_scroll = props.on_scroll,
+				},
+			)
+			if child != nil do child(frame_state)
+			widget_emit_scroll_bars(widget_scroll_top()^)
+			widget_scroll_pop()
+		} else if child != nil {
+			child(frame_state)
+		}
 
 		o.ui_pop_style()
 		o.layout_pop_node()
@@ -267,6 +292,17 @@ Image :: proc(props: Image_Props) {
 		rect,
 		config,
 	)
+	widget_handle_scroll_wheel(
+		layout_id,
+		config,
+		frame_state.is_hovered,
+		key,
+		props.on_scroll,
+	)
+	scroll := o.widget_scroll_get(key)
+	config.scroll_x = scroll.x
+	config.scroll_y = scroll.y
+	frame_state.config = config
 
 	event, _ = image_refresh_merged_if_interaction_changed(props, &frame_state, style_fp)
 	config = frame_state.config
@@ -344,7 +380,7 @@ Image :: proc(props: Image_Props) {
 		}
 	}
 
-	o.Children(child, layout_id, config, frame_state)
+	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
 
 	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
 }

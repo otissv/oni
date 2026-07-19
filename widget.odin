@@ -116,6 +116,135 @@ widget_map_clear_owned :: proc(m: ^map[string]bool) {
 	m^ = nil
 }
 
+@(private)
+widget_scroll_map_clear :: proc() {
+	if w_ctx == nil || w_ctx.scroll_offsets == nil do return
+	for key in w_ctx.scroll_offsets {
+		widget_release_key(key)
+	}
+	delete(w_ctx.scroll_offsets)
+	w_ctx.scroll_offsets = nil
+}
+
+/*
+Returns whether an author-time scroll field is set (including explicit 0).
+*/
+scroll_value_is_set :: proc(value: Scroll_Value) -> bool {
+	#partial switch _ in value {
+	case f32:
+		return true
+	}
+	return false
+}
+
+/*
+Returns the f32 from a set Scroll_Value, or (0, false) when unset.
+*/
+scroll_value_get :: proc(value: Scroll_Value) -> (f32, bool) {
+	#partial switch v in value {
+	case f32:
+		return v, true
+	}
+	return 0, false
+}
+
+/*
+Ensures a scroll-offset map entry exists for key and returns a stable pointer.
+*/
+widget_scroll_ensure :: proc(key: string) -> ^Vec2 {
+	if w_ctx == nil || key == "" do return nil
+	if w_ctx.scroll_offsets == nil {
+		w_ctx.scroll_offsets = make(map[string]Vec2)
+	}
+	if _, exists := w_ctx.scroll_offsets[key]; !exists {
+		w_ctx.scroll_offsets[widget_retain_key(key)] = {}
+	}
+	return &w_ctx.scroll_offsets[key]
+}
+
+/*
+Returns the persisted scroll offset for a widget key.
+*/
+widget_scroll_get :: proc(key: string) -> Vec2 {
+	if w_ctx == nil || w_ctx.scroll_offsets == nil || key == "" do return {}
+	return w_ctx.scroll_offsets[key]
+}
+
+/*
+Writes a scroll offset into widget context for the given key.
+*/
+widget_scroll_set :: proc(key: string, scroll: Vec2) {
+	entry := widget_scroll_ensure(key)
+	if entry == nil do return
+	entry^ = scroll
+}
+
+/*
+Applies optional author config.scroll_* overrides into widget context, then
+copies the persisted offsets onto the resolved config for layout/draw.
+
+No-ops (and does not allocate) for non-scrollports without an author override.
+*/
+widget_scroll_apply :: proc(key: string, author: Widget_Config, config: ^Resolved_Widget_Config) {
+	if config == nil do return
+	has_override := scroll_value_is_set(author.scroll_x) || scroll_value_is_set(author.scroll_y)
+	is_port := style_is_scrollport(config.overflow_x, config.overflow_y)
+	if !is_port && !has_override {
+		config.scroll_x = 0
+		config.scroll_y = 0
+		return
+	}
+	entry := widget_scroll_ensure(key)
+	if entry == nil {
+		config.scroll_x = 0
+		config.scroll_y = 0
+		return
+	}
+	if x, ok := scroll_value_get(author.scroll_x); ok {
+		entry.x = x
+	}
+	if y, ok := scroll_value_get(author.scroll_y); ok {
+		entry.y = y
+	}
+	config.scroll_x = entry.x
+	config.scroll_y = entry.y
+}
+
+/*
+Returns whether AUTO overflow scrollbars should emit for this scrollport.
+
+Sticky across the layout+draw pair: set during draw from hover/drag, read next frame.
+Keys must be stable element ids (borrowed; not temp-allocated).
+*/
+widget_scroll_auto_reveal_get :: proc(key: string) -> bool {
+	if w_ctx == nil || w_ctx.scroll_auto_reveal == nil || key == "" do return false
+	return w_ctx.scroll_auto_reveal[key]
+}
+
+/*
+Records whether AUTO overflow scrollbars should show on the next frame.
+*/
+widget_scroll_auto_reveal_set :: proc(key: string, show: bool) {
+	if w_ctx == nil || key == "" do return
+	if !show {
+		if w_ctx.scroll_auto_reveal != nil {
+			delete_key(&w_ctx.scroll_auto_reveal, key)
+		}
+		return
+	}
+	if w_ctx.scroll_auto_reveal == nil {
+		w_ctx.scroll_auto_reveal = make(map[string]bool)
+	}
+	w_ctx.scroll_auto_reveal[key] = true
+}
+
+@(private)
+widget_scroll_auto_reveal_clear :: proc() {
+	if w_ctx == nil || w_ctx.scroll_auto_reveal == nil do return
+	delete(w_ctx.scroll_auto_reveal)
+	w_ctx.scroll_auto_reveal = nil
+}
+
 /*
 Removes stale hover and pointer-down entries for elements no longer in the UI.
 */
@@ -143,6 +272,31 @@ widget_prune_element_maps :: proc() {
 			widget_map_delete_key(&w_ctx.element_pointer_down, key)
 		}
 	}
+
+	if w_ctx.scroll_offsets != nil {
+		remove_keys := make([dynamic]string, context.temp_allocator)
+		for key in w_ctx.scroll_offsets {
+			if !element_key_is_active(key) {
+				append(&remove_keys, key)
+			}
+		}
+		for key in remove_keys {
+			delete_key(&w_ctx.scroll_offsets, key)
+			widget_release_key(key)
+		}
+	}
+
+	if w_ctx.scroll_auto_reveal != nil {
+		remove_keys := make([dynamic]string, context.temp_allocator)
+		for key in w_ctx.scroll_auto_reveal {
+			if !element_key_is_active(key) {
+				append(&remove_keys, key)
+			}
+		}
+		for key in remove_keys {
+			delete_key(&w_ctx.scroll_auto_reveal, key)
+		}
+	}
 }
 
 /*
@@ -163,6 +317,8 @@ widget_ctx_shutdown :: proc() {
 	}
 	widget_map_clear_owned(&w_ctx.element_was_hovered)
 	widget_map_clear_owned(&w_ctx.element_pointer_down)
+	widget_scroll_map_clear()
+	widget_scroll_auto_reveal_clear()
 
 	if w_ctx.focused_id_owned {
 		widget_release_key(w_ctx.focused_id)

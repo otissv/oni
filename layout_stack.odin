@@ -64,12 +64,13 @@ layout_pointer_events_none :: proc(pointer_events: Pointer_Events) -> bool {
 }
 
 /*
-Returns whether overflow mode clips content (HIDDEN or SCROLL).
+Returns whether overflow mode clips content (HIDDEN, SCROLL, or AUTO).
 */
 layout_overflow_clips :: proc(overflow: Overflow) -> bool {
 	hidden: Overflow = .HIDDEN
 	scroll: Overflow = .SCROLL
-	return overflow == hidden || overflow == scroll
+	auto: Overflow = .AUTO
+	return overflow == hidden || overflow == scroll || overflow == auto
 }
 
 /*
@@ -245,7 +246,7 @@ layout_resolve_clips :: proc(node_index: int, parent_clip: Rect, parent_has_clip
 
 	kind := layout_position_kind(node.config.position)
 	if kind == .STICKY && has_clip {
-		// Clamp sticky box into the nearest scrollport/clip until dedicated scroll offsets exist.
+		// Keep sticky boxes inside the nearest clip/scrollport viewport.
 		r := node.rect
 		if r.x < clip.x do r.x = clip.x
 		if r.y < clip.y do r.y = clip.y

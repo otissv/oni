@@ -110,6 +110,14 @@ Opacity :: F32
 
 overflow :: proc(value: oni.Overflow) -> oni.Cfg(oni.Overflow) {return cfg_value(value)}
 
+Overflow_X :: overflow
+
+Overflow_Y :: overflow
+
+Scroll_X :: proc(value: f32) -> oni.Scroll_Value {return value}
+
+Scroll_Y :: proc(value: f32) -> oni.Scroll_Value {return value}
+
 /*
 Sets a padding widget config field to an explicit value or `.INHERIT`.
 */

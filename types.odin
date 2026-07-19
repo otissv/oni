@@ -74,6 +74,8 @@ Widget_Context :: struct {
 	tab_focus_changed:           bool,
 	auto_element_index:          u32,
 	static_ids:                  map[string]Widget_ID,
+	scroll_offsets:              map[string]Vec2,
+	scroll_auto_reveal:          map[string]bool,
 	mouse_x:                     f32,
 	mouse_y:                     f32,
 	mouse_moved:                 bool,
@@ -148,6 +150,15 @@ Widget_Kind :: enum {
 	TABLE_ROW,
 	TABLE_CELL,
 	TABLE_FOOT,
+	SCROLL_BAR,
+}
+
+/*
+Axis for a scrollbar thumb (horizontal scrolls scroll_x, vertical scrolls scroll_y).
+*/
+Scroll_Axis :: enum {
+	X,
+	Y,
 }
 
 Cfg_Tri :: enum {
@@ -163,6 +174,14 @@ Inherit is expressed inside each value union as `.INHERIT`, not on Cfg.
 Cfg :: struct($T: typeid) {
 	mode:  Cfg_Tri,
 	value: T,
+}
+
+/*
+Author-time scroll override. Nil means keep the widget-context scroll offset;
+an f32 (including 0) overwrites context for that axis.
+*/
+Scroll_Value :: union {
+	f32,
 }
 
 /*
@@ -268,6 +287,8 @@ Widget_Config :: struct {
 	space:                 Cfg(Style_Space),
 	tabbable:              Cfg(Style_Bool),
 	accepts_text_input:    bool, // not styled; set true on text fields
+	scroll_x:              Scroll_Value, // optional override of w_ctx scroll; not inherited
+	scroll_y:              Scroll_Value, // optional override of w_ctx scroll; not inherited
 	text_decoration:       Cfg(Text_Decoration),
 	text_decoration_color: Cfg(Colors),
 	text_decoration_style: Cfg(Text_Decoration_Style),
@@ -347,6 +368,8 @@ Resolved_Widget_Style :: struct {
 	texture_pos:               Style_Texture_Pos,
 	tabbable:                  bool,
 	accepts_text_input:        bool,
+	scroll_x:                  f32,
+	scroll_y:                  f32,
 }
 
 /*

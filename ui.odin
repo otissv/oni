@@ -70,6 +70,7 @@ ui_shutdown :: proc() {
 		delete(state.ui.label_crc)
 		state.ui.label_crc = nil
 	}
+	scroll_shutdown()
 	shortcut_shutdown()
 	widget_ctx_shutdown()
 

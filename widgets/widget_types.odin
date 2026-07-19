@@ -70,6 +70,25 @@ FocusElement :: proc(id: string) -> bool {
 }
 
 /*
+Returns the persisted scroll offset for a widget id registered this frame.
+*/
+Scroll_Get :: proc(id: string) -> (scroll: o.Vec2, ok: bool) {
+	element_id, found := GetElementById(id)
+	if !found do return {}, false
+	return o.widget_scroll_get(element_id), true
+}
+
+/*
+Sets the persisted scroll offset for a widget id registered this frame.
+*/
+Scroll_Set :: proc(id: string, scroll_x, scroll_y: f32) -> bool {
+	element_id, ok := GetElementById(id)
+	if !ok do return false
+	o.widget_scroll_set(element_id, {scroll_x, scroll_y})
+	return true
+}
+
+/*
 Moves keyboard focus to the next tabbable element in declaration order.
 */
 FocusNext :: proc() -> bool {

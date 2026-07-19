@@ -616,6 +616,8 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Justify, &result.self, override.self)
 	merge_cfg(Style_Texture_Fit, &result.texture_fit, override.texture_fit)
 	merge_cfg(Style_Texture_Pos, &result.texture_pos, override.texture_pos)
+	if scroll_value_is_set(override.scroll_x) do result.scroll_x = override.scroll_x
+	if scroll_value_is_set(override.scroll_y) do result.scroll_y = override.scroll_y
 
 	return result
 }
@@ -1210,6 +1212,8 @@ resolve_widget_config :: proc(
 		),
 		tabbable              = resolve_cfg_bool(decl.tabbable, parent.tabbable, theme.tabbable),
 		accepts_text_input    = decl.accepts_text_input,
+		scroll_x              = 0,
+		scroll_y              = 0,
 	}
 
 	resolved := Resolved_Widget_Config {

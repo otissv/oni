@@ -27,6 +27,7 @@ Sidebar_Layout_options :: enum {
 	LAYOUT_VISIBILITY,
 	LAYOUT_OPACITY,
 	LAYOUT_POPOVER,
+	LAYOUT_SCROLLVIEW,
 }
 
 @(private)
@@ -77,6 +78,8 @@ layout_container := proc(state: w.Rectangle_State) {
 		Layout_Opacity()
 	case .LAYOUT_POPOVER:
 		Layout_Popover()
+	case .LAYOUT_SCROLLVIEW:
+		Layout_Scrollview()
 	}
 }
 
@@ -356,6 +359,19 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "layout-popover-nav", text = "Popover"}})
+		},
+	})
+
+	ui.Button({
+		id = "scrollview",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			active_layout_option = .LAYOUT_SCROLLVIEW
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "layout-scrollview-nav", text = "Scrollview"}})
 		},
 	})
 }
