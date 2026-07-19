@@ -289,6 +289,7 @@ Widget_Config :: struct {
 	accepts_text_input:    bool, // not styled; set true on text fields
 	scroll_x:              Scroll_Value, // optional override of w_ctx scroll; not inherited
 	scroll_y:              Scroll_Value, // optional override of w_ctx scroll; not inherited
+	tab_size:              Cfg(Style_F32),
 	text_decoration:       Cfg(Text_Decoration),
 	text_decoration_color: Cfg(Colors),
 	text_decoration_style: Cfg(Text_Decoration_Style),
@@ -298,6 +299,7 @@ Widget_Config :: struct {
 	visibility:            Cfg(Visibility),
 	width:                 Width,
 	wrap:                  Cfg(Text_Wrap),
+	word_spacing:          Cfg(Style_F32),
 	x:                     Cfg(Style_F32),
 	y:                     Cfg(Style_F32),
 	right:                 Cfg(Style_F32),
@@ -370,7 +372,14 @@ Resolved_Widget_Style :: struct {
 	accepts_text_input:            bool,
 	scroll_x:                      f32,
 	scroll_y:                      f32,
+	tab_size:                      f32,
+	word_spacing:                  f32,
 }
+
+/*
+Default tab stop width for preserve text, in space columns.
+*/
+DEFAULT_TAB_SIZE :: 4
 
 /*
 Resolved widget identity and style ready for layout and drawing.
@@ -635,6 +644,7 @@ Text_Wrap_Kind :: enum {
 	NONE,
 	NEWLINES,
 	BALANCE,
+	PRESERVE,
 }
 
 Text_Wrap :: union {

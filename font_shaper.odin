@@ -5,6 +5,7 @@ import "core:hash"
 import "core:math"
 import "core:mem"
 import "core:strings"
+import "core:unicode/utf8"
 
 /*
 One glyph produced by text shaping with cluster and advance offsets.
@@ -36,6 +37,7 @@ Font_Shape_Cache_Key :: struct {
 	text_len:            int,
 	letter_spacing_bits: u32,
 	word_spacing_bits:   u32,
+	tab_size_bits:       u32,
 	wrap_mode:           Text_Wrap_Kind,
 	wrap_width_bits:     u32,
 	direction:           Text_Direction_Kind,
@@ -763,27 +765,167 @@ text_decoration_style_kind :: proc(style: Text_Decoration_Style) -> Text_Decorat
 }
 
 /*
-Copies glyphs into a shaped line and bakes letter-spacing into advances.
+Copies glyphs into a shaped line and bakes letter-spacing and word-spacing into advances.
 
-Spacing is applied between glyphs (not after the last), matching CSS letter-spacing.
+Letter-spacing is applied between glyphs (not after the last). Word-spacing is added to
+space cluster advances, matching CSS word-spacing.
 */
 font_make_shaped_line :: proc(
+	text: string,
 	glyphs: []Shaped_Glyph,
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
+	word_spacing: f32,
 ) -> Shaped_Line {
 	line_glyphs := make([]Shaped_Glyph, len(glyphs), layout_frame_allocator())
 	copy(line_glyphs, glyphs)
+
 	if letter_spacing != 0 && len(line_glyphs) > 1 {
 		for i in 0 ..< len(line_glyphs) - 1 {
 			line_glyphs[i].x_advance += letter_spacing
 		}
 	}
+
+	if word_spacing != 0 {
+		for i in 0 ..< len(line_glyphs) {
+			if font_is_break_cluster(text, line_glyphs[i].cluster) {
+				line_glyphs[i].x_advance += word_spacing
+			}
+		}
+	}
+
 	return Shaped_Line {
-		glyphs = line_glyphs,
-		width = shaped_line_width(line_glyphs),
+		glyphs    = line_glyphs,
+		width     = shaped_line_width(line_glyphs),
 		direction = direction,
 	}
+}
+
+/*
+Normalizes CRLF and lone CR line endings to LF.
+*/
+text_normalize_line_endings :: proc(text: string, allocator: mem.Allocator) -> string {
+	if len(text) == 0 do return text
+	if !strings.contains_rune(text, '\r') do return text
+
+	b := strings.builder_make(allocator)
+	for i := 0; i < len(text); {
+		switch text[i] {
+		case '\r':
+			strings.write_byte(&b, '\n')
+
+			if i + 1 < len(text) && text[i + 1] == '\n' {
+				i += 2
+			} else {
+				i += 1
+			}
+		case '\n':
+			strings.write_byte(&b, '\n')
+			i += 1
+		case:
+			_, w := utf8.decode_rune_in_string(text[i:])
+			strings.write_string(&b, text[i:i + w])
+			i += w
+		}
+	}
+
+	return strings.to_string(b)
+}
+
+/*
+Expands tab characters to spaces on a fixed column grid.
+
+`tab_size` is the stop interval in columns; values below one use `DEFAULT_TAB_SIZE`.
+*/
+text_expand_tabs :: proc(text: string, tab_size: f32, allocator: mem.Allocator) -> string {
+	if len(text) == 0 do return text
+	if !strings.contains_rune(text, '\t') do return text
+
+	stop := int(tab_size)
+	if stop < 1 do stop = DEFAULT_TAB_SIZE
+
+	b := strings.builder_make(allocator)
+	column := 0
+
+	for i := 0; i < len(text); {
+		switch text[i] {
+		case '\n':
+			strings.write_byte(&b, '\n')
+			column = 0
+			i += 1
+		case '\t':
+			spaces := stop - (column % stop)
+			if spaces == 0 do spaces = stop
+
+			for _ in 0 ..< spaces {
+				strings.write_byte(&b, ' ')
+			}
+
+			column += spaces
+			i += 1
+		case:
+			_, w := utf8.decode_rune_in_string(text[i:])
+			strings.write_string(&b, text[i:i + w])
+			column += 1
+			i += w
+		}
+	}
+
+	return strings.to_string(b)
+}
+
+/*
+Prepares author text for preserve shaping: normalize line endings and expand tabs.
+*/
+text_prepare_preserve :: proc(text: string, tab_size: f32, allocator: mem.Allocator) -> string {
+	if len(text) == 0 do return text
+
+	has_cr := strings.contains_rune(text, '\r')
+	has_tab := strings.contains_rune(text, '\t')
+
+	if !has_cr && !has_tab do return text
+
+	stop := int(tab_size)
+	if stop < 1 do stop = DEFAULT_TAB_SIZE
+
+	b := strings.builder_make(allocator)
+	column := 0
+
+	for i := 0; i < len(text); {
+		switch text[i] {
+		case '\r':
+			strings.write_byte(&b, '\n')
+
+			if i + 1 < len(text) && text[i + 1] == '\n' {
+				i += 2
+			} else {
+				i += 1
+			}
+
+			column = 0
+		case '\n':
+			strings.write_byte(&b, '\n')
+			i += 1
+			column = 0
+		case '\t':
+			spaces := stop - (column % stop)
+			if spaces == 0 do spaces = stop
+
+			for _ in 0 ..< spaces {
+				strings.write_byte(&b, ' ')
+			}
+
+			column += spaces
+			i += 1
+		case:
+			_, w := utf8.decode_rune_in_string(text[i:])
+			strings.write_string(&b, text[i:i + w])
+			column += 1
+			i += w
+		}
+	}
+
+	return strings.to_string(b)
 }
 
 /*
@@ -791,6 +933,7 @@ Shapes text and splits it into lines according to wrap mode, width, and spacing.
 
 NONE: single line (newlines omitted).
 NEWLINES: hard breaks only.
+PRESERVE: hard breaks with CRLF normalization and tab expansion.
 BALANCE: soft-wrap at max_w, then rebalance line lengths.
 
 Results are cloned into the layout frame arena when active so callers share simple
@@ -805,35 +948,75 @@ font_shape_line_build :: proc(
 	max_w: f32,
 	letter_spacing: f32,
 	word_spacing: f32,
+	tab_size: f32,
 	wrap: Text_Wrap_Kind,
 	direction: Text_Direction_Kind,
 ) -> []Shaped_Line {
 	if face == nil || len(text) == 0 do return nil
 
+	allocator := layout_frame_allocator()
+	shape_text := text
+	preprocess_heap := false
+
+	if wrap == .PRESERVE {
+		prepared := text_prepare_preserve(text, tab_size, allocator)
+
+		if prepared != text {
+			shape_text = prepared
+			preprocess_heap = !layout_uses_frame_arena()
+		}
+	} else {
+		normalized := text_normalize_line_endings(text, allocator)
+
+		if normalized != text {
+			shape_text = normalized
+			preprocess_heap = !layout_uses_frame_arena()
+		}
+	}
+
+	defer if preprocess_heap do delete(shape_text)
+
 	font_shape_cache_ensure_dpi()
-	key := font_shape_cache_key(face_id, text, letter_spacing, word_spacing, wrap, max_w, direction)
-	if cached, ok := font_shape_cache_lookup(key, text); ok {
+	key := font_shape_cache_key(
+		face_id,
+		shape_text,
+		letter_spacing,
+		word_spacing,
+		tab_size,
+		wrap,
+		max_w,
+		direction,
+	)
+	if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
 		return font_clone_shaped_lines(cached, layout_frame_allocator())
 	}
 
-	shaped := font_shape(face, text, direction)
+	shaped := font_shape(face, shape_text, direction)
 	if len(shaped) == 0 do return nil
 
 	result: []Shaped_Line
 	switch wrap {
 	case .NONE:
-		result = font_shape_lines_none(text, shaped, direction, letter_spacing)
-	case .NEWLINES:
-		result = font_shape_lines_newlines(text, shaped, direction, letter_spacing)
+		result = font_shape_lines_none(shape_text, shaped, direction, letter_spacing, word_spacing)
+	case .NEWLINES, .PRESERVE:
+		result = font_shape_lines_newlines(shape_text, shaped, direction, letter_spacing, word_spacing)
 	case .BALANCE:
-		result = font_shape_lines_balance(text, shaped, max_w, direction, letter_spacing)
+		result = font_shape_lines_balance(
+			shape_text,
+			shaped,
+			max_w,
+			direction,
+			letter_spacing,
+			word_spacing,
+		)
 	}
 	if !layout_uses_frame_arena() {
 		delete(shaped)
 	}
 	if len(result) == 0 do return nil
 
-	font_shape_cache_insert(key, text, result)
+	font_shape_cache_insert(key, shape_text, result)
+
 	return result
 }
 
@@ -861,19 +1044,21 @@ font_shape_cache_key :: proc(
 	text: string,
 	letter_spacing: f32,
 	word_spacing: f32,
+	tab_size: f32,
 	wrap: Text_Wrap_Kind,
 	max_w: f32,
 	direction: Text_Direction_Kind,
 ) -> Font_Shape_Cache_Key {
 	return Font_Shape_Cache_Key {
-		face_id = face_id,
-		text_hash = hash.crc32(transmute([]u8)text),
-		text_len = len(text),
+		face_id             = face_id,
+		text_hash           = hash.crc32(transmute([]u8)text),
+		text_len            = len(text),
 		letter_spacing_bits = transmute(u32)letter_spacing,
-		word_spacing_bits = transmute(u32)word_spacing,
-		wrap_mode = wrap,
-		wrap_width_bits = transmute(u32)max_w,
-		direction = direction,
+		word_spacing_bits   = transmute(u32)word_spacing,
+		tab_size_bits       = transmute(u32)tab_size,
+		wrap_mode           = wrap,
+		wrap_width_bits     = transmute(u32)max_w,
+		direction           = direction,
 	}
 }
 
@@ -963,6 +1148,7 @@ font_shape_lines_none :: proc(
 	shaped: []Shaped_Glyph,
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
+	word_spacing: f32,
 ) -> []Shaped_Line {
 	kept := make([dynamic]Shaped_Glyph, context.temp_allocator)
 
@@ -973,7 +1159,8 @@ font_shape_lines_none :: proc(
 	if len(kept) == 0 do return nil
 
 	lines := make([]Shaped_Line, 1, layout_frame_allocator())
-	lines[0] = font_make_shaped_line(kept[:], direction, letter_spacing)
+	lines[0] = font_make_shaped_line(text, kept[:], direction, letter_spacing, word_spacing)
+
 	return lines
 }
 
@@ -986,23 +1173,33 @@ font_shape_lines_newlines :: proc(
 	shaped: []Shaped_Glyph,
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
+	word_spacing: f32,
 ) -> []Shaped_Line {
 	lines := make([dynamic]Shaped_Line, layout_frame_allocator())
 	line_start := 0
 
 	for i in 0 ..< len(shaped) {
 		if !font_is_newline_cluster(text, shaped[i].cluster) do continue
+
 		if i > line_start {
-			append(&lines, font_make_shaped_line(shaped[line_start:i], direction, letter_spacing))
+			append(
+				&lines,
+				font_make_shaped_line(text, shaped[line_start:i], direction, letter_spacing, word_spacing),
+			)
 		}
+
 		line_start = i + 1
 	}
 
 	if line_start < len(shaped) {
-		append(&lines, font_make_shaped_line(shaped[line_start:], direction, letter_spacing))
+		append(
+			&lines,
+			font_make_shaped_line(text, shaped[line_start:], direction, letter_spacing, word_spacing),
+		)
 	}
 
 	if len(lines) == 0 do return nil
+
 	return lines[:]
 }
 
@@ -1019,12 +1216,13 @@ font_shape_lines_balance :: proc(
 	max_w: f32,
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
+	word_spacing: f32,
 ) -> []Shaped_Line {
 	if max_w <= 0 {
-		return font_shape_lines_newlines(text, shaped, direction, letter_spacing)
+		return font_shape_lines_newlines(text, shaped, direction, letter_spacing, word_spacing)
 	}
 
-	lines := font_shape_lines_soft_wrap(text, shaped, max_w, direction, letter_spacing)
+	lines := font_shape_lines_soft_wrap(text, shaped, max_w, direction, letter_spacing, word_spacing)
 	if len(lines) <= 1 do return lines
 
 	target_count := len(lines)
@@ -1036,7 +1234,7 @@ font_shape_lines_balance :: proc(
 	best := lines
 	for _ in 0 ..< 16 {
 		mid := (lo + hi) * 0.5
-		trial := font_shape_lines_soft_wrap(text, shaped, mid, direction, letter_spacing)
+		trial := font_shape_lines_soft_wrap(text, shaped, mid, direction, letter_spacing, word_spacing)
 		if len(trial) > target_count {
 			if !arena {
 				font_destroy_shaped_lines(trial)
@@ -1093,6 +1291,7 @@ font_shape_lines_soft_wrap :: proc(
 	max_w: f32,
 	direction: Text_Direction_Kind,
 	letter_spacing: f32,
+	word_spacing: f32,
 ) -> []Shaped_Line {
 	lines := make([dynamic]Shaped_Line, layout_frame_allocator())
 	line_start := 0
@@ -1106,7 +1305,16 @@ font_shape_lines_soft_wrap :: proc(
 
 		if font_is_newline_cluster(text, glyph.cluster) {
 			if i > line_start {
-				append(&lines, font_make_shaped_line(shaped[line_start:i], direction, letter_spacing))
+				append(
+					&lines,
+					font_make_shaped_line(
+						text,
+						shaped[line_start:i],
+						direction,
+						letter_spacing,
+						word_spacing,
+					),
+				)
 			}
 			line_start = i + 1
 			line_width = 0
@@ -1127,7 +1335,13 @@ font_shape_lines_soft_wrap :: proc(
 
 			append(
 				&lines,
-				font_make_shaped_line(shaped[line_start:break_at], direction, letter_spacing),
+				font_make_shaped_line(
+					text,
+					shaped[line_start:break_at],
+					direction,
+					letter_spacing,
+					word_spacing,
+				),
 			)
 
 			line_start = break_at
@@ -1147,10 +1361,14 @@ font_shape_lines_soft_wrap :: proc(
 	}
 
 	if line_start < len(shaped) {
-		append(&lines, font_make_shaped_line(shaped[line_start:], direction, letter_spacing))
+		append(
+			&lines,
+			font_make_shaped_line(text, shaped[line_start:], direction, letter_spacing, word_spacing),
+		)
 	}
 
 	if len(lines) == 0 do return nil
+
 	return lines[:]
 }
 

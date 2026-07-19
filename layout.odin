@@ -626,6 +626,7 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 
 	shape_max_w := wrap_w > 0 ? wrap_w / layout_scale : wrap_w
 	letter_spacing := config.letter_spacing / layout_scale
+	word_spacing := config.word_spacing / layout_scale
 	wrap := text_wrap_kind(config.wrap)
 	direction := text_direction_kind(config.text_direction)
 	lines := font_shape_line_build(
@@ -634,7 +635,8 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		node.measure.text,
 		shape_max_w,
 		letter_spacing,
-		0,
+		word_spacing,
+		config.tab_size,
 		wrap,
 		direction,
 	)

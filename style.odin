@@ -555,6 +555,8 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		opacity               = 1,
 		order                 = 0,
 		z_index               = 0,
+		tab_size              = DEFAULT_TAB_SIZE,
+		word_spacing          = 0,
 	}
 	theme_widget_style_cache_valid = true
 	theme_widget_style_cache_sig = sig
@@ -612,6 +614,8 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	if cfg_width_is_set(override.width) do result.width = override.width
 
 	merge_cfg(Text_Wrap, &result.wrap, override.wrap)
+	merge_cfg(Style_F32, &result.tab_size, override.tab_size)
+	merge_cfg(Style_F32, &result.word_spacing, override.word_spacing)
 	merge_cfg(Style_F32, &result.x, override.x)
 	merge_cfg(Style_F32, &result.y, override.y)
 	merge_cfg(Style_F32, &result.right, override.right)
@@ -1189,6 +1193,20 @@ resolve_widget_config :: proc(
 			event,
 		),
 		wrap                  = resolve_cfg(Text_Wrap, decl.wrap, parent.wrap, theme.wrap),
+		tab_size              = resolve_cfg_f32(
+			decl.tab_size,
+			parent.tab_size,
+			theme.tab_size,
+			state,
+			event,
+		),
+		word_spacing          = resolve_cfg_f32(
+			decl.word_spacing,
+			parent.word_spacing,
+			theme.word_spacing,
+			state,
+			event,
+		),
 		x                     = resolve_cfg_f32(decl.x, parent.x, theme.x, state, event),
 		y                     = resolve_cfg_f32(decl.y, parent.y, theme.y, state, event),
 		right                 = resolve_cfg_f32(

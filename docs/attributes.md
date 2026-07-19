@@ -46,7 +46,9 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `top` | `y` | Inset / offset; with absolute/fixed pairs with `bottom` |
 | `visibility` | `visibility` | `VISIBLE` (default), `HIDDEN` (layout hole, no paint/hit), `NONE` (removed from tree) |
 | `width` | `width` | `f32` px; `Width` union exists but not on struct |
-| `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Balance` — not full `white-space` |
+| `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Preserve`, `Balance` — not full `white-space` |
+| `tab-size` | `tab_size` | Preserve text tab stops in space columns; default `4` |
+| `word-spacing` | `word_spacing` | Extra advance on space clusters; default `0` |
 | `z-index` | `z_index` | Local stacking context; layout builds paint/hit `stack_index` (default `0`) |
 
 Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard, screen, or popover — popover paints/hits above screen+artboard with its own stacking context).

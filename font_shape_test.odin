@@ -194,9 +194,9 @@ font_make_shaped_line_applies_letter_spacing_between_glyphs :: proc(t: ^testing.
 		{glyph_id = 2, x_advance = 12},
 		{glyph_id = 3, x_advance = 8},
 	}
-	plain := font_make_shaped_line(glyphs, .LTR, 0)
+	plain := font_make_shaped_line("ABC", glyphs, .LTR, 0, 0)
 	defer delete(plain.glyphs)
-	spaced := font_make_shaped_line(glyphs, .LTR, 2)
+	spaced := font_make_shaped_line("ABC", glyphs, .LTR, 2, 0)
 	defer delete(spaced.glyphs)
 
 	expect_close(t, plain.width, 30)
@@ -213,7 +213,7 @@ font_shape_line_build_none_omits_newlines :: proc(t: ^testing.T) {
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "one\ntwo", 0, 0, 0, .NONE, .LTR)
+		lines := font_shape_line_build(face, handle.id, "one\ntwo", 0, 0, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
 		defer font_destroy_shaped_lines(lines)
 		testing.expect_value(t, len(lines), 1)
 		testing.expect(t, lines[0].width > 0)
@@ -234,6 +234,7 @@ font_shape_line_build_newlines_hard_breaks :: proc(t: ^testing.T) {
 			0,
 			0,
 			0,
+			DEFAULT_TAB_SIZE,
 			.NEWLINES,
 			.LTR,
 		)
@@ -256,11 +257,11 @@ font_shape_line_build_balance_soft_wraps_under_max_width :: proc(t: ^testing.T) 
 			testing.expect(t, ok)
 
 			text := "alpha beta gamma delta epsilon zeta eta theta"
-			wide := font_shape_line_build(face, handle.id, text, 1000, 0, 0, .BALANCE, .LTR)
+			wide := font_shape_line_build(face, handle.id, text, 1000, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(wide)
 			testing.expect_value(t, len(wide), 1)
 
-			narrow := font_shape_line_build(face, handle.id, text, 80, 0, 0, .BALANCE, .LTR)
+			narrow := font_shape_line_build(face, handle.id, text, 80, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
 			defer font_destroy_shaped_lines(narrow)
 			testing.expect(t, len(narrow) >= 2)
 			for line in narrow {
@@ -283,7 +284,7 @@ font_shape_line_build_balance_zero_max_w_falls_back_to_newlines :: proc(t: ^test
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "a\nb\nc", 0, 0, 0, .BALANCE, .LTR)
+		lines := font_shape_line_build(face, handle.id, "a\nb\nc", 0, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
 		defer font_destroy_shaped_lines(lines)
 		testing.expect_value(t, len(lines), 3)
 	})
@@ -298,8 +299,8 @@ font_shape_line_build_letter_spacing_increases_width :: proc(t: ^testing.T) {
 			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
 
-			plain := font_shape_line_build(face, handle.id, "ABCD", 0, 0, 0, .NONE, .LTR)
-			spaced := font_shape_line_build(face, handle.id, "ABCD", 0, 2, 0, .NONE, .LTR)
+			plain := font_shape_line_build(face, handle.id, "ABCD", 0, 0, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
+			spaced := font_shape_line_build(face, handle.id, "ABCD", 0, 2, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
 			defer font_destroy_shaped_lines(plain)
 			defer font_destroy_shaped_lines(spaced)
 			testing.expect_value(t, len(plain), 1)
@@ -317,7 +318,7 @@ font_measure_lines_matches_line_count_and_max_width :: proc(t: ^testing.T) {
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "hello\nworld", 0, 0, 0, .NEWLINES, .LTR)
+		lines := font_shape_line_build(face, handle.id, "hello\nworld", 0, 0, 0, DEFAULT_TAB_SIZE, .NEWLINES, .LTR)
 		defer font_destroy_shaped_lines(lines)
 		size := font_measure_lines(face, lines, 24, 1)
 		expect_close(t, size.y, 48)
@@ -465,7 +466,7 @@ font_shape_unicode_latin_and_cjk_clusters :: proc(t: ^testing.T) {
 		for g in cjk do cjk_w += g.x_advance
 		testing.expect(t, cjk_w > 0)
 
-		mixed := font_shape_line_build(face, handle.id, "Hello 世界\nBonjour", 100, 0, 0, .BALANCE, .LTR)
+		mixed := font_shape_line_build(face, handle.id, "Hello 世界\nBonjour", 100, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
 		defer font_destroy_shaped_lines(mixed)
 		testing.expect(t, len(mixed) >= 2)
 	})
@@ -479,4 +480,60 @@ font_is_break_and_newline_cluster_helpers :: proc(t: ^testing.T) {
 	testing.expect(t, font_is_newline_cluster("a\nb", 1))
 	testing.expect(t, !font_is_newline_cluster("ab", 1))
 	testing.expect(t, !font_is_newline_cluster("a", 9))
+}
+
+@(test)
+text_normalize_line_endings_converts_crlf_and_cr :: proc(t: ^testing.T) {
+	got := text_normalize_line_endings("a\r\nb\rc", context.temp_allocator)
+	testing.expect_value(t, got, "a\nb\nc")
+}
+
+@(test)
+text_expand_tabs_uses_column_stops :: proc(t: ^testing.T) {
+	got := text_expand_tabs("a\tb", 4, context.temp_allocator)
+	testing.expect_value(t, got, "a   b")
+	got = text_expand_tabs("\tb", 4, context.temp_allocator)
+	testing.expect_value(t, got, "    b")
+}
+
+@(test)
+font_shape_line_build_preserve_expands_tabs_and_normalizes_crlf :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		lines := font_shape_line_build(
+			face,
+			handle.id,
+			"a\tb\r\nc",
+			0,
+			0,
+			0,
+			4,
+			.PRESERVE,
+			.LTR,
+		)
+		defer font_destroy_shaped_lines(lines)
+		testing.expect_value(t, len(lines), 2)
+		testing.expect(t, lines[0].width > 0)
+		testing.expect(t, lines[1].width > 0)
+	})
+}
+
+@(test)
+font_make_shaped_line_applies_word_spacing_to_spaces :: proc(t: ^testing.T) {
+	glyphs := []Shaped_Glyph {
+		{glyph_id = 1, cluster = 0, x_advance = 10},
+		{glyph_id = 2, cluster = 1, x_advance = 5},
+		{glyph_id = 3, cluster = 2, x_advance = 8},
+	}
+	plain := font_make_shaped_line("a b c", glyphs, .LTR, 0, 0)
+	defer delete(plain.glyphs)
+	spaced := font_make_shaped_line("a b c", glyphs, .LTR, 0, 3)
+	defer delete(spaced.glyphs)
+
+	expect_close(t, plain.width, 23)
+	expect_close(t, spaced.width, 26)
+	expect_close(t, spaced.glyphs[1].x_advance, 8)
 }

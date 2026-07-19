@@ -209,4 +209,8 @@ Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 
 Wrap :: proc(value: oni.Text_Wrap) -> oni.Cfg(oni.Text_Wrap) {return cfg_value(value)}
 
+Tab_Size :: F32
+
+Word_Spacing :: F32
+
 Z_Index :: F32
