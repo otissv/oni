@@ -493,7 +493,7 @@ Stacking/hit for overlays is already in layout (`space = .POPOVER`, `Popover_Beg
 ### Deliverables
 
 - [x] `log_error` / `log_warn` / debug helpers with file/line (`oni/log.odin`)
-- [ ] `last_error` string + on-screen error banner
+- [x] `last_error` string + on-screen error banner
 - [ ] Non-fatal toast panel (auto-dismiss ~3 s) via modal layer
 - [ ] Fatal GPU device loss: message box + graceful quit
 - [ ] RenderDoc notes; pipeline `debug_name = "ui_pipeline"`

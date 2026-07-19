@@ -1,6 +1,5 @@
 package oni
 
-import "core:fmt"
 import sdl "vendor:sdl3"
 
 Draw_Proc :: proc()
@@ -32,8 +31,9 @@ present_frame :: proc(draw: Draw_Proc) {
 		cmd_buf = nil
 	}
 	if cmd_buf == nil {
-		fmt.eprintln("SDL_AcquireGPUCommandBuffer failed:", sdl.GetError())
+		log_errorf("SDL_AcquireGPUCommandBuffer failed: %s", sdl.GetError())
 		batch_reset()
+
 		return
 	}
 
@@ -51,19 +51,21 @@ present_frame :: proc(draw: Draw_Proc) {
 		swapchain_ok = sdl.WaitAndAcquireGPUSwapchainTexture(cmd_buf, state.window, &swapchain_tex, nil, nil)
 	}
 	if !swapchain_ok {
-		fmt.eprintln("SDL_WaitAndAcquireGPUSwapchainTexture failed:", sdl.GetError())
+		log_errorf("SDL_WaitAndAcquireGPUSwapchainTexture failed: %s", sdl.GetError())
 		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
-			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
+			log_errorf("SDL_CancelGPUCommandBuffer failed: %s", sdl.GetError())
 		}
 		batch_reset()
+
 		return
 	}
 
 	if swapchain_tex == nil {
 		if !sdl.CancelGPUCommandBuffer(cmd_buf) || test_hook_present_fail_cancel {
-			fmt.eprintln("SDL_CancelGPUCommandBuffer failed:", sdl.GetError())
+			log_errorf("SDL_CancelGPUCommandBuffer failed: %s", sdl.GetError())
 		}
 		batch_reset()
+
 		return
 	}
 
@@ -87,11 +89,12 @@ present_frame :: proc(draw: Draw_Proc) {
 		render_pass = nil
 	}
 	if render_pass == nil {
-		fmt.eprintln("SDL_BeginGPURenderPass failed:", sdl.GetError())
+		log_errorf("SDL_BeginGPURenderPass failed: %s", sdl.GetError())
 		if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
-			fmt.eprintln("SDL_SubmitGPUCommandBuffer failed:", sdl.GetError())
+			log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
 		}
 		batch_reset()
+
 		return
 	}
 
@@ -103,7 +106,7 @@ present_frame :: proc(draw: Draw_Proc) {
 	sdl.EndGPURenderPass(render_pass)
 
 	if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
-		fmt.eprintln("SDL_SubmitGPUCommandBuffer failed:", sdl.GetError())
+		log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
 	}
 
 	batch_reset()

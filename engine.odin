@@ -492,6 +492,7 @@ shutdown :: proc() {
 
 	gamepad_close()
 	ui_shutdown()
+	error_shutdown()
 	font_shutdown()
 	assets_shutdown()
 	gpu_destroy()
@@ -641,6 +642,7 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.running = src.running
 	dst.ui = src.ui
 	dst.shortcuts = src.shortcuts
+	dst.errors = src.errors
 	dst.gamepad = src.gamepad
 	dst.gamepad_instance_id = src.gamepad_instance_id
 }

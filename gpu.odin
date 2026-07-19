@@ -390,18 +390,26 @@ gpu_init :: proc() {
 	if state.gpu == nil || state.window == nil || state.gpu_state.pipeline != nil do return
 
 	pipeline := gpu_create_pipeline(state.gpu, state.window)
-	if pipeline == nil do return
+	if pipeline == nil {
+		log_errorf("gpu_init: failed to create UI graphics pipeline: %s", sdl.GetError())
+
+		return
+	}
 
 	sampler := gpu_create_sampler(state.gpu)
 	if sampler == nil {
+		log_errorf("gpu_init: failed to create UI sampler: %s", sdl.GetError())
 		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
 		return
 	}
 
 	white_texture := gpu_create_white_texture(state.gpu)
 	if white_texture == nil {
+		log_errorf("gpu_init: failed to create white fallback texture: %s", sdl.GetError())
 		sdl.ReleaseGPUSampler(state.gpu, sampler)
 		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
 		return
 	}
 

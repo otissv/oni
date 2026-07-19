@@ -33,8 +33,20 @@ Dpi_Sync :: dpi_sync
 
 Log_Error :: log_error
 Log_Errorf :: log_errorf
+Log_Warn :: log_warn
+Log_Warnf :: log_warnf
 Log_Debug :: log
 Log_Debugf :: logf
+
+Error_Report :: error_report
+Error_Reportf :: error_reportf
+Error_Warn :: error_warn
+Error_Warnf :: error_warnf
+Error_Banner_Height :: error_banner_height
+Error_Dismiss_All :: error_dismiss_all
+Error_Format_Log_Line :: error_format_log_line
+Error_Toggle_Expanded :: error_toggle_expanded
+Error_Dismiss :: error_dismiss
 
 Draw_Rectangle :: draw_rect
 Draw_Line :: draw_line

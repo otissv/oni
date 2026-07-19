@@ -1,12 +1,20 @@
 package oni
 
+import "core:fmt"
 import "core:mem"
 import "core:strconv"
 import "core:strings"
 
+Text_Tag_Diagnostic :: struct {
+	message: string,
+	offset:  int,
+}
+
 Text_Tag_Parse :: struct {
-	plain: string,
-	runs:  []Text_Run,
+	plain:       string,
+	runs:        []Text_Run,
+	layout_runs: []Layout_Text_Run,
+	diagnostics: []Text_Tag_Diagnostic,
 }
 
 @(private)
@@ -649,6 +657,7 @@ text_runs_push :: proc(
 	if len(runs) > 0 && text_run_style_equal(runs[len(runs) - 1].style, style) {
 		prev := &runs[len(runs) - 1]
 		b := strings.builder_make(allocator)
+		defer strings.builder_destroy(&b)
 		strings.write_string(&b, prev.text)
 		strings.write_string(&b, text)
 		prev.text = strings.to_string(b)
@@ -660,9 +669,23 @@ text_runs_push :: proc(
 }
 
 @(private)
+text_tags_push_diagnostic :: proc(
+	diagnostics: ^[dynamic]Text_Tag_Diagnostic,
+	message: string,
+	offset: int,
+	allocator: mem.Allocator,
+) {
+	append(
+		diagnostics,
+		Text_Tag_Diagnostic{message = strings.clone(message, allocator), offset = offset},
+	)
+}
+
+@(private)
 text_tags_open :: proc(
 	stack: ^[dynamic]Text_Run_Tag_Entry,
 	body: string,
+	offset: int,
 ) -> bool {
 	field: Text_Run_Style_Field
 	field_ok: bool
@@ -672,7 +695,10 @@ text_tags_open :: proc(
 
 		if !value_ok do return false
 
-		append(stack, Text_Run_Tag_Entry{field = .color, value = value})
+		append(
+			stack,
+			Text_Run_Tag_Entry{field = .color, value = value, tag = body, offset = offset},
+		)
 
 		return true
 	}
@@ -690,7 +716,10 @@ text_tags_open :: proc(
 
 		if !value_ok do return false
 
-		append(stack, Text_Run_Tag_Entry{field = field, value = value})
+		append(
+			stack,
+			Text_Run_Tag_Entry{field = field, value = value, tag = body, offset = offset},
+		)
 
 		return true
 	}
@@ -703,26 +732,18 @@ text_tags_open :: proc(
 
 	if !value_ok do return false
 
-	append(stack, Text_Run_Tag_Entry{field = field, value = value})
+	append(stack, Text_Run_Tag_Entry{field = field, value = value, tag = body, offset = offset})
 
 	return true
 }
 
 @(private)
-text_tags_close :: proc(stack: ^[dynamic]Text_Run_Tag_Entry, body: string) -> bool {
-	field, ok := text_tag_field_from_name(body)
+text_tag_entry_close_name :: proc(entry: Text_Run_Tag_Entry) -> string {
+	colon := strings.index_byte(entry.tag, ':')
 
-	if !ok do return false
+	if colon >= 0 do return entry.tag[:colon]
 
-	for i := len(stack) - 1; i >= 0; i -= 1 {
-		if stack[i].field != field do continue
-
-		ordered_remove(stack, i)
-
-		return true
-	}
-
-	return false
+	return entry.tag
 }
 
 /*
@@ -730,6 +751,7 @@ Parses rich-text tags in `source` into flattened plain text and styled runs.
 
 Open tags use Widget_Config field names: `{field:value}...{/field}`.
 Shorthand tags: `{c:name}`, `{b}`, `{i}`, `{u}`.
+Close tags must match the most recently opened tag (strict XML-like nesting).
 Escape a literal `{` with `\{`.
 
 Only text-applicable fields affect layout and draw; other parsed fields are
@@ -739,7 +761,9 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 	if len(source) == 0 do return {}
 
 	runs := make([dynamic]Text_Run, allocator)
-	stack := make([dynamic]Text_Run_Tag_Entry, allocator)
+	stack := make([dynamic]Text_Run_Tag_Entry, context.temp_allocator)
+	defer delete(stack)
+	diagnostics := make([dynamic]Text_Tag_Diagnostic, allocator)
 
 	literal := strings.builder_make(context.temp_allocator)
 	defer strings.builder_destroy(&literal)
@@ -780,6 +804,12 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 		}
 
 		if close >= len(source) {
+			text_tags_push_diagnostic(
+				&diagnostics,
+				fmt.tprintf("unterminated tag starting at offset %d", i),
+				i,
+				allocator,
+			)
 			strings.write_byte(&literal, '{')
 			i += 1
 
@@ -792,9 +822,48 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 		flush_literal(&literal, &runs, stack[:], allocator)
 
 		if len(body) > 0 && body[0] == '/' {
-			accepted = text_tags_close(&stack, body[1:])
+			close_body := body[1:]
+			close_field, close_name_ok := text_tag_field_from_name(close_body)
+
+			if !close_name_ok {
+				text_tags_push_diagnostic(
+					&diagnostics,
+					fmt.tprintf("unknown close tag {%s}", body),
+					i,
+					allocator,
+				)
+			} else if len(stack) == 0 {
+				text_tags_push_diagnostic(
+					&diagnostics,
+					fmt.tprintf("close tag {%s} without matching open tag", body),
+					i,
+					allocator,
+				)
+			} else if stack[len(stack) - 1].field != close_field {
+				expected := text_tag_entry_close_name(stack[len(stack) - 1])
+				text_tags_push_diagnostic(
+					&diagnostics,
+					fmt.tprintf(
+						"mis-nested close tag {%s}; expected {/%s}",
+						body,
+						expected,
+					),
+					i,
+					allocator,
+				)
+			} else {
+				pop(&stack)
+				accepted = true
+			}
+		} else if text_tags_open(&stack, body, i) {
+			accepted = true
 		} else {
-			accepted = text_tags_open(&stack, body)
+			text_tags_push_diagnostic(
+				&diagnostics,
+				fmt.tprintf("unknown or invalid tag {%s}", body),
+				i,
+				allocator,
+			)
 		}
 
 		if !accepted {
@@ -807,7 +876,21 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 
 	flush_literal(&literal, &runs, stack[:], allocator)
 
-	plain, _ := text_runs_to_layout(runs[:], allocator)
+	for entry in stack {
+		text_tags_push_diagnostic(
+			&diagnostics,
+			fmt.tprintf("unclosed {%s} tag opened at offset %d", entry.tag, entry.offset),
+			entry.offset,
+			allocator,
+		)
+	}
 
-	return {plain = plain, runs = runs[:]}
+	plain, layout_runs := text_runs_to_layout(runs[:], allocator)
+
+	return {
+		plain = plain,
+		runs = runs[:],
+		layout_runs = layout_runs,
+		diagnostics = diagnostics[:],
+	}
 }

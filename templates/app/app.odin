@@ -22,10 +22,18 @@ run_init :: proc() {
 main_ui :: proc() {
 	o.Begin_Screen()
 
+	w.Error_Banner()
+	banner_h := o.Error_Banner_Height()
+	content_y: f32 = 60 + banner_h
+
 	c.Nav()
 
 	w.Rectangle({
-		config = {id = "main", y = set.F32(60), padding = set.Padding(o.Pd_struct{x = 10})},
+		config = {
+			id = "main",
+			y = set.F32(content_y),
+			padding = set.Padding(o.Pd_struct{x = 10}),
+		},
 		child = proc(state: w.Rectangle_State) {
 			#partial switch g.app.Route {
 			case .Artboard:

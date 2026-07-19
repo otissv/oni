@@ -74,6 +74,7 @@ State :: struct {
 	reload_keys_prev:    struct {
 		f5, f6: bool,
 	},
+	errors: Error_State,
 }
 
 state: ^State

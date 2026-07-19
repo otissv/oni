@@ -326,8 +326,10 @@ text_run_style_equal :: proc(a, b: Text_Run_Style) -> bool {
 One parsed open-tag override on the tag stack.
 */
 Text_Run_Tag_Entry :: struct {
-	field: Text_Run_Style_Field,
-	value: Text_Run_Tag_Value,
+	field:  Text_Run_Style_Field,
+	value:  Text_Run_Tag_Value,
+	tag:    string,
+	offset: int,
 }
 
 text_run_style_set :: proc(

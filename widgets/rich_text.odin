@@ -29,6 +29,7 @@ Rich_Text_Merged_State :: struct {
 	plain:             string,
 	runs:              []o.Text_Run,
 	layout_runs:       []o.Layout_Text_Run,
+	diagnostics:       []o.Text_Tag_Diagnostic,
 }
 
 /*
@@ -87,10 +88,18 @@ rich_text_refresh_merged :: proc(
 	parsed := o.text_tags_parse(override.text, context.temp_allocator)
 	frame_state.plain = parsed.plain
 	frame_state.runs = parsed.runs
-	frame_state.plain, frame_state.layout_runs = o.text_runs_to_layout(
-		parsed.runs,
-		context.temp_allocator,
-	)
+	frame_state.layout_runs = parsed.layout_runs
+	frame_state.diagnostics = parsed.diagnostics
+
+	for diagnostic in parsed.diagnostics {
+		id_label := override.id != "" ? override.id : "RichText"
+		o.error_reportf("RichText %q: %s", id_label, diagnostic.message)
+	}
+
+	if len(parsed.diagnostics) > 0 {
+		frame_state.style.border = f32(1)
+		frame_state.style.border_color = o.Color.DESTRUCTIVE
+	}
 
 	return widget_event(frame_state^)
 }

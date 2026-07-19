@@ -1,6 +1,7 @@
 package oni
 
 import "core:os"
+import "core:strings"
 import "core:sync"
 import "core:testing"
 
@@ -96,6 +97,43 @@ text_tags_parse_literal_brace_escape :: proc(t: ^testing.T) {
 text_tags_unknown_tag_stays_literal :: proc(t: ^testing.T) {
 	parsed := text_tags_parse("{unknown}", context.temp_allocator)
 	testing.expect_value(t, parsed.plain, "{unknown}")
+}
+
+@(test)
+text_tags_parse_nested_tags :: proc(t: ^testing.T) {
+	source := "{c:accent}Accent {b}bold accent{/b} plain accent{/c} normal"
+	parsed := text_tags_parse(source, context.temp_allocator)
+	testing.expect_value(t, parsed.plain, "Accent bold accent plain accent normal")
+	testing.expect(t, len(parsed.runs) == 4)
+	testing.expect(t, text_run_style_has(parsed.runs[0].style, .color))
+	testing.expect(t, parsed.runs[0].style.color == .ACCENT)
+	testing.expect(t, !text_run_style_has(parsed.runs[0].style, .font_weight))
+	testing.expect(t, text_run_style_has(parsed.runs[1].style, .color))
+	testing.expect(t, text_run_style_has(parsed.runs[1].style, .font_weight))
+	testing.expect(t, parsed.runs[1].style.font_weight == .Bold)
+	testing.expect(t, text_run_style_has(parsed.runs[2].style, .color))
+	testing.expect(t, !text_run_style_has(parsed.runs[2].style, .font_weight))
+	testing.expect(t, !text_run_style_has(parsed.runs[3].style, .color))
+}
+
+@(test)
+text_tags_misnested_close_stays_literal :: proc(t: ^testing.T) {
+	source := "{c:accent}{b}Hi{/c}{/b}{/c}"
+	parsed := text_tags_parse(source, context.temp_allocator)
+	testing.expect_value(t, parsed.plain, "Hi{/c}")
+	testing.expect(t, len(parsed.runs) == 1)
+	testing.expect_value(t, parsed.runs[0].text, "Hi{/c}")
+	testing.expect(t, text_run_style_has(parsed.runs[0].style, .color))
+	testing.expect(t, text_run_style_has(parsed.runs[0].style, .font_weight))
+	testing.expect(t, len(parsed.diagnostics) >= 1)
+}
+
+@(test)
+text_tags_unclosed_tag_reports_diagnostic :: proc(t: ^testing.T) {
+	parsed := text_tags_parse("{b}Bold without close", context.temp_allocator)
+	testing.expect_value(t, parsed.plain, "Bold without close")
+	testing.expect(t, len(parsed.diagnostics) == 1)
+	testing.expect(t, strings.contains(parsed.diagnostics[0].message, "unclosed"))
 }
 
 @(test)
