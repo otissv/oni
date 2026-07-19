@@ -9,16 +9,17 @@ set -euo pipefail
 #     app/               # hot-reload DLL sources
 #     assets/
 #     oni/               # this framework (or clone/submodule)
-#       build_hot_reload.sh
+#       scripts/build_hot_reload.sh
 #       libs/
 #       shaders/
 #
 # Run from anywhere:
-#   ./oni/build_hot_reload.sh run
+#   ./oni/scripts/build_hot_reload.sh run
 # Override project root if oni is not a direct child of the project:
-#   ONI_PROJECT_ROOT=/path/to/project ./oni/build_hot_reload.sh run
+#   ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run
 
-ONI_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ONI_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 if [[ -n "${ONI_PROJECT_ROOT:-}" ]]; then
 	PROJECT_ROOT="$(cd "$ONI_PROJECT_ROOT" && pwd)"
@@ -26,7 +27,7 @@ else
 	PROJECT_ROOT="$(cd "$ONI_ROOT/.." && pwd)"
 fi
 
-# shellcheck source=odin_collections.sh
+# shellcheck source=../odin_collections.sh
 source "${ONI_ROOT}/odin_collections.sh"
 
 OUT_DIR="${PROJECT_ROOT}/build/hot_reload"
@@ -284,7 +285,7 @@ start_watch() {
 			--format '%w%f')"; do
 			if [[ "$path" == *main.odin ]]; then
 				if build_host; then
-					echo "Host rebuilt. Restart the window (./oni/build_hot_reload.sh restart) to pick it up."
+					echo "Host rebuilt. Restart the window (./oni/scripts/build_hot_reload.sh restart) to pick it up."
 				else
 					echo "Host rebuild failed."
 				fi
@@ -312,7 +313,7 @@ run)
 			exit 1
 		fi
 		echo "Hot reloading... (app already running, PID $(app_pid))"
-		echo "No new window will open. Use './oni/build_hot_reload.sh restart' for a fresh window."
+		echo "No new window will open. Use './oni/scripts/build_hot_reload.sh restart' for a fresh window."
 		exit 0
 	fi
 

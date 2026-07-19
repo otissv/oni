@@ -25,8 +25,8 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU. It is a **framework 
 | `templates/main.odin` | Starter host |
 | `templates/app/` | Starter app (routes, components, theme, exports) |
 | `fixtures/` | Test-only assets (fonts) |
-| `build_hot_reload.sh` | Build, run, watch, stop (operates on the **parent** project) |
-| `test_all.sh` | Package test runner (debug + leak checks) |
+| `scripts/build_hot_reload.sh` | Build, run, watch, stop (operates on the **parent** project) |
+| `scripts/test_all.sh` | Package test runner (debug + leak checks) |
 | `odin_collections.sh` | Shared `-collection:libs=oni/libs` flags |
 
 ## Build & run
@@ -34,13 +34,13 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU. It is a **framework 
 From the consumer project (or anywhere; the script resolves the project as the parent of `oni/`):
 
 ```bash
-./oni/build_hot_reload.sh run      # build app.so + host, start, watch app/ + oni/ + main.odin
-./oni/build_hot_reload.sh build    # rebuild app.so only (hot-reloads if running)
-./oni/build_hot_reload.sh restart  # fresh window
-./oni/build_hot_reload.sh stop
+./oni/scripts/build_hot_reload.sh run      # build app.so + host, start, watch app/ + oni/ + main.odin
+./oni/scripts/build_hot_reload.sh build    # rebuild app.so only (hot-reloads if running)
+./oni/scripts/build_hot_reload.sh restart  # fresh window
+./oni/scripts/build_hot_reload.sh stop
 ```
 
-Override project root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/build_hot_reload.sh run`.
+Override project root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run`.
 
 Flags used by the build: `-vet -strict-style -debug`. Needs `odin`, `glslc`, SDL3, SDL3_image, FreeType, HarfBuzz; Linux watch needs `inotify-tools`.
 
@@ -48,20 +48,20 @@ In-app: **F5** force reload, **F6** force restart.
 
 ## Tests
 
-Run from the framework root (`oni/`):
+Run from anywhere (the script `cd`s to the framework root):
 
 ```bash
-./test_all.sh                  # all packages: colors, tengu, oni, widgets
-./test_all.sh colors tengu     # subset
-./test_all.sh --asan           # AddressSanitizer (+ leak detection)
-./test_all.sh --valgrind       # re-run kept binaries under Valgrind
-./test_all.sh --report-memory  # always print per-test memory usage
-odin test . -debug             # engine package only (manual)
+./oni/scripts/test_all.sh                  # all packages: colors, tengu, oni, widgets
+./oni/scripts/test_all.sh colors tengu     # subset
+./oni/scripts/test_all.sh --asan           # AddressSanitizer (+ leak detection)
+./oni/scripts/test_all.sh --valgrind       # re-run kept binaries under Valgrind
+./oni/scripts/test_all.sh --report-memory  # always print per-test memory usage
+odin test . -debug                         # engine package only (manual; from oni/)
 ```
 
-Always enabled by `test_all.sh`: `-vet -strict-style -debug -keep-executable`, plus Odin tracking-allocator defines that report leaks and fail the suite on bad memory. Binaries land under `build/test/` (gitignored). `oni` / `widgets` link FreeType + HarfBuzz. Font tests use `fixtures/fonts/` (not the consumer `assets/`).
+Always enabled by `test_all.sh`: `-vet -strict-style -debug -keep-executable`, plus Odin tracking-allocator defines that report leaks and fail the suite on bad memory. Binaries land under `oni/build/test/` (gitignored). `oni` / `widgets` link FreeType + HarfBuzz. Font tests use `fixtures/fonts/` (not the consumer `assets/`).
 
-Tests live as `*_test.odin` next to the package under test. Prefer `./test_all.sh` over ad-hoc `odin test` so leak checks stay consistent.
+Tests live as `*_test.odin` next to the package under test. Prefer `./oni/scripts/test_all.sh` over ad-hoc `odin test` so leak checks stay consistent.
 
 ## Architecture (do not reinvent)
 

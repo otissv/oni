@@ -303,7 +303,7 @@ init_app :: proc(
 	loaded: bool
 	app_api, loaded = load_app_api(api_version)
 	if !loaded {
-		fmt.println("Failed to load app library. Run ./oni/build_hot_reload.sh first.")
+		fmt.println("Failed to load app library. Run ./oni/scripts/build_hot_reload.sh first.")
 		log.destroy_console_logger(host_logger)
 		host_logger = {}
 		return
