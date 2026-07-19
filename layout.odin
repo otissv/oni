@@ -10,14 +10,18 @@ Author text and optional wrap-width hint for leaf text measurement.
 Layout_Measure :: struct {
 	text:  string,
 	max_w: f32,
+	runs:  []Layout_Text_Run,
+	rich:  bool,
 }
 
 /*
 One layout-owned glyph paint quad in absolute logical coordinates.
 */
 Layout_Glyph_Paint :: struct {
-	glyph_id: u32,
-	dst:      Rect,
+	face_id:   Asset_Id,
+	glyph_id:  u32,
+	dst:       Rect,
+	run_index: u16,
 }
 
 /*
@@ -26,6 +30,7 @@ One layout-owned decoration stroke segment in absolute logical coordinates.
 Layout_Decoration_Stroke :: struct {
 	a, b:      Vec2,
 	thickness: f32,
+	color:     RGBA,
 }
 
 /*
@@ -36,11 +41,13 @@ Layout_Text :: struct {
 	line_origins:        []Vec2,
 	glyphs:              []Layout_Glyph_Paint,
 	decoration_strokes:  []Layout_Decoration_Stroke,
+	runs:                []Layout_Text_Run,
 	font:                Font_Face_Handle,
 	layout_scale:        f32,
 	wrap_w:              f32,
 	line_height:         f32,
 	size:                Vec2,
+	rich:                bool,
 }
 
 /*
@@ -650,11 +657,13 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		line_origins        = nil,
 		glyphs              = nil,
 		decoration_strokes  = nil,
+		runs                = node.measure.runs,
 		font                = resolved_font,
 		layout_scale        = layout_scale,
 		wrap_w              = wrap_w,
 		line_height         = line_height,
 		size                = size,
+		rich                = node.measure.rich,
 	}
 }
 
@@ -704,6 +713,12 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
 
+	if node.text.rich && len(node.text.runs) > 0 {
+		layout_rich_text_position_glyphs(node)
+
+		return
+	}
+
 	face := font_face_from_handle(node.text.font)
 	if face == nil do return
 
@@ -745,15 +760,112 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 			append(
 				&glyphs,
 				Layout_Glyph_Paint {
-					glyph_id = glyph.glyph_id,
+					face_id   = face_id,
+					glyph_id  = glyph.glyph_id,
 					dst = {
 						x = snap_logical(glyph_x + entry.bearing_x * scale),
 						y = snap_logical(glyph_y),
 						w = entry.region.w * scale,
 						h = entry.region.h * scale,
 					},
+					run_index = 0,
 				},
 			)
+		}
+	}
+
+	if len(glyphs) == 0 do return
+	node.text.glyphs = glyphs[:]
+}
+
+@(private)
+layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
+	config := node.config
+	text := node.measure.text
+
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return
+
+	ascent_scaled := face.ascent * node.text.layout_scale
+	glyphs := make([dynamic]Layout_Glyph_Paint, layout_frame_allocator())
+
+	for line, line_i in node.text.lines {
+		line_start, line_end := font_line_byte_range(text, line)
+		if line_end <= line_start do continue
+
+		origin := node.text.line_origins[line_i]
+		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+		baseline_y := snap_logical(pos.y + ascent_scaled)
+		pen_x := pos.x
+
+		for run, run_index in node.text.runs {
+			if run.end <= line_start do continue
+
+			if run.start >= line_end do break
+
+			seg_start := max(run.start, line_start)
+			seg_end := min(run.end, line_end)
+			sub := text[seg_start:seg_end]
+
+			if len(sub) == 0 do continue
+
+			segment := text_run_segment_layout(run.style, config)
+			scale := node.text.layout_scale
+			letter_spacing := segment.letter_spacing / scale
+			word_spacing := segment.word_spacing / scale
+			resolved_font, seg_scale, ok := font_resolve(
+				segment.font,
+				segment.font_size,
+				config.space,
+				segment.font_weight,
+				segment.font_style,
+			)
+
+			if !ok do continue
+
+			seg_face := font_face_from_handle(resolved_font)
+			if seg_face == nil do continue
+
+			shaped := font_shape(seg_face, sub, segment.text_direction)
+
+			if len(shaped) == 0 do continue
+
+			seg_line := font_make_shaped_line(
+				sub,
+				shaped,
+				segment.text_direction,
+				letter_spacing,
+				word_spacing,
+			)
+
+			if !font_ensure_glyphs(seg_face, resolved_font.id, seg_line.glyphs) do continue
+
+			for glyph in seg_line.glyphs {
+				key := Font_Glyph_Key {
+					face_id  = resolved_font.id,
+					glyph_id = glyph.glyph_id,
+				}
+				entry, cache_ok := state.fonts.glyph_cache[key]
+				if !cache_ok do continue
+
+				glyph_x := pen_x + glyph.x_offset * seg_scale
+				glyph_y := baseline_y + glyph.y_offset * seg_scale - entry.bearing_y * seg_scale
+				append(
+					&glyphs,
+					Layout_Glyph_Paint {
+						face_id   = resolved_font.id,
+						glyph_id  = glyph.glyph_id,
+						dst = {
+							x = snap_logical(glyph_x + entry.bearing_x * seg_scale),
+							y = snap_logical(glyph_y),
+							w = entry.region.w * seg_scale,
+							h = entry.region.h * seg_scale,
+						},
+						run_index = u16(run_index),
+					},
+				)
+				pen_x += glyph.x_advance * seg_scale
+			}
 		}
 	}
 
@@ -768,21 +880,22 @@ layout_text_append_decoration_stroke :: proc(
 	strokes: ^[dynamic]Layout_Decoration_Stroke,
 	x0, x1, y, thickness: f32,
 	style: Text_Decoration_Style_Kind,
+	color: RGBA,
 ) {
 	switch style {
 	case .SOLID:
-		append(strokes, Layout_Decoration_Stroke{{x0, y}, {x1, y}, thickness})
+		append(strokes, Layout_Decoration_Stroke{{x0, y}, {x1, y}, thickness, color})
 	case .DOUBLE:
 		gap := thickness * 1.5
-		append(strokes, Layout_Decoration_Stroke{{x0, y - gap * 0.5}, {x1, y - gap * 0.5}, thickness})
-		append(strokes, Layout_Decoration_Stroke{{x0, y + gap * 0.5}, {x1, y + gap * 0.5}, thickness})
+		append(strokes, Layout_Decoration_Stroke{{x0, y - gap * 0.5}, {x1, y - gap * 0.5}, thickness, color})
+		append(strokes, Layout_Decoration_Stroke{{x0, y + gap * 0.5}, {x1, y + gap * 0.5}, thickness, color})
 	case .DOTTED:
 		dot := max(thickness, 1)
 		gap := dot
 		x := x0
 		for x < x1 {
 			end := min(x + dot, x1)
-			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness})
+			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness, color})
 			x += dot + gap
 		}
 	case .DASHED:
@@ -791,7 +904,7 @@ layout_text_append_decoration_stroke :: proc(
 		x := x0
 		for x < x1 {
 			end := min(x + dash, x1)
-			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness})
+			append(strokes, Layout_Decoration_Stroke{{x, y}, {end, y}, thickness, color})
 			x += dash + gap
 		}
 	case .WAVY:
@@ -804,7 +917,7 @@ layout_text_append_decoration_stroke :: proc(
 			next_x := min(x + period * 0.5, x1)
 			next_y := y + (up ? -amp : amp)
 			next := Vec2{next_x, next_y}
-			append(strokes, Layout_Decoration_Stroke{prev, next, thickness})
+			append(strokes, Layout_Decoration_Stroke{prev, next, thickness, color})
 			prev = next
 			x = next_x
 			up = !up
@@ -823,10 +936,24 @@ layout_text_position_decorations :: proc(node: ^Layout_Node) {
 
 	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
 
+	if node.text.rich && len(node.text.runs) > 0 {
+		layout_rich_text_position_decorations(node)
+
+		return
+	}
+
 	lines := text_decoration_lines(node.config.text_decoration)
 	if lines == {} do return
 
 	style := text_decoration_style_kind(node.config.text_decoration_style)
+	deco_color := node.config.color_rgba
+
+	if node.config.text_decoration_color_rgba_ok {
+		deco_color = node.config.text_decoration_color_rgba
+	} else if !node.config.color_rgba_ok {
+		deco_color = {}
+	}
+
 	face := font_face_from_handle(node.text.font)
 	if face == nil do return
 
@@ -849,15 +976,116 @@ layout_text_position_decorations :: proc(node: ^Layout_Node) {
 
 		if .UNDERLINE in lines {
 			y := baseline_y - underline_pos_scaled
-			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
 		}
 		if .LINE_THROUGH in lines {
 			y := baseline_y - line_through_offset
-			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
 		}
 		if .OVERLINE in lines {
 			y := pos.y + thickness * 0.5
-			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style)
+			layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+		}
+	}
+
+	if len(strokes) == 0 do return
+	node.text.decoration_strokes = strokes[:]
+}
+
+@(private)
+layout_rich_text_position_decorations :: proc(node: ^Layout_Node) {
+	config := node.config
+	text := node.measure.text
+	scale := node.text.layout_scale
+	base_deco_color := config.color_rgba
+
+	if config.text_decoration_color_rgba_ok {
+		base_deco_color = config.text_decoration_color_rgba
+	} else if !config.color_rgba_ok {
+		base_deco_color = {}
+	}
+
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return
+
+	ascent_scaled := face.ascent * scale
+	underline_pos_scaled := face.underline_position * scale
+	line_through_offset := (face.ascent * 0.35) * scale
+	strokes := make([dynamic]Layout_Decoration_Stroke, layout_frame_allocator())
+
+	for line, line_i in node.text.lines {
+		line_start, line_end := font_line_byte_range(text, line)
+		if line_end <= line_start do continue
+
+		origin := node.text.line_origins[line_i]
+		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+		baseline_y := pos.y + ascent_scaled
+		thickness := max(face.underline_thickness * scale, 1)
+		pen_x := pos.x
+
+		for run in node.text.runs {
+			if run.end <= line_start do continue
+
+			if run.start >= line_end do break
+
+			seg_start := max(run.start, line_start)
+			seg_end := min(run.end, line_end)
+			sub := text[seg_start:seg_end]
+
+			if len(sub) == 0 do continue
+
+			segment := text_run_segment_layout(run.style, config)
+			resolved_font, seg_scale, ok := font_resolve(
+				segment.font,
+				segment.font_size,
+				config.space,
+				segment.font_weight,
+				segment.font_style,
+			)
+
+			if !ok do continue
+
+			seg_face := font_face_from_handle(resolved_font)
+			if seg_face == nil do continue
+
+			shaped := font_shape(seg_face, sub, segment.text_direction)
+
+			if len(shaped) == 0 do continue
+
+			seg_line := font_make_shaped_line(
+				sub,
+				shaped,
+				segment.text_direction,
+				segment.letter_spacing / scale,
+				segment.word_spacing / scale,
+			)
+			seg_w := seg_line.width * seg_scale
+			x0 := pen_x
+			x1 := pen_x + seg_w
+			lines := segment.text_decoration
+			style := segment.text_decoration_style
+			deco_color := base_deco_color
+
+			if color, color_ok := colors_as_concrete_rgba(segment.text_decoration_color); color_ok {
+				deco_color = color
+			}
+
+			if .UNDERLINE in lines {
+				y := baseline_y - underline_pos_scaled
+				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+			}
+
+			if .LINE_THROUGH in lines {
+				y := baseline_y - line_through_offset
+				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+			}
+
+			if .OVERLINE in lines {
+				y := pos.y + thickness * 0.5
+				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+			}
+
+			pen_x += seg_w
 		}
 	}
 
@@ -1193,6 +1421,23 @@ Attaches author text and optional max-width hint for layout-owned shaping.
 layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.text = text
 	node.measure.max_w = max_w
+	node.measure.runs = nil
+	node.measure.rich = false
+}
+
+/*
+Attaches rich author text, styled runs, and optional max-width hint for layout-owned shaping.
+*/
+layout_set_measure_rich_text :: proc(
+	node: ^Layout_Node,
+	text: string,
+	runs: []Layout_Text_Run,
+	max_w: f32,
+) {
+	node.measure.text = text
+	node.measure.max_w = max_w
+	node.measure.runs = runs
+	node.measure.rich = len(runs) > 0
 }
 
 /*

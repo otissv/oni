@@ -603,10 +603,8 @@ font_ensure_glyphs_nil_face_and_empty_are_success :: proc(t: ^testing.T) {
 
 @(test)
 font_ensure_glyphs_from_paint_nil_face_and_empty_are_success :: proc(t: ^testing.T) {
-	testing.expect(t, font_ensure_glyphs_from_paint(nil, 0, nil))
-	testing.expect(t, font_ensure_glyphs_from_paint(nil, 0, {}))
-	face := Font_Face{}
-	testing.expect(t, font_ensure_glyphs_from_paint(&face, 0, {}))
+	testing.expect(t, font_ensure_glyphs_from_paint(nil))
+	testing.expect(t, font_ensure_glyphs_from_paint({}))
 }
 
 @(test)
@@ -634,10 +632,11 @@ font_ensure_glyphs_from_paint_fails_without_gpu_when_glyphs_present :: proc(t: ^
 			_ = pixel
 			face, handle, ok := font_test_face(inter, 16)
 			testing.expect(t, ok)
-			paints := []Layout_Glyph_Paint{{glyph_id = 1, dst = {0, 0, 4, 4}}}
+			_ = face
+			paints := []Layout_Glyph_Paint{{face_id = handle.id, glyph_id = 1, dst = {0, 0, 4, 4}}}
 			// Even if cached, paint path always calls texture_atlas_init.
 			layout_test_seed_glyph(handle.id, 1, 4, 4)
-			testing.expect(t, !font_ensure_glyphs_from_paint(face, handle.id, paints))
+			testing.expect(t, !font_ensure_glyphs_from_paint(paints))
 		},
 	)
 }
@@ -732,19 +731,20 @@ font_ensure_glyphs_from_paint_rasterizes_missing_and_skips_cached :: proc(t: ^te
 		defer delete(paints)
 		for g, i in shaped {
 			paints[i] = {
+				face_id  = handle.id,
 				glyph_id = g.glyph_id,
 				dst      = {f32(i * 8), 0, 8, 10},
 			}
 		}
 
-		testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
+		testing.expect(t, font_ensure_glyphs_from_paint(paints))
 		for g in shaped {
 			_, found := state.fonts.glyph_cache[{face_id = handle.id, glyph_id = g.glyph_id}]
 			testing.expect(t, found)
 		}
 
 		count := len(state.fonts.glyph_cache)
-		testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
+		testing.expect(t, font_ensure_glyphs_from_paint(paints))
 		testing.expect_value(t, len(state.fonts.glyph_cache), count)
 	})
 }
@@ -837,6 +837,7 @@ font_draw_layout_text_draws_glyphs_and_decorations :: proc(t: ^testing.T) {
 		defer delete(paints)
 		for g, i in shaped {
 			paints[i] = {
+				face_id  = handle.id,
 				glyph_id = g.glyph_id,
 				dst      = {10 + f32(i) * 8, 20, 8, 12},
 			}
@@ -872,7 +873,7 @@ font_draw_layout_text_skips_decorations_when_alpha_zero :: proc(t: ^testing.T) {
 			defer delete(shaped)
 			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
 
-			paints := []Layout_Glyph_Paint{{glyph_id = shaped[0].glyph_id, dst = {0, 0, 8, 10}}}
+			paints := []Layout_Glyph_Paint{{face_id = handle.id, glyph_id = shaped[0].glyph_id, dst = {0, 0, 8, 10}}}
 			strokes := []Layout_Decoration_Stroke{{a = {0, 0}, b = {10, 0}, thickness = 2}}
 			laid := Layout_Text {
 				lines              = []Shaped_Line{{width = 8}},
@@ -905,7 +906,7 @@ font_draw_layout_text_continues_when_glyph_missing_from_cache_after_ensure_fail 
 			// Glyphs present but atlas cannot init without GPU → ensure fails → empty size.
 			laid := Layout_Text {
 				lines  = []Shaped_Line{{width = 1}},
-				glyphs = []Layout_Glyph_Paint{{glyph_id = 42, dst = {0, 0, 4, 4}}},
+				glyphs = []Layout_Glyph_Paint{{face_id = handle.id, glyph_id = 42, dst = {0, 0, 4, 4}}},
 				font   = handle,
 				size   = {9, 9},
 			}
@@ -1318,11 +1319,12 @@ font_draw_layout_text_re_ensures_deleted_glyph_before_paint :: proc(t: ^testing.
 			defer delete(paints)
 			for g, i in shaped {
 				paints[i] = {
+					face_id  = handle.id,
 					glyph_id = g.glyph_id,
 					dst      = {f32(i) * 10, 0, 8, 10},
 				}
 			}
-			testing.expect(t, font_ensure_glyphs_from_paint(face, handle.id, paints))
+			testing.expect(t, font_ensure_glyphs_from_paint(paints))
 			delete_key(
 				&state.fonts.glyph_cache,
 				Font_Glyph_Key{face_id = handle.id, glyph_id = shaped[1].glyph_id},
@@ -1357,6 +1359,7 @@ font_draw_layout_text_emits_quad_vertices_per_glyph :: proc(t: ^testing.T) {
 		defer delete(paints)
 		for g, i in shaped {
 			paints[i] = {
+				face_id  = handle.id,
 				glyph_id = g.glyph_id,
 				dst      = {f32(i) * 8, 4, 7, 9},
 			}
@@ -1381,8 +1384,9 @@ font_ensure_glyphs_from_paint_returns_false_when_rasterize_fails :: proc(t: ^tes
 		_ = pixel
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
-		paints := []Layout_Glyph_Paint{{glyph_id = 0x7FFFFFFF, dst = {0, 0, 1, 1}}}
-		testing.expect(t, !font_ensure_glyphs_from_paint(face, handle.id, paints))
+		_ = face
+		paints := []Layout_Glyph_Paint{{face_id = handle.id, glyph_id = 0x7FFFFFFF, dst = {0, 0, 1, 1}}}
+		testing.expect(t, !font_ensure_glyphs_from_paint(paints))
 	})
 }
 

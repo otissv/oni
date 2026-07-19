@@ -275,6 +275,38 @@ font_register_family :: proc(name: string, faces: []Font_Face_Desc) -> (Font_Han
 }
 
 /*
+Looks up a registered font family by name.
+
+Matches registered family names case-insensitively. Theme aliases `body` and
+`heading` resolve to theme.font_body and theme.font_heading when theme is set.
+Returns a family handle with size_px 0; use font_with_size or a font tag size.
+*/
+font_family_by_name :: proc(name: string) -> (Font_Handle, bool) {
+	if len(name) == 0 do return {}, false
+
+	lower := strings.to_lower(name, context.temp_allocator)
+
+	if theme != nil {
+		switch lower {
+		case "body":
+			return theme.font_body, true
+		case "heading":
+			return theme.font_heading, true
+		}
+	}
+
+	if !font_init() do return {}, false
+
+	for &family, i in state.fonts.families {
+		if strings.to_lower(family.name, context.temp_allocator) == lower {
+			return Font_Handle{id = Asset_Id(i), size_px = 0}, true
+		}
+	}
+
+	return {}, false
+}
+
+/*
 Returns a family handle with an explicit default logical size.
 */
 font_with_size :: proc(font: Font_Handle, size_px: f32) -> Font_Handle {
@@ -799,6 +831,26 @@ font_make_shaped_line :: proc(
 		width     = shaped_line_width(line_glyphs),
 		direction = direction,
 	}
+}
+
+/*
+Returns the UTF-8 byte range covered by one shaped line in the source string.
+*/
+font_line_byte_range :: proc(text: string, line: Shaped_Line) -> (start, end: int) {
+	if len(line.glyphs) == 0 do return 0, 0
+
+	start = int(line.glyphs[0].cluster)
+	end = int(line.glyphs[len(line.glyphs) - 1].cluster)
+
+	for end < len(text) {
+		_, w := utf8.decode_rune_in_string(text[end:])
+
+		if w == 0 do break
+
+		end += w
+	}
+
+	return start, end
 }
 
 /*

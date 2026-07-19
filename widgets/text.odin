@@ -107,9 +107,6 @@ Lays out and draws text. Layout owns wrap, size, and line positions; draw paints
 Text :: proc(props: Text_Props) -> o.Vec2 {
 	config := props.config
 	key := o.element_key(config.id)
-	layout_label := config.id != "" ? config.id : key
-	layout_id := o.ui_id(layout_label)
-
 	was_focused := widget_is_focused(key)
 
 	frame_state := Text_Merged_State {
@@ -117,111 +114,16 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		is_focused  = was_focused,
 	}
 
-	event := text_refresh_merged(props, &frame_state)
-	style_fp := widget_style_interaction_fp(&frame_state)
-	style := frame_state.style
-	handlers := widget_lifecycle_handlers(props, Text_Merged_State)
-	should_auto_focus := widget_should_auto_focus(style, key)
-
-	if o.ui_pass() == .Layout {
-		skip_layout, ran_unmount := widget_run_layout_lifecycle(
-			handlers,
-			layout_id,
-			config.id != "",
-			&frame_state,
-			style.visibility,
-		)
-
-		if ran_unmount {
-			event = text_refresh_merged(props, &frame_state)
-			style = frame_state.style
-			should_auto_focus = widget_should_auto_focus(style, key)
-		}
-
-		if skip_layout do return {}
-
-		can_interact := widget_can_interact(handlers, &frame_state)
-
-		if can_interact && should_auto_focus {
-			widget_apply_auto_focus(key, true)
-			frame_state.is_focused = true
-		}
-
-		widget_register_tab_order(key, style.tabbable, can_interact)
-
-		node := o.layout_push_node(layout_id, style)
-		o.layout_set_measure_text(node, frame_state.text, style.max_w)
-		o.layout_pop_node()
-
-		return {}
-	}
-
-	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return {}
-
-	frame_state.is_focused = widget_is_focused(key)
-
-	layout_rect := o.ui_layout_rect(layout_id)
-
-	widget_handle_interaction(
+	return text_widget_core(
 		props,
 		&frame_state,
-		handlers,
-		key,
-		was_focused,
-		style.tabbable,
-		layout_id,
-		layout_rect,
-		style,
+		{
+			kind = .TEXT,
+			measure_text = props.config.text,
+			layout_runs = nil,
+			rich = false,
+		},
+		text_refresh_merged,
+		text_refresh_merged_if_interaction_changed,
 	)
-
-	event, _ = text_refresh_merged_if_interaction_changed(props, &frame_state, style_fp)
-	style = frame_state.style
-
-	if widget_can_interact(handlers, &frame_state) {
-		if widget_got_tab_focus(key) && props.on_focus != nil {
-			props.on_focus(event)
-		}
-
-		if widget_lost_tab_focus(key) && props.on_blur != nil {
-			props.on_blur(event)
-		}
-	}
-
-	if should_auto_focus &&
-	   !was_focused &&
-	   props.on_focus != nil &&
-	   widget_can_interact(handlers, &frame_state) {
-		props.on_focus(event)
-	}
-
-	// Leaf: dispatch before paint so early paint returns still deliver events.
-	// Parents dispatch after Children, so bubble order remains child → parent.
-	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
-
-	rgbaColor, color_ok := o.style_color_rgba(style, &frame_state, event)
-	if !color_ok do return {}
-
-	if o.ui_layout_paint_skip(layout_id) do return {}
-
-	laid := o.layout_text_result(layout_id)
-	if laid == nil do return {}
-
-	deco_color := rgbaColor
-	#partial switch c in style.text_decoration_color {
-	case o.Color:
-		if c != .INHERIT {
-			if resolved, ok := o.style_text_decoration_color_rgba(style, &frame_state, event); ok {
-				deco_color = resolved
-			}
-		}
-	case:
-		if resolved, ok := o.style_text_decoration_color_rgba(style, &frame_state, event); ok {
-			deco_color = resolved
-		}
-	}
-
-	o.Draw_Push_Opacity(style.opacity)
-	defer o.Draw_Pop_Opacity()
-
-	return o.font_draw_layout_text(laid, rgbaColor, deco_color)
 }

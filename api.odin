@@ -56,6 +56,7 @@ Render :: render
 Load_Texture :: assets_load_texture
 Get_Texture :: assets_get_texture
 Register_Font_Family :: font_register_family
+Font_Family_By_Name :: font_family_by_name
 Font_With_Size :: font_with_size
 Font_Face_From :: font_face_from_handle
 Font_Resolve :: font_resolve

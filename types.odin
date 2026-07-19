@@ -141,6 +141,7 @@ Widget_Frame_State :: struct {
 Widget_Kind :: enum {
 	RECT,
 	TEXT,
+	RICH_TEXT,
 	BUTTON,
 	TABLE,
 	TABLE_CAPTION,

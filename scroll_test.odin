@@ -136,11 +136,11 @@ layout_offset_subtree_moves_text_paint_geometry :: proc(t: ^testing.T) {
 		proc(t: ^testing.T) {
 			ui_begin_frame()
 			glyphs := make([]Layout_Glyph_Paint, 1, context.temp_allocator)
-			glyphs[0] = {glyph_id = 1, dst = {10, 20, 8, 12}}
+			glyphs[0] = {face_id = Asset_Id(0), glyph_id = 1, dst = {10, 20, 8, 12}}
 			origins := make([]Vec2, 1, context.temp_allocator)
 			origins[0] = {10, 30}
 			strokes := make([]Layout_Decoration_Stroke, 1, context.temp_allocator)
-			strokes[0] = {a = {10, 40}, b = {18, 40}, thickness = 1}
+			strokes[0] = {a = {10, 40}, b = {18, 40}, thickness = 1, color = {255, 255, 255, 255}}
 
 			append(
 				&state.ui.layout.nodes,

@@ -604,57 +604,91 @@ font_draw_layout_text :: proc(
 	laid: ^Layout_Text,
 	color: RGBA,
 	decoration_color: RGBA = {},
+	run_colors: []RGBA = nil,
 ) -> Vec2 {
 	if laid == nil || len(laid.lines) == 0 do return {}
 
-	face := font_face_from_handle(laid.font)
-	if face == nil do return {}
-
-	face_id := laid.font.id
 	if len(laid.glyphs) > 0 {
-		if !font_ensure_glyphs_from_paint(face, face_id, laid.glyphs) do return {}
+		if !font_ensure_glyphs_from_paint(laid.glyphs) do return {}
+	}
 
-		atlas := texture_handle(state.textures.atlas.texture_id)
-		use_atlas_batch := atlas.id != INVALID_ASSET_ID && atlas.w > 0 && atlas.h > 0
+	atlas := texture_handle(state.textures.atlas.texture_id)
+	use_atlas_batch := atlas.id != INVALID_ASSET_ID && atlas.w > 0 && atlas.h > 0
+
+	glyph_color :: proc(
+		paint: Layout_Glyph_Paint,
+		default_color: RGBA,
+		run_colors: []RGBA,
+	) -> RGBA {
+		if len(run_colors) == 0 do return default_color
+
+		idx := int(paint.run_index)
+
+		if idx < 0 || idx >= len(run_colors) do return default_color
+
+		return run_colors[idx]
+	}
+
+	flush_batch :: proc(
+		atlas: Texture_Handle,
+		use_atlas_batch: bool,
+		dsts: ^[dynamic]Rect,
+		srcs: ^[dynamic]Rect,
+		batch_color: RGBA,
+	) {
+		if len(dsts) == 0 do return
+
 		if use_atlas_batch {
-			dsts := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
-			srcs := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
-			for paint in laid.glyphs {
-				key := Font_Glyph_Key {
-					face_id  = face_id,
-					glyph_id = paint.glyph_id,
-				}
-				entry, ok := state.fonts.glyph_cache[key]
-				if !ok do continue
-				if entry.region.texture_id == atlas.id {
-					append(&dsts, paint.dst)
-					append(
-						&srcs,
-						Rect{entry.region.x, entry.region.y, entry.region.w, entry.region.h},
-					)
-				} else {
-					draw_atlas_region(entry.region, paint.dst, color)
-				}
+			batch_push_atlas_quads(atlas, dsts[:], srcs[:], batch_color)
+		}
+
+		clear(dsts)
+		clear(srcs)
+	}
+
+	dsts := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
+	srcs := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
+	current_color := color
+
+	for paint in laid.glyphs {
+		tint := glyph_color(paint, color, run_colors)
+
+		key := Font_Glyph_Key {
+			face_id  = paint.face_id,
+			glyph_id = paint.glyph_id,
+		}
+		entry, ok := state.fonts.glyph_cache[key]
+		if !ok do continue
+
+		if use_atlas_batch && entry.region.texture_id == atlas.id {
+			if len(dsts) > 0 && tint != current_color {
+				flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
 			}
-			if len(dsts) > 0 {
-				batch_push_atlas_quads(atlas, dsts[:], srcs[:], color)
-			}
+
+			current_color = tint
+			append(&dsts, paint.dst)
+			append(
+				&srcs,
+				Rect{entry.region.x, entry.region.y, entry.region.w, entry.region.h},
+			)
 		} else {
-			for paint in laid.glyphs {
-				key := Font_Glyph_Key {
-					face_id  = face_id,
-					glyph_id = paint.glyph_id,
-				}
-				entry, ok := state.fonts.glyph_cache[key]
-				if !ok do continue
-				draw_atlas_region(entry.region, paint.dst, color)
-			}
+			flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
+			current_color = tint
+			draw_atlas_region(entry.region, paint.dst, tint)
 		}
 	}
 
-	if decoration_color.a > 0 {
+	flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
+
+	if decoration_color.a > 0 || len(laid.decoration_strokes) > 0 {
 		for stroke in laid.decoration_strokes {
-			draw_line(stroke.a, stroke.b, decoration_color, stroke.thickness)
+			stroke_color := stroke.color
+
+			if stroke_color.a == 0 && decoration_color.a > 0 {
+				stroke_color = decoration_color
+			}
+
+			draw_line(stroke.a, stroke.b, stroke_color, stroke.thickness)
 		}
 	}
 
@@ -664,30 +698,55 @@ font_draw_layout_text :: proc(
 /*
 Ensures atlas glyphs exist for precomputed layout glyph paint quads.
 */
-font_ensure_glyphs_from_paint :: proc(
-	face: ^Font_Face,
-	face_id: Asset_Id,
-	glyphs: []Layout_Glyph_Paint,
-) -> bool {
-	if face == nil || len(glyphs) == 0 do return true
-	// Paint path always probes the atlas when glyphs are present (even if cached).
+font_ensure_glyphs_from_paint :: proc(glyphs: []Layout_Glyph_Paint) -> bool {
+	if len(glyphs) == 0 do return true
+
 	if !texture_atlas_init() do return false
 
-	missing := make([dynamic]u32, 0, len(glyphs))
-	defer delete(missing)
-	seen: map[u32]struct{}
-	defer delete(seen)
+	face_missing: map[Asset_Id][dynamic]u32
+	defer {
+		for _, list in face_missing {
+			delete(list)
+		}
+		delete(face_missing)
+	}
 
 	for paint in glyphs {
 		key := Font_Glyph_Key {
-			face_id  = face_id,
+			face_id  = paint.face_id,
 			glyph_id = paint.glyph_id,
 		}
+
 		if key in state.fonts.glyph_cache do continue
-		if paint.glyph_id in seen do continue
-		seen[paint.glyph_id] = {}
-		append(&missing, paint.glyph_id)
+
+		list, ok := &face_missing[paint.face_id]
+		if !ok {
+			face_missing[paint.face_id] = make([dynamic]u32)
+			list = &face_missing[paint.face_id]
+		}
+
+		seen := false
+
+		for id in list {
+			if id == paint.glyph_id {
+				seen = true
+				break
+			}
+		}
+
+		if seen do continue
+
+		append(list, paint.glyph_id)
 	}
-	if len(missing) == 0 do return true
-	return font_rasterize_and_cache_missing(face, face_id, missing[:])
+
+	for face_id, missing in face_missing {
+		if len(missing) == 0 do continue
+
+		face := font_face_from_handle(Font_Face_Handle{id = face_id})
+		if face == nil do return false
+
+		if !font_rasterize_and_cache_missing(face, face_id, missing[:]) do return false
+	}
+
+	return true
 }

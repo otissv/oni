@@ -129,23 +129,24 @@ layout_text_append_decoration_stroke_styles :: proc(t: ^testing.T) {
 	strokes: [dynamic]Layout_Decoration_Stroke
 	defer delete(strokes)
 
-	layout_text_append_decoration_stroke(&strokes, 0, 40, 10, 2, .SOLID)
+	white := RGBA{255, 255, 255, 255}
+	layout_text_append_decoration_stroke(&strokes, 0, 40, 10, 2, .SOLID, white)
 	testing.expect_value(t, len(strokes), 1)
 
 	clear(&strokes)
-	layout_text_append_decoration_stroke(&strokes, 0, 40, 10, 2, .DOUBLE)
+	layout_text_append_decoration_stroke(&strokes, 0, 40, 10, 2, .DOUBLE, white)
 	testing.expect_value(t, len(strokes), 2)
 
 	clear(&strokes)
-	layout_text_append_decoration_stroke(&strokes, 0, 20, 10, 2, .DOTTED)
+	layout_text_append_decoration_stroke(&strokes, 0, 20, 10, 2, .DOTTED, white)
 	testing.expect(t, len(strokes) >= 2)
 
 	clear(&strokes)
-	layout_text_append_decoration_stroke(&strokes, 0, 30, 10, 2, .DASHED)
+	layout_text_append_decoration_stroke(&strokes, 0, 30, 10, 2, .DASHED, white)
 	testing.expect(t, len(strokes) >= 2)
 
 	clear(&strokes)
-	layout_text_append_decoration_stroke(&strokes, 0, 20, 10, 2, .WAVY)
+	layout_text_append_decoration_stroke(&strokes, 0, 20, 10, 2, .WAVY, white)
 	testing.expect(t, len(strokes) >= 2)
 }
 
