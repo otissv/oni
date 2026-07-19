@@ -162,7 +162,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 
 	layout_rect := o.ui_layout_rect(layout_id)
 
-	got_focus, lost_focus := widget_handle_interaction(
+	widget_handle_interaction(
 		props,
 		&frame_state,
 		handlers,
@@ -196,7 +196,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 
 	// Leaf: dispatch before paint so early paint returns still deliver events.
 	// Parents dispatch after Children, so bubble order remains child → parent.
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
+	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 
 	rgbaColor, color_ok := o.style_color_rgba(style, &frame_state, event)
 	if !color_ok do return {}

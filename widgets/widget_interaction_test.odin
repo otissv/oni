@@ -52,13 +52,13 @@ widget_dispatch_events_fires_click_on_pointer_release :: proc(t: ^testing.T) {
 		event := widget_event(frame)
 
 		o.w_ctx.left_mouse.pressed = true
-		widget_dispatch_events(props, &frame, handlers, event, "rect", false, false)
+		widget_dispatch_events(props, &frame, handlers, event, "rect", false)
 		testing.expect_value(t, interaction_entered, 1)
 		testing.expect_value(t, interaction_clicked, 0)
 
 		o.w_ctx.left_mouse.pressed = false
 		o.w_ctx.left_mouse.released = true
-		widget_dispatch_events(props, &frame, handlers, event, "rect", false, false)
+		widget_dispatch_events(props, &frame, handlers, event, "rect", false)
 		testing.expect_value(t, interaction_clicked, 1)
 	})
 }
@@ -74,6 +74,7 @@ widget_dispatch_events_keyboard_click_when_focused :: proc(t: ^testing.T) {
 				interaction_key = event.key
 			},
 		}
+		o.w_ctx.focused_id = "rect"
 		frame := Rectangle_State {
 			is_focused = true,
 		}
@@ -81,7 +82,7 @@ widget_dispatch_events_keyboard_click_when_focused :: proc(t: ^testing.T) {
 		event := widget_event(frame)
 
 		o.w_ctx.keys[int(sdl.Scancode.RETURN)].pressed = true
-		widget_dispatch_events(props, &frame, handlers, event, "rect", false, false)
+		widget_dispatch_events(props, &frame, handlers, event, "rect", true)
 		testing.expect_value(t, interaction_clicked, 1)
 		testing.expect(t, interaction_key == o.Scancode(sdl.Scancode.RETURN))
 	})
@@ -105,7 +106,7 @@ widget_dispatch_events_skips_when_cannot_interact :: proc(t: ^testing.T) {
 		event := widget_event(frame)
 		o.w_ctx.left_mouse.pressed = true
 		o.w_ctx.left_mouse.released = true
-		widget_dispatch_events(props, &frame, handlers, event, "rect", false, false)
+		widget_dispatch_events(props, &frame, handlers, event, "rect", false)
 		testing.expect_value(t, interaction_clicked, 0)
 	})
 }
@@ -188,7 +189,6 @@ widget_dispatch_events_respects_stop_propagation :: proc(t: ^testing.T) {
 			child_event,
 			"child",
 			false,
-			false,
 		)
 		o.w_ctx.left_mouse.pressed = false
 		o.w_ctx.left_mouse.released = true
@@ -198,7 +198,6 @@ widget_dispatch_events_respects_stop_propagation :: proc(t: ^testing.T) {
 			child_handlers,
 			child_event,
 			"child",
-			false,
 			false,
 		)
 		testing.expect_value(t, interaction_clicked, 1)
@@ -222,7 +221,6 @@ widget_dispatch_events_respects_stop_propagation :: proc(t: ^testing.T) {
 			parent_handlers,
 			parent_event,
 			"parent",
-			false,
 			false,
 		)
 		testing.expect_value(t, interaction_clicked, 0)
@@ -332,7 +330,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"child",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -340,7 +337,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"parent",
-			false,
 			false,
 		)
 
@@ -353,7 +349,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"child",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -361,7 +356,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"parent",
-			false,
 			false,
 		)
 
@@ -396,7 +390,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"child2",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -404,7 +397,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"parent2",
-			false,
 			false,
 		)
 		o.w_ctx.left_mouse.pressed = false
@@ -416,7 +408,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"child2",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -424,7 +415,6 @@ widget_click_bubbles_child_then_parent_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"parent2",
-			false,
 			false,
 		)
 
@@ -551,7 +541,6 @@ widget_hover_enter_leave_parent_stable_across_child_switch :: proc(t: ^testing.T
 				widget_event(child_a_frame),
 				"a",
 				false,
-				false,
 			)
 			widget_dispatch_events(
 				parent_props,
@@ -559,7 +548,6 @@ widget_hover_enter_leave_parent_stable_across_child_switch :: proc(t: ^testing.T
 				parent_handlers,
 				widget_event(parent_frame),
 				"parent",
-				false,
 				false,
 			)
 			testing.expect_value(t, hover_child_a_enters, 1)
@@ -575,7 +563,6 @@ widget_hover_enter_leave_parent_stable_across_child_switch :: proc(t: ^testing.T
 				widget_event(child_a_frame),
 				"a",
 				false,
-				false,
 			)
 			widget_dispatch_events(
 				child_b_props,
@@ -584,7 +571,6 @@ widget_hover_enter_leave_parent_stable_across_child_switch :: proc(t: ^testing.T
 				widget_event(child_b_frame),
 				"b",
 				false,
-				false,
 			)
 			widget_dispatch_events(
 				parent_props,
@@ -592,7 +578,6 @@ widget_hover_enter_leave_parent_stable_across_child_switch :: proc(t: ^testing.T
 				parent_handlers,
 				widget_event(parent_frame),
 				"parent",
-				false,
 				false,
 			)
 
@@ -639,7 +624,6 @@ widget_enter_leave_ignore_stop_propagation :: proc(t: ^testing.T) {
 			widget_event(parent_frame),
 			"p-enter",
 			false,
-			false,
 		)
 		o.w_ctx.left_mouse.pressed = false
 		o.w_ctx.left_mouse.released = true
@@ -649,7 +633,6 @@ widget_enter_leave_ignore_stop_propagation :: proc(t: ^testing.T) {
 			handlers,
 			widget_event(parent_frame),
 			"p-enter",
-			false,
 			false,
 		)
 
@@ -664,7 +647,6 @@ widget_enter_leave_ignore_stop_propagation :: proc(t: ^testing.T) {
 			handlers,
 			widget_event(parent_frame),
 			"p-enter",
-			false,
 			false,
 		)
 		testing.expect_value(t, hover_parent_leaves, 1)
@@ -725,7 +707,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"c-press",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -733,7 +714,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"p-press",
-			false,
 			false,
 		)
 		testing.expect_value(t, bubble_pressed, 1)
@@ -748,7 +728,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"c-move",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -756,7 +735,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"p-move",
-			false,
 			false,
 		)
 		testing.expect_value(t, bubble_moves, 11)
@@ -770,7 +748,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"c-ctx",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			parent_props,
@@ -778,7 +755,6 @@ widget_non_click_pointer_events_bubble_unless_stopped :: proc(t: ^testing.T) {
 			parent_handlers,
 			widget_event(parent_frame),
 			"p-ctx",
-			false,
 			false,
 		)
 		testing.expect_value(t, bubble_contexts, 1)
@@ -798,13 +774,14 @@ widget_keyboard_click_ignores_stop_propagation :: proc(t: ^testing.T) {
 				interaction_key = event.key
 			},
 		}
+		o.w_ctx.focused_id = "kbd"
 		frame := Rectangle_State {
 			is_focused = true,
 		}
 		handlers := widget_lifecycle_handlers(props, Rectangle_State)
 
 		o.w_ctx.keys[int(sdl.Scancode.SPACE)].pressed = true
-		widget_dispatch_events(props, &frame, handlers, widget_event(frame), "kbd", false, false)
+		widget_dispatch_events(props, &frame, handlers, widget_event(frame), "kbd", true)
 		testing.expect_value(t, interaction_clicked, 1)
 		testing.expect(t, interaction_key == o.Scancode(sdl.Scancode.SPACE))
 	})
@@ -857,7 +834,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"deep-c",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			mid_props,
@@ -866,7 +842,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			widget_event(mid_frame),
 			"deep-m",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			grand_props,
@@ -874,7 +849,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			grand_handlers,
 			widget_event(grand_frame),
 			"deep-g",
-			false,
 			false,
 		)
 
@@ -887,7 +861,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			widget_event(child_frame),
 			"deep-c",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			mid_props,
@@ -896,7 +869,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			widget_event(mid_frame),
 			"deep-m",
 			false,
-			false,
 		)
 		widget_dispatch_events(
 			grand_props,
@@ -904,7 +876,6 @@ widget_deep_click_bubble_stops_at_middle :: proc(t: ^testing.T) {
 			grand_handlers,
 			widget_event(grand_frame),
 			"deep-g",
-			false,
 			false,
 		)
 

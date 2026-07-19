@@ -127,7 +127,7 @@ widget_handle_interaction :: proc(
 		key,
 		tabbable,
 		was_focused,
-		frame_state.is_pointer_target,
+		frame_state.is_hovered,
 		&frame_state.is_focused,
 	)
 }
@@ -139,6 +139,9 @@ Pointer handlers (move/press/down/release/click/contextmenu) are skipped when
 `o.stop_propagation()` was already called this frame so ancestors that dispatch
 after Children do not receive bubbled events. Enter/leave and keyboard are not
 gated by the stop flag.
+
+`was_focused` is reconciled against the current focused id after Children so
+parents blur when a deeper tabbable descendant claims focus on the same press.
 */
 @(private)
 widget_dispatch_events :: proc(
@@ -147,10 +150,14 @@ widget_dispatch_events :: proc(
 	handlers: Widget_Lifecycle_Handlers(S),
 	event: o.Widget_Event(S),
 	key: string,
-	got_focus: bool,
-	lost_focus: bool,
+	was_focused: bool,
 ) {
 	if !widget_can_interact(handlers, frame_state) do return
+
+	now_focused := widget_is_focused(key)
+	got_focus := now_focused && !was_focused
+	lost_focus := was_focused && !now_focused
+	frame_state.is_focused = now_focused
 
 	state := frame_state^
 	propagate := !o.w_ctx.pointer_propagation_stopped
@@ -160,6 +167,7 @@ widget_dispatch_events :: proc(
 	if entered && props.on_mouse_enter != nil {
 		props.on_mouse_enter(event)
 	}
+
 	if left && props.on_mouse_leave != nil {
 		props.on_mouse_leave(event)
 	}

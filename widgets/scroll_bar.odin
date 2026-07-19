@@ -342,7 +342,7 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
 
-	got_focus, lost_focus := widget_handle_interaction(
+	widget_handle_interaction(
 		merged_props,
 		&frame_state,
 		handlers,
@@ -415,5 +415,5 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 
 	o.Children(child, layout_id, config, frame_state)
 
-	widget_dispatch_events(merged_props, &frame_state, handlers, event, key, got_focus, lost_focus)
+	widget_dispatch_events(merged_props, &frame_state, handlers, event, key, was_focused)
 }

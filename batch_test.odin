@@ -748,6 +748,34 @@ batch_push_axis_quad_respects_artboard_transform :: proc(t: ^testing.T) {
 	)
 }
 
+@(test)
+batch_push_axis_quad_snaps_bordered_solid_to_pixels :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_push_axis_quad(
+				{10.2, 20.7, 30.4, 40.4},
+				{0, 0, 1, 1},
+				{255, 255, 255, 255},
+				{255, 0, 0, 255},
+				{30.4, 40.4},
+				{},
+				{t = 1, b = 1, l = 1, r = 1},
+				.Solid,
+			)
+			testing.expect_value(t, len(batch_current().vertices), 4)
+			v0 := batch_current().vertices[0]
+			v2 := batch_current().vertices[2]
+			expect_close(t, v0.pos[0], 10)
+			expect_close(t, v0.pos[1], 21)
+			expect_close(t, v2.pos[0], 41)
+			expect_close(t, v2.pos[1], 61)
+			expect_close(t, v0.rect_size[0], 31)
+			expect_close(t, v0.rect_size[1], 40)
+		},
+	)
+}
+
 // ---------------------------------------------------------------------------
 // clip_to_scissor
 // ---------------------------------------------------------------------------

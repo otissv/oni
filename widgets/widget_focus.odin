@@ -37,10 +37,11 @@ widget_is_focused :: proc(element_id: o.Widget_ID) -> bool {
 }
 
 /*
-Updates focus from a pointer press when the widget is the pointer target.
+Updates focus from a pointer press using CSS-like hover.
 
-Uses the topmost hit (`is_pointer_target`), not CSS-like hover, so parents do not
-steal or keep focus when a child is pressed.
+Any tabbable hovered ancestor of the hit may claim focus; deeper widgets run
+later and overwrite, so the deepest tabbable under the pointer wins. Non-tabbable
+children (e.g. button labels) therefore still focus their tabbable parent.
 
 Returns got_focus when this element gained focus and lost_focus when it was cleared.
 */
@@ -48,7 +49,7 @@ widget_handle_pointer_focus :: proc(
 	element_id: o.Widget_ID,
 	tabbable: bool,
 	was_focused: bool,
-	is_pointer_target: bool,
+	is_hovered: bool,
 	is_focused: ^bool,
 ) -> (
 	got_focus: bool,
@@ -56,13 +57,16 @@ widget_handle_pointer_focus :: proc(
 ) {
 	if !tabbable do return
 
-	if is_pointer_target && o.w_ctx.left_mouse.pressed && !is_focused^ {
+	if !o.w_ctx.left_mouse.pressed do return
+
+	if is_hovered {
 		o.widget_set_focused_id(element_id)
 		is_focused^ = true
-		got_focus = true
-	}
 
-	if was_focused && !is_pointer_target && o.w_ctx.left_mouse.pressed {
+		if !was_focused {
+			got_focus = true
+		}
+	} else if was_focused {
 		o.widget_set_focused_id("")
 		is_focused^ = false
 		lost_focus = true

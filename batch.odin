@@ -464,6 +464,44 @@ batch_push_quad :: proc(
 	batch_push_indices(base)
 }
 
+@(private)
+batch_axis_quad_has_chrome :: proc(radii: [4]f32, border: Bd_px) -> bool {
+	return radii[0] > 0 ||
+		radii[1] > 0 ||
+		radii[2] > 0 ||
+		radii[3] > 0 ||
+		border.t > 0 ||
+		border.b > 0 ||
+		border.l > 0 ||
+		border.r > 0
+}
+
+/*
+Snaps screen-space rect edges to device pixels for stable 1px chrome.
+
+This keeps bordered / rounded solid quads from landing on fractional edges,
+which otherwise makes thin borders fade or disappear inconsistently.
+*/
+@(private)
+batch_snap_rect_to_pixels :: proc(r: Rect) -> Rect {
+	if r.w <= 0 || r.h <= 0 do return r
+
+	x0 := math.floor(r.x + 0.5)
+	y0 := math.floor(r.y + 0.5)
+	x1 := math.floor(r.x + r.w + 0.5)
+	y1 := math.floor(r.y + r.h + 0.5)
+
+	if x1 <= x0 {
+		x1 = x0 + 1
+	}
+
+	if y1 <= y0 {
+		y1 = y0 + 1
+	}
+
+	return {x0, y0, x1 - x0, y1 - y0}
+}
+
 /*
 Records an axis-aligned rectangle quad, optionally clipped for textured draws.
 
@@ -501,6 +539,10 @@ batch_push_axis_quad :: proc(
 			v1 = uv_rect.y + uv_rect.h * fy1
 		}
 		screen = visible
+	}
+
+	if mode == .Solid && batch_axis_quad_has_chrome(radii, border) {
+		screen = batch_snap_rect_to_pixels(screen)
 	}
 
 	x0, y0 := screen.x, screen.y

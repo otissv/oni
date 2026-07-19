@@ -29,7 +29,7 @@ Button_Props :: struct {
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Button_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Button_State) -> o.Mount,
-	on_scroll:                     proc(scroll_x, scroll_y: f32),
+	on_scroll:                    proc(scroll_x, scroll_y: f32),
 	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Button_Event),
 	on_blur:                      proc(event: Button_Event),
@@ -51,13 +51,14 @@ Returns the default button theme config, muted when the widget is disabled.
 */
 @(private)
 button_theme_base :: proc(frame_state: ^Button_State) -> Button_Config {
-	color := o.Color.FOREGROUND
+	_ = frame_state
 
-	if frame_state.is_disabled {
-		color = o.Color.MUTED
+	return Button_Config {
+		kind = .BUTTON,
+		line_height = set.F32(1),
+		border = set.Border(1),
+		border_color = set.Border_color(o.Color.TRANSPARENT),
 	}
-
-	return Button_Config{kind = .BUTTON, line_height = set.F32(1)}
 }
 
 /*
@@ -107,7 +108,17 @@ Button :: proc(props: Button_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+			widget_children(
+				child,
+				layout_id,
+				config,
+				frame_state,
+				key,
+				props.config,
+				props.on_scroll,
+				props.scroll_bar,
+				frame_state.is_hovered,
+			)
 		}
 
 		return
@@ -119,7 +130,7 @@ Button :: proc(props: Button_Props) {
 
 	rect := o.ui_layout_rect(layout_id)
 
-	got_focus, lost_focus := widget_handle_interaction(
+	widget_handle_interaction(
 		props,
 		&frame_state,
 		handlers,
@@ -130,13 +141,7 @@ Button :: proc(props: Button_Props) {
 		rect,
 		config,
 	)
-	widget_handle_scroll_wheel(
-		layout_id,
-		config,
-		frame_state.is_hovered,
-		key,
-		props.on_scroll,
-	)
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y
@@ -200,7 +205,17 @@ Button :: proc(props: Button_Props) {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+	widget_children(
+		child,
+		layout_id,
+		config,
+		frame_state,
+		key,
+		props.config,
+		props.on_scroll,
+		props.scroll_bar,
+		frame_state.is_hovered,
+	)
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
+	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }

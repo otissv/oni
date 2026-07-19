@@ -117,7 +117,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 
-	got_focus, lost_focus := widget_handle_interaction(
+	widget_handle_interaction(
 		props,
 		&frame_state,
 		handlers,
@@ -179,7 +179,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		},
 	)
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
+	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }
 
 

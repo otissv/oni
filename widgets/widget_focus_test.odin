@@ -67,7 +67,7 @@ widget_handle_pointer_focus_gains_and_loses_on_press :: proc(t: ^testing.T) {
 }
 
 @(test)
-widget_pointer_focus_uses_target_not_ancestor_hover :: proc(t: ^testing.T) {
+widget_pointer_focus_deepest_tabbable_wins :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
 		proc(t: ^testing.T) {
@@ -134,14 +134,107 @@ widget_pointer_focus_uses_target_not_ancestor_hover :: proc(t: ^testing.T) {
 
 			testing.expect(t, parent_frame.is_hovered)
 			testing.expect(t, !parent_frame.is_pointer_target)
-			testing.expect(t, parent_lost && !parent_got)
-			testing.expect(t, !parent_frame.is_focused)
+			testing.expect(t, !parent_lost && !parent_got)
+			testing.expect(t, parent_frame.is_focused)
 
 			testing.expect(t, child_frame.is_hovered)
 			testing.expect(t, child_frame.is_pointer_target)
 			testing.expect(t, child_got && !child_lost)
 			testing.expect(t, child_frame.is_focused)
 			testing.expect_value(t, o.w_ctx.focused_id, "child")
+
+			widget_dispatch_events(
+				parent_props,
+				&parent_frame,
+				parent_handlers,
+				widget_event(parent_frame),
+				"parent",
+				true,
+			)
+			testing.expect(t, !parent_frame.is_focused)
+		},
+	)
+}
+
+@(test)
+widget_pointer_focus_parent_gains_when_child_not_tabbable :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			widget_test_begin_layout()
+			defer widget_test_end_frame()
+
+			parent_id := o.UI_Id(10)
+			child_id := o.UI_Id(20)
+			_ = o.layout_push_node(
+				parent_id,
+				{kind = .RECT, space = .SCREEN, width = len_fixed(100), height = len_fixed(100)},
+			)
+			_ = o.layout_push_node(
+				child_id,
+				{kind = .RECT, space = .SCREEN, width = len_fixed(40), height = len_fixed(40)},
+			)
+			o.layout_pop_node()
+			o.layout_pop_node()
+			parent_i := o.state.ui.layout.id_to_node[parent_id]
+			child_i := o.state.ui.layout.id_to_node[child_id]
+			o.state.ui.layout.nodes[parent_i].rect = {0, 0, 100, 100}
+			o.state.ui.layout.nodes[child_i].rect = {10, 10, 40, 40}
+			o.layout_finalize_stack_order()
+			widget_test_finish_layout()
+
+			o.w_ctx.mouse_x = 20
+			o.w_ctx.mouse_y = 20
+			widget_test_begin_draw()
+			o.w_ctx.left_mouse.pressed = true
+
+			parent_config := o.Resolved_Widget_Config {
+				space    = .SCREEN,
+				tabbable = true,
+			}
+			child_config := o.Resolved_Widget_Config {
+				space    = .SCREEN,
+				tabbable = false,
+			}
+			parent_props := Rectangle_Props{}
+			child_props := Rectangle_Props{}
+			parent_frame := Rectangle_State{}
+			child_frame := Rectangle_State{}
+			parent_handlers := widget_lifecycle_handlers(parent_props, Rectangle_State)
+			child_handlers := widget_lifecycle_handlers(child_props, Rectangle_State)
+
+			parent_got, parent_lost := widget_handle_interaction(
+				parent_props,
+				&parent_frame,
+				parent_handlers,
+				"parent",
+				false,
+				true,
+				parent_id,
+				o.state.ui.layout.nodes[parent_i].rect,
+				parent_config,
+			)
+			child_got, child_lost := widget_handle_interaction(
+				child_props,
+				&child_frame,
+				child_handlers,
+				"child",
+				false,
+				false,
+				child_id,
+				o.state.ui.layout.nodes[child_i].rect,
+				child_config,
+			)
+
+			testing.expect(t, parent_frame.is_hovered)
+			testing.expect(t, !parent_frame.is_pointer_target)
+			testing.expect(t, parent_got && !parent_lost)
+			testing.expect(t, parent_frame.is_focused)
+
+			testing.expect(t, child_frame.is_hovered)
+			testing.expect(t, child_frame.is_pointer_target)
+			testing.expect(t, !child_got && !child_lost)
+			testing.expect_value(t, o.w_ctx.focused_id, "parent")
 		},
 	)
 }

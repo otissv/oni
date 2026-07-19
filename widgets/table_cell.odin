@@ -123,7 +123,7 @@ Table_Cell :: proc(props: Table_Cell_Props) {
 
 	rect := o.ui_layout_rect(layout_id)
 
-	got_focus, lost_focus := widget_handle_interaction(
+	widget_handle_interaction(
 		props,
 		&frame_state,
 		handlers,
@@ -178,5 +178,5 @@ Table_Cell :: proc(props: Table_Cell_Props) {
 
 	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
 
-	widget_dispatch_events(props, &frame_state, handlers, event, key, got_focus, lost_focus)
+	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }

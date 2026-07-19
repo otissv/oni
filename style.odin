@@ -129,7 +129,10 @@ resolve_style_f32_value :: proc(
 		return parent
 	case f32:
 		return v
-	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Style_F32:
+	case proc(
+		     frame_state: Widget_Frame_State,
+		     event: Widget_Event(Widget_Frame_State),
+	     ) -> Style_F32:
 		ui_state := to_ui_state(state)
 		ui_event := to_ui_event(state)
 		return resolve_style_f32_value(v(ui_state, ui_event), parent, theme_default, state, event)
@@ -521,37 +524,37 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 	}
 
 	theme_widget_style_cache = Resolved_Widget_Style {
-		font = theme.font_body,
-		font_size = theme.font_body.size_px,
-		font_weight = Font_Weights.Normal,
-		font_style = Font_Styles.NORMAL,
-		color = theme.palette[.FOREGROUND],
-		background = theme.background,
-		border = theme.border,
-		border_color = theme.border_color,
-		padding = theme.padding,
-		radius = theme.radius,
-		gap_x = gap_x,
-		gap_y = gap_y,
-		direction = direction,
-		justify = justify,
-		line_height = 1,
-		letter_spacing = 0,
-		align = .LEFT,
-		wrap = .BALANCE,
-		text_decoration = Text_Decoration_Lines{},
+		font                  = theme.font_body,
+		font_size             = theme.font_body.size_px,
+		font_weight           = Font_Weights.Normal,
+		font_style            = Font_Styles.NORMAL,
+		color                 = theme.palette[.FOREGROUND],
+		background            = theme.background,
+		border                = theme.border,
+		border_color          = theme.border_color,
+		padding               = theme.padding,
+		radius                = theme.radius,
+		gap_x                 = gap_x,
+		gap_y                 = gap_y,
+		direction             = direction,
+		justify               = justify,
+		line_height           = 1,
+		letter_spacing        = 0,
+		align                 = .LEFT,
+		wrap                  = .BALANCE,
+		text_decoration       = Text_Decoration_Lines{},
 		text_decoration_style = Text_Decoration_Style_Kind.SOLID,
 		text_decoration_color = Color.INHERIT,
-		text_direction = Text_Direction_Kind.LTR,
-		space = .SCREEN,
-		texture_fit = .FILL,
-		texture_pos = {},
-		position = .RELATIVE,
-		visibility = .VISIBLE,
-		pointer_events = .AUTO,
-		opacity = 1,
-		order = 0,
-		z_index = 0,
+		text_direction        = Text_Direction_Kind.LTR,
+		space                 = .SCREEN,
+		texture_fit           = .FILL,
+		texture_pos           = {},
+		position              = .RELATIVE,
+		visibility            = .VISIBLE,
+		pointer_events        = .AUTO,
+		opacity               = 1,
+		order                 = 0,
+		z_index               = 0,
 	}
 	theme_widget_style_cache_valid = true
 	theme_widget_style_cache_sig = sig
@@ -570,7 +573,9 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Text_Align, &result.align, override.align)
 	merge_cfg(Style_Bool, &result.auto_focus, override.auto_focus)
 	merge_cfg(Style_Bool, &result.tabbable, override.tabbable)
+
 	if override.accepts_text_input do result.accepts_text_input = true
+
 	merge_cfg(Colors, &result.background, override.background)
 	merge_cfg(Border, &result.border, override.border)
 	merge_cfg(Colors, &result.border_color, override.border_color)
@@ -584,7 +589,9 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Font_Weight, &result.font_weight, override.font_weight)
 	merge_cfg(Gap_X, &result.gap_x, override.gap_x)
 	merge_cfg(Gap_Y, &result.gap_y, override.gap_y)
+
 	if cfg_height_is_set(override.height) do result.height = override.height
+
 	merge_cfg(Justify, &result.justify, override.justify)
 	merge_cfg(Style_F32, &result.letter_spacing, override.letter_spacing)
 	merge_cfg(Style_F32, &result.line_height, override.line_height)
@@ -601,7 +608,9 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Colors, &result.text_decoration_color, override.text_decoration_color)
 	merge_cfg(Text_Decoration_Style, &result.text_decoration_style, override.text_decoration_style)
 	merge_cfg(Text_Direction, &result.text_direction, override.text_direction)
+
 	if cfg_width_is_set(override.width) do result.width = override.width
+
 	merge_cfg(Text_Wrap, &result.wrap, override.wrap)
 	merge_cfg(Style_F32, &result.x, override.x)
 	merge_cfg(Style_F32, &result.y, override.y)
@@ -616,6 +625,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Justify, &result.self, override.self)
 	merge_cfg(Style_Texture_Fit, &result.texture_fit, override.texture_fit)
 	merge_cfg(Style_Texture_Pos, &result.texture_pos, override.texture_pos)
+
 	if scroll_value_is_set(override.scroll_x) do result.scroll_x = override.scroll_x
 	if scroll_value_is_set(override.scroll_y) do result.scroll_y = override.scroll_y
 
@@ -1104,11 +1114,41 @@ resolve_widget_config :: proc(
 			state,
 			event,
 		),
-		max_h                 = resolve_cfg_f32(decl.max_h, parent.max_h, theme.max_h, state, event),
-		max_w                 = resolve_cfg_f32(decl.max_w, parent.max_w, theme.max_w, state, event),
-		min_h                 = resolve_cfg_f32(decl.min_h, parent.min_h, theme.min_h, state, event),
-		min_w                 = resolve_cfg_f32(decl.min_w, parent.min_w, theme.min_w, state, event),
-		order                 = resolve_cfg_f32(decl.order, parent.order, theme.order, state, event),
+		max_h                 = resolve_cfg_f32(
+			decl.max_h,
+			parent.max_h,
+			theme.max_h,
+			state,
+			event,
+		),
+		max_w                 = resolve_cfg_f32(
+			decl.max_w,
+			parent.max_w,
+			theme.max_w,
+			state,
+			event,
+		),
+		min_h                 = resolve_cfg_f32(
+			decl.min_h,
+			parent.min_h,
+			theme.min_h,
+			state,
+			event,
+		),
+		min_w                 = resolve_cfg_f32(
+			decl.min_w,
+			parent.min_w,
+			theme.min_w,
+			state,
+			event,
+		),
+		order                 = resolve_cfg_f32(
+			decl.order,
+			parent.order,
+			theme.order,
+			state,
+			event,
+		),
 		padding               = resolve_cfg(Padding, decl.padding, parent.padding, theme.padding),
 		pointer_events        = resolve_cfg(
 			Pointer_Events,
@@ -1151,7 +1191,13 @@ resolve_widget_config :: proc(
 		wrap                  = resolve_cfg(Text_Wrap, decl.wrap, parent.wrap, theme.wrap),
 		x                     = resolve_cfg_f32(decl.x, parent.x, theme.x, state, event),
 		y                     = resolve_cfg_f32(decl.y, parent.y, theme.y, state, event),
-		right                 = resolve_cfg_f32(decl.right, parent.right, theme.right, state, event),
+		right                 = resolve_cfg_f32(
+			decl.right,
+			parent.right,
+			theme.right,
+			state,
+			event,
+		),
 		bottom                = resolve_cfg_f32(
 			decl.bottom,
 			parent.bottom,
