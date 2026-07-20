@@ -21,11 +21,11 @@ Button_Size :: enum {
 	ICON,
 }
 
-Button_state :: w.Rectangle_State
-Button_Event :: w.Rectangle_Event
+Button_state :: w.Button_State
+Button_Event :: w.Button_Event
 
 Button_props :: struct {
-	using _:           w.Rectangle_Config,
+	using _:           w.Button_Config,
 	variant:           Button_Variant,
 	size:              Button_Size,
 	active:            bool,
@@ -47,6 +47,12 @@ Button_props :: struct {
 
 @(private)
 button_active_variant: Button_Variant
+
+@(private)
+button_border_fallback: o.Colors
+
+@(private)
+button_border_width_fallback: o.Border
 
 @(private)
 button_background :: proc(
@@ -90,12 +96,49 @@ button_background :: proc(
 		return o.Color.ACCENT
 	}
 
-
 	return o.Color.PRIMARY
 }
 
 @(private)
-button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Variant) {
+button_border_color :: proc(
+	state: o.Widget_Frame_State,
+	_: o.Widget_Event(o.Widget_Frame_State),
+) -> o.Colors {
+	if state.is_focused do return o.palette[.RING]
+
+	return button_border_fallback
+}
+
+@(private)
+button_border_width :: proc(
+	state: o.Widget_Frame_State,
+	_: o.Widget_Event(o.Widget_Frame_State),
+) -> o.Border {
+	if state.is_focused do return f32(1)
+
+	return button_border_width_fallback
+}
+
+@(private)
+button_apply_border_color :: proc(config: ^w.Button_Config) {
+	if config.border_color.mode == .Value {
+		button_border_fallback = config.border_color.value
+	} else {
+		button_border_fallback = o.palette[.TRANSPARENT]
+	}
+
+	if config.border.mode == .Value {
+		button_border_width_fallback = config.border.value
+	} else {
+		button_border_width_fallback = f32(1)
+	}
+
+	config.border = set.Border(button_border_width)
+	config.border_color = set.Colors(button_border_color)
+}
+
+@(private)
+button_apply_variant :: proc(config: ^w.Button_Config, variant: Button_Variant) {
 	config.font = set.Font(o.theme.font_heading)
 	config.background = set.Colors(button_background)
 
@@ -107,8 +150,6 @@ button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Varian
 	case .SECONDARY:
 	case .ACTIVE:
 	case .OUTLINE:
-		config.border = set.Border(f32(1))
-		config.border_color = set.Colors(o.RGBA{80, 80, 80, 255})
 	case .GHOST:
 	case .DESTRUCTIVE:
 	case .LINK:
@@ -123,7 +164,7 @@ button_apply_variant :: proc(config: ^w.Rectangle_Config, variant: Button_Varian
 
 
 @(private)
-button_apply_size :: proc(config: ^w.Rectangle_Config, size: Button_Size) {
+button_apply_size :: proc(config: ^w.Button_Config, size: Button_Size) {
 	current := o.cfg_style_f32(config.font_size)
 	padding_x: f32 = 12
 	padding_y: f32 = 8
@@ -158,7 +199,13 @@ Button :: proc(props: Button_props) {
 	button_active_variant = props.variant
 	defer button_active_variant = prev_variant
 
-	base := w.Rectangle_Config {
+	prev_border := button_border_fallback
+	defer button_border_fallback = prev_border
+
+	prev_border_width := button_border_width_fallback
+	defer button_border_width_fallback = prev_border_width
+
+	base := w.Button_Config {
 		width    = set.Width(.AUTO),
 		justify  = set.Justify(o.Justify_Pos{x = .CENTER, y = .CENTER}),
 		tabbable = set.Bool(true),
@@ -167,9 +214,12 @@ Button :: proc(props: Button_props) {
 	button_apply_variant(&base, props.variant)
 	button_apply_size(&base, props.size)
 
-	w.Rectangle(
+	config := o.merge_widget_config(base, props)
+	button_apply_border_color(&config)
+
+	w.Button(
 		{
-			config = o.merge_widget_config(base, props),
+			config = config,
 			child = props.child,
 			on_focus = props.on_focus,
 			on_blur = props.on_blur,

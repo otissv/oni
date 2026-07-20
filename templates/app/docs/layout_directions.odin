@@ -22,8 +22,6 @@ Layout_Directions :: proc(
 			justify = set.Justify(o.Justify_Pos{x = .SPACE_AROUND}),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 		},
 		child = proc(state: w.Rectangle_State) {
 			w.Rectangle(

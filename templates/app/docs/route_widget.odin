@@ -10,7 +10,9 @@ import w "../../oni/widgets"
 Sidebar_Widgets_options :: enum {
 	WIDGET_BUTTON,
 	WIDGET_IMAGE,
+	WIDGET_PRESERVE,
 	WIDGET_RECTANGLE,
+	WIDGET_RICH_TEXT,
 	WIDGET_TEXT,
 	WIDGET_TABLE,
 }
@@ -30,6 +32,10 @@ widget_container := proc(state: w.Rectangle_State) {
 		Widget_Image()
 	case .WIDGET_BUTTON:
 		Widget_Button()
+	case .WIDGET_PRESERVE:
+		Widget_Preserve()
+	case .WIDGET_RICH_TEXT:
+		Widget_Rich_Text()
 	case .WIDGET_TEXT:
 		WidgetText()
 	}
@@ -101,6 +107,32 @@ widget_sidebar := proc(state: w.Rectangle_State) {
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "widget_sidebar_button_text_text", text = "Text"}})
+		},
+	})
+
+	ui.Button({
+		id = "widget_sidebar_button_rich_text",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			active_widget_option = .WIDGET_RICH_TEXT
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "widget_sidebar_button_rich_text_text", text = "RichText"}})
+		},
+	})
+
+	ui.Button({
+		id = "widget_sidebar_button_preserve",
+		variant = .GHOST,
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
+		radius = set.Radius(5),
+		on_click = proc(_: ui.Button_Event) {
+			active_widget_option = .WIDGET_PRESERVE
+		},
+		child = proc(_: ui.Button_state) {
+			w.Text({config = {id = "widget_sidebar_button_preserve_text", text = "Preserve"}})
 		},
 	})
 

@@ -1,0 +1,13 @@
+build/
+libs
+oni
+colors
+tengu
+game_hot_reload
+.vscode/
+sdl3
+app.so
+app.dll
+app.dylib
+app.exe
+oni_assets_test_fixtures/

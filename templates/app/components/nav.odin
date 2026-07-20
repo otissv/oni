@@ -15,8 +15,8 @@ Nav :: proc() {
 		child = proc(state: w.Rectangle_State) {
 			ui.Button({
 				id = "nav-home-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Home
 				},
@@ -27,8 +27,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-about-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .About
 				},
@@ -39,8 +39,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-artboard-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Artboard
 				},
@@ -51,8 +51,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-layout-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Layout
 				},
@@ -63,8 +63,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-widgets-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Widgets
 				},
@@ -75,8 +75,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-Components-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Components
 				},
@@ -87,8 +87,8 @@ Nav :: proc() {
 
 			ui.Button({
 				id = "nav-shortcuts-button",
-				variant = .GHOST,
 				radius = set.Radius(5),
+				variant = .GHOST,
 				on_click = proc(_: ui.Button_Event) {
 					g.app.Route = .Shortcuts
 				},

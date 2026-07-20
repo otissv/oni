@@ -20,16 +20,16 @@ Layout_Popover :: proc() {
 			padding = set.Padding(f32(20)),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 		},
 		child = proc(_: w.Rectangle_State) {
-			w.Text({
-				config = {
-					id = "layout-popover-title",
-					text = "Popover paints and hits above screen content.",
+			w.Text(
+				{
+					config = {
+						id = "layout-popover-title",
+						text = "Popover paints and hits above screen content.",
+					},
 				},
-			})
+			)
 			ui.Button({
 				id = "layout-popover-toggle",
 				variant = .DEFAULT,
@@ -76,18 +76,17 @@ Layout_Popover :: proc() {
 						justify = set.Justify(o.Justify_Pos{x = .START, y = .START}),
 					},
 					child = proc(_: w.Popover_State) {
-						w.Text({
-							config = {
-								id = "layout-popover-panel-title",
-								text = "Popover panel",
+						w.Text(
+							{config = {id = "layout-popover-panel-title", text = "Popover panel"}},
+						)
+						w.Text(
+							{
+								config = {
+									id = "layout-popover-panel-body",
+									text = "Always space=.POPOVER",
+								},
 							},
-						})
-						w.Text({
-							config = {
-								id = "layout-popover-panel-body",
-								text = "Always space=.POPOVER",
-							},
-						})
+						)
 					},
 				})
 			}

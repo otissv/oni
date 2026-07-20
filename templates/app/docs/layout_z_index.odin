@@ -14,8 +14,6 @@ Layout_Z_Index :: proc() {
 			padding = set.Padding(f32(20)),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 		},
 		child = proc(_: w.Rectangle_State) {
 			w.Rectangle({

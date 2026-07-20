@@ -42,6 +42,7 @@ build_theme :: proc() -> o.Theme {
 		justify = o.Justify_Pos{x = .START, y = .START},
 		direction = .HORIZONTAL,
 		border_color = .BLACK,
+		ring = .RING,
 		background = .BACKGROUND,
 		padding = 0,
 		radius = 0,

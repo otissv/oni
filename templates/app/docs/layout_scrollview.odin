@@ -5,8 +5,8 @@ import set "../../oni/set"
 import w "../../oni/widgets"
 
 Layout_Scrollview :: proc() {
-	// overflow_y = SCROLL turns a fixed-size rectangle into a scrollport:
-	// content taller than the viewport clips, wheel/drag scrolls, bars paint.
+	// overflow_y = AUTO: scrollport clips overflow; bars appear on hover of the
+	// port or scrollbar. SCROLL always shows bars. Offset lives in widget ctx.
 	w.Rectangle({
 		config = {
 			id = "layout_scrollview",
@@ -17,16 +17,16 @@ Layout_Scrollview :: proc() {
 			padding = set.Padding(f32(20)),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 		},
 		child = proc(_: w.Rectangle_State) {
-			w.Text({
-				config = {
-					id = "layout-scrollview-title",
-					text = "Wheel or drag the scrollbar to scroll.",
+			w.Text(
+				{
+					config = {
+						id = "layout-scrollview-title",
+						text = "Hover the list for a scrollbar; wheel or drag to scroll.",
+					},
 				},
-			})
+			)
 			w.Rectangle({
 				config = {
 					id = "scroll-port",

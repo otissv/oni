@@ -24,8 +24,6 @@ Layout_Content :: proc(
 			justify = set.Justify(o.Justify_Pos{x = content_align_x, y = content_align_y}),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 		},
 		child = proc(state: w.Rectangle_State) {
 			w.Rectangle({

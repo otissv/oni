@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-
-oni/scripts/build_hot_reload.sh "$@"

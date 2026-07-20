@@ -16,8 +16,6 @@ Layout_Opacity :: proc() {
 			padding = set.Padding(f32(20)),
 			background = set.Colors(o.theme.palette[.BACKGROUND]),
 			radius = set.Radius(10),
-			border = set.Border(f32(1)),
-			border_color = set.Colors(o.Color.YELLOW_500),
 			justify = set.Justify(o.Justify_Pos{y = .CENTER}),
 		},
 		child = proc(_: w.Rectangle_State) {
