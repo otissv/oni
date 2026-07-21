@@ -399,8 +399,6 @@ layout_finalize_text_node_with_real_font_positions_glyphs_without_gpu :: proc(t:
 			defer layout_text_release(&node)
 			testing.expect(t, len(node.text.lines) == 1)
 
-			layout_test_seed_glyphs_from_node(&node)
-
 			layout_finalize_text_node(&node)
 			testing.expect(t, node.rect.h > 10) // auto height from shaped size
 			testing.expect(t, len(node.text.line_origins) == 1)

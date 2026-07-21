@@ -154,6 +154,42 @@ font_resolve :: proc(
 }
 
 /*
+Loads one glyph outline and returns layout paint metrics without rasterizing.
+
+Uses FT_LOAD_DEFAULT (or FT_LOAD_NO_BITMAP + embolden for synthetic bold) so
+layout can position quads while draw owns atlas rasterization.
+*/
+font_glyph_metrics :: proc(face: ^Font_Face, glyph_id: u32) -> (w, h, bearing_x, bearing_y: f32, ok: bool) {
+	if face == nil || face.ft_face == nil do return 0, 0, 0, 0, false
+
+	load_flags: c.int = face.fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_DEFAULT)
+	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), load_flags)) {
+		log_errorf("FT_Load_Glyph failed for metrics glyph %d", glyph_id)
+		return 0, 0, 0, 0, false
+	}
+
+	slot := ft_glyph_slot(face.ft_face)
+	if face.fake_bold {
+		GlyphSlot_Embolden(slot)
+	}
+
+	metrics := ft_slot_metrics(slot)^
+	w = ft_pos_to_f32(metrics.width)
+	h = ft_pos_to_f32(metrics.height)
+	bearing_x = ft_pos_to_f32(metrics.hori_bearing_x)
+	bearing_y = ft_pos_to_f32(metrics.hori_bearing_y)
+
+	if w <= 0 || h <= 0 {
+		w = 1
+		h = 1
+		bearing_x = 0
+		bearing_y = 0
+	}
+
+	return w, h, bearing_x, bearing_y, true
+}
+
+/*
 Clears the font atlas CPU surface and resets shelf allocation state.
 
 Used before reloading faces so glyph packing starts from a clean atlas.

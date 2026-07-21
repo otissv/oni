@@ -32,16 +32,6 @@ layout_test_seed_glyph :: proc(face_id: Asset_Id, glyph_id: u32, w: f32 = 8, h: 
 }
 
 @(private)
-layout_test_seed_glyphs_from_node :: proc(node: ^Layout_Node, w: f32 = 6, h: f32 = 10) {
-	face_id := node.text.font.id
-	for line in node.text.lines {
-		for glyph in line.glyphs {
-			layout_test_seed_glyph(face_id, glyph.glyph_id, w, h)
-		}
-	}
-}
-
-@(private)
 layout_test_make_line :: proc(
 	glyph_ids: []u32,
 	advances: []f32,
@@ -72,6 +62,25 @@ layout_test_clear_stub_fonts :: proc() {
 	delete(state.fonts.glyph_cache)
 	state.fonts.faces = nil
 	state.fonts.glyph_cache = nil
+}
+
+@(private)
+layout_test_register_inter_font :: proc() -> (inter: Font_Handle, ok: bool) {
+	inter, ok = font_register_family(
+		"LayoutEdgeTest",
+		{{path = INTER_FONT_FIXTURE, style = .NORMAL, weight = .Normal}},
+	)
+	if !ok do return inter, false
+
+	return font_with_size(inter, 16), true
+}
+
+@(private)
+layout_test_glyph_ids :: proc(face: ^Font_Face, text: string) -> (first, second: u32, ok: bool) {
+	shaped := font_shape(face, text, .LTR)
+	if len(shaped) < 2 do return 0, 0, false
+
+	return shaped[0].glyph_id, shaped[1].glyph_id, true
 }
 
 @(private)
@@ -222,17 +231,26 @@ layout_text_position_lines_stacks_multiple_lines :: proc(t: ^testing.T) {
 }
 
 @(test)
-layout_text_position_glyphs_ltr_and_rtl_with_stub_cache :: proc(t: ^testing.T) {
+layout_text_position_glyphs_ltr_and_rtl :: proc(t: ^testing.T) {
+	if !font_fixture_available() do return
+
 	with_layout_solve(
 		t,
 		proc(layout: ^Layout_State, t: ^testing.T) {
 			_ = layout
-			font := layout_test_stub_font()
-			defer layout_test_clear_stub_fonts()
-			layout_test_seed_glyph(font.id, 1)
-			layout_test_seed_glyph(font.id, 2)
+			testing.expect(t, font_init())
+			defer font_shutdown()
 
-			ltr := layout_test_make_line({1, 2}, {10, 12}, .LTR)
+			inter, inter_ok := layout_test_register_inter_font()
+			testing.expect(t, inter_ok)
+
+			face, font, face_ok := font_test_face(inter, 16)
+			testing.expect(t, face_ok)
+
+			gid_a, gid_b, ids_ok := layout_test_glyph_ids(face, "AB")
+			testing.expect(t, ids_ok)
+
+			ltr := layout_test_make_line({gid_a, gid_b}, {10, 12}, .LTR)
 			lines := layout_test_make_lines({ltr})
 			node := Layout_Node {
 				rect = {10, 20, 100, 40},
@@ -244,7 +262,7 @@ layout_text_position_glyphs_ltr_and_rtl_with_stub_cache :: proc(t: ^testing.T) {
 			testing.expect(t, node.text.glyphs[0].dst.x < node.text.glyphs[1].dst.x)
 			layout_text_release(&node)
 
-			rtl := layout_test_make_line({1, 2}, {10, 12}, .RTL)
+			rtl := layout_test_make_line({gid_a, gid_b}, {10, 12}, .RTL)
 			lines = layout_test_make_lines({rtl})
 			layout_test_attach_stub_text(&node, font, lines, 100)
 			layout_text_position_lines(&node)
@@ -252,6 +270,60 @@ layout_text_position_glyphs_ltr_and_rtl_with_stub_cache :: proc(t: ^testing.T) {
 			testing.expect_value(t, len(node.text.glyphs), 2)
 			// RTL places first logical glyph toward the right edge of the line box.
 			testing.expect(t, node.text.glyphs[0].dst.x > node.text.glyphs[1].dst.x)
+			layout_text_release(&node)
+		},
+	)
+}
+
+@(test)
+layout_text_position_glyphs_matches_rasterized_dst :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			state.ui.layout = layout_test_begin()
+			defer layout_test_end(&state.ui.layout)
+
+			face, font, face_ok := font_test_face(inter, 16)
+			testing.expect(t, face_ok)
+
+			shaped := font_shape(face, "Hi", .LTR)
+			testing.expect(t, len(shaped) >= 2)
+
+			line := font_make_shaped_line("Hi", shaped, .LTR, 0, 0)
+			lines := layout_test_make_lines({line})
+			node := Layout_Node {
+				rect = {10, 20, 200, 40},
+			}
+			layout_test_attach_stub_text(&node, font, lines, 200)
+			layout_text_position_lines(&node)
+
+			cache_before := len(state.fonts.glyph_cache)
+			layout_text_position_glyphs(&node)
+			testing.expect_value(t, len(state.fonts.glyph_cache), cache_before)
+
+			testing.expect(t, font_ensure_glyphs(face, font.id, shaped))
+			baseline_y := snap_logical(node.rect.y + node.text.line_origins[0].y + face.ascent)
+			pen_x := node.rect.x + node.text.line_origins[0].x
+
+			for glyph, i in shaped {
+				expected, expected_ok := font_test_glyph_paint_from_cache(
+					face,
+					font.id,
+					glyph,
+					pen_x,
+					baseline_y,
+					1,
+				)
+				testing.expect(t, expected_ok)
+				pen_x += glyph.x_advance
+
+				expect_close(t, node.text.glyphs[i].dst.x, expected.dst.x, 1.5)
+				expect_close(t, node.text.glyphs[i].dst.y, expected.dst.y, 1.5)
+				expect_close(t, node.text.glyphs[i].dst.w, expected.dst.w, 1.5)
+				expect_close(t, node.text.glyphs[i].dst.h, expected.dst.h, 1.5)
+			}
+
 			layout_text_release(&node)
 		},
 	)
@@ -286,16 +358,26 @@ layout_text_position_decorations_emits_underline_strike_overline :: proc(t: ^tes
 
 @(test)
 layout_text_auto_height_and_paint_from_shaped_text :: proc(t: ^testing.T) {
+	if !font_fixture_available() do return
+
 	with_layout_solve(
 		t,
 		proc(layout: ^Layout_State, t: ^testing.T) {
 			_ = layout
-			font := layout_test_stub_font()
-			defer layout_test_clear_stub_fonts()
-			layout_test_seed_glyph(font.id, 1)
+			testing.expect(t, font_init())
+			defer font_shutdown()
 
-			l0 := layout_test_make_line({1}, {20})
-			l1 := layout_test_make_line({1}, {20})
+			inter, inter_ok := layout_test_register_inter_font()
+			testing.expect(t, inter_ok)
+
+			face, font, face_ok := font_test_face(inter, 16)
+			testing.expect(t, face_ok)
+
+			gid, _, ids_ok := layout_test_glyph_ids(face, "AA")
+			testing.expect(t, ids_ok)
+
+			l0 := layout_test_make_line({gid}, {20})
+			l1 := layout_test_make_line({gid}, {20})
 			lines := layout_test_make_lines({l0, l1})
 			node := Layout_Node {
 				rect = {0, 0, 100, 10},

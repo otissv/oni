@@ -126,6 +126,18 @@ FT_SLOT_OFFSET_FORMAT :: 144
 FT_SLOT_OFFSET_BITMAP :: 152
 FT_SLOT_OFFSET_BITMAP_LEFT :: 192
 FT_SLOT_OFFSET_BITMAP_TOP :: 196
+FT_SLOT_OFFSET_METRICS :: 48
+
+/*
+FreeType horizontal/vertical glyph metrics in 26.6 fixed-point pixels.
+*/
+FT_Glyph_Metrics :: struct {
+	width, height:             FT_Pos,
+	hori_bearing_x, hori_bearing_y: FT_Pos,
+	hori_advance:              FT_Pos,
+	vert_bearing_x, vert_bearing_y: FT_Pos,
+	vert_advance:              FT_Pos,
+}
 
 when ODIN_OS == .Windows {
 	foreign import lib "system:freetype.lib"
@@ -272,6 +284,20 @@ Reads the vertical bitmap bearing (top) from a glyph slot in pixels.
 */
 ft_slot_bitmap_top :: proc(slot: ^FT_GlyphSlotRec) -> c.int {
 	return (cast(^c.int)(uintptr(slot) + FT_SLOT_OFFSET_BITMAP_TOP))^
+}
+
+/*
+Returns the metrics sub-structure inside a glyph slot.
+*/
+ft_slot_metrics :: proc(slot: ^FT_GlyphSlotRec) -> ^FT_Glyph_Metrics {
+	return cast(^FT_Glyph_Metrics)(uintptr(slot) + FT_SLOT_OFFSET_METRICS)
+}
+
+/*
+Converts 26.6 FT_Pos to floating-point pixels.
+*/
+ft_pos_to_f32 :: proc(v: FT_Pos) -> f32 {
+	return f32(v) / 64.0
 }
 
 /*

@@ -591,6 +591,78 @@ font_atlas_reset_clears_pixels_and_shelves :: proc(t: ^testing.T) {
 	)
 }
 
+// --- font_glyph_metrics ---
+
+@(private)
+font_test_glyph_paint_from_cache :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	glyph: Shaped_Glyph,
+	pen_x, baseline_y, scale: f32,
+) -> (
+	paint: Layout_Glyph_Paint,
+	ok: bool,
+) {
+	key := Font_Glyph_Key {
+		face_id  = face_id,
+		glyph_id = glyph.glyph_id,
+	}
+	entry, cache_ok := state.fonts.glyph_cache[key]
+	if !cache_ok do return {}, false
+
+	glyph_x := pen_x + glyph.x_offset * scale
+	glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
+	return Layout_Glyph_Paint {
+		face_id  = face_id,
+		glyph_id = glyph.glyph_id,
+		dst = {
+			x = snap_logical(glyph_x + entry.bearing_x * scale),
+			y = snap_logical(glyph_y),
+			w = entry.region.w * scale,
+			h = entry.region.h * scale,
+		},
+	}, true
+}
+
+@(test)
+font_glyph_metrics_nil_face_and_invalid_glyph :: proc(t: ^testing.T) {
+	_, _, _, _, ok := font_glyph_metrics(nil, 1)
+	testing.expect(t, !ok)
+
+	face := Font_Face{}
+	_, _, _, _, ok = font_glyph_metrics(&face, 1)
+	testing.expect(t, !ok)
+}
+
+@(test)
+font_glyph_metrics_matches_rasterized_bearings :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, _, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "Ag", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 2)
+
+			for glyph in shaped {
+				mw, mh, mbx, mby, metrics_ok := font_glyph_metrics(face, glyph.glyph_id)
+				testing.expect(t, metrics_ok)
+
+				entry, cache_ok := font_rasterize_glyph(face, glyph.glyph_id)
+				testing.expect(t, cache_ok)
+
+				expect_close(t, mbx, entry.bearing_x, 1.5)
+				expect_close(t, mby, entry.bearing_y, 1.5)
+				expect_close(t, mw, entry.region.w, 1.5)
+				expect_close(t, mh, entry.region.h, 1.5)
+			}
+		},
+	)
+}
+
 // --- font_ensure_glyphs / font_rasterize_glyph / font_ensure_glyphs_from_paint ---
 
 @(test)

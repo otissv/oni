@@ -781,6 +781,35 @@ layout_text_position_lines :: proc(node: ^Layout_Node) {
 	node.text.line_origins = origins
 }
 
+@(private)
+layout_glyph_paint_quad :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	glyph: Shaped_Glyph,
+	pen_x, baseline_y, scale: f32,
+	run_index: u16 = 0,
+) -> (
+	paint: Layout_Glyph_Paint,
+	ok: bool,
+) {
+	w, h, bearing_x, bearing_y, metrics_ok := font_glyph_metrics(face, glyph.glyph_id)
+	if !metrics_ok do return {}, false
+
+	glyph_x := pen_x + glyph.x_offset * scale
+	glyph_y := baseline_y + glyph.y_offset * scale - bearing_y * scale
+	return Layout_Glyph_Paint {
+		face_id   = face_id,
+		glyph_id  = glyph.glyph_id,
+		dst = {
+			x = snap_logical(glyph_x + bearing_x * scale),
+			y = snap_logical(glyph_y),
+			w = w * scale,
+			h = h * scale,
+		},
+		run_index = run_index,
+	}, true
+}
+
 /*
 Builds absolute glyph paint quads from shaped lines and line origins.
 */
@@ -808,7 +837,6 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 	for line, i in node.text.lines {
 		if len(line.glyphs) == 0 do continue
-		if !font_ensure_glyphs(face, face_id, line.glyphs) do continue
 
 		origin := node.text.line_origins[i]
 		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
@@ -819,37 +847,19 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 		}
 
 		for glyph in line.glyphs {
-			key := Font_Glyph_Key {
-				face_id  = face_id,
-				glyph_id = glyph.glyph_id,
-			}
-			entry, ok := state.fonts.glyph_cache[key]
-			if !ok do continue
-
 			glyph_x: f32
 			if line.direction == .RTL {
 				pen_x -= glyph.x_advance * scale
-				glyph_x = pen_x + glyph.x_offset * scale
+				glyph_x = pen_x
 			} else {
-				glyph_x = pen_x + glyph.x_offset * scale
+				glyph_x = pen_x
 				pen_x += glyph.x_advance * scale
 			}
 
-			glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
-			append(
-				&glyphs,
-				Layout_Glyph_Paint {
-					face_id   = face_id,
-					glyph_id  = glyph.glyph_id,
-					dst = {
-						x = snap_logical(glyph_x + entry.bearing_x * scale),
-						y = snap_logical(glyph_y),
-						w = entry.region.w * scale,
-						h = entry.region.h * scale,
-					},
-					run_index = 0,
-				},
-			)
+			paint, ok := layout_glyph_paint_quad(face, face_id, glyph, glyph_x, baseline_y, scale)
+			if !ok do continue
+
+			append(&glyphs, paint)
 		}
 	}
 
@@ -917,32 +927,19 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 				word_spacing,
 			)
 
-			if !font_ensure_glyphs(seg_face, resolved_font.id, seg_line.glyphs) do continue
-
 			for glyph in seg_line.glyphs {
-				key := Font_Glyph_Key {
-					face_id  = resolved_font.id,
-					glyph_id = glyph.glyph_id,
-				}
-				entry, cache_ok := state.fonts.glyph_cache[key]
-				if !cache_ok do continue
-
-				glyph_x := pen_x + glyph.x_offset * seg_scale
-				glyph_y := baseline_y + glyph.y_offset * seg_scale - entry.bearing_y * seg_scale
-				append(
-					&glyphs,
-					Layout_Glyph_Paint {
-						face_id   = resolved_font.id,
-						glyph_id  = glyph.glyph_id,
-						dst = {
-							x = snap_logical(glyph_x + entry.bearing_x * seg_scale),
-							y = snap_logical(glyph_y),
-							w = entry.region.w * seg_scale,
-							h = entry.region.h * seg_scale,
-						},
-						run_index = u16(run_index),
-					},
+				paint, paint_ok := layout_glyph_paint_quad(
+					seg_face,
+					resolved_font.id,
+					glyph,
+					pen_x,
+					baseline_y,
+					seg_scale,
+					u16(run_index),
 				)
+				if !paint_ok do continue
+
+				append(&glyphs, paint)
 				pen_x += glyph.x_advance * seg_scale
 			}
 		}

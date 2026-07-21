@@ -5,8 +5,8 @@ import "core:sync"
 import "core:testing"
 
 
-expect_close :: proc(t: ^testing.T, got, want: f32, loc := #caller_location) {
-	testing.expectf(t, abs(got - want) < 1e-4, "got=%v want=%v", got, want, loc = loc)
+expect_close :: proc(t: ^testing.T, got, want: f32, epsilon: f32 = 1e-4, loc := #caller_location) {
+	testing.expectf(t, abs(got - want) < epsilon, "got=%v want=%v", got, want, loc = loc)
 }
 
 @(private)
@@ -2641,7 +2641,6 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 			wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
 
 			layout_text_build(node, wrap_w)
-			layout_test_seed_glyphs_from_node(node)
 			layout_text_release(node)
 
 			layout_finalize_text_node(node)
