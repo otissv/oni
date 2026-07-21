@@ -14,7 +14,6 @@ with_error_test_state :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	defer state = saved_state
 	state = &test_state
-	error_init()
 
 	defer error_shutdown()
 
@@ -38,7 +37,7 @@ error_push_deduplicates_same_message :: proc(t: ^testing.T) {
 }
 
 @(test)
-error_dismiss_hides_entry_from_active_count :: proc(t: ^testing.T) {
+error_dismiss_removes_entry :: proc(t: ^testing.T) {
 	with_error_test_state(t, proc(t: ^testing.T) {
 		loc := runtime.Source_Code_Location {
 			file_path = "error_test.odin",
@@ -50,20 +49,20 @@ error_dismiss_hides_entry_from_active_count :: proc(t: ^testing.T) {
 		error_dismiss(key)
 
 		testing.expect_value(t, error_active_count(), 0)
+		testing.expect_value(t, len(state.errors.entries), 0)
 	})
 }
 
 @(test)
 error_format_log_line_matches_stderr_shape :: proc(t: ^testing.T) {
 	with_error_test_state(t, proc(t: ^testing.T) {
-		entry := Error_Entry {
-			level     = .ERROR,
-			message   = "boom",
-			file      = "error_test.odin",
+		loc := runtime.Source_Code_Location {
+			file_path = "error_test.odin",
 			line      = 9,
 			procedure = "test_proc",
 		}
-		line := error_format_log_line(entry)
+		error_push(.ERROR, "boom", loc)
+		line := error_format_log_line(state.errors.entries[0])
 
 		testing.expect(t, strings.contains(line, "[ERROR]"))
 		testing.expect(t, strings.contains(line, "error_test.odin:9:test_proc"))
@@ -72,11 +71,37 @@ error_format_log_line_matches_stderr_shape :: proc(t: ^testing.T) {
 }
 
 @(test)
-log_error_also_queues_banner_entry :: proc(t: ^testing.T) {
+error_report_queues_banner_entry :: proc(t: ^testing.T) {
 	with_error_test_state(t, proc(t: ^testing.T) {
-		log_error("queued")
+		error_report("queued")
 
 		testing.expect_value(t, error_active_count(), 1)
 		testing.expect_value(t, state.errors.entries[0].message, "queued")
+	})
+}
+
+@(test)
+log_error_does_not_queue_banner_entry :: proc(t: ^testing.T) {
+	with_error_test_state(t, proc(t: ^testing.T) {
+		log_error("stderr only")
+
+		testing.expect_value(t, error_active_count(), 0)
+	})
+}
+
+@(test)
+error_dismiss_all_clears_entries :: proc(t: ^testing.T) {
+	with_error_test_state(t, proc(t: ^testing.T) {
+		loc := runtime.Source_Code_Location {
+			file_path = "error_test.odin",
+			line      = 3,
+			procedure = "test_proc",
+		}
+		error_push(.ERROR, "one", loc)
+		error_push(.WARN, "two", loc)
+		error_dismiss_all()
+
+		testing.expect_value(t, error_active_count(), 0)
+		testing.expect_value(t, len(state.errors.entries), 0)
 	})
 }

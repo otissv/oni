@@ -42,7 +42,9 @@ Error_Report :: error_report
 Error_Reportf :: error_reportf
 Error_Warn :: error_warn
 Error_Warnf :: error_warnf
+Error_Entries :: error_entries
 Error_Banner_Height :: error_banner_height
+Error_Estimate_Banner_Height :: error_estimate_banner_height
 Error_Dismiss_All :: error_dismiss_all
 Error_Format_Log_Line :: error_format_log_line
 Error_Toggle_Expanded :: error_toggle_expanded

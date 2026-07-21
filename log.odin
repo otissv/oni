@@ -26,7 +26,6 @@ Use for non-recoverable failures; output writes directly to stderr.
 */
 log_error :: proc(msg: string, loc := #caller_location) {
 	write_log("ERROR", msg, loc)
-	error_push(.ERROR, msg, loc)
 }
 
 /*
@@ -37,7 +36,6 @@ Use when the message needs printf-style interpolation.
 log_errorf :: proc(format: string, args: ..any, loc := #caller_location) {
 	msg := fmt.tprintf(format, ..args)
 	write_log("ERROR", msg, loc)
-	error_push(.ERROR, msg, loc)
 }
 
 /*
@@ -47,7 +45,6 @@ Use for recoverable or degraded conditions that should still be visible.
 */
 log_warn :: proc(msg: string, loc := #caller_location) {
 	write_log("WARN", msg, loc)
-	error_push(.WARN, msg, loc)
 }
 
 /*
@@ -58,5 +55,4 @@ Use when the warning needs printf-style interpolation.
 log_warnf :: proc(format: string, args: ..any, loc := #caller_location) {
 	msg := fmt.tprintf(format, ..args)
 	write_log("WARN", msg, loc)
-	error_push(.WARN, msg, loc)
 }

@@ -6,6 +6,9 @@ import "core:fmt"
 
 
 @(private)
+error_banner_entries: []o.Error_Entry
+
+@(private)
 error_banner_entry: struct {
 	entry: o.Error_Entry,
 	index: int,
@@ -22,12 +25,11 @@ error_banner_summary_row :: proc(state: Rectangle_State) {
 
 	entry := error_banner_entry.entry
 	index := error_banner_entry.index
-	level_label := entry.level == .ERROR ? "ERROR" : "WARN"
 
 	Text({
 		config = {
 			id = error_banner_entry_id(index, "summary"),
-			text = fmt.tprintf("[%s] %s", level_label, entry.message),
+			text = entry.summary,
 			color = set.Color(.DESTRUCTIVE_FOREGROUND),
 			font = set.Font(o.theme.font_body),
 			font_size = set.F32(13),
@@ -114,7 +116,7 @@ error_banner_entry_body :: proc(state: Rectangle_State) {
 		Text({
 			config = {
 				id = error_banner_entry_id(index, "details-text"),
-				text = o.error_format_log_line(entry),
+				text = entry.log_line,
 				color = set.Color(.DESTRUCTIVE_FOREGROUND),
 				font = set.Font(o.theme.font_body),
 				font_size = set.F32(12),
@@ -143,31 +145,10 @@ error_banner_render_entry :: proc() {
 }
 
 @(private)
-error_banner_estimate_height :: proc(entries: []o.Error_Entry) -> f32 {
-	if len(entries) == 0 do return 0
-
-	height := f32(20)
-
-	for entry in entries {
-		height += 28
-
-		if entry.expanded {
-			height += 20
-		}
-
-		height += 8
-	}
-
-	return height
-}
-
-@(private)
 error_banner_body :: proc(state: Rectangle_State) {
 	_ = state
 
-	entries := o.error_active_entries(context.temp_allocator)
-
-	for entry, index in entries {
+	for entry, index in error_banner_entries {
 		error_banner_entry = {entry, index}
 		error_banner_render_entry()
 	}
@@ -185,8 +166,8 @@ Error_Banner :: proc() {
 		return
 	}
 
-	entries := o.error_active_entries(context.temp_allocator)
-	o.error_set_banner_height(error_banner_estimate_height(entries))
+	error_banner_entries = o.error_entries()
+	o.error_set_banner_height(o.error_estimate_banner_height())
 
 	Rectangle({
 		config = {

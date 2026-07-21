@@ -2,7 +2,6 @@ package oni
 
 import "base:runtime"
 import "core:fmt"
-import "core:hash"
 import "core:mem"
 import "core:path/filepath"
 import "core:strings"
@@ -20,14 +19,22 @@ Error_Entry :: struct {
 	file:      string,
 	line:      i32,
 	procedure: string,
+	summary:   string,
+	log_line:  string,
 	expanded:  bool,
-	dismissed: bool,
 }
 
 Error_State :: struct {
 	entries:       [dynamic]Error_Entry,
+	index:         map[u64]int,
+	active_count:  int,
 	banner_height: f32,
+	arena:         mem.Arena,
+	arena_backing: [dynamic]byte,
 }
+
+ERROR_ARENA_INITIAL :: 4096
+ERROR_ARENA_REPACK_MIN_WASTE :: 2048
 
 @(private)
 error_level_label :: proc(level: Error_Level) -> string {
@@ -42,6 +49,14 @@ error_level_label :: proc(level: Error_Level) -> string {
 }
 
 @(private)
+error_hash_mix :: proc(h: ^u64, data: []u8) {
+	for b in data {
+		h^ ~= u64(b)
+		h^ *= 1099511628211
+	}
+}
+
+@(private)
 error_entry_key :: proc(
 	level: Error_Level,
 	message: string,
@@ -52,48 +67,178 @@ error_entry_key :: proc(
 	h: u64 = 14695981039346656037
 	h ~= u64(level)
 	h *= 1099511628211
-	h ~= u64(hash.crc32(transmute([]u8)message))
-	h *= 1099511628211
-	h ~= u64(hash.crc32(transmute([]u8)file))
-	h *= 1099511628211
+	error_hash_mix(&h, transmute([]u8)message)
+	error_hash_mix(&h, transmute([]u8)file)
 	h ~= u64(line)
 	h *= 1099511628211
-	h ~= u64(hash.crc32(transmute([]u8)procedure))
+	error_hash_mix(&h, transmute([]u8)procedure)
 
 	return h
+}
+
+@(private)
+error_arena_allocator :: proc() -> mem.Allocator {
+	return mem.arena_allocator(&state.errors.arena)
+}
+
+@(private)
+error_clone_to_arena :: proc(value: string) -> string {
+	return strings.clone(value, error_arena_allocator())
+}
+
+@(private)
+error_build_summary :: proc(level: Error_Level, message: string) -> string {
+	formatted := fmt.tprintf("[%s] %s", error_level_label(level), message)
+
+	return error_clone_to_arena(formatted)
+}
+
+@(private)
+error_build_log_line :: proc(
+	level: Error_Level,
+	file: string,
+	line: i32,
+	procedure: string,
+	message: string,
+) -> string {
+	formatted := fmt.tprintf(
+		"[%s] [%s:%d:%s] %s",
+		error_level_label(level),
+		file,
+		line,
+		procedure,
+		message,
+	)
+
+	return error_clone_to_arena(formatted)
+}
+
+@(private)
+error_arena_reset :: proc() {
+	errors := &state.errors
+
+	mem.arena_free_all(&errors.arena)
+}
+
+@(private)
+error_arena_destroy :: proc() {
+	errors := &state.errors
+
+	delete(errors.arena_backing)
+	errors.arena_backing = nil
+	errors.arena = {}
+}
+
+@(private)
+error_repack_arena :: proc() {
+	errors := &state.errors
+
+	if len(errors.entries) == 0 {
+		error_arena_reset()
+
+		return
+	}
+
+	n := len(errors.entries)
+	temp_messages := make([]string, n, context.temp_allocator)
+	temp_files := make([]string, n, context.temp_allocator)
+	temp_procedures := make([]string, n, context.temp_allocator)
+	temp_summaries := make([]string, n, context.temp_allocator)
+	temp_log_lines := make([]string, n, context.temp_allocator)
+
+	for entry, i in errors.entries {
+		temp_messages[i] = strings.clone(entry.message, context.temp_allocator)
+		temp_files[i] = strings.clone(entry.file, context.temp_allocator)
+		temp_procedures[i] = strings.clone(entry.procedure, context.temp_allocator)
+		temp_summaries[i] = strings.clone(entry.summary, context.temp_allocator)
+		temp_log_lines[i] = strings.clone(entry.log_line, context.temp_allocator)
+	}
+
+	error_arena_reset()
+	alloc := error_arena_allocator()
+
+	for &entry, i in errors.entries {
+		entry.message = strings.clone(temp_messages[i], alloc)
+		entry.file = strings.clone(temp_files[i], alloc)
+		entry.procedure = strings.clone(temp_procedures[i], alloc)
+		entry.summary = strings.clone(temp_summaries[i], alloc)
+		entry.log_line = strings.clone(temp_log_lines[i], alloc)
+	}
+}
+
+@(private)
+error_maybe_repack_arena :: proc() {
+	errors := &state.errors
+
+	if len(errors.entries) == 0 {
+		error_arena_reset()
+
+		return
+	}
+
+	used := errors.arena.peak_used
+	remaining := len(errors.entries) * 256
+
+	if used > remaining && used - remaining >= ERROR_ARENA_REPACK_MIN_WASTE {
+		error_repack_arena()
+	}
+}
+
+@(private)
+error_remove_at :: proc(index: int) {
+	errors := &state.errors
+	entry := errors.entries[index]
+
+	delete_key(&errors.index, entry.key)
+
+	last := len(errors.entries) - 1
+
+	if index != last {
+		errors.entries[index] = errors.entries[last]
+		errors.index[errors.entries[index].key] = index
+	}
+
+	pop(&errors.entries)
+	errors.active_count -= 1
 }
 
 error_init :: proc() {
 	if state == nil do return
 
-	if state.errors.entries == nil {
-		state.errors.entries = make([dynamic]Error_Entry)
+	errors := &state.errors
+
+	if errors.entries != nil do return
+
+	errors.entries = make([dynamic]Error_Entry)
+	errors.index = make(map[u64]int)
+	errors.active_count = 0
+
+	if len(errors.arena_backing) == 0 {
+		resize(&errors.arena_backing, ERROR_ARENA_INITIAL)
 	}
+
+	mem.arena_init(&errors.arena, errors.arena_backing[:])
 }
 
 error_shutdown :: proc() {
 	if state == nil || state.errors.entries == nil do return
 
-	for &entry in state.errors.entries {
-		delete(entry.message)
-		delete(entry.file)
-		delete(entry.procedure)
-	}
+	errors := &state.errors
 
-	delete(state.errors.entries)
-	state.errors.entries = nil
-	state.errors.banner_height = 0
+	clear(&errors.index)
+	delete(errors.index)
+	errors.index = nil
+
+	delete(errors.entries)
+	errors.entries = nil
+	errors.active_count = 0
+	errors.banner_height = 0
+
+	error_arena_destroy()
 }
 
 error_format_log_line :: proc(entry: Error_Entry) -> string {
-	return fmt.tprintf(
-		"[%s] [%s:%d:%s] %s",
-		error_level_label(entry.level),
-		entry.file,
-		entry.line,
-		entry.procedure,
-		entry.message,
-	)
+	return entry.log_line
 }
 
 error_push :: proc(level: Error_Level, message: string, loc: runtime.Source_Code_Location) {
@@ -104,26 +249,36 @@ error_push :: proc(level: Error_Level, message: string, loc: runtime.Source_Code
 	file := filepath.base(loc.file_path)
 	key := error_entry_key(level, message, file, loc.line, loc.procedure)
 
-	for &entry in state.errors.entries {
-		if entry.key != key do continue
-
-		entry.dismissed = false
+	if index, found := state.errors.index[key]; found {
+		entry := &state.errors.entries[index]
 		entry.level = level
 
 		return
 	}
+
+	message_copy := error_clone_to_arena(message)
+	file_copy := error_clone_to_arena(file)
+	procedure_copy := error_clone_to_arena(loc.procedure)
+	summary := error_build_summary(level, message_copy)
+	log_line := error_build_log_line(level, file_copy, loc.line, procedure_copy, message_copy)
+
+	index := len(state.errors.entries)
 
 	append(
 		&state.errors.entries,
 		Error_Entry {
 			key = key,
 			level = level,
-			message = strings.clone(message),
-			file = strings.clone(file),
+			message = message_copy,
+			file = file_copy,
 			line = loc.line,
-			procedure = strings.clone(loc.procedure),
+			procedure = procedure_copy,
+			summary = summary,
+			log_line = log_line,
 		},
 	)
+	state.errors.index[key] = index
+	state.errors.active_count += 1
 }
 
 /*
@@ -161,13 +316,31 @@ error_warnf :: proc(format: string, args: ..any, loc := #caller_location) {
 error_active_count :: proc() -> int {
 	if state == nil || state.errors.entries == nil do return 0
 
-	count := 0
+	return state.errors.active_count
+}
+
+error_entries :: proc() -> []Error_Entry {
+	if state == nil || state.errors.entries == nil do return nil
+
+	return state.errors.entries[:]
+}
+
+error_estimate_banner_height :: proc() -> f32 {
+	if state == nil || state.errors.active_count == 0 do return 0
+
+	height := f32(20)
 
 	for entry in state.errors.entries {
-		if !entry.dismissed do count += 1
+		height += 28
+
+		if entry.expanded {
+			height += 20
+		}
+
+		height += 8
 	}
 
-	return count
+	return height
 }
 
 error_banner_height :: proc() -> f32 {
@@ -185,45 +358,25 @@ error_set_banner_height :: proc(height: f32) {
 error_toggle_expanded :: proc(key: u64) {
 	if state == nil || state.errors.entries == nil do return
 
-	for &entry in state.errors.entries {
-		if entry.key == key {
-			entry.expanded = !entry.expanded
-
-			return
-		}
+	if index, found := state.errors.index[key]; found {
+		state.errors.entries[index].expanded = !state.errors.entries[index].expanded
 	}
 }
 
 error_dismiss :: proc(key: u64) {
 	if state == nil || state.errors.entries == nil do return
 
-	for &entry in state.errors.entries {
-		if entry.key == key {
-			entry.dismissed = true
-
-			return
-		}
+	if index, found := state.errors.index[key]; found {
+		error_remove_at(index)
+		error_maybe_repack_arena()
 	}
 }
 
 error_dismiss_all :: proc() {
 	if state == nil || state.errors.entries == nil do return
 
-	for &entry in state.errors.entries {
-		entry.dismissed = true
-	}
-}
-
-error_active_entries :: proc(allocator: mem.Allocator) -> []Error_Entry {
-	if state == nil || state.errors.entries == nil do return nil
-
-	active := make([dynamic]Error_Entry, allocator)
-
-	for entry in state.errors.entries {
-		if entry.dismissed do continue
-
-		append(&active, entry)
-	}
-
-	return active[:]
+	clear(&state.errors.index)
+	clear(&state.errors.entries)
+	state.errors.active_count = 0
+	error_arena_reset()
 }
