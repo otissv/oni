@@ -95,6 +95,7 @@ Layout_Node :: struct {
 	rect:              Rect,
 	parent:            int,
 	child_indices:     [dynamic]int,
+	wrap_lines:        []Layout_Wrap_Line,
 	measure:           Layout_Measure,
 	text:              Layout_Text,
 	image_input:       Layout_Image_Input,
@@ -220,6 +221,7 @@ layout_release_node_children :: proc(layout: ^Layout_State) {
 	for &node in layout.nodes {
 		if !arena {
 			delete(node.child_indices)
+			delete(node.wrap_lines)
 			if len(node.text.lines) > 0 {
 				font_destroy_shaped_lines(node.text.lines)
 			}
@@ -228,6 +230,7 @@ layout_release_node_children :: proc(layout: ^Layout_State) {
 			delete(node.text.decoration_strokes)
 		}
 		node.child_indices = {}
+		node.wrap_lines = {}
 		node.text = {}
 	}
 }
@@ -467,6 +470,19 @@ layout_wrap_build_lines :: proc(
 	return lines
 }
 
+@(private)
+layout_wrap_store_lines :: proc(node: ^Layout_Node, lines: [dynamic]Layout_Wrap_Line) {
+	if len(lines) == 0 {
+
+		node.wrap_lines = {}
+		return
+	}
+
+	stored := make([]Layout_Wrap_Line, len(lines), layout_frame_allocator())
+	copy(stored, lines[:])
+	node.wrap_lines = stored
+}
+
 /*
 Measures a wrap container's natural size from child desired sizes.
 */
@@ -484,6 +500,7 @@ layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, g
 
 	main_limit := layout_wrap_main_limit_from_config(node, is_horizontal)
 	lines := layout_wrap_build_lines(sizes[:], is_horizontal, gap_main, main_limit)
+	layout_wrap_store_lines(node, lines)
 
 	main_natural: f32
 	cross_sum: f32
@@ -2200,7 +2217,15 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
 		layout_apply_definite_size(child, content, &child_sizes[i])
 	}
 
-	lines := layout_wrap_build_lines(child_sizes[:], is_horizontal, gap_main, main_limit)
+	lines: []Layout_Wrap_Line
+	if len(node.wrap_lines) > 0 {
+
+		lines = node.wrap_lines
+	} else {
+
+		built := layout_wrap_build_lines(child_sizes[:], is_horizontal, gap_main, main_limit)
+		lines = built[:]
+	}
 
 	line_cross_sizes := make([dynamic]f32, len(lines), context.temp_allocator)
 
