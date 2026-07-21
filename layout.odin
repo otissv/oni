@@ -1,8 +1,10 @@
 package oni
 
 import "core:mem"
+import "core:slice"
 
 LAYOUT_FRAME_ARENA_INITIAL :: 1 * mem.Megabyte
+LAYOUT_CHILD_SORT_INSERTION_THRESHOLD :: 16
 
 /*
 Author text and optional wrap-width hint for leaf text measurement.
@@ -1426,16 +1428,24 @@ layout_sort_children_by_order :: proc(node: ^Layout_Node) {
 	if n < 2 do return
 	if node.kind == .TABLE_ROW do return
 
-	for i in 1 ..< n {
-		key := node.child_indices[i]
-		key_order := state.ui.layout.nodes[key].config.order
-		j := i - 1
-		for j >= 0 && state.ui.layout.nodes[node.child_indices[j]].config.order > key_order {
-			node.child_indices[j + 1] = node.child_indices[j]
-			j -= 1
+	if n < LAYOUT_CHILD_SORT_INSERTION_THRESHOLD {
+		for i in 1 ..< n {
+			key := node.child_indices[i]
+			key_order := state.ui.layout.nodes[key].config.order
+			j := i - 1
+			for j >= 0 && state.ui.layout.nodes[node.child_indices[j]].config.order > key_order {
+				node.child_indices[j + 1] = node.child_indices[j]
+				j -= 1
+			}
+			node.child_indices[j + 1] = key
 		}
-		node.child_indices[j + 1] = key
+
+		return
 	}
+
+	slice.stable_sort_by(node.child_indices[:], proc(a, b: int) -> bool {
+		return state.ui.layout.nodes[a].config.order < state.ui.layout.nodes[b].config.order
+	})
 }
 
 /*

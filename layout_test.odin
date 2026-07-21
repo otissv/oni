@@ -2576,6 +2576,47 @@ layout_flex_order_stable_for_equal_values :: proc(t: ^testing.T) {
 	})
 }
 
+@(private)
+LAYOUT_TEST_MANY_CHILDREN :: 60
+
+@(test)
+layout_flex_order_sorts_many_children :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{f32(LAYOUT_TEST_MANY_CHILDREN) * 10, 20},
+			{direction = .HORIZONTAL},
+		)
+		for i in 0 ..< LAYOUT_TEST_MANY_CHILDREN {
+			order := f32(LAYOUT_TEST_MANY_CHILDREN - 1 - i)
+			_ = layout_test_append_node(
+				layout,
+				root,
+				.RECT,
+				{},
+				{10, 20},
+				{order = order},
+			)
+		}
+
+		layout_sort_children_by_order(&layout.nodes[root])
+		testing.expect(t, len(layout.nodes[root].child_indices) == LAYOUT_TEST_MANY_CHILDREN)
+		for i in 0 ..< LAYOUT_TEST_MANY_CHILDREN {
+			child := layout.nodes[root].child_indices[i]
+			testing.expect_value(t, layout.nodes[child].config.order, f32(i))
+		}
+
+		layout_solve(&layout.nodes[root], {0, 0, f32(LAYOUT_TEST_MANY_CHILDREN) * 10, 20})
+		for i in 0 ..< LAYOUT_TEST_MANY_CHILDREN {
+			child := layout.nodes[root].child_indices[i]
+			expect_rect(t, layout.nodes[child].rect, {f32(i) * 10, 0, 10, 20})
+		}
+	})
+}
+
 LAYOUT_TEST_INTER_FONT :: "fixtures/fonts/Inter-VariableFont_opsz,wght.ttf"
 LAYOUT_TEST_INTER_ITALIC_FONT :: "fixtures/fonts/Inter-Italic-VariableFont_opsz,wght.ttf"
 

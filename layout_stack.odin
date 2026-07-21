@@ -1,5 +1,7 @@
 package oni
 
+import "core:slice"
+
 /*
 Helpers for position, visibility, pointer-events, overflow clip, and paint/hit
 stack order. Layout owns stacking policy; draw only reads stack_index / flags.
@@ -289,15 +291,25 @@ layout_stack_child_less :: proc(a_index, b_index: int) -> bool {
 @(private)
 layout_sort_stack_children :: proc(indices: []int) {
 	n := len(indices)
-	for i in 1 ..< n {
-		key := indices[i]
-		j := i - 1
-		for j >= 0 && layout_stack_child_less(key, indices[j]) {
-			indices[j + 1] = indices[j]
-			j -= 1
+	if n < 2 do return
+
+	if n < LAYOUT_CHILD_SORT_INSERTION_THRESHOLD {
+		for i in 1 ..< n {
+			key := indices[i]
+			j := i - 1
+			for j >= 0 && layout_stack_child_less(key, indices[j]) {
+				indices[j + 1] = indices[j]
+				j -= 1
+			}
+			indices[j + 1] = key
 		}
-		indices[j + 1] = key
+
+		return
 	}
+
+	slice.sort_by(indices, proc(a, b: int) -> bool {
+		return layout_stack_child_less(a, b)
+	})
 }
 
 /*

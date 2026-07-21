@@ -120,6 +120,53 @@ layout_stack_order_tiebreaks_equal_z :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_stack_sorts_many_siblings :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			_ = layout_push_node(
+				UI_Id(1),
+				{kind = .RECT, width = layout_len_fixed(800), height = layout_len_fixed(600)},
+			)
+			child_ids: [LAYOUT_TEST_MANY_CHILDREN]UI_Id
+			for i in 0 ..< LAYOUT_TEST_MANY_CHILDREN {
+				child_ids[i] = UI_Id(100 + i)
+				child := layout_push_node(
+					child_ids[i],
+					{
+						kind = .RECT,
+						z_index = f32(LAYOUT_TEST_MANY_CHILDREN - 1 - i),
+						width = layout_len_fixed(10),
+						height = layout_len_fixed(10),
+					},
+				)
+				layout_set_measure_size(child, {10, 10})
+				layout_pop_node()
+			}
+			layout_pop_node()
+			layout_end_space()
+			layout_finalize_stack_order()
+
+			for i in 1 ..< LAYOUT_TEST_MANY_CHILDREN {
+				low_z := state.ui.layout.id_to_node[child_ids[LAYOUT_TEST_MANY_CHILDREN - i]]
+				high_z :=
+					state.ui.layout.id_to_node[child_ids[LAYOUT_TEST_MANY_CHILDREN - 1 - i]]
+				testing.expect(
+					t,
+					state.ui.layout.nodes[low_z].stack_index <
+						state.ui.layout.nodes[high_z].stack_index,
+				)
+			}
+		},
+	)
+}
+
+@(test)
 layout_absolute_left_right_stretch :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
