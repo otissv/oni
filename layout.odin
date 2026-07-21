@@ -88,6 +88,7 @@ Layout_Node :: struct {
 	ui_id:             UI_Id,
 	kind:              Widget_Kind,
 	config:            Resolved_Widget_Style,
+	direction_info:    Layout_Direction_Info,
 	padding:           Pd_px,
 	border:            Bd_px,
 	desired:           Vec2,
@@ -1261,8 +1262,7 @@ Measures a node's desired size from children or leaf content.
 layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	padding := node.padding
 	border := node.border
-	direction := layout_config_direction(node.config)
-	info := layout_direction_info(direction)
+	info := node.direction_info
 	gap_main := layout_config_gap_main(node.config, info.is_horizontal)
 	gap_cross := layout_config_gap_cross(node.config, info.is_horizontal)
 
@@ -1381,11 +1381,12 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	node_index := len(state.ui.layout.nodes)
 
 	node := Layout_Node {
-		index         = node_index,
-		ui_id         = ui_id,
-		kind          = config.kind,
-		config        = style,
-		padding       = padding,
+		index          = node_index,
+		ui_id          = ui_id,
+		kind           = config.kind,
+		config         = style,
+		direction_info = layout_direction_info(layout_config_direction(style)),
+		padding        = padding,
 		border        = border,
 		parent        = parent_index,
 		child_indices = make([dynamic]int, layout_frame_allocator()),
@@ -2177,11 +2178,8 @@ layout_position_out_of_flow_children :: proc(node: ^Layout_Node) {
 /*
 Positions children in a wrap flex container.
 */
-layout_position_children_wrap :: proc(
-	node: ^Layout_Node,
-	content: Rect,
-	info: Layout_Direction_Info,
-) {
+layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
+	info := node.direction_info
 	is_horizontal := info.is_horizontal
 	gap_main := layout_config_gap_main(node.config, is_horizontal)
 	gap_cross := layout_config_gap_cross(node.config, is_horizontal)
@@ -2462,10 +2460,10 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		layout_table_prepare(layout_node_index(node))
 	}
 
-	direction := layout_config_direction(node.config)
-	info := layout_direction_info(direction)
+	info := node.direction_info
 	if info.is_wrap {
-		layout_position_children_wrap(node, content, info)
+
+		layout_position_children_wrap(node, content)
 		layout_wrap_apply_auto_cross_size(node, info.is_horizontal)
 		return
 	}

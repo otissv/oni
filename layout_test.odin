@@ -158,6 +158,7 @@ layout_test_append_node :: proc(
 			index = node_index,
 			kind = kind,
 			config = node_config,
+			direction_info = layout_direction_info(layout_config_direction(node_config)),
 			desired = desired,
 			padding = padding,
 			border = border,
@@ -1158,6 +1159,24 @@ layout_direction_info_covers_all_directions :: proc(t: ^testing.T) {
 	testing.expect(t, !layout_direction_is_horizontal(.VERTICAL))
 	testing.expect(t, layout_direction_is_wrap(.HORIZONTAL_WRAP))
 	testing.expect(t, !layout_direction_is_wrap(.VERTICAL))
+}
+
+@(test)
+layout_push_node_caches_direction_info :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		_ = layout
+
+		node := layout_push_node(
+			UI_Id(1),
+			{kind = .RECT, direction = .HORIZONTAL_WRAP_REVERSE},
+		)
+		expected := layout_direction_info(.HORIZONTAL_WRAP_REVERSE)
+
+		testing.expect(t, node.direction_info.is_horizontal == expected.is_horizontal)
+		testing.expect(t, node.direction_info.is_wrap == expected.is_wrap)
+		testing.expect(t, node.direction_info.is_main_reverse == expected.is_main_reverse)
+		testing.expect(t, node.direction_info.is_cross_reverse == expected.is_cross_reverse)
+	})
 }
 
 @(test)
