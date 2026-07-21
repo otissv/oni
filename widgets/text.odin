@@ -101,6 +101,22 @@ text_refresh_merged_if_interaction_changed :: proc(
 	return text_refresh_merged(props, frame_state), fp
 }
 
+@(private)
+text_prepare_layout_input :: proc(
+	props: Text_Props,
+	frame_state: ^Text_Merged_State,
+) -> Text_Widget_Input {
+	_ = frame_state
+
+	return {
+		kind = .TEXT,
+		measure_text = props.config.text,
+		layout_runs = nil,
+		rich = false,
+		tag_diagnostics = false,
+	}
+}
+
 /*
 Lays out and draws text. Layout owns wrap, size, and line positions; draw paints them.
 */
@@ -117,12 +133,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 	return text_widget_core(
 		props,
 		&frame_state,
-		{
-			kind = .TEXT,
-			measure_text = props.config.text,
-			layout_runs = nil,
-			rich = false,
-		},
+		text_prepare_layout_input,
 		text_refresh_merged,
 		text_refresh_merged_if_interaction_changed,
 	)

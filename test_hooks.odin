@@ -31,6 +31,8 @@ test_hook_font_init_fail: bool
 @(private)
 test_hook_font_shape_call_count: int
 @(private)
+test_hook_text_tags_parse_call_count: int
+@(private)
 test_hook_keyboard_override: bool
 @(private)
 test_hook_keyboard_f5: bool
@@ -105,6 +107,7 @@ clear_test_hooks :: proc() {
 	test_hook_create_window_fail = .None
 	test_hook_font_init_fail = false
 	test_hook_font_shape_call_count = 0
+	test_hook_text_tags_parse_call_count = 0
 	test_hook_keyboard_override = false
 	test_hook_keyboard_f5 = false
 	test_hook_keyboard_f6 = false

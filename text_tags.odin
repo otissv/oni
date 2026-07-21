@@ -760,6 +760,8 @@ Only text-applicable fields affect layout and draw; other parsed fields are
 retained for tooling such as syntax highlighters.
 */
 text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Parse {
+	test_hook_text_tags_parse_call_count += 1
+
 	if len(source) == 0 do return {}
 
 	runs := make([dynamic]Text_Run, allocator)
@@ -895,4 +897,18 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 		layout_runs = layout_runs,
 		diagnostics = diagnostics[:],
 	}
+}
+
+/*
+Resets the test-only text_tags_parse invocation counter.
+*/
+test_text_tags_parse_call_count_reset :: proc() {
+	test_hook_text_tags_parse_call_count = 0
+}
+
+/*
+Returns the test-only text_tags_parse invocation counter.
+*/
+test_text_tags_parse_call_count :: proc() -> int {
+	return test_hook_text_tags_parse_call_count
 }

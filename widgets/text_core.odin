@@ -4,10 +4,11 @@ import o ".."
 
 
 Text_Widget_Input :: struct {
-	kind:         o.Widget_Kind,
-	measure_text: string,
-	layout_runs:  []o.Layout_Text_Run,
-	rich:         bool,
+	kind:            o.Widget_Kind,
+	measure_text:    string,
+	layout_runs:     []o.Layout_Text_Run,
+	rich:            bool,
+	tag_diagnostics: bool,
 }
 
 /*
@@ -16,7 +17,7 @@ Shared layout, interaction, and draw implementation for Text and RichText widget
 text_widget_core :: proc(
 	props: $P,
 	frame_state: ^$S,
-	input: Text_Widget_Input,
+	prepare_input: proc(props: P, frame_state: ^S) -> Text_Widget_Input,
 	refresh_merged: proc(props: P, frame_state: ^S) -> o.Widget_Event(S),
 	refresh_if_changed: proc(props: P, frame_state: ^S, prev_fp: u8) -> (
 		o.Widget_Event(S),
@@ -62,10 +63,17 @@ text_widget_core :: proc(
 
 		widget_register_tab_order(key, style.tabbable, can_interact)
 
+		input := prepare_input(props, frame_state)
 		node := o.layout_push_node(layout_id, style)
 
 		if input.rich {
-			o.layout_set_measure_rich_text(node, input.measure_text, input.layout_runs, style.max_w)
+			o.layout_set_measure_rich_text(
+				node,
+				input.measure_text,
+				input.layout_runs,
+				style.max_w,
+				input.tag_diagnostics,
+			)
 		} else {
 			o.layout_set_measure_text(node, input.measure_text, style.max_w)
 		}

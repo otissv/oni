@@ -10,10 +10,11 @@ LAYOUT_CHILD_SORT_INSERTION_THRESHOLD :: 16
 Author text and optional wrap-width hint for leaf text measurement.
 */
 Layout_Measure :: struct {
-	text:  string,
-	max_w: f32,
-	runs:  []Layout_Text_Run,
-	rich:  bool,
+	text:            string,
+	max_w:           f32,
+	runs:            []Layout_Text_Run,
+	rich:            bool,
+	tag_diagnostics: bool,
 }
 
 /*
@@ -54,6 +55,7 @@ Layout_Text :: struct {
 	line_height:         f32,
 	size:                Vec2,
 	rich:                bool,
+	tag_diagnostics:     bool,
 	lines_borrowed:      bool,
 }
 
@@ -845,6 +847,7 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		line_height         = line_height,
 		size                = size,
 		rich                = node.measure.rich,
+		tag_diagnostics     = node.measure.tag_diagnostics,
 		lines_borrowed      = shaped.borrowed,
 	}
 }
@@ -1379,6 +1382,18 @@ layout_text_result :: proc(id: UI_Id) -> ^Layout_Text {
 }
 
 /*
+Returns whether rich-text tag diagnostics were recorded for a UI id during layout.
+*/
+layout_text_tag_diagnostics :: proc(id: UI_Id) -> bool {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		node := &state.ui.layout.nodes[node_index]
+		if node.measure.tag_diagnostics do return true
+		if len(node.text.lines) > 0 do return node.text.tag_diagnostics
+	}
+	return false
+}
+
+/*
 Returns layout-owned image paint geometry for a UI id after the layout pass.
 */
 layout_image_result :: proc(id: UI_Id) -> ^Layout_Image {
@@ -1639,6 +1654,7 @@ layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.max_w = max_w
 	node.measure.runs = nil
 	node.measure.rich = false
+	node.measure.tag_diagnostics = false
 }
 
 /*
@@ -1649,11 +1665,13 @@ layout_set_measure_rich_text :: proc(
 	text: string,
 	runs: []Layout_Text_Run,
 	max_w: f32,
+	tag_diagnostics: bool,
 ) {
 	node.measure.text = text
 	node.measure.max_w = max_w
 	node.measure.runs = runs
 	node.measure.rich = len(runs) > 0
+	node.measure.tag_diagnostics = tag_diagnostics
 }
 
 /*

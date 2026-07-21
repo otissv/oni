@@ -48,6 +48,9 @@ Error_Format_Log_Line :: error_format_log_line
 Error_Toggle_Expanded :: error_toggle_expanded
 Error_Dismiss :: error_dismiss
 
+Test_Text_Tags_Parse_Call_Count :: test_text_tags_parse_call_count
+Test_Text_Tags_Parse_Call_Count_Reset :: test_text_tags_parse_call_count_reset
+
 Draw_Rectangle :: draw_rect
 Draw_Line :: draw_line
 Draw_Texture :: draw_texture
