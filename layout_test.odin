@@ -1,5 +1,6 @@
 package oni
 
+import "core:os"
 import "core:sync"
 import "core:testing"
 
@@ -85,6 +86,7 @@ with_test_global_state :: proc(
 	state = test_state
 	widget_ctx_sync()
 	theme = nil
+	theme_widget_style_invalidate()
 	body(test_state, t)
 }
 
@@ -98,6 +100,10 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 	saved_state := state
 	saved_theme := theme
 	defer {
+		delete(test_state.ui.style_stack)
+		test_state.ui.style_stack = nil
+		delete(test_state.ui.scope_stack)
+		test_state.ui.scope_stack = nil
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -106,6 +112,7 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 	state = &test_state
 	widget_ctx_sync()
 	theme = nil
+	theme_widget_style_invalidate()
 	test_state.ui.layout = layout_test_begin()
 	defer layout_test_end(&test_state.ui.layout)
 	body(&test_state.ui.layout, t)
@@ -2567,4 +2574,83 @@ layout_flex_order_stable_for_equal_values :: proc(t: ^testing.T) {
 		expect_rect(t, layout.nodes[a].rect, {40, 0, 40, 20})
 		expect_rect(t, layout.nodes[b].rect, {80, 0, 40, 20})
 	})
+}
+
+LAYOUT_TEST_INTER_FONT :: "fixtures/fonts/Inter-VariableFont_opsz,wght.ttf"
+LAYOUT_TEST_INTER_ITALIC_FONT :: "fixtures/fonts/Inter-Italic-VariableFont_opsz,wght.ttf"
+
+@(private)
+layout_test_font_fixtures_available :: proc() -> bool {
+	return os.exists(LAYOUT_TEST_INTER_FONT) && os.exists(LAYOUT_TEST_INTER_ITALIC_FONT)
+}
+
+@(test)
+layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+		return
+	}
+
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := font_register_family(
+				"LayoutTextTest",
+				{
+					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
+					{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
+				},
+			)
+			testing.expect(t, inter_ok)
+			inter = font_with_size(inter, 16)
+
+			ui_push_style(Style_Context{content_w = 800, content_h = 600})
+			defer ui_pop_style()
+
+			node := layout_push_node(UI_Id(100), {kind = .TEXT})
+			node.config.font = inter
+			node.config.font_size = 16
+			node.config.line_height = 1.5
+			node.config.space = .SCREEN
+			node.config.wrap = Text_Wrap_Kind.NONE
+			node.config.text_direction = Text_Direction_Kind.LTR
+			node.config.align = Text_Align_Kind.LEFT
+			node.config.text_decoration = Text_Decoration_Lines{}
+			node.config.text_decoration_style = Text_Decoration_Style_Kind.SOLID
+			layout_set_measure_text(node, "hello", 0)
+			layout_pop_node()
+
+			testing.expect_value(t, len(node.text.lines), 0)
+			testing.expect_value(t, len(node.text.glyphs), 0)
+			testing.expect(t, node.desired.x > 0)
+			testing.expect(t, node.desired.y > 0)
+
+			node.rect = {0, 0, node.desired.x, node.desired.y}
+			wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
+
+			layout_text_build(node, wrap_w)
+			layout_test_seed_glyphs_from_node(node)
+			layout_text_release(node)
+
+			layout_finalize_text_node(node)
+			defer layout_text_release(node)
+
+			testing.expect(t, len(node.text.lines) > 0)
+			testing.expect(t, len(node.text.line_origins) > 0)
+			testing.expect(t, node.text.size.x > 0)
+			testing.expect(t, node.text.size.y > 0)
+		},
+	)
 }

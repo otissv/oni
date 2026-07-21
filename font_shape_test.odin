@@ -399,12 +399,7 @@ layout_finalize_text_node_with_real_font_positions_glyphs_without_gpu :: proc(t:
 			defer layout_text_release(&node)
 			testing.expect(t, len(node.text.lines) == 1)
 
-			// Seed glyph cache so position_glyphs never hits the atlas/GPU path.
-			face := font_face_from_handle(node.text.font)
-			testing.expect(t, face != nil)
-			for g in node.text.lines[0].glyphs {
-				layout_test_seed_glyph(node.text.font.id, g.glyph_id, 6, 10)
-			}
+			layout_test_seed_glyphs_from_node(&node)
 
 			layout_finalize_text_node(&node)
 			testing.expect(t, node.rect.h > 10) // auto height from shaped size

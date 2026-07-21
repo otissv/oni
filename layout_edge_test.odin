@@ -32,6 +32,16 @@ layout_test_seed_glyph :: proc(face_id: Asset_Id, glyph_id: u32, w: f32 = 8, h: 
 }
 
 @(private)
+layout_test_seed_glyphs_from_node :: proc(node: ^Layout_Node, w: f32 = 6, h: f32 = 10) {
+	face_id := node.text.font.id
+	for line in node.text.lines {
+		for glyph in line.glyphs {
+			layout_test_seed_glyph(face_id, glyph.glyph_id, w, h)
+		}
+	}
+}
+
+@(private)
 layout_test_make_line :: proc(
 	glyph_ids: []u32,
 	advances: []f32,
@@ -275,7 +285,7 @@ layout_text_position_decorations_emits_underline_strike_overline :: proc(t: ^tes
 }
 
 @(test)
-layout_finalize_text_node_updates_auto_height_and_paint :: proc(t: ^testing.T) {
+layout_text_auto_height_and_paint_from_shaped_text :: proc(t: ^testing.T) {
 	with_layout_solve(
 		t,
 		proc(layout: ^Layout_State, t: ^testing.T) {
@@ -298,7 +308,14 @@ layout_finalize_text_node_updates_auto_height_and_paint :: proc(t: ^testing.T) {
 				},
 			}
 			layout_test_attach_stub_text(&node, font, lines, 100, font_size = 16, line_height_mult = 1.5)
-			layout_finalize_text_node(&node)
+
+			if !length_is_definite(node.config.height) && node.text.size.y > 0 {
+				node.rect.h = layout_clamp_axis(node.text.size.y, node.config.min_h, node.config.max_h)
+			}
+
+			layout_text_position_lines(&node)
+			layout_text_position_glyphs(&node)
+			layout_text_position_decorations(&node)
 
 			expect_close(t, node.rect.h, 48) // 2 * 24
 			testing.expect(t, len(node.text.line_origins) == 2)

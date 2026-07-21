@@ -639,6 +639,56 @@ layout_text_resolve_wrap_w :: proc(node: ^Layout_Node, available_w: f32) -> f32 
 }
 
 /*
+Measures text size without persisting shaped lines on the node.
+
+Used during layout measure; finalize owns authoritative shaping into node.text.
+Temporary shaped lines are discarded when the layout frame arena is inactive.
+*/
+layout_text_measure_size :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
+	if !layout_node_has_text(node) do return {}
+
+	config := node.config
+	resolved_font, layout_scale, ok := font_resolve(
+		config.font,
+		config.font_size,
+		config.space,
+		config.font_weight,
+		config.font_style,
+	)
+	if !ok do return {}
+
+	face := font_face_from_handle(resolved_font)
+	if face == nil do return {}
+
+	shape_max_w := wrap_w > 0 ? wrap_w / layout_scale : wrap_w
+	letter_spacing := config.letter_spacing / layout_scale
+	word_spacing := config.word_spacing / layout_scale
+	wrap := text_wrap_kind(config.wrap)
+	direction := text_direction_kind(config.text_direction)
+	lines := font_shape_line_build(
+		face,
+		resolved_font.id,
+		node.measure.text,
+		shape_max_w,
+		letter_spacing,
+		word_spacing,
+		config.tab_size,
+		wrap,
+		direction,
+	)
+	if len(lines) == 0 do return {}
+
+	line_height := config.font_size * config.line_height
+	size := font_measure_lines(face, lines, line_height, layout_scale)
+
+	if !layout_uses_frame_arena() {
+		font_destroy_shaped_lines(lines)
+	}
+
+	return size
+}
+
+/*
 Shapes text into the node and records measured size.
 
 Destroys any previous shaped lines. Line origins are filled by layout_text_position_lines.
@@ -1123,18 +1173,16 @@ layout_rich_text_position_decorations :: proc(node: ^Layout_Node) {
 }
 
 /*
-Builds or refreshes layout-owned text for the node's allocated rect.
+Builds layout-owned text for the node's allocated rect and precomputes paint geometry.
 
-Uses the allocated width as wrap width when the author did not set one.
-Updates auto height from the shaped result and precomputes paint geometry.
+Measure leaves node.text empty; finalize always shapes once using the allocated width
+when the author did not set an explicit wrap width.
 */
 layout_finalize_text_node :: proc(node: ^Layout_Node) {
 	if !layout_node_has_text(node) do return
 
 	wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
-	if len(node.text.lines) == 0 || node.text.wrap_w != wrap_w {
-		layout_text_build(node, wrap_w)
-	}
+	layout_text_build(node, wrap_w)
 
 	if !length_is_definite(node.config.height) && node.text.size.y > 0 {
 		node.rect.h = layout_clamp_axis(node.text.size.y, node.config.min_h, node.config.max_h)
@@ -1244,8 +1292,7 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 	if layout_node_has_text(node) {
 		available_w := ui_style_current().content_w
 		wrap_w := layout_text_resolve_wrap_w(node, available_w)
-		layout_text_build(node, wrap_w)
-		size = node.text.size
+		size = layout_text_measure_size(node, wrap_w)
 	} else {
 		width := resolved_w
 		height := resolved_h
