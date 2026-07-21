@@ -35,6 +35,10 @@ Layout_Decoration_Stroke :: struct {
 
 /*
 Layout-owned shaped text: wrap, line boxes, glyph quads, and decoration strokes.
+
+When lines_borrowed is true, lines reference the persistent shape cache and must
+not be destroyed in layout_text_release. Borrowed slices are invalid after
+font_shape_cache_clear, DPI scale changes, or hot reload.
 */
 Layout_Text :: struct {
 	lines:               []Shaped_Line,
@@ -48,6 +52,7 @@ Layout_Text :: struct {
 	line_height:         f32,
 	size:                Vec2,
 	rich:                bool,
+	lines_borrowed:      bool,
 }
 
 /*
@@ -614,7 +619,7 @@ When the layout frame arena is active, memory is arena-owned and only pointers a
 layout_text_release :: proc(node: ^Layout_Node) {
 	if node == nil do return
 	if !layout_uses_frame_arena() {
-		if len(node.text.lines) > 0 {
+		if len(node.text.lines) > 0 && !node.text.lines_borrowed {
 			font_destroy_shaped_lines(node.text.lines)
 		}
 		delete(node.text.line_origins)
@@ -665,7 +670,7 @@ layout_text_measure_size :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
 	word_spacing := config.word_spacing / layout_scale
 	wrap := text_wrap_kind(config.wrap)
 	direction := text_direction_kind(config.text_direction)
-	lines := font_shape_line_build(
+	shaped := font_shape_line_build(
 		face,
 		resolved_font.id,
 		node.measure.text,
@@ -676,14 +681,12 @@ layout_text_measure_size :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
 		wrap,
 		direction,
 	)
-	if len(lines) == 0 do return {}
+	if len(shaped.lines) == 0 do return {}
 
 	line_height := config.font_size * config.line_height
-	size := font_measure_lines(face, lines, line_height, layout_scale)
+	size := font_measure_lines(face, shaped.lines, line_height, layout_scale)
 
-	if !layout_uses_frame_arena() {
-		font_destroy_shaped_lines(lines)
-	}
+	font_shape_lines_release(shaped)
 
 	return size
 }
@@ -715,7 +718,7 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	word_spacing := config.word_spacing / layout_scale
 	wrap := text_wrap_kind(config.wrap)
 	direction := text_direction_kind(config.text_direction)
-	lines := font_shape_line_build(
+	shaped := font_shape_line_build(
 		face,
 		resolved_font.id,
 		node.measure.text,
@@ -726,13 +729,13 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		wrap,
 		direction,
 	)
-	if len(lines) == 0 do return
+	if len(shaped.lines) == 0 do return
 
 	line_height := config.font_size * config.line_height
-	size := font_measure_lines(face, lines, line_height, layout_scale)
+	size := font_measure_lines(face, shaped.lines, line_height, layout_scale)
 
 	node.text = {
-		lines               = lines,
+		lines               = shaped.lines,
 		line_origins        = nil,
 		glyphs              = nil,
 		decoration_strokes  = nil,
@@ -743,6 +746,7 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		line_height         = line_height,
 		size                = size,
 		rich                = node.measure.rich,
+		lines_borrowed      = shaped.borrowed,
 	}
 }
 

@@ -2647,6 +2647,7 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 			defer layout_text_release(node)
 
 			testing.expect(t, len(node.text.lines) > 0)
+			testing.expect(t, node.text.lines_borrowed)
 			testing.expect(t, len(node.text.line_origins) > 0)
 			testing.expect(t, node.text.size.x > 0)
 			testing.expect(t, node.text.size.y > 0)

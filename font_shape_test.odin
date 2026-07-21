@@ -213,10 +213,10 @@ font_shape_line_build_none_omits_newlines :: proc(t: ^testing.T) {
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "one\ntwo", 0, 0, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
-		defer font_destroy_shaped_lines(lines)
-		testing.expect_value(t, len(lines), 1)
-		testing.expect(t, lines[0].width > 0)
+		shaped := font_shape_line_build(face, handle.id, "one\ntwo", 0, 0, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 1)
+		testing.expect(t, shaped.lines[0].width > 0)
 	})
 }
 
@@ -227,7 +227,7 @@ font_shape_line_build_newlines_hard_breaks :: proc(t: ^testing.T) {
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(
+		shaped := font_shape_line_build(
 			face,
 			handle.id,
 			"one\ntwo\nthree",
@@ -238,9 +238,9 @@ font_shape_line_build_newlines_hard_breaks :: proc(t: ^testing.T) {
 			.NEWLINES,
 			.LTR,
 		)
-		defer font_destroy_shaped_lines(lines)
-		testing.expect_value(t, len(lines), 3)
-		for line in lines {
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 3)
+		for line in shaped.lines {
 			testing.expect(t, line.width > 0)
 			testing.expect(t, len(line.glyphs) > 0)
 		}
@@ -258,13 +258,13 @@ font_shape_line_build_balance_soft_wraps_under_max_width :: proc(t: ^testing.T) 
 
 			text := "alpha beta gamma delta epsilon zeta eta theta"
 			wide := font_shape_line_build(face, handle.id, text, 1000, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
-			defer font_destroy_shaped_lines(wide)
-			testing.expect_value(t, len(wide), 1)
+			defer font_shape_lines_release(wide)
+			testing.expect_value(t, len(wide.lines), 1)
 
 			narrow := font_shape_line_build(face, handle.id, text, 80, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
-			defer font_destroy_shaped_lines(narrow)
-			testing.expect(t, len(narrow) >= 2)
-			for line in narrow {
+			defer font_shape_lines_release(narrow)
+			testing.expect(t, len(narrow.lines) >= 2)
+			for line in narrow.lines {
 				testing.expect(t, line.width > 0)
 				// Soft wrap keeps lines under max_w except when a single unbreakable run is wider.
 				if line.width > 80 + 1 {
@@ -284,9 +284,9 @@ font_shape_line_build_balance_zero_max_w_falls_back_to_newlines :: proc(t: ^test
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "a\nb\nc", 0, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
-		defer font_destroy_shaped_lines(lines)
-		testing.expect_value(t, len(lines), 3)
+		shaped := font_shape_line_build(face, handle.id, "a\nb\nc", 0, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 3)
 	})
 }
 
@@ -301,12 +301,12 @@ font_shape_line_build_letter_spacing_increases_width :: proc(t: ^testing.T) {
 
 			plain := font_shape_line_build(face, handle.id, "ABCD", 0, 0, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
 			spaced := font_shape_line_build(face, handle.id, "ABCD", 0, 2, 0, DEFAULT_TAB_SIZE, .NONE, .LTR)
-			defer font_destroy_shaped_lines(plain)
-			defer font_destroy_shaped_lines(spaced)
-			testing.expect_value(t, len(plain), 1)
-			testing.expect_value(t, len(spaced), 1)
-			testing.expect(t, spaced[0].width > plain[0].width)
-			expect_close(t, spaced[0].width - plain[0].width, 6) // 3 gaps * 2
+			defer font_shape_lines_release(plain)
+			defer font_shape_lines_release(spaced)
+			testing.expect_value(t, len(plain.lines), 1)
+			testing.expect_value(t, len(spaced.lines), 1)
+			testing.expect(t, spaced.lines[0].width > plain.lines[0].width)
+			expect_close(t, spaced.lines[0].width - plain.lines[0].width, 6) // 3 gaps * 2
 		},
 	)
 }
@@ -318,11 +318,11 @@ font_measure_lines_matches_line_count_and_max_width :: proc(t: ^testing.T) {
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(face, handle.id, "hello\nworld", 0, 0, 0, DEFAULT_TAB_SIZE, .NEWLINES, .LTR)
-		defer font_destroy_shaped_lines(lines)
-		size := font_measure_lines(face, lines, 24, 1)
+		shaped := font_shape_line_build(face, handle.id, "hello\nworld", 0, 0, 0, DEFAULT_TAB_SIZE, .NEWLINES, .LTR)
+		defer font_shape_lines_release(shaped)
+		size := font_measure_lines(face, shaped.lines, 24, 1)
 		expect_close(t, size.y, 48)
-		max_w := max(lines[0].width, lines[1].width)
+		max_w := max(shaped.lines[0].width, shaped.lines[1].width)
 		expect_close(t, size.x, max_w)
 	})
 }
@@ -460,8 +460,8 @@ font_shape_unicode_latin_and_cjk_clusters :: proc(t: ^testing.T) {
 		testing.expect(t, cjk_w > 0)
 
 		mixed := font_shape_line_build(face, handle.id, "Hello 世界\nBonjour", 100, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
-		defer font_destroy_shaped_lines(mixed)
-		testing.expect(t, len(mixed) >= 2)
+		defer font_shape_lines_release(mixed)
+		testing.expect(t, len(mixed.lines) >= 2)
 	})
 }
 
@@ -496,7 +496,7 @@ font_shape_line_build_preserve_expands_tabs_and_normalizes_crlf :: proc(t: ^test
 		face, handle, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 
-		lines := font_shape_line_build(
+		shaped := font_shape_line_build(
 			face,
 			handle.id,
 			"a\tb\r\nc",
@@ -507,10 +507,10 @@ font_shape_line_build_preserve_expands_tabs_and_normalizes_crlf :: proc(t: ^test
 			.PRESERVE,
 			.LTR,
 		)
-		defer font_destroy_shaped_lines(lines)
-		testing.expect_value(t, len(lines), 2)
-		testing.expect(t, lines[0].width > 0)
-		testing.expect(t, lines[1].width > 0)
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 2)
+		testing.expect(t, shaped.lines[0].width > 0)
+		testing.expect(t, shaped.lines[1].width > 0)
 	})
 }
 
@@ -529,4 +529,72 @@ font_make_shaped_line_applies_word_spacing_to_spaces :: proc(t: ^testing.T) {
 	expect_close(t, plain.width, 23)
 	expect_close(t, spaced.width, 26)
 	expect_close(t, spaced.glyphs[1].x_advance, 8)
+}
+
+@(test)
+font_shape_line_build_cache_hit_is_borrowed :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		first := font_shape_line_build(
+			face,
+			handle.id,
+			"Static label",
+			0,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			.LTR,
+		)
+		defer font_shape_lines_release(first)
+		testing.expect(t, first.borrowed)
+		testing.expect_value(t, len(first.lines), 1)
+
+		second := font_shape_line_build(
+			face,
+			handle.id,
+			"Static label",
+			0,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			.LTR,
+		)
+		defer font_shape_lines_release(second)
+		testing.expect(t, second.borrowed)
+		testing.expect(t, raw_data(second.lines) == raw_data(first.lines))
+	})
+}
+
+@(test)
+layout_text_build_borrows_cached_shape_lines :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		node := Layout_Node {
+			measure = {text = "Borrowed cache lines"},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.5,
+				wrap = Text_Wrap_Kind.NONE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+			},
+		}
+
+		layout_text_build(&node, 0)
+		testing.expect(t, node.text.lines_borrowed)
+		first_ptr := raw_data(node.text.lines)
+		layout_text_release(&node)
+
+		layout_text_build(&node, 0)
+		defer layout_text_release(&node)
+		testing.expect(t, node.text.lines_borrowed)
+		testing.expect(t, raw_data(node.text.lines) == first_ptr)
+	})
 }

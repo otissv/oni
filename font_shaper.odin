@@ -27,6 +27,18 @@ Shaped_Line :: struct {
 }
 
 /*
+Shaped lines from font_shape_line_build with ownership metadata.
+
+When borrowed is true, lines point into the persistent shape cache and must not
+be destroyed by callers. Borrowed slices are invalid after font_shape_cache_clear,
+DPI scale changes, or hot reload (faces/cache are cleared on those paths).
+*/
+Font_Shape_Lines :: struct {
+	lines:    []Shaped_Line,
+	borrowed: bool,
+}
+
+/*
 Lookup key for the persistent shaped-text cache.
 
 `wrap_width` and spacing use exact f32 bit patterns so float equality is bit-exact.
@@ -988,10 +1000,9 @@ NEWLINES: hard breaks only.
 PRESERVE: hard breaks with CRLF normalization and tab expansion.
 BALANCE: soft-wrap at max_w, then rebalance line lengths.
 
-Results are cloned into the layout frame arena when active so callers share simple
-ownership with other layout frame data. Persistent copies live in the shape cache.
-When the frame arena is inactive, returned lines are heap-owned and must be freed
-with font_destroy_shaped_lines.
+On cache hit (and after insert on miss), returns a borrow of the persistent cache
+entry. Otherwise returns frame-arena or heap-owned lines. Release with
+font_shape_lines_release when not borrowing into layout-owned node.text.
 */
 font_shape_line_build :: proc(
 	face: ^Font_Face,
@@ -1003,8 +1014,8 @@ font_shape_line_build :: proc(
 	tab_size: f32,
 	wrap: Text_Wrap_Kind,
 	direction: Text_Direction_Kind,
-) -> []Shaped_Line {
-	if face == nil || len(text) == 0 do return nil
+) -> Font_Shape_Lines {
+	if face == nil || len(text) == 0 do return {}
 
 	allocator := layout_frame_allocator()
 	shape_text := text
@@ -1040,11 +1051,11 @@ font_shape_line_build :: proc(
 		direction,
 	)
 	if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
-		return font_clone_shaped_lines(cached, layout_frame_allocator())
+		return Font_Shape_Lines{lines = cached, borrowed = true}
 	}
 
 	shaped := font_shape(face, shape_text, direction)
-	if len(shaped) == 0 do return nil
+	if len(shaped) == 0 do return {}
 
 	result: []Shaped_Line
 	switch wrap {
@@ -1065,11 +1076,32 @@ font_shape_line_build :: proc(
 	if !layout_uses_frame_arena() {
 		delete(shaped)
 	}
-	if len(result) == 0 do return nil
+	if len(result) == 0 do return {}
 
 	font_shape_cache_insert(key, shape_text, result)
 
-	return result
+	if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
+		if !layout_uses_frame_arena() {
+			font_destroy_shaped_lines(result)
+		}
+
+		return Font_Shape_Lines{lines = cached, borrowed = true}
+	}
+
+	return Font_Shape_Lines{lines = result, borrowed = false}
+}
+
+/*
+Releases shaped lines returned by font_shape_line_build when they are owned locally.
+
+No-op for cache borrows and when the layout frame arena owns the slice.
+*/
+font_shape_lines_release :: proc(shaped: Font_Shape_Lines) {
+	if shaped.borrowed do return
+	if layout_uses_frame_arena() do return
+	if len(shaped.lines) > 0 {
+		font_destroy_shaped_lines(shaped.lines)
+	}
 }
 
 /*
