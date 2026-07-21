@@ -598,3 +598,89 @@ layout_text_build_borrows_cached_shape_lines :: proc(t: ^testing.T) {
 		testing.expect(t, raw_data(node.text.lines) == first_ptr)
 	})
 }
+
+@(test)
+font_shape_segment_build_cache_hit_is_borrowed :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		first := font_shape_segment_build(face, handle.id, "Bold span", 0, 0, .LTR)
+		defer font_shape_lines_release(first)
+		testing.expect(t, first.borrowed)
+		testing.expect_value(t, len(first.lines), 1)
+		testing.expect(t, len(first.lines[0].glyphs) > 0)
+
+		second := font_shape_segment_build(face, handle.id, "Bold span", 0, 0, .LTR)
+		defer font_shape_lines_release(second)
+		testing.expect(t, second.borrowed)
+		testing.expect(t, raw_data(second.lines) == raw_data(first.lines))
+	})
+}
+
+@(test)
+font_shape_segment_build_matches_uncached_shaped_line :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		text := "Segment"
+		letter_spacing: f32 = 1.5
+		word_spacing: f32 = 2
+
+		cached := font_shape_segment_build(face, handle.id, text, letter_spacing, word_spacing, .LTR)
+		defer font_shape_lines_release(cached)
+		testing.expect_value(t, len(cached.lines), 1)
+
+		raw := font_shape(face, text, .LTR)
+		defer delete(raw)
+		uncached := font_make_shaped_line(text, raw, .LTR, letter_spacing, word_spacing)
+		defer delete(uncached.glyphs)
+
+		expect_close(t, cached.lines[0].width, uncached.width)
+		testing.expect_value(t, len(cached.lines[0].glyphs), len(uncached.glyphs))
+		for i in 0 ..< len(uncached.glyphs) {
+			testing.expect_value(t, cached.lines[0].glyphs[i].glyph_id, uncached.glyphs[i].glyph_id)
+			expect_close(t, cached.lines[0].glyphs[i].x_advance, uncached.glyphs[i].x_advance)
+		}
+	})
+}
+
+@(test)
+font_shape_segment_build_letter_spacing_uses_separate_cache_entries :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		plain := font_shape_segment_build(face, handle.id, "AB", 0, 0, .LTR)
+		defer font_shape_lines_release(plain)
+		spaced := font_shape_segment_build(face, handle.id, "AB", 2, 0, .LTR)
+		defer font_shape_lines_release(spaced)
+
+		testing.expect(t, plain.borrowed)
+		testing.expect(t, spaced.borrowed)
+		testing.expect(t, spaced.lines[0].width > plain.lines[0].width)
+	})
+}
+
+@(test)
+font_shape_segment_build_different_faces_do_not_share_cache :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		iface, ihandle, iok := font_test_face(inter, 16)
+		pface, phandle, pok := font_test_face(pixel, 8)
+		testing.expect(t, iok && pok)
+
+		text := "Aa"
+		inter_seg := font_shape_segment_build(iface, ihandle.id, text, 0, 0, .LTR)
+		defer font_shape_lines_release(inter_seg)
+		pixel_seg := font_shape_segment_build(pface, phandle.id, text, 0, 0, .LTR)
+		defer font_shape_lines_release(pixel_seg)
+
+		testing.expect(t, inter_seg.borrowed)
+		testing.expect(t, pixel_seg.borrowed)
+		testing.expect(t, raw_data(inter_seg.lines) != raw_data(pixel_seg.lines))
+	})
+}

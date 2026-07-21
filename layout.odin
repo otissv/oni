@@ -872,6 +872,56 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 }
 
 @(private)
+layout_rich_text_shape_segment :: proc(
+	text: string,
+	seg_start, seg_end: int,
+	run: Layout_Text_Run,
+	config: Resolved_Widget_Style,
+	layout_scale: f32,
+) -> (
+	seg_line: Shaped_Line,
+	seg_face: ^Font_Face,
+	resolved_font: Font_Face_Handle,
+	seg_scale: f32,
+	ok: bool,
+) {
+	if seg_end <= seg_start do return {}, nil, {}, 0, false
+
+	sub := text[seg_start:seg_end]
+	if len(sub) == 0 do return {}, nil, {}, 0, false
+
+	segment := text_run_segment_layout(run.style, config)
+	letter_spacing := segment.letter_spacing / layout_scale
+	word_spacing := segment.word_spacing / layout_scale
+	resolved_font, seg_scale, ok = font_resolve(
+		segment.font,
+		segment.font_size,
+		config.space,
+		segment.font_weight,
+		segment.font_style,
+	)
+
+	if !ok do return {}, nil, {}, 0, false
+
+	seg_face = font_face_from_handle(resolved_font)
+	if seg_face == nil do return {}, nil, {}, 0, false
+
+	shaped := font_shape_segment_build(
+		seg_face,
+		resolved_font.id,
+		sub,
+		letter_spacing,
+		word_spacing,
+		segment.text_direction,
+	)
+	defer font_shape_lines_release(shaped)
+
+	if len(shaped.lines) == 0 || len(shaped.lines[0].glyphs) == 0 do return {}, nil, {}, 0, false
+
+	return shaped.lines[0], seg_face, resolved_font, seg_scale, true
+}
+
+@(private)
 layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 	config := node.config
 	text := node.measure.text
@@ -902,34 +952,17 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 			if len(sub) == 0 do continue
 
-			segment := text_run_segment_layout(run.style, config)
 			scale := node.text.layout_scale
-			letter_spacing := segment.letter_spacing / scale
-			word_spacing := segment.word_spacing / scale
-			resolved_font, seg_scale, ok := font_resolve(
-				segment.font,
-				segment.font_size,
-				config.space,
-				segment.font_weight,
-				segment.font_style,
+			seg_line, seg_face, resolved_font, seg_scale, shape_ok := layout_rich_text_shape_segment(
+				text,
+				seg_start,
+				seg_end,
+				run,
+				config,
+				scale,
 			)
 
-			if !ok do continue
-
-			seg_face := font_face_from_handle(resolved_font)
-			if seg_face == nil do continue
-
-			shaped := font_shape(seg_face, sub, segment.text_direction)
-
-			if len(shaped) == 0 do continue
-
-			seg_line := font_make_shaped_line(
-				sub,
-				shaped,
-				segment.text_direction,
-				letter_spacing,
-				word_spacing,
-			)
+			if !shape_ok do continue
 
 			for glyph in seg_line.glyphs {
 				paint, paint_ok := layout_glyph_paint_quad(
@@ -1114,31 +1147,18 @@ layout_rich_text_position_decorations :: proc(node: ^Layout_Node) {
 
 			if len(sub) == 0 do continue
 
+			seg_line, _, _, seg_scale, shape_ok := layout_rich_text_shape_segment(
+				text,
+				seg_start,
+				seg_end,
+				run,
+				config,
+				scale,
+			)
+
+			if !shape_ok do continue
+
 			segment := text_run_segment_layout(run.style, config)
-			resolved_font, seg_scale, ok := font_resolve(
-				segment.font,
-				segment.font_size,
-				config.space,
-				segment.font_weight,
-				segment.font_style,
-			)
-
-			if !ok do continue
-
-			seg_face := font_face_from_handle(resolved_font)
-			if seg_face == nil do continue
-
-			shaped := font_shape(seg_face, sub, segment.text_direction)
-
-			if len(shaped) == 0 do continue
-
-			seg_line := font_make_shaped_line(
-				sub,
-				shaped,
-				segment.text_direction,
-				segment.letter_spacing / scale,
-				segment.word_spacing / scale,
-			)
 			seg_w := seg_line.width * seg_scale
 			x0 := pen_x
 			x1 := pen_x + seg_w

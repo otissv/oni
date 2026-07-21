@@ -1105,6 +1105,33 @@ font_shape_lines_release :: proc(shaped: Font_Shape_Lines) {
 }
 
 /*
+Shapes one rich-text segment (no wrap) with letter/word spacing via the persistent shape cache.
+
+Returns at most one Shaped_Line keyed by face, substring, direction, and spacing.
+Release with font_shape_lines_release when not borrowing into layout-owned storage.
+*/
+font_shape_segment_build :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	text: string,
+	letter_spacing: f32,
+	word_spacing: f32,
+	direction: Text_Direction_Kind,
+) -> Font_Shape_Lines {
+	return font_shape_line_build(
+		face,
+		face_id,
+		text,
+		0,
+		letter_spacing,
+		word_spacing,
+		DEFAULT_TAB_SIZE,
+		.NONE,
+		direction,
+	)
+}
+
+/*
 Deep-copies shaped lines into the given allocator.
 */
 font_clone_shaped_lines :: proc(lines: []Shaped_Line, allocator: mem.Allocator) -> []Shaped_Line {
