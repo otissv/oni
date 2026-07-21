@@ -5,6 +5,11 @@ import set "../set"
 import "core:fmt"
 
 
+@(init)
+error_banner_ui_register :: proc "contextless" () {
+	o.error_banner_register_ui(error_banner_ui)
+}
+
 @(private)
 error_banner_entries: []o.Error_Entry
 
@@ -154,25 +159,21 @@ error_banner_body :: proc(state: Rectangle_State) {
 	}
 }
 
-/*
-Renders active engine/app errors in a fixed banner at the top of the window.
-
-Call near the start of the screen UI tree. Height is exposed via o.Error_Banner_Height().
-*/
-Error_Banner :: proc() {
+@(private)
+error_banner_ui :: proc() {
 	if o.error_active_count() == 0 {
-		o.error_set_banner_height(0)
 
 		return
 	}
 
 	error_banner_entries = o.error_entries()
-	o.error_set_banner_height(o.error_estimate_banner_height())
+
+	o.Begin_Overlay()
+	defer o.End_Overlay()
 
 	Rectangle({
 		config = {
 			id = "error-banner",
-			space = set.Space(.POPOVER),
 			position = set.Position(.FIXED),
 			x = set.F32(0),
 			y = set.F32(0),
@@ -183,14 +184,7 @@ Error_Banner :: proc() {
 			background = set.Colors(o.Color.DESTRUCTIVE),
 			border = set.Border(o.BORDER_SM),
 			border_color = set.Border_color(o.Color.DESTRUCTIVE),
-			z_index = set.Z_Index(f32(100000)),
 		},
 		child = error_banner_body,
 	})
-
-	if o.ui_pass() == .Draw {
-		layout_id := o.ui_id("error-banner")
-		layout_rect := o.ui_layout_rect(layout_id)
-		o.error_set_banner_height(layout_rect.h)
-	}
 }

@@ -1646,7 +1646,10 @@ shortcut_focused_kind :: proc(focused_id: string) -> Widget_Kind {
 shortcut_popover_active :: proc() -> bool {
 	if state == nil do return false
 
-	return len(state.ui.layout.paint_list_popover) > 0
+	return(
+		len(state.ui.layout.paint_list_popover) > 0 ||
+		len(state.ui.layout.paint_list_overlay) > 0 \
+	)
 }
 
 @(private)

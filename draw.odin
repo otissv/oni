@@ -286,6 +286,31 @@ end_popover :: proc() {
 }
 
 /*
+Enters overlay draw space with matching layout and root UI style.
+
+Overlay uses screen coordinates and paints/hits above popover, screen, and artboard.
+Framework chrome (error banner) lives here. During the layout pass, also begins a nested
+overlay layout region.
+*/
+begin_overlay :: proc() {
+	draw_push_space(.OVERLAY)
+	bounds := layout_space_bounds(.OVERLAY)
+	ui_push_style(style_root(.OVERLAY, bounds))
+	if ui_pass() == .Layout do layout_begin_space(.OVERLAY)
+}
+
+/*
+Leaves overlay draw space and restores the previous layout and style state.
+
+During the layout pass, ends the nested overlay layout region first.
+*/
+end_overlay :: proc() {
+	if ui_pass() == .Layout do layout_end_space()
+	ui_pop_style()
+	draw_pop_space()
+}
+
+/*
 Draws a filled and/or bordered rectangle with optional corner radii.
 
 Skips the draw when both fill and border are fully transparent or zero-sized.

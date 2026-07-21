@@ -43,8 +43,6 @@ Error_Reportf :: error_reportf
 Error_Warn :: error_warn
 Error_Warnf :: error_warnf
 Error_Entries :: error_entries
-Error_Banner_Height :: error_banner_height
-Error_Estimate_Banner_Height :: error_estimate_banner_height
 Error_Dismiss_All :: error_dismiss_all
 Error_Format_Log_Line :: error_format_log_line
 Error_Toggle_Expanded :: error_toggle_expanded
@@ -65,6 +63,8 @@ Begin_Screen :: draw_push_screen
 End_Screen :: draw_pop_screen
 Popover_Begin :: begin_popover
 Popover_End :: end_popover
+Begin_Overlay :: begin_overlay
+End_Overlay :: end_overlay
 Render :: render
 
 Load_Texture :: assets_load_texture

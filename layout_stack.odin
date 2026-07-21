@@ -258,8 +258,8 @@ layout_resolve_clips :: proc(node_index: int, parent_clip: Rect, parent_has_clip
 	}
 
 	for child_index in node.child_indices {
-		// Popover subtrees are not clipped by app-tree overflow.
-		if layout_is_popover_subtree_root(child_index) {
+		// Popover/overlay subtrees are not clipped by app-tree overflow.
+		if layout_is_layer_subtree_root(child_index) {
 			layout_resolve_clips(child_index, {}, false)
 			continue
 		}
@@ -268,11 +268,16 @@ layout_resolve_clips :: proc(node_index: int, parent_clip: Rect, parent_has_clip
 }
 
 @(private)
-layout_is_popover_subtree_root :: proc(node_index: int) -> bool {
+layout_space_is_layer :: proc(space: Draw_Space) -> bool {
+	return space == .POPOVER || space == .OVERLAY
+}
+
+@(private)
+layout_is_layer_subtree_root :: proc(node_index: int) -> bool {
 	node := &state.ui.layout.nodes[node_index]
-	if node.space != .POPOVER do return false
+	if !layout_space_is_layer(node.space) do return false
 	if node.parent < 0 do return true
-	return state.ui.layout.nodes[node.parent].space != .POPOVER
+	return !layout_space_is_layer(state.ui.layout.nodes[node.parent].space)
 }
 
 @(private)
@@ -325,10 +330,10 @@ layout_assign_stack :: proc(node_index: int, paint_list: ^[dynamic]int, ancestor
 	pos := make([dynamic]int, context.temp_allocator)
 
 	for child_index in node.child_indices {
-		child := &state.ui.layout.nodes[child_index]
-		if layout_is_popover_subtree_root(child_index) {
+		if layout_is_layer_subtree_root(child_index) {
 			continue
 		}
+		child := &state.ui.layout.nodes[child_index]
 		if child.config.z_index < 0 {
 			append(&neg, child_index)
 		} else {
@@ -362,15 +367,16 @@ layout_assign_stack :: proc(node_index: int, paint_list: ^[dynamic]int, ancestor
 }
 
 /*
-Finalizes global stack ordering: artboard (back), screen, popover (front).
+Finalizes global stack ordering: artboard (back), screen, popover, overlay (front).
 
-Each popover subtree root is its own stacking context; z_index sorts within
-that context, then among sibling popover roots.
+Each popover/overlay subtree root is its own stacking context; z_index sorts within
+that context, then among sibling layer roots.
 */
 layout_finalize_stack_order :: proc() {
 	clear(&state.ui.layout.paint_list_artboard)
 	clear(&state.ui.layout.paint_list_screen)
 	clear(&state.ui.layout.paint_list_popover)
+	clear(&state.ui.layout.paint_list_overlay)
 	state.ui.layout.stack_counter = 0
 
 	artboard_roots := make([dynamic]int, context.temp_allocator)
@@ -379,7 +385,7 @@ layout_finalize_stack_order :: proc() {
 	for node_index in 0 ..< len(state.ui.layout.nodes) {
 		node := &state.ui.layout.nodes[node_index]
 		if node.parent >= 0 do continue
-		if node.space == .POPOVER do continue
+		if layout_space_is_layer(node.space) do continue
 		layout_resolve_clips(node_index, {}, false)
 		if node.space == .ARTBOARD {
 			append(&artboard_roots, node_index)
@@ -399,13 +405,28 @@ layout_finalize_stack_order :: proc() {
 
 	popover_roots := make([dynamic]int, context.temp_allocator)
 	for node_index in 0 ..< len(state.ui.layout.nodes) {
-		if !layout_is_popover_subtree_root(node_index) do continue
+		node := &state.ui.layout.nodes[node_index]
+		if node.space != .POPOVER do continue
+		if !layout_is_layer_subtree_root(node_index) do continue
 		layout_resolve_clips(node_index, {}, false)
 		append(&popover_roots, node_index)
 	}
 	layout_sort_stack_children(popover_roots[:])
 	for root in popover_roots {
 		layout_assign_stack(root, &state.ui.layout.paint_list_popover, false)
+	}
+
+	overlay_roots := make([dynamic]int, context.temp_allocator)
+	for node_index in 0 ..< len(state.ui.layout.nodes) {
+		node := &state.ui.layout.nodes[node_index]
+		if node.space != .OVERLAY do continue
+		if !layout_is_layer_subtree_root(node_index) do continue
+		layout_resolve_clips(node_index, {}, false)
+		append(&overlay_roots, node_index)
+	}
+	layout_sort_stack_children(overlay_roots[:])
+	for root in overlay_roots {
+		layout_assign_stack(root, &state.ui.layout.paint_list_overlay, false)
 	}
 
 	state.ui.layout.stack_counter = 0
@@ -418,6 +439,10 @@ layout_finalize_stack_order :: proc() {
 		state.ui.layout.stack_counter += 1
 	}
 	for node_index in state.ui.layout.paint_list_popover {
+		state.ui.layout.nodes[node_index].stack_index = state.ui.layout.stack_counter
+		state.ui.layout.stack_counter += 1
+	}
+	for node_index in state.ui.layout.paint_list_overlay {
 		state.ui.layout.nodes[node_index].stack_index = state.ui.layout.stack_counter
 		state.ui.layout.stack_counter += 1
 	}
@@ -455,12 +480,17 @@ layout_hit_test_list :: proc(list: []int, space: Draw_Space) -> (UI_Id, bool) {
 /*
 Picks the topmost layout node under the pointer from paint lists.
 
-Hit order (front → back): popover → screen → artboard.
+Hit order (front → back): overlay → popover → screen → artboard.
 */
 layout_resolve_pointer_hit :: proc() {
 	w_ctx.pointer_hit_valid = false
 	w_ctx.pointer_hit_ui_id = {}
 
+	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_overlay[:], .OVERLAY); ok {
+		w_ctx.pointer_hit_ui_id = id
+		w_ctx.pointer_hit_valid = true
+		return
+	}
 	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_popover[:], .POPOVER); ok {
 		w_ctx.pointer_hit_ui_id = id
 		w_ctx.pointer_hit_valid = true

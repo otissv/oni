@@ -148,6 +148,7 @@ Layout_State :: struct {
 	paint_list_screen:    [dynamic]int,
 	paint_list_artboard:  [dynamic]int,
 	paint_list_popover:   [dynamic]int,
+	paint_list_overlay:   [dynamic]int,
 	current_space:        Draw_Space,
 	space_stack:          [dynamic]Draw_Space,
 	stack_counter:        u32,
@@ -269,6 +270,7 @@ layout_reset :: proc() {
 	clear(&layout.paint_list_screen)
 	clear(&layout.paint_list_artboard)
 	clear(&layout.paint_list_popover)
+	clear(&layout.paint_list_overlay)
 	clear(&layout.space_stack)
 	layout.current_space = .SCREEN
 	layout.stack_counter = 0
@@ -323,7 +325,10 @@ layout_shutdown :: proc() {
 	state.ui.layout.paint_list_artboard = nil
 	delete(state.ui.layout.paint_list_popover)
 	state.ui.layout.paint_list_popover = nil
+	delete(state.ui.layout.paint_list_overlay)
+	state.ui.layout.paint_list_overlay = nil
 	delete(state.ui.layout.space_stack)
+	state.ui.layout.space_stack = nil
 	state.ui.layout.space_stack = nil
 	layout_frame_arena_destroy(&state.ui.layout)
 }
@@ -1555,13 +1560,25 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 	if config.space == .POPOVER {
 		space = .POPOVER
 	}
-	if parent_index >= 0 && state.ui.layout.nodes[parent_index].space == .POPOVER {
-		space = .POPOVER
+	if config.space == .OVERLAY {
+		space = .OVERLAY
+	}
+	if parent_index >= 0 {
+		parent_space := state.ui.layout.nodes[parent_index].space
+		if parent_space == .POPOVER {
+			space = .POPOVER
+		}
+		if parent_space == .OVERLAY {
+			space = .OVERLAY
+		}
 	}
 
 	style := config.style
 	if space == .POPOVER {
 		style.space = .POPOVER
+	}
+	if space == .OVERLAY {
+		style.space = .OVERLAY
 	}
 
 	node_index := len(state.ui.layout.nodes)
@@ -2939,7 +2956,7 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 		return {0, 0, logical_w / zoom, logical_h / zoom}
 	}
 
-	// SCREEN and POPOVER share logical viewport bounds.
+	// SCREEN, POPOVER, and OVERLAY share logical viewport bounds.
 	return {0, 0, logical_w, logical_h}
 }
 

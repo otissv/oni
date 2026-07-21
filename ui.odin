@@ -178,14 +178,31 @@ ui_end_frame :: proc() {
 /*
 Runs each UI builder through layout and draw passes, then ends the frame.
 
-Each proc is invoked twice: once to measure, once to render.
+Each proc is invoked twice: once to measure, once to render. Framework overlay
+chrome (error banner) is appended after app UI on both passes.
 */
+error_banner_ui: proc()
+
+error_banner_register_ui :: proc "contextless" (ui: proc()) {
+	error_banner_ui = ui
+}
+
 render :: proc(ui: ..proc()) {
 	for u in ui {
 		u()
+
+		if error_banner_ui != nil {
+			error_banner_ui()
+		}
+
 		ui_end_layout_pass()
 
 		u()
+
+		if error_banner_ui != nil {
+			error_banner_ui()
+		}
+
 		ui_end_frame()
 	}
 }

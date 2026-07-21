@@ -25,11 +25,10 @@ Error_Entry :: struct {
 }
 
 Error_State :: struct {
-	entries:       [dynamic]Error_Entry,
-	index:         map[u64]int,
-	active_count:  int,
-	banner_height: f32,
-	arena:         mem.Arena,
+	entries:      [dynamic]Error_Entry,
+	index:        map[u64]int,
+	active_count: int,
+	arena:        mem.Arena,
 	arena_backing: [dynamic]byte,
 }
 
@@ -232,7 +231,6 @@ error_shutdown :: proc() {
 	delete(errors.entries)
 	errors.entries = nil
 	errors.active_count = 0
-	errors.banner_height = 0
 
 	error_arena_destroy()
 }
@@ -323,36 +321,6 @@ error_entries :: proc() -> []Error_Entry {
 	if state == nil || state.errors.entries == nil do return nil
 
 	return state.errors.entries[:]
-}
-
-error_estimate_banner_height :: proc() -> f32 {
-	if state == nil || state.errors.active_count == 0 do return 0
-
-	height := f32(20)
-
-	for entry in state.errors.entries {
-		height += 28
-
-		if entry.expanded {
-			height += 20
-		}
-
-		height += 8
-	}
-
-	return height
-}
-
-error_banner_height :: proc() -> f32 {
-	if state == nil do return 0
-
-	return state.errors.banner_height
-}
-
-error_set_banner_height :: proc(height: f32) {
-	if state == nil do return
-
-	state.errors.banner_height = height
 }
 
 error_toggle_expanded :: proc(key: u64) {

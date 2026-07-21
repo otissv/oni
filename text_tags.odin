@@ -467,6 +467,8 @@ text_tag_parse_space :: proc(value: string) -> (Draw_Space, bool) {
 		return .ARTBOARD, true
 	case "popover":
 		return .POPOVER, true
+	case "overlay":
+		return .OVERLAY, true
 	}
 
 	return .SCREEN, false

@@ -902,6 +902,7 @@ Draw_Space :: enum {
 	ARTBOARD,
 	SCREEN,
 	POPOVER, // screen-coordinate overlay; paints/hits above screen + artboard
+	OVERLAY, // framework chrome (error banner); paints/hits above popover
 }
 
 /*
