@@ -90,6 +90,7 @@ package_out_name() {
 
 run_package() {
 	local pkg="$1"
+	local log_file="${2:-}"
 	local pkg_path
 	pkg_path="$(package_path "$pkg")"
 	local out_name
@@ -107,24 +108,37 @@ run_package() {
 	echo "==> Testing ${pkg} (${pkg_path})"
 	echo "    ${cmd[*]}"
 
-	# First pass: compile + run with Odin's tracking allocator (and optional ASan).
-	# Odin's test runner may exit 0 even when tests fail — parse the summary.
+	# Stream output live (line-buffered when stdbuf is available). Odin's test runner
+	# may exit 0 even when tests fail — keep a log copy to parse the summary.
 	local log
-	log="$(mktemp "${OUT_DIR}/run.XXXXXX.log")"
+	local cleanup_log=false
+	if [[ -n "$log_file" ]]; then
+		log="$log_file"
+	else
+		log="$(mktemp "${OUT_DIR}/run.XXXXXX.log")"
+		cleanup_log=true
+	fi
+
+	local -a run_cmd=()
+	if command -v stdbuf >/dev/null 2>&1; then
+		run_cmd=(stdbuf -oL -eL)
+	fi
+	run_cmd+=("${cmd[@]}")
+
 	set +e
-	"${cmd[@]}" >"$log" 2>&1
-	local compile_status=$?
+	"${run_cmd[@]}" 2>&1 | tee "$log"
+	local compile_status=${PIPESTATUS[0]}
 	set -e
-	cat "$log"
+
 	if ((compile_status != 0)); then
-		rm -f "$log"
+		$cleanup_log && rm -f "$log"
 		return "$compile_status"
 	fi
 	if grep -Eq 'tests? failed\.|[[:space:]][0-9]+ tests? failed' "$log"; then
-		rm -f "$log"
+		$cleanup_log && rm -f "$log"
 		return 1
 	fi
-	rm -f "$log"
+	$cleanup_log && rm -f "$log"
 
 	if $USE_VALGRIND; then
 		if ! command -v valgrind >/dev/null 2>&1; then
@@ -237,13 +251,15 @@ else
 	for pkg in "${PACKAGES[@]}"; do
 		out_name="$(package_out_name "$pkg")"
 		log_file="${log_dir}/${out_name}.log"
+		status_file="${log_dir}/${out_name}.exit"
 		(
-			if run_package "$pkg"; then
-				exit 0
-			else
-				exit $?
-			fi
-		) >"$log_file" 2>&1 &
+			set +e
+			run_package "$pkg" "$log_file"
+			status=$?
+			set -e
+			echo "$status" >"$status_file"
+			exit "$status"
+		) 2>&1 | sed -u "s/^/[${pkg}] /" &
 		pids["$pkg"]=$!
 	done
 
@@ -251,16 +267,17 @@ else
 		pid="${pids[$pkg]}"
 		set +e
 		wait "$pid"
-		statuses["$pkg"]=$?
 		set -e
 		out_name="$(package_out_name "$pkg")"
-		cat "${log_dir}/${out_name}.log"
+		status_file="${log_dir}/${out_name}.exit"
+		status=$(cat "$status_file")
+		statuses["$pkg"]=$status
 		echo ""
-		if ((statuses["$pkg"] == 0)); then
+		if ((status == 0)); then
 			passed+=("$pkg")
 		else
 			failed+=("$pkg")
-			echo "FAILED: ${pkg} (exit ${statuses[$pkg]})"
+			echo "FAILED: ${pkg} (exit ${status})"
 			echo ""
 		fi
 	done
