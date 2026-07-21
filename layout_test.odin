@@ -150,9 +150,12 @@ layout_test_append_node :: proc(
 	padding, _ := resolve_padding_value(node_config.padding)
 	border, _ := resolve_border_value(node_config.border)
 
+	node_index := len(layout.nodes)
+
 	append(
 		&layout.nodes,
 		Layout_Node {
+			index = node_index,
 			kind = kind,
 			config = node_config,
 			desired = desired,
@@ -162,7 +165,6 @@ layout_test_append_node :: proc(
 			child_indices = make([dynamic]int, layout_frame_allocator_for(layout)),
 		},
 	)
-	node_index := len(layout.nodes) - 1
 	if parent >= 0 {
 		append(&layout.nodes[parent].child_indices, node_index)
 	}

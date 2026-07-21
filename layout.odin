@@ -84,6 +84,7 @@ Layout_Collapsed_Borders :: struct {
 One node in the flex layout tree with resolved style, geometry, and children.
 */
 Layout_Node :: struct {
+	index:             int,
 	ui_id:             UI_Id,
 	kind:              Widget_Kind,
 	config:            Resolved_Widget_Style,
@@ -129,6 +130,7 @@ Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
 	nodes:                [dynamic]Layout_Node,
+	peak_node_count:      int,
 	node_stack:           [dynamic]int,
 	bounds_stack:         [dynamic]Rect,
 	space_markers:        [dynamic]int,
@@ -236,6 +238,15 @@ Called at the start of each UI frame.
 */
 layout_reset :: proc() {
 	layout := &state.ui.layout
+
+	if len(layout.nodes) > layout.peak_node_count {
+		layout.peak_node_count = len(layout.nodes)
+	}
+
+	if layout.peak_node_count > 0 {
+		reserve(&layout.nodes, layout.peak_node_count)
+	}
+
 	// Frame-arena memory is reclaimed below; nil pointers without delete.
 	clear(&layout.table_tracks)
 	layout_release_node_children(layout)
@@ -1368,7 +1379,10 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 		style.space = .POPOVER
 	}
 
+	node_index := len(state.ui.layout.nodes)
+
 	node := Layout_Node {
+		index         = node_index,
 		ui_id         = ui_id,
 		kind          = config.kind,
 		config        = style,
@@ -1380,7 +1394,6 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 		space         = space,
 	}
 	append(&state.ui.layout.nodes, node)
-	node_index := len(state.ui.layout.nodes) - 1
 
 	// Collapsed tables share borders via paint conflict resolution; layout must
 	// not reserve separate border space on the table or its structural parts.
@@ -1564,10 +1577,9 @@ layout_child_cross_size :: proc(
 Returns the layout node index for a node pointer in a layout tree.
 */
 layout_node_index_in :: proc(layout: ^Layout_State, node: ^Layout_Node) -> int {
-	for &n, i in layout.nodes {
-		if &n == node do return i
-	}
-	return -1
+	_ = layout
+
+	return node.index
 }
 
 /*
