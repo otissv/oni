@@ -1267,8 +1267,6 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	gap_cross := layout_config_gap_cross(node.config, info.is_horizontal)
 
 	if len(node.child_indices) > 0 {
-		layout_sort_children_by_order(node)
-
 		if info.is_wrap {
 			return layout_wrap_measure(node, info.is_horizontal, gap_main, gap_cross)
 		}
@@ -1335,6 +1333,7 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 /*
 Stable-sorts flex children by resolved `order` (ascending). Equal orders keep
 source order. Skips table rows so column indices stay aligned with tracks.
+Invoked once per container in layout_pop_node before measure.
 */
 @(private)
 layout_sort_children_by_order :: proc(node: ^Layout_Node) {
@@ -1461,7 +1460,8 @@ layout_set_measure_size :: proc(node: ^Layout_Node, size: Vec2) {
 }
 
 /*
-Pops the current node from the stack and stores its measured size.
+Pops the current node from the stack, sorts flex children once for the frame,
+and stores its measured size.
 */
 layout_pop_node :: proc() {
 	if len(state.ui.layout.node_stack) == 0 do return
@@ -1470,6 +1470,12 @@ layout_pop_node :: proc() {
 	ordered_remove(&state.ui.layout.node_stack, len(state.ui.layout.node_stack) - 1)
 
 	node := &state.ui.layout.nodes[node_index]
+
+	if len(node.child_indices) >= 2 && node.kind != .TABLE_ROW {
+
+		layout_sort_children_by_order(node)
+	}
+
 	node.desired = layout_measure(node)
 }
 
@@ -2451,7 +2457,6 @@ Positions children in a non-wrap flex container.
 */
 layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
-	layout_sort_children_by_order(node)
 
 	if node.kind == .TABLE {
 		layout_table_prepare(layout_node_index(node))

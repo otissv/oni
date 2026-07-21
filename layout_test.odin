@@ -2516,6 +2516,7 @@ layout_flex_order_reorders_children_ascending :: proc(t: ^testing.T) {
 		b := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 0})
 		c := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 1})
 
+		layout_sort_children_by_order(&layout.nodes[root])
 		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
 		expect_rect(t, layout.nodes[b].rect, {0, 0, 40, 20})
 		expect_rect(t, layout.nodes[c].rect, {40, 0, 40, 20})
@@ -2541,6 +2542,7 @@ layout_flex_order_stable_for_equal_values :: proc(t: ^testing.T) {
 		b := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 1})
 		c := layout_test_append_node(layout, root, .RECT, {}, {40, 20}, {order = 0})
 
+		layout_sort_children_by_order(&layout.nodes[root])
 		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
 		expect_rect(t, layout.nodes[c].rect, {0, 0, 40, 20})
 		expect_rect(t, layout.nodes[a].rect, {40, 0, 40, 20})
