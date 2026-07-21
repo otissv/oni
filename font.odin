@@ -221,10 +221,8 @@ rasterize FreeType bitmaps in parallel, then pack into the atlas serially.
 font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
 
-	missing := make([dynamic]u32, 0, len(glyphs))
-	defer delete(missing)
-	seen: map[u32]struct{}
-	defer delete(seen)
+	missing := make([dynamic]u32, 0, len(glyphs), context.temp_allocator)
+	seen := make(map[u32]struct{}, context.temp_allocator)
 
 	for glyph in glyphs {
 		key := Font_Glyph_Key {
