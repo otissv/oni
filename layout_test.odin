@@ -2657,6 +2657,9 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 			testing.expect(t, inter_ok)
 			inter = font_with_size(inter, 16)
 
+			clear_test_hooks()
+			defer clear_test_hooks()
+
 			ui_push_style(Style_Context{content_w = 800, content_h = 600})
 			defer ui_pop_style()
 
@@ -2673,25 +2676,86 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 			layout_set_measure_text(node, "hello", 0)
 			layout_pop_node()
 
+			testing.expect_value(t, test_hook_font_shape_call_count, 0)
 			testing.expect_value(t, len(node.text.lines), 0)
 			testing.expect_value(t, len(node.text.glyphs), 0)
 			testing.expect(t, node.desired.x > 0)
 			testing.expect(t, node.desired.y > 0)
 
 			node.rect = {0, 0, node.desired.x, node.desired.y}
-			wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
-
-			layout_text_build(node, wrap_w)
-			layout_text_release(node)
 
 			layout_finalize_text_node(node)
 			defer layout_text_release(node)
 
+			testing.expect_value(t, test_hook_font_shape_call_count, 1)
 			testing.expect(t, len(node.text.lines) > 0)
 			testing.expect(t, node.text.lines_borrowed)
 			testing.expect(t, len(node.text.line_origins) > 0)
 			testing.expect(t, node.text.size.x > 0)
 			testing.expect(t, node.text.size.y > 0)
+		},
+	)
+}
+
+@(test)
+layout_text_estimate_uses_shape_cache_after_finalize :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+		return
+	}
+
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := font_register_family(
+				"LayoutEstimateCacheTest",
+				{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+			)
+			testing.expect(t, inter_ok)
+			inter = font_with_size(inter, 16)
+
+			node := Layout_Node {
+				measure = {text = "Cached estimate"},
+				config = {
+					font = inter,
+					font_size = 16,
+					line_height = 1.5,
+					wrap = Text_Wrap_Kind.NONE,
+					text_direction = Text_Direction_Kind.LTR,
+					align = Text_Align_Kind.LEFT,
+					space = .SCREEN,
+					text_decoration = Text_Decoration_Lines{},
+					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+				},
+			}
+
+			clear_test_hooks()
+			defer clear_test_hooks()
+
+			layout_finalize_text_node(&node)
+			defer layout_text_release(&node)
+			testing.expect_value(t, test_hook_font_shape_call_count, 1)
+
+			final_size := node.text.size
+			layout_text_release(&node)
+			node.text = {}
+
+			estimated := layout_text_estimate_size(&node, 800)
+			testing.expect_value(t, test_hook_font_shape_call_count, 1)
+			expect_close(t, estimated.x, final_size.x)
+			expect_close(t, estimated.y, final_size.y)
 		},
 	)
 }

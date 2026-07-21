@@ -707,6 +707,8 @@ font_shape :: proc(
 	text: string,
 	direction: Text_Direction_Kind,
 ) -> []Shaped_Glyph {
+	test_hook_font_shape_call_count += 1
+
 	if face == nil || len(text) == 0 do return nil
 
 	buffer := buffer_create()
@@ -1150,6 +1152,16 @@ font_clone_shaped_lines :: proc(lines: []Shaped_Line, allocator: mem.Allocator) 
 }
 
 @(private)
+font_shape_cache_wrap_max_w :: proc(wrap: Text_Wrap_Kind, max_w: f32) -> f32 {
+	#partial switch wrap {
+	case .BALANCE:
+		return max_w
+	}
+
+	return 0
+}
+
+@(private)
 font_shape_cache_key :: proc(
 	face_id: Asset_Id,
 	text: string,
@@ -1160,6 +1172,8 @@ font_shape_cache_key :: proc(
 	max_w: f32,
 	direction: Text_Direction_Kind,
 ) -> Font_Shape_Cache_Key {
+	cache_max_w := font_shape_cache_wrap_max_w(wrap, max_w)
+
 	return Font_Shape_Cache_Key {
 		face_id             = face_id,
 		text_hash           = hash.crc32(transmute([]u8)text),
@@ -1168,9 +1182,44 @@ font_shape_cache_key :: proc(
 		word_spacing_bits   = transmute(u32)word_spacing,
 		tab_size_bits       = transmute(u32)tab_size,
 		wrap_mode           = wrap,
-		wrap_width_bits     = transmute(u32)max_w,
+		wrap_width_bits     = transmute(u32)cache_max_w,
 		direction           = direction,
 	}
+}
+
+/*
+Read-only shape-cache lookup without HarfBuzz or insert.
+
+Returns cached shaped lines when the key and text match. Invalid after
+font_shape_cache_clear, DPI scale changes, or hot reload.
+*/
+font_shape_cache_peek :: proc(
+	face_id: Asset_Id,
+	text: string,
+	letter_spacing: f32,
+	word_spacing: f32,
+	tab_size: f32,
+	wrap: Text_Wrap_Kind,
+	max_w: f32,
+	direction: Text_Direction_Kind,
+) -> (
+	[]Shaped_Line,
+	bool,
+) {
+	font_shape_cache_ensure_dpi()
+	shape_max_w := font_shape_cache_wrap_max_w(wrap, max_w)
+	key := font_shape_cache_key(
+		face_id,
+		text,
+		letter_spacing,
+		word_spacing,
+		tab_size,
+		wrap,
+		shape_max_w,
+		direction,
+	)
+
+	return font_shape_cache_lookup(key, text)
 }
 
 @(private)

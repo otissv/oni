@@ -195,6 +195,13 @@ foreign lib {
 	Load_Glyph :: proc(face: FT_Face, glyph_index: c.uint, load_flags: c.int) -> FT_Error ---
 
 	/*
+	Maps a Unicode code point to a glyph index for a face.
+
+	Binds to FT_Get_Char_Index. Returns 0 when the glyph is missing.
+	*/
+	Get_Char_Index :: proc(face: FT_Face, charcode: c.ulong) -> c.uint ---
+
+	/*
 	Rasterizes the glyph currently loaded in the slot to a bitmap.
 
 	Binds to FT_Render_Glyph.

@@ -646,12 +646,44 @@ layout_text_resolve_wrap_w :: proc(node: ^Layout_Node, available_w: f32) -> f32 
 }
 
 /*
-Measures text size without persisting shaped lines on the node.
+Returns whether the text node's wrap width is definite before layout solve.
 
-Used during layout measure; finalize owns authoritative shaping into node.text.
-Temporary shaped lines are discarded when the layout frame arena is inactive.
+When true, wrap_w is the width used for soft-wrap (BALANCE) estimates.
 */
-layout_text_measure_size :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
+layout_text_wrap_width_known :: proc(node: ^Layout_Node) -> (wrap_w: f32, known: bool) {
+	if node.measure.max_w > 0 do return node.measure.max_w, true
+
+	if node.config.width.kind == .FIXED && node.config.width.value > 0 {
+		return node.config.width.value, true
+	}
+
+	if node.config.max_w > 0 do return node.config.max_w, true
+
+	return 0, false
+}
+
+/*
+Counts layout lines used for measure height estimates from author text.
+*/
+@(private)
+layout_text_estimate_line_count :: proc(text: string, wrap: Text_Wrap_Kind) -> int {
+	if wrap == .NONE do return 1
+
+	count := 1
+	for b in text {
+		if b == '\n' do count += 1
+	}
+
+	return count
+}
+
+/*
+Estimates text size for layout measure without HarfBuzz.
+
+Uses the shape cache when populated, otherwise FreeType advance heuristics.
+Finalize owns authoritative shaping via layout_text_build.
+*/
+layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec2 {
 	if !layout_node_has_text(node) do return {}
 
 	config := node.config
@@ -667,30 +699,90 @@ layout_text_measure_size :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
 	face := font_face_from_handle(resolved_font)
 	if face == nil do return {}
 
-	shape_max_w := wrap_w > 0 ? wrap_w / layout_scale : wrap_w
-	letter_spacing := config.letter_spacing / layout_scale
-	word_spacing := config.word_spacing / layout_scale
+	line_height := config.font_size * config.line_height
 	wrap := text_wrap_kind(config.wrap)
 	direction := text_direction_kind(config.text_direction)
-	shaped := font_shape_line_build(
-		face,
+	letter_spacing := config.letter_spacing / layout_scale
+	word_spacing := config.word_spacing / layout_scale
+	shape_letter_spacing := config.letter_spacing
+	shape_word_spacing := config.word_spacing
+
+	wrap_w, wrap_known := layout_text_wrap_width_known(node)
+	effective_w := wrap_known ? wrap_w : provisional_w
+
+	shape_max_w: f32
+	if wrap == .BALANCE && effective_w > 0 {
+		shape_max_w = effective_w / layout_scale
+	}
+
+	if cached, peek_ok := font_shape_cache_peek(
 		resolved_font.id,
 		node.measure.text,
-		shape_max_w,
 		letter_spacing,
 		word_spacing,
 		config.tab_size,
 		wrap,
+		shape_max_w,
 		direction,
-	)
-	if len(shaped.lines) == 0 do return {}
+	); peek_ok && len(cached) > 0 {
+		return font_measure_lines(face, cached, line_height, layout_scale)
+	}
 
-	line_height := config.font_size * config.line_height
-	size := font_measure_lines(face, shaped.lines, line_height, layout_scale)
+	line_count := layout_text_estimate_line_count(node.measure.text, wrap)
+	height := f32(line_count) * line_height
 
-	font_shape_lines_release(shaped)
+	width: f32
 
-	return size
+	switch wrap {
+	case .NONE:
+		width = font_text_segment_advance_estimate(
+			face,
+			node.measure.text,
+			shape_letter_spacing,
+			shape_word_spacing,
+		)
+	case .NEWLINES:
+		width = font_text_max_line_advance_estimate(
+			face,
+			node.measure.text,
+			shape_letter_spacing,
+			shape_word_spacing,
+			false,
+			config.tab_size,
+		)
+
+		if effective_w > 0 {
+			width = min(width, effective_w)
+		}
+	case .PRESERVE:
+		width = font_text_max_line_advance_estimate(
+			face,
+			node.measure.text,
+			shape_letter_spacing,
+			shape_word_spacing,
+			true,
+			config.tab_size,
+		)
+
+		if effective_w > 0 {
+			width = min(width, effective_w)
+		}
+	case .BALANCE:
+		if effective_w > 0 {
+			width = effective_w
+		} else {
+			width = font_text_max_line_advance_estimate(
+				face,
+				node.measure.text,
+				shape_letter_spacing,
+				shape_word_spacing,
+				false,
+				config.tab_size,
+			)
+		}
+	}
+
+	return {width, height}
 }
 
 /*
@@ -1314,8 +1406,7 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 
 	if layout_node_has_text(node) {
 		available_w := ui_style_current().content_w
-		wrap_w := layout_text_resolve_wrap_w(node, available_w)
-		size = layout_text_measure_size(node, wrap_w)
+		size = layout_text_estimate_size(node, available_w)
 	} else {
 		width := resolved_w
 		height := resolved_h

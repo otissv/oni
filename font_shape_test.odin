@@ -532,6 +532,84 @@ font_make_shaped_line_applies_word_spacing_to_spaces :: proc(t: ^testing.T) {
 }
 
 @(test)
+font_shape_cache_peek_miss_before_insert_hit_after :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		_, miss := font_shape_cache_peek(
+			handle.id,
+			"Peek me",
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			0,
+			.LTR,
+		)
+		testing.expect(t, !miss)
+
+		shaped := font_shape_line_build(
+			face,
+			handle.id,
+			"Peek me",
+			0,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			.LTR,
+		)
+		defer font_shape_lines_release(shaped)
+
+		cached, hit := font_shape_cache_peek(
+			handle.id,
+			"Peek me",
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			0,
+			.LTR,
+		)
+		testing.expect(t, hit)
+		testing.expect(t, raw_data(cached) == raw_data(shaped.lines))
+	})
+}
+
+@(test)
+font_text_segment_advance_estimate_matches_shaped_none_width :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		text := "Advance"
+		estimate := font_text_segment_advance_estimate(face, text, 0, 0)
+
+		shaped := font_shape_line_build(
+			face,
+			handle.id,
+			text,
+			0,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NONE,
+			.LTR,
+		)
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 1)
+
+		// FreeType advances are a close lower bound; shaped width includes kerning/ligatures.
+		testing.expect(t, estimate > 0)
+		testing.expect(t, shaped.lines[0].width >= estimate * 0.85)
+		testing.expect(t, shaped.lines[0].width <= estimate * 1.15)
+	})
+}
+
+@(test)
 font_shape_line_build_cache_hit_is_borrowed :: proc(t: ^testing.T) {
 	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
 		_ = pixel

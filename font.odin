@@ -5,6 +5,7 @@ import "core:math"
 import "core:mem"
 import "core:strings"
 import "core:thread"
+import "core:unicode/utf8"
 import sdl "vendor:sdl3"
 
 FONT_GLYPH_PARALLEL_THRESHOLD :: 4
@@ -598,6 +599,105 @@ Falls back to the face line height scaled by layout_scale when line_height is ze
 font_text_line_height :: proc(face: ^Font_Face, line_height: f32, layout_scale: f32) -> f32 {
 	if line_height > 0 do return line_height
 	return face.line_height * layout_scale
+}
+
+/*
+Estimates horizontal advance for one text segment using FreeType glyph metrics.
+
+Does not call HarfBuzz. Used during layout measure before finalize shaping.
+*/
+font_text_segment_advance_estimate :: proc(
+	face: ^Font_Face,
+	text: string,
+	letter_spacing: f32,
+	word_spacing: f32,
+) -> f32 {
+	if face == nil || len(text) == 0 do return 0
+
+	width: f32
+	glyph_count := 0
+
+	for i := 0; i < len(text); {
+		if text[i] == '\r' {
+			i += 1
+
+			if i < len(text) && text[i] == '\n' {
+				i += 1
+			}
+
+			continue
+		}
+
+		if text[i] == '\n' do break
+
+		r, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+
+		glyph_index := Get_Char_Index(face.ft_face, c.ulong(r))
+		if glyph_index == 0 {
+			i += w
+			continue
+		}
+
+		if !ft_ok(Load_Glyph(face.ft_face, glyph_index, c.int(FT_LOAD_DEFAULT))) {
+			i += w
+			continue
+		}
+
+		slot := ft_glyph_slot(face.ft_face)
+		if face.fake_bold {
+			GlyphSlot_Embolden(slot)
+		}
+
+		if glyph_count > 0 {
+			width += letter_spacing
+		}
+
+		width += ft_pos_to_f32(ft_slot_metrics(slot).hori_advance)
+
+		if r == ' ' || r == '\t' {
+			width += word_spacing
+		}
+
+		glyph_count += 1
+		i += w
+	}
+
+	return width
+}
+
+/*
+Estimates the widest line advance for newline-separated text.
+
+When expand_tabs is true, tabs are expanded on the temp allocator before measuring.
+*/
+font_text_max_line_advance_estimate :: proc(
+	face: ^Font_Face,
+	text: string,
+	letter_spacing: f32,
+	word_spacing: f32,
+	expand_tabs: bool,
+	tab_size: f32,
+) -> f32 {
+	if face == nil || len(text) == 0 do return 0
+
+	max_width: f32
+	line_start := 0
+
+	for i in 0 ..= len(text) {
+		if i < len(text) && text[i] != '\n' do continue
+
+		segment := text[line_start:i]
+		if expand_tabs && strings.contains_rune(segment, '\t') {
+			segment = text_expand_tabs(segment, tab_size, context.temp_allocator)
+		}
+
+		line_width := font_text_segment_advance_estimate(face, segment, letter_spacing, word_spacing)
+		max_width = max(max_width, line_width)
+		line_start = i + 1
+	}
+
+	return max_width
 }
 
 /*
