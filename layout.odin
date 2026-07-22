@@ -11,6 +11,7 @@ Author text and optional wrap-width hint for leaf text measurement.
 */
 Layout_Measure :: struct {
 	text:            string,
+	edit_plain:      string,
 	max_w:           f32,
 	runs:            []Layout_Text_Run,
 	rich:            bool,
@@ -1117,6 +1118,88 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 	node.text.glyphs = glyphs[:]
 }
 
+@(private)
+layout_text_append_edit_glyphs_from_line :: proc(
+	edit_glyphs: ^[dynamic]Text_Edit_Glyph,
+	line: Shaped_Line,
+	line_i: int,
+	pen_x: f32,
+	ascent_scaled, descent_scaled: f32,
+	scale: f32,
+	direction: Text_Direction_Kind,
+) {
+	cursor_x := pen_x
+
+	if line.direction == .RTL {
+		cursor_x = cursor_x + line.width * scale
+	}
+
+	for glyph in line.glyphs {
+		advance := glyph.x_advance * scale
+		glyph_x: f32
+
+		if line.direction == .RTL {
+			cursor_x -= advance
+			glyph_x = cursor_x
+		} else {
+			glyph_x = cursor_x
+			cursor_x += advance
+		}
+
+		append(
+			edit_glyphs,
+			Text_Edit_Glyph {
+				cluster = int(glyph.cluster),
+				x0 = glyph_x,
+				x1 = glyph_x + advance,
+				line_index = line_i,
+				ascent = ascent_scaled,
+				descent = descent_scaled,
+			},
+		)
+	}
+}
+
+@(private)
+layout_text_build_edit_glyphs_from_lines :: proc(
+	node: ^Layout_Node,
+	text: string,
+	lines: []Shaped_Line,
+	line_origins: []Vec2,
+) -> []Text_Edit_Glyph {
+	edit_glyphs := make([dynamic]Text_Edit_Glyph, layout_frame_allocator())
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return nil
+
+	scale := node.text.layout_scale
+	ascent_scaled := face.ascent * scale
+	descent_scaled := face.descent * scale
+	direction := text_direction_kind(node.config.text_direction)
+
+	for line, line_i in lines {
+		if len(line.glyphs) == 0 do continue
+
+		origin := line_origins[line_i]
+		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+		layout_text_append_edit_glyphs_from_line(
+			&edit_glyphs,
+			line,
+			line_i,
+			pos.x,
+			ascent_scaled,
+			descent_scaled,
+			scale,
+			direction,
+		)
+	}
+
+	_ = text
+
+	if len(edit_glyphs) == 0 do return nil
+
+	return edit_glyphs[:]
+}
+
 /*
 Builds caret/selection geometry aligned with glyph paint pen positions.
 */
@@ -1124,23 +1207,28 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 	node.text.edit_geometry = {}
 	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
 
-	text := node.measure.text
-	node.text.edit_geometry.plain = text
+	edit_plain := node.measure.edit_plain
+	if len(edit_plain) == 0 {
+		edit_plain = node.measure.text
+	}
+
+	node.text.edit_geometry.plain = edit_plain
 	node.text.edit_geometry.rich = node.text.rich
 	node.text.edit_geometry.line_height = node.text.line_height
 	node.text.edit_geometry.line_origins = node.text.line_origins
 
-	edit_glyphs := make([dynamic]Text_Edit_Glyph, layout_frame_allocator())
+	edit_glyphs: []Text_Edit_Glyph
 
-	if node.text.rich && len(node.text.runs) > 0 {
+	if edit_plain == node.measure.text && node.text.rich && len(node.text.runs) > 0 {
 		config := node.config
 		face := font_face_from_handle(node.text.font)
 		if face == nil do return
 
 		scale := node.text.layout_scale
+		rich_glyphs := make([dynamic]Text_Edit_Glyph, layout_frame_allocator())
 
 		for line, line_i in node.text.lines {
-			line_start, line_end := font_line_byte_range(text, line)
+			line_start, line_end := font_line_byte_range(edit_plain, line)
 			if line_end <= line_start do continue
 
 			origin := node.text.line_origins[line_i]
@@ -1157,7 +1245,7 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 				if seg_end <= seg_start do continue
 
 				seg_line, seg_face, _, seg_scale, shape_ok := layout_rich_text_shape_segment(
-					text,
+					edit_plain,
 					seg_start,
 					seg_end,
 					run,
@@ -1171,7 +1259,7 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 					glyph_x := pen_x
 					advance := glyph.x_advance * seg_scale
 					append(
-						&edit_glyphs,
+						&rich_glyphs,
 						Text_Edit_Glyph {
 							cluster = int(glyph.cluster),
 							x0 = glyph_x,
@@ -1185,56 +1273,55 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 				}
 			}
 		}
-	} else {
+
+		if len(rich_glyphs) > 0 {
+			edit_glyphs = rich_glyphs[:]
+		}
+	} else if edit_plain == node.measure.text {
+		edit_glyphs = layout_text_build_edit_glyphs_from_lines(
+			node,
+			edit_plain,
+			node.text.lines,
+			node.text.line_origins,
+		)
+	} else if len(edit_plain) > 0 {
+		config := node.config
 		face := font_face_from_handle(node.text.font)
 		if face == nil do return
 
 		scale := node.text.layout_scale
-		ascent_scaled := face.ascent * scale
-		descent_scaled := face.descent * scale
+		wrap := text_wrap_kind(config.wrap)
+		direction := text_direction_kind(config.text_direction)
+		letter_spacing := config.letter_spacing / scale
+		word_spacing := config.word_spacing / scale
+		shape_max_w := node.text.wrap_w > 0 ? node.text.wrap_w / scale : node.text.wrap_w
+		shaped := font_shape_line_build(
+			face,
+			node.text.font.id,
+			edit_plain,
+			shape_max_w,
+			letter_spacing,
+			word_spacing,
+			config.tab_size,
+			wrap,
+			direction,
+		)
+		defer if !shaped.borrowed {
+			font_destroy_shaped_lines(shaped.lines)
+		}
 
-		for line, line_i in node.text.lines {
-			if len(line.glyphs) == 0 do continue
-
-			origin := node.text.line_origins[line_i]
-			pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
-			baseline_y := snap_logical(pos.y + ascent_scaled)
-			pen_x := pos.x
-
-			if line.direction == .RTL {
-				pen_x = pos.x + line.width * scale
-			}
-
-			for glyph in line.glyphs {
-				advance := glyph.x_advance * scale
-				glyph_x: f32
-
-				if line.direction == .RTL {
-					pen_x -= advance
-					glyph_x = pen_x
-				} else {
-					glyph_x = pen_x
-					pen_x += advance
-				}
-
-				append(
-					&edit_glyphs,
-					Text_Edit_Glyph {
-						cluster = int(glyph.cluster),
-						x0 = glyph_x,
-						x1 = glyph_x + advance,
-						line_index = line_i,
-						ascent = ascent_scaled,
-						descent = descent_scaled,
-					},
-				)
-				_ = baseline_y
-			}
+		if len(shaped.lines) > 0 {
+			edit_glyphs = layout_text_build_edit_glyphs_from_lines(
+				node,
+				edit_plain,
+				shaped.lines,
+				node.text.line_origins[:min(len(node.text.line_origins), len(shaped.lines))],
+			)
 		}
 	}
 
-	if len(edit_glyphs) > 0 {
-		node.text.edit_geometry.glyphs = edit_glyphs[:]
+	if edit_glyphs != nil {
+		node.text.edit_geometry.glyphs = edit_glyphs
 	}
 }
 
@@ -1818,10 +1905,21 @@ Attaches author text and optional max-width hint for layout-owned shaping.
 */
 layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.text = text
+	node.measure.edit_plain = text
 	node.measure.max_w = max_w
 	node.measure.runs = nil
 	node.measure.rich = false
 	node.measure.tag_diagnostics = false
+}
+
+/*
+Sets the plain string used for caret/selection geometry when it differs from measure.text.
+
+Call after layout_set_measure_text when display text (placeholder, password mask) is shaped
+for layout but edit indices refer to a different plain document.
+*/
+layout_set_edit_plain :: proc(node: ^Layout_Node, plain: string) {
+	node.measure.edit_plain = plain
 }
 
 /*
@@ -1835,6 +1933,7 @@ layout_set_measure_rich_text :: proc(
 	tag_diagnostics: bool,
 ) {
 	node.measure.text = text
+	node.measure.edit_plain = text
 	node.measure.max_w = max_w
 	node.measure.runs = runs
 	node.measure.rich = len(runs) > 0
@@ -3119,6 +3218,9 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 
 	if len(node.child_indices) > 0 {
 		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))
+	} else if layout_node_is_scrollport(node) {
+		content := layout_inner_rect(node.rect, node.border, node.padding)
+		layout_finalize_scrollport(node, content)
 	}
 }
 

@@ -130,6 +130,84 @@ layout_scrollport_skips_scrollbar_children :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_scrollport_offsets_text_leaf_content :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ov_scroll: Overflow = .SCROLL
+			glyphs := make([]Layout_Glyph_Paint, 1, context.temp_allocator)
+			glyphs[0] = {face_id = Asset_Id(0), glyph_id = 1, dst = {4, 24, 8, 12}}
+			origins := make([]Vec2, 1, context.temp_allocator)
+			origins[0] = {4, 24}
+
+			append(
+				&state.ui.layout.nodes,
+				Layout_Node {
+					ui_id = UI_Id(20),
+					kind = .TEXT_INPUT,
+					config = {
+						width = layout_len_fixed(100),
+						height = layout_len_fixed(40),
+						overflow_y = ov_scroll,
+						scroll_y = 20,
+					},
+					rect = {0, 0, 100, 40},
+					measure = {text = "line one\nline two\nline three"},
+					text = {
+						size = {80, 120},
+						glyphs = glyphs,
+						line_origins = origins,
+					},
+				},
+			)
+
+			node := &state.ui.layout.nodes[0]
+			content := layout_inner_rect(node.rect, node.border, node.padding)
+			layout_finalize_scrollport(node, content)
+
+			expect_close(t, node.max_scroll.y, 80)
+			expect_close(t, node.scroll.y, 20)
+			expect_close(t, node.text.glyphs[0].dst.y, 4)
+		},
+	)
+}
+
+@(test)
+layout_apply_scroll_delta_offsets_text_paint_geometry :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			glyphs := make([]Layout_Glyph_Paint, 1, context.temp_allocator)
+			glyphs[0] = {face_id = Asset_Id(0), glyph_id = 1, dst = {4, 24, 8, 12}}
+			origins := make([]Vec2, 1, context.temp_allocator)
+			origins[0] = {4, 24}
+
+			append(
+				&state.ui.layout.nodes,
+				Layout_Node {
+					ui_id = UI_Id(21),
+					kind = .TEXT_INPUT,
+					rect = {0, 0, 100, 40},
+					text = {
+						size = {80, 120},
+						glyphs = glyphs,
+						line_origins = origins,
+					},
+				},
+			)
+			state.ui.layout.id_to_node[UI_Id(21)] = 0
+
+			changed := layout_apply_scroll_delta(UI_Id(21), {0, 20})
+			node := &state.ui.layout.nodes[0]
+
+			testing.expect(t, changed)
+			expect_close(t, node.scroll.y, 20)
+			expect_close(t, node.text.glyphs[0].dst.y, 4)
+		},
+	)
+}
+
+@(test)
 layout_offset_subtree_moves_text_paint_geometry :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,

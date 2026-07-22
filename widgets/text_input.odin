@@ -41,10 +41,10 @@ Text_Input_Props :: struct {
 }
 
 @(private)
-text_input_theme_base :: proc(frame_state: ^Text_Input_State) -> Text_Input_Config {
+text_input_theme_base :: proc(frame_state: ^Text_Input_State) -> o.Widget_Config {
 	_ = frame_state
 
-	return Text_Input_Config {
+	return o.Widget_Config {
 		kind = .TEXT_INPUT,
 		line_height = set.F32(1.2),
 		padding = set.Padding(o.Pd_struct{x = 8, y = 6}),
@@ -57,20 +57,22 @@ text_input_theme_base :: proc(frame_state: ^Text_Input_State) -> Text_Input_Conf
 	}
 }
 
-@(private)
-text_input_refresh_merged :: proc(
-	props: Text_Input_Props,
-	frame_state: ^Text_Input_State,
-) -> Text_Input_Event {
-	event := widget_event(frame_state^)
-	base := text_input_theme_base(frame_state)
-	frame_state.config = o.resolve_widget_config(base, props.config, frame_state, event)
 
-	return widget_event(frame_state^)
+@(private)
+text_input_mask_password :: proc(text: string) -> string {
+	if len(text) == 0 do return text
+
+	b := strings.builder_make(context.temp_allocator)
+
+	for _ in 0 ..< len(text) {
+		strings.write_byte(&b, '*')
+	}
+
+	return strings.to_string(b)
 }
 
 @(private)
-text_input_display_text :: proc(
+text_input_layout_measure_text :: proc(
 	text: string,
 	password: bool,
 	placeholder: string,
@@ -79,13 +81,7 @@ text_input_display_text :: proc(
 	display := text
 
 	if password {
-		b := strings.builder_make(context.temp_allocator)
-
-		for _ in 0 ..< len(text) {
-			strings.write_rune(&b, '•')
-		}
-
-		display = strings.to_string(b)
+		display = text_input_mask_password(text)
 	}
 
 	if len(display) == 0 && len(placeholder) > 0 {
@@ -93,6 +89,15 @@ text_input_display_text :: proc(
 	}
 
 	return o.input_ime_preview(display, caret, o.state.input.ime_text)
+}
+
+@(private)
+text_input_sync_edit_state :: proc(key: string, plain: string) {
+	edit := o.widget_text_edit_get(key)
+	if edit == nil do return
+
+	edit.caret = o.text_edit_clamp_offset(plain, edit.caret)
+	edit.selection = o.text_edit_clamp_selection(plain, edit.selection)
 }
 
 Text_Input :: proc(props: Text_Input_Props) {
@@ -108,7 +113,8 @@ Text_Input :: proc(props: Text_Input_Props) {
 		is_focused  = was_focused,
 	}
 
-	event := text_input_refresh_merged(props, &frame_state)
+	event := widget_refresh_merged(props, &frame_state, text_input_theme_base)
+	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	handlers := widget_lifecycle_handlers(props, Text_Input_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
@@ -118,6 +124,16 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 	if edit_state != nil {
 		caret = edit_state.caret
+	}
+
+	text_input_sync_edit_state(key, cfg.text)
+
+	edit_opts := Text_Edit_Widget_Opts {
+		selectable = true,
+		editable   = true,
+		multiline  = cfg.multiline,
+		max_length = cfg.max_length,
+		draw_space = config.space,
 	}
 
 	if o.ui_pass() == .Layout {
@@ -130,9 +146,10 @@ Text_Input :: proc(props: Text_Input_Props) {
 		)
 
 		if ran_unmount {
-			event = text_input_refresh_merged(props, &frame_state)
+			event = widget_refresh_merged(props, &frame_state, text_input_theme_base)
 			config = frame_state.config
 			should_auto_focus = widget_should_auto_focus(config, key)
+			edit_opts.draw_space = config.space
 		}
 
 		if skip_layout do return
@@ -146,10 +163,38 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 		widget_register_tab_order(key, config.tabbable, can_interact)
 
-		display := text_input_display_text(cfg.text, cfg.password, cfg.placeholder, caret)
-		node := o.layout_push_node(layout_id, config)
-		o.layout_set_measure_text(node, display, config.max_w)
+		layout_config := config
+
+		if cfg.multiline {
+			layout_config.style.wrap = o.Text_Wrap_Kind.BALANCE
+		} else {
+			layout_config.style.wrap = o.Text_Wrap_Kind.NONE
+		}
+
+		o.widget_scroll_apply(key, props.config, &layout_config)
+		text_edit_widget_apply_layout_scroll_defaults(props.config, cfg.multiline, &layout_config)
+
+		measure_text := text_input_layout_measure_text(
+			cfg.text,
+			cfg.password,
+			cfg.placeholder,
+			caret,
+		)
+		node := o.layout_push_node(layout_id, layout_config)
+		o.layout_set_measure_text(node, measure_text, config.max_w)
+		o.layout_set_edit_plain(node, cfg.text)
 		o.layout_pop_node()
+
+		scroll_frame := Widget_Scrollport_Frame {
+			layout_id  = layout_id,
+			element_id = key,
+			parent_id  = layout_config.id != "" ? layout_config.id : key,
+			config     = layout_config,
+		}
+
+		if widget_scrollport_frame_begin(scroll_frame) {
+			widget_scrollport_frame_end(true, true)
+		}
 
 		return
 	}
@@ -172,27 +217,38 @@ Text_Input :: proc(props: Text_Input_Props) {
 		config,
 	)
 
-	scroll := o.widget_scroll_get(key)
-	config.scroll_x = scroll.x
-	config.scroll_y = scroll.y
+	scroll_entry := o.widget_scroll_ensure(key)
+	scroll_before := scroll_entry^
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key)
+	text_edit_widget_after_wheel_scroll(key, layout_id, scroll_entry, scroll_before)
+
+	config.scroll_x = scroll_entry.x
+	config.scroll_y = scroll_entry.y
 	frame_state.config = config
+
+	event, _ = widget_refresh_merged_if_interaction_changed(
+		props,
+		&frame_state,
+		text_input_theme_base,
+		style_fp,
+	)
+	config = frame_state.config
+	edit_opts.draw_space = config.space
 
 	plain := cfg.text
 	can_interact := widget_can_interact(handlers, &frame_state)
-	text_edit_widget_handle_pointer(key, layout_id, rect, scroll, plain, can_interact)
+	text_edit_widget_handle_pointer(key, layout_id, rect, scroll_entry, plain, can_interact, config, edit_opts)
 
-	edit_opts := Text_Edit_Widget_Opts {
-		selectable = true,
-		editable   = true,
-	}
+	submit := false
 
 	if frame_state.is_focused {
 		updated, changed := text_edit_widget_handle_keys(
 			key,
 			layout_id,
 			rect,
-			scroll,
+			scroll_entry,
 			plain,
+			config,
 			edit_opts,
 		)
 
@@ -201,13 +257,31 @@ Text_Input :: proc(props: Text_Input_Props) {
 		}
 
 		plain = updated
-		updated_cmd, cmd_changed := text_edit_widget_consume_commands(key, plain)
+		updated_cmd, cmd_changed := text_edit_widget_consume_commands(
+			key,
+			layout_id,
+			rect,
+			scroll_entry,
+			plain,
+			config,
+			edit_opts,
+		)
 
 		if cmd_changed && props.on_change != nil {
 			props.on_change(event, strings.clone(updated_cmd))
 		}
 
 		plain = updated_cmd
+
+		if !cfg.multiline && props.on_submit != nil {
+			enter := o.w_ctx.keys[int(o.Scancode.RETURN)]
+			kp_enter := o.w_ctx.keys[int(o.Scancode.KP_ENTER)]
+
+			if (enter.pressed && !o.shortcut_key_consumed(o.Scancode.RETURN)) ||
+			   (kp_enter.pressed && !o.shortcut_key_consumed(o.Scancode.KP_ENTER)) {
+				submit = true
+			}
+		}
 	}
 
 	background: o.RGBA
@@ -243,16 +317,54 @@ Text_Input :: proc(props: Text_Input_Props) {
 		o.Draw_Rectangle(rect, background, radius, border, border_color)
 	}
 
-	laid := o.layout_text_result(layout_id)
-	text_color, text_color_ok := o.style_color_rgba(config, &frame_state, event)
+	scroll_frame := Widget_Scrollport_Frame {
+		layout_id  = layout_id,
+		element_id = key,
+		parent_id  = config.id != "" ? config.id : key,
+		config     = config,
+		hovered    = frame_state.is_hovered,
+	}
+	scrollport_active := widget_scrollport_frame_begin(scroll_frame)
+	clipped := false
 
-	if laid != nil && text_color_ok {
-		o.font_draw_layout_text(laid, text_color, text_color, nil)
-		edit_opts.has_caret_color = true
-		edit_opts.caret_color = text_color
+	if scrollport_active && o.style_is_scrollport(config.overflow_x, config.overflow_y) {
+		clipped = o.Draw_Push_Layout_Clip(layout_id)
 	}
 
-	text_edit_widget_draw_overlay(edit_opts, key, layout_id, rect, scroll, frame_state.is_focused)
+	laid := o.layout_text_result(layout_id)
+	text_color, text_color_ok := o.style_color_rgba(config, &frame_state, event)
+	show_placeholder := len(cfg.text) == 0 && len(cfg.placeholder) > 0
+
+	if laid != nil && text_color_ok {
+		if show_placeholder {
+			placeholder_config := config
+			placeholder_config.color = o.Color.MUTED_FOREGROUND
+			placeholder_config.color_rgba_ok = false
+			placeholder_color, placeholder_ok := o.style_color_rgba(
+				placeholder_config,
+				&frame_state,
+				event,
+			)
+
+			if placeholder_ok {
+				o.font_draw_layout_text(laid, placeholder_color, placeholder_color, nil)
+			}
+		} else {
+			o.font_draw_layout_text(laid, text_color, text_color, nil)
+			edit_opts.has_caret_color = true
+			edit_opts.caret_color = text_color
+		}
+	}
+
+	text_edit_widget_draw_overlay(edit_opts, key, layout_id, rect, scroll_entry^, frame_state.is_focused)
+
+	if scrollport_active {
+		widget_scrollport_frame_end(true, true)
+	}
+
+	if clipped {
+		o.Draw_Pop_Clip()
+	}
 
 	if widget_can_interact(handlers, &frame_state) {
 		if widget_got_tab_focus(key) && props.on_focus != nil {
@@ -265,4 +377,8 @@ Text_Input :: proc(props: Text_Input_Props) {
 	}
 
 	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
+
+	if submit && props.on_submit != nil {
+		props.on_submit(event)
+	}
 }

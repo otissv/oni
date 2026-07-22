@@ -164,6 +164,7 @@ Layout_Paint_Skip :: ui_layout_paint_skip
 Layout_Hit_Skip :: ui_layout_hit_skip
 Layout_Clip_Rect :: ui_layout_clip_rect
 Scrollport_Metrics_Get :: ui_scrollport_metrics
+Layout_Apply_Scroll_Delta :: layout_apply_scroll_delta
 Draw_Push_Clip :: draw_push_clip
 Draw_Pop_Clip :: draw_pop_clip
 Draw_Push_Layout_Clip :: draw_push_layout_clip

@@ -124,7 +124,7 @@ text_widget_core :: proc(
 
 	widget_dispatch_events(props, frame_state, handlers, event, key, was_focused)
 
-	scroll := o.widget_scroll_get(key)
+	scroll_entry := o.widget_scroll_ensure(key)
 
 	rgbaColor, color_ok := o.style_color_rgba(style, frame_state, event)
 	if !color_ok do return {}
@@ -142,32 +142,52 @@ text_widget_core :: proc(
 
 	if edit_opts.selectable || edit_opts.editable {
 		can_edit := widget_can_interact(handlers, frame_state)
-		text_edit_widget_handle_pointer(key, layout_id, layout_rect, scroll, plain, can_edit)
+		opts := edit_opts
+		opts.draw_space = style.space
+		text_edit_widget_handle_pointer(
+			key,
+			layout_id,
+			layout_rect,
+			scroll_entry,
+			plain,
+			can_edit,
+			style,
+			opts,
+		)
 
-		if edit_opts.selectable && !edit_opts.editable {
+		if opts.selectable && !opts.editable {
 			text_edit_widget_handle_selectable(key, plain)
 		}
 
-		if edit_opts.editable && frame_state.is_focused {
+		if opts.editable && frame_state.is_focused {
 			updated, _ := text_edit_widget_handle_keys(
 				key,
 				layout_id,
 				layout_rect,
-				scroll,
+				scroll_entry,
 				plain,
-				edit_opts,
+				style,
+				opts,
 			)
 			plain = updated
-			updated_cmd, _ := text_edit_widget_consume_commands(key, plain)
+			updated_cmd, _ := text_edit_widget_consume_commands(
+				key,
+				layout_id,
+				layout_rect,
+				scroll_entry,
+				plain,
+				style,
+				opts,
+			)
 			plain = updated_cmd
 		}
 
 		text_edit_widget_draw_overlay(
-			edit_opts,
+			opts,
 			key,
 			layout_id,
 			layout_rect,
-			scroll,
+			scroll_entry^,
 			frame_state.is_focused,
 		)
 	}

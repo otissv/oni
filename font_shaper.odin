@@ -1324,6 +1324,27 @@ font_shape_lines_none :: proc(
 	return lines
 }
 
+@(private)
+font_make_empty_shaped_line :: proc(direction: Text_Direction_Kind) -> Shaped_Line {
+	return Shaped_Line{direction = direction}
+}
+
+@(private)
+font_shape_text_ends_with_newline :: proc(text: string) -> bool {
+	return len(text) > 0 && text[len(text) - 1] == '\n'
+}
+
+@(private)
+font_shape_append_trailing_empty_line :: proc(
+	lines: ^[dynamic]Shaped_Line,
+	text: string,
+	direction: Text_Direction_Kind,
+) {
+	if font_shape_text_ends_with_newline(text) {
+		append(lines, font_make_empty_shaped_line(direction))
+	}
+}
+
 /*
 Builds lines broken only on newline clusters.
 */
@@ -1341,13 +1362,10 @@ font_shape_lines_newlines :: proc(
 	for i in 0 ..< len(shaped) {
 		if !font_is_newline_cluster(text, shaped[i].cluster) do continue
 
-		if i > line_start {
-			append(
-				&lines,
-				font_make_shaped_line(text, shaped[line_start:i], direction, letter_spacing, word_spacing),
-			)
-		}
-
+		append(
+			&lines,
+			font_make_shaped_line(text, shaped[line_start:i], direction, letter_spacing, word_spacing),
+		)
 		line_start = i + 1
 	}
 
@@ -1356,6 +1374,8 @@ font_shape_lines_newlines :: proc(
 			&lines,
 			font_make_shaped_line(text, shaped[line_start:], direction, letter_spacing, word_spacing),
 		)
+	} else {
+		font_shape_append_trailing_empty_line(&lines, text, direction)
 	}
 
 	if len(lines) == 0 do return nil
@@ -1464,18 +1484,16 @@ font_shape_lines_soft_wrap :: proc(
 		glyph := shaped[i]
 
 		if font_is_newline_cluster(text, glyph.cluster) {
-			if i > line_start {
-				append(
-					&lines,
-					font_make_shaped_line(
-						text,
-						shaped[line_start:i],
-						direction,
-						letter_spacing,
-						word_spacing,
-					),
-				)
-			}
+			append(
+				&lines,
+				font_make_shaped_line(
+					text,
+					shaped[line_start:i],
+					direction,
+					letter_spacing,
+					word_spacing,
+				),
+			)
 			line_start = i + 1
 			line_width = 0
 			line_glyphs = 0
@@ -1525,6 +1543,8 @@ font_shape_lines_soft_wrap :: proc(
 			&lines,
 			font_make_shaped_line(text, shaped[line_start:], direction, letter_spacing, word_spacing),
 		)
+	} else {
+		font_shape_append_trailing_empty_line(&lines, text, direction)
 	}
 
 	if len(lines) == 0 do return nil

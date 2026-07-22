@@ -248,6 +248,31 @@ font_shape_line_build_newlines_hard_breaks :: proc(t: ^testing.T) {
 }
 
 @(test)
+font_shape_line_build_trailing_newline_adds_blank_line :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		shaped := font_shape_line_build(
+			face,
+			handle.id,
+			"one\n",
+			0,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.NEWLINES,
+			.LTR,
+		)
+		defer font_shape_lines_release(shaped)
+		testing.expect_value(t, len(shaped.lines), 2)
+		testing.expect(t, shaped.lines[0].width > 0)
+		testing.expect_value(t, len(shaped.lines[1].glyphs), 0)
+	})
+}
+
+@(test)
 font_shape_line_build_balance_soft_wraps_under_max_width :: proc(t: ^testing.T) {
 	with_font_fixtures(
 		t,

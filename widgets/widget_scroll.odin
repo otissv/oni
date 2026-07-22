@@ -84,6 +84,51 @@ widget_scroll_notify :: proc(scroll_x, scroll_y: f32) {
 	}
 }
 
+Widget_Scrollport_Frame :: struct {
+	layout_id:  o.UI_Id,
+	element_id: string,
+	parent_id:  string,
+	config:     o.Resolved_Widget_Config,
+	scroll_bar: Scroll_Bar_Style,
+	hovered:    bool,
+	on_scroll:  proc(scroll_x, scroll_y: f32),
+}
+
+@(private)
+widget_scrollport_frame_begin :: proc(frame: Widget_Scrollport_Frame) -> bool {
+	if !o.style_is_scrollport(frame.config.overflow_x, frame.config.overflow_y) do return false
+
+	entry := o.widget_scroll_ensure(frame.element_id)
+	if entry == nil do return false
+
+	widget_scroll_push(
+		{
+			layout_id = frame.layout_id,
+			parent_id = frame.parent_id,
+			element_id = frame.element_id,
+			overflow_x = frame.config.overflow_x,
+			overflow_y = frame.config.overflow_y,
+			scroll = entry,
+			style = frame.scroll_bar,
+			hovered = frame.hovered,
+			on_scroll = frame.on_scroll,
+		},
+	)
+
+	return true
+}
+
+@(private)
+widget_scrollport_frame_end :: proc(active: bool, emit_bars: bool) {
+	if !active do return
+
+	if emit_bars {
+		widget_emit_scroll_bars(widget_scroll_top()^)
+	}
+
+	widget_scroll_pop()
+}
+
 @(private)
 widget_scroll_bar_hot_or_dragging :: proc(bar_id: string) -> bool {
 	if bar_id == "" do return false

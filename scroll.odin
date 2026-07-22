@@ -90,22 +90,27 @@ layout_offset_subtree :: proc(node_index: int, dx, dy: f32) {
 Measures unscrolled content size from non-scrollbar children relative to content origin.
 */
 layout_measure_scroll_content :: proc(node: ^Layout_Node, content: Rect) -> Vec2 {
-	max_r := content.x
-	max_b := content.y
-	has_content := false
+	extent_w := content.w
+	extent_h := content.h
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
 		if !layout_child_is_scroll_content(child) do continue
-		has_content = true
-		max_r = max(max_r, child.rect.x + child.rect.w)
-		max_b = max(max_b, child.rect.y + child.rect.h)
+		extent_w = max(extent_w, child.rect.x + child.rect.w - content.x)
+		extent_h = max(extent_h, child.rect.y + child.rect.h - content.y)
 	}
 
-	if !has_content {
-		return {content.w, content.h}
+	if layout_node_has_text(node) && (node.text.size.x > 0 || node.text.size.y > 0) {
+		extent_w = max(extent_w, node.text.size.x)
+		extent_h = max(extent_h, node.text.size.y)
 	}
-	return {max(content.w, max_r - content.x), max(content.h, max_b - content.y)}
+
+	if node.image.active {
+		extent_w = max(extent_w, node.image.dst.x + node.image.dst.w - content.x)
+		extent_h = max(extent_h, node.image.dst.y + node.image.dst.h - content.y)
+	}
+
+	return {extent_w, extent_h}
 }
 
 /*
@@ -156,10 +161,15 @@ layout_finalize_scrollport :: proc(node: ^Layout_Node, content: Rect) {
 	)
 
 	if scroll_x == 0 && scroll_y == 0 do return
+
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
 		if !layout_child_is_scroll_content(child) do continue
 		layout_offset_subtree(child_index, -scroll_x, -scroll_y)
+	}
+
+	if layout_node_has_text(node) || node.image.active {
+		layout_offset_paint_geometry(node, -scroll_x, -scroll_y)
 	}
 }
 
@@ -300,6 +310,28 @@ scroll_apply_wheel :: proc(
 		}
 	}
 	return changed
+}
+
+/*
+Applies an incremental scroll delta to layout-owned paint geometry for the current frame.
+
+Call during draw when widget scroll changes after layout finalize so text/caret paint
+matches the updated offset without waiting for the next layout pass.
+*/
+layout_apply_scroll_delta :: proc(id: UI_Id, delta: Vec2) -> bool {
+	if state == nil || (delta.x == 0 && delta.y == 0) do return false
+
+	node_index, ok := state.ui.layout.id_to_node[id]
+	if !ok do return false
+
+	node := &state.ui.layout.nodes[node_index]
+	layout_offset_paint_geometry(node, -delta.x, -delta.y)
+	node.scroll.x += delta.x
+	node.scroll.y += delta.y
+	node.config.scroll_x = node.scroll.x
+	node.config.scroll_y = node.scroll.y
+
+	return true
 }
 
 /*
