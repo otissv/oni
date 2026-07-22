@@ -9,7 +9,8 @@ RichText widget configuration extending Widget_Config with tagged display text.
 */
 Rich_Text_Config :: struct {
 	using _: o.Widget_Config,
-	text:    string,
+	text:       string,
+	selectable: bool,
 }
 
 /*
@@ -155,5 +156,8 @@ RichText :: proc(props: Rich_Text_Props) -> o.Vec2 {
 		rich_text_prepare_layout_input,
 		rich_text_refresh_merged,
 		rich_text_refresh_merged_if_interaction_changed,
+		{
+			selectable = config.selectable,
+		},
 	)
 }

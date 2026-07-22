@@ -73,6 +73,7 @@ ui_shutdown :: proc() {
 	scroll_shutdown()
 	shortcut_shutdown()
 	widget_ctx_shutdown()
+	input_shutdown()
 
 	state.ui.frame = 0
 	state.ui.pass = .Layout

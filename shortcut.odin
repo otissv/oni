@@ -1072,6 +1072,7 @@ shortcut_install_defaults :: proc() {
 	if state.shortcuts.defaults_installed do return
 
 	shortcut_defaults()
+	text_edit_bind_default_shortcuts()
 
 	// app.quit action is registered; Escape is not bound by default.
 	state.shortcuts.defaults_installed = true
@@ -1097,6 +1098,7 @@ shortcut_register_builtin_actions :: proc() {
 	shortcut_register_action(SHORTCUT_APP_QUIT, shortcut_action_app_quit)
 	shortcut_register_action(SHORTCUT_HOST_RELOAD, shortcut_action_host_reload)
 	shortcut_register_action(SHORTCUT_HOST_RESTART, shortcut_action_host_restart)
+	text_edit_register_shortcut_actions()
 
 	shortcut_set_action_label(SHORTCUT_VIEW_ZOOM_IN, "Zoom In")
 	shortcut_set_action_label(SHORTCUT_VIEW_ZOOM_OUT, "Zoom Out")

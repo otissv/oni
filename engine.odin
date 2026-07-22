@@ -97,6 +97,7 @@ input_clear_keyboard_mouse :: proc() {
 	state.input.mouse_middle = false
 	state.input.modifiers = {}
 	clear(&state.input.text_input)
+	input_clear_ime()
 }
 
 /*
@@ -226,6 +227,13 @@ poll_events :: proc() {
 				append_elem_string(&state.input.text_input, string(event.text.text))
 			}
 
+		case .TEXT_EDITING:
+			if event.edit.text != nil {
+				input_set_ime_text(string(event.edit.text))
+				state.input.ime_cursor = int(event.edit.start)
+				state.input.ime_length = int(event.edit.length)
+			}
+
 		case .MOUSE_MOTION:
 			prev_x := state.input.mouse_x
 			prev_y := state.input.mouse_y
@@ -349,6 +357,7 @@ reset_input_state :: proc() {
 	gamepad_instance_id := state.gamepad_instance_id
 
 	delete(state.input.text_input)
+	input_clear_ime()
 	state.input = {}
 	state.force_reload = false
 	state.force_restart = false

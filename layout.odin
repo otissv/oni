@@ -57,6 +57,7 @@ Layout_Text :: struct {
 	rich:                bool,
 	tag_diagnostics:     bool,
 	lines_borrowed:      bool,
+	edit_geometry:       Text_Edit_Geometry,
 }
 
 /*
@@ -237,6 +238,7 @@ layout_release_node_children :: proc(layout: ^Layout_State) {
 			}
 			delete(node.text.line_origins)
 			delete(node.text.glyphs)
+			delete(node.text.edit_geometry.glyphs)
 			delete(node.text.decoration_strokes)
 		}
 		node.child_indices = {}
@@ -620,6 +622,24 @@ layout_node_has_text :: proc(node: ^Layout_Node) -> bool {
 	return node != nil && len(node.measure.text) > 0
 }
 
+@(private)
+layout_text_horizontal_insets :: proc(node: ^Layout_Node) -> f32 {
+	return node.padding.l + node.padding.r + node.border.l + node.border.r
+}
+
+@(private)
+layout_text_vertical_insets :: proc(node: ^Layout_Node) -> f32 {
+	return node.padding.t + node.padding.b + node.border.t + node.border.b
+}
+
+@(private)
+layout_text_content_origin :: proc(node: ^Layout_Node) -> Vec2 {
+	return {
+		node.border.l + node.padding.l,
+		node.border.t + node.padding.t,
+	}
+}
+
 /*
 Frees shaped lines, origins, glyph quads, and decoration strokes owned by a layout node.
 
@@ -633,6 +653,7 @@ layout_text_release :: proc(node: ^Layout_Node) {
 		}
 		delete(node.text.line_origins)
 		delete(node.text.glyphs)
+		delete(node.text.edit_geometry.glyphs)
 		delete(node.text.decoration_strokes)
 	}
 	node.text = {}
@@ -644,12 +665,16 @@ Resolves the wrap width layout owns for text.
 Priority: author max_w, fixed width, then the available layout width.
 */
 layout_text_resolve_wrap_w :: proc(node: ^Layout_Node, available_w: f32) -> f32 {
+	inset_w := layout_text_horizontal_insets(node)
+	inner_w := max(0, available_w - inset_w)
+
 	if node.measure.max_w > 0 do return node.measure.max_w
 	if node.config.width.kind == .FIXED && node.config.width.value > 0 {
-		return node.config.width.value
+		return max(0, node.config.width.value - inset_w)
 	}
 	if node.config.max_w > 0 do return node.config.max_w
-	return available_w
+
+	return inner_w
 }
 
 /*
@@ -658,10 +683,12 @@ Returns whether the text node's wrap width is definite before layout solve.
 When true, wrap_w is the width used for soft-wrap (BALANCE) estimates.
 */
 layout_text_wrap_width_known :: proc(node: ^Layout_Node) -> (wrap_w: f32, known: bool) {
+	inset_w := layout_text_horizontal_insets(node)
+
 	if node.measure.max_w > 0 do return node.measure.max_w, true
 
 	if node.config.width.kind == .FIXED && node.config.width.value > 0 {
-		return node.config.width.value, true
+		return max(0, node.config.width.value - inset_w), true
 	}
 
 	if node.config.max_w > 0 do return node.config.max_w, true
@@ -866,19 +893,21 @@ layout_text_position_lines :: proc(node: ^Layout_Node) {
 	face := font_face_from_handle(node.text.font)
 	lh := font_text_line_height(face, node.text.line_height, node.text.layout_scale)
 	align := text_align_kind(node.config.align)
-	box_w := node.rect.w
+	content_origin := layout_text_content_origin(node)
+	inset_w := layout_text_horizontal_insets(node)
+	box_w := max(0, node.rect.w - inset_w)
 
-	y: f32
+	y := content_origin.y
 	for line, i in node.text.lines {
 		line_w := line.width * node.text.layout_scale
 		x: f32
 		switch align {
 		case .LEFT:
-			x = 0
+			x = content_origin.x
 		case .CENTER:
-			x = (box_w - line_w) * 0.5
+			x = content_origin.x + (box_w - line_w) * 0.5
 		case .RIGHT:
-			x = box_w - line_w
+			x = content_origin.x + box_w - line_w
 		}
 		origins[i] = {x, y}
 		y += lh
@@ -1086,6 +1115,127 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 	if len(glyphs) == 0 do return
 	node.text.glyphs = glyphs[:]
+}
+
+/*
+Builds caret/selection geometry aligned with glyph paint pen positions.
+*/
+layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
+	node.text.edit_geometry = {}
+	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
+
+	text := node.measure.text
+	node.text.edit_geometry.plain = text
+	node.text.edit_geometry.rich = node.text.rich
+	node.text.edit_geometry.line_height = node.text.line_height
+	node.text.edit_geometry.line_origins = node.text.line_origins
+
+	edit_glyphs := make([dynamic]Text_Edit_Glyph, layout_frame_allocator())
+
+	if node.text.rich && len(node.text.runs) > 0 {
+		config := node.config
+		face := font_face_from_handle(node.text.font)
+		if face == nil do return
+
+		scale := node.text.layout_scale
+
+		for line, line_i in node.text.lines {
+			line_start, line_end := font_line_byte_range(text, line)
+			if line_end <= line_start do continue
+
+			origin := node.text.line_origins[line_i]
+			pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+			pen_x := pos.x
+
+			for run in node.text.runs {
+				if run.end <= line_start do continue
+
+				if run.start >= line_end do break
+
+				seg_start := max(run.start, line_start)
+				seg_end := min(run.end, line_end)
+				if seg_end <= seg_start do continue
+
+				seg_line, seg_face, _, seg_scale, shape_ok := layout_rich_text_shape_segment(
+					text,
+					seg_start,
+					seg_end,
+					run,
+					config,
+					scale,
+				)
+
+				if !shape_ok do continue
+
+				for glyph in seg_line.glyphs {
+					glyph_x := pen_x
+					advance := glyph.x_advance * seg_scale
+					append(
+						&edit_glyphs,
+						Text_Edit_Glyph {
+							cluster = int(glyph.cluster),
+							x0 = glyph_x,
+							x1 = glyph_x + advance,
+							line_index = line_i,
+							ascent = seg_face.ascent * seg_scale,
+							descent = seg_face.descent * seg_scale,
+						},
+					)
+					pen_x += advance
+				}
+			}
+		}
+	} else {
+		face := font_face_from_handle(node.text.font)
+		if face == nil do return
+
+		scale := node.text.layout_scale
+		ascent_scaled := face.ascent * scale
+		descent_scaled := face.descent * scale
+
+		for line, line_i in node.text.lines {
+			if len(line.glyphs) == 0 do continue
+
+			origin := node.text.line_origins[line_i]
+			pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
+			baseline_y := snap_logical(pos.y + ascent_scaled)
+			pen_x := pos.x
+
+			if line.direction == .RTL {
+				pen_x = pos.x + line.width * scale
+			}
+
+			for glyph in line.glyphs {
+				advance := glyph.x_advance * scale
+				glyph_x: f32
+
+				if line.direction == .RTL {
+					pen_x -= advance
+					glyph_x = pen_x
+				} else {
+					glyph_x = pen_x
+					pen_x += advance
+				}
+
+				append(
+					&edit_glyphs,
+					Text_Edit_Glyph {
+						cluster = int(glyph.cluster),
+						x0 = glyph_x,
+						x1 = glyph_x + advance,
+						line_index = line_i,
+						ascent = ascent_scaled,
+						descent = descent_scaled,
+					},
+				)
+				_ = baseline_y
+			}
+		}
+	}
+
+	if len(edit_glyphs) > 0 {
+		node.text.edit_geometry.glyphs = edit_glyphs[:]
+	}
 }
 
 /*
@@ -1308,12 +1458,14 @@ layout_finalize_text_node :: proc(node: ^Layout_Node) {
 	layout_text_build(node, wrap_w)
 
 	if !length_is_definite(node.config.height) && node.text.size.y > 0 {
-		node.rect.h = layout_clamp_axis(node.text.size.y, node.config.min_h, node.config.max_h)
+		inset_h := layout_text_vertical_insets(node)
+		node.rect.h = layout_clamp_axis(node.text.size.y + inset_h, node.config.min_h, node.config.max_h)
 	}
 
 	layout_text_position_lines(node)
 	layout_text_position_glyphs(node)
 	layout_text_position_decorations(node)
+	layout_text_build_edit_geometry(node)
 }
 
 /*
@@ -1368,6 +1520,17 @@ Finalizes all layout-owned paint geometry for a node after its rect is assigned.
 layout_finalize_node :: proc(node: ^Layout_Node) {
 	layout_finalize_text_node(node)
 	layout_finalize_image_node(node)
+}
+
+/*
+Returns layout-built edit geometry for a UI id after the layout pass.
+*/
+layout_text_edit_geometry :: proc(id: UI_Id) -> ^Text_Edit_Geometry {
+	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
+		node := &state.ui.layout.nodes[node_index]
+		if len(node.text.edit_geometry.glyphs) > 0 do return &node.text.edit_geometry
+	}
+	return nil
 }
 
 /*
@@ -1426,7 +1589,11 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 
 	if layout_node_has_text(node) {
 		available_w := ui_style_current().content_w
-		size = layout_text_estimate_size(node, available_w)
+		inset_w := layout_text_horizontal_insets(node)
+		inset_h := layout_text_vertical_insets(node)
+		size = layout_text_estimate_size(node, max(0, available_w - inset_w))
+		size.x += inset_w
+		size.y += inset_h
 	} else {
 		width := resolved_w
 		height := resolved_h

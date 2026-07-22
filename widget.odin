@@ -126,6 +126,52 @@ widget_scroll_map_clear :: proc() {
 	w_ctx.scroll_offsets = nil
 }
 
+widget_text_edit_map_clear :: proc() {
+	if w_ctx == nil || w_ctx.text_edit_states == nil do return
+
+	for key, &state in w_ctx.text_edit_states {
+		text_edit_undo_clear(&state.undo)
+		widget_release_key(key)
+	}
+
+	delete(w_ctx.text_edit_states)
+	w_ctx.text_edit_states = nil
+}
+
+widget_text_edit_remove :: proc(key: string) {
+	if w_ctx == nil || w_ctx.text_edit_states == nil || key == "" do return
+
+	if state, ok := w_ctx.text_edit_states[key]; ok {
+		text_edit_undo_clear(&state.undo)
+		delete_key(&w_ctx.text_edit_states, key)
+		widget_release_key(key)
+	}
+}
+
+widget_text_edit_ensure :: proc(key: string) -> ^Text_Edit_State {
+	if w_ctx == nil || key == "" do return nil
+
+	if w_ctx.text_edit_states == nil {
+		w_ctx.text_edit_states = make(map[string]Text_Edit_State)
+	}
+
+	if _, exists := w_ctx.text_edit_states[key]; !exists {
+		state := Text_Edit_State{}
+		text_edit_undo_stack_init(&state.undo)
+		w_ctx.text_edit_states[widget_retain_key(key)] = state
+	}
+
+	return &w_ctx.text_edit_states[key]
+}
+
+widget_text_edit_get :: proc(key: string) -> ^Text_Edit_State {
+	if w_ctx == nil || w_ctx.text_edit_states == nil || key == "" do return nil
+
+	if _, ok := w_ctx.text_edit_states[key]; !ok do return nil
+
+	return &w_ctx.text_edit_states[key]
+}
+
 /*
 Returns whether an author-time scroll field is set (including explicit 0).
 */
@@ -297,6 +343,18 @@ widget_prune_element_maps :: proc() {
 			delete_key(&w_ctx.scroll_auto_reveal, key)
 		}
 	}
+
+	if w_ctx.text_edit_states != nil {
+		remove_keys := make([dynamic]string, context.temp_allocator)
+		for key in w_ctx.text_edit_states {
+			if !element_key_is_active(key) {
+				append(&remove_keys, key)
+			}
+		}
+		for key in remove_keys {
+			widget_text_edit_remove(key)
+		}
+	}
 }
 
 /*
@@ -319,6 +377,7 @@ widget_ctx_shutdown :: proc() {
 	widget_map_clear_owned(&w_ctx.element_pointer_down)
 	widget_scroll_map_clear()
 	widget_scroll_auto_reveal_clear()
+	widget_text_edit_map_clear()
 
 	if w_ctx.focused_id_owned {
 		widget_release_key(w_ctx.focused_id)

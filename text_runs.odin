@@ -1,7 +1,9 @@
 package oni
 
+import "core:fmt"
 import "core:mem"
 import "core:strings"
+import "core:unicode/utf8"
 
 /*
 Rich-text override keys aligned with Widget_Config style field names.
@@ -652,4 +654,130 @@ text_run_resolve_opacity :: proc(run: Layout_Text_Run, base: f32) -> f32 {
 	}
 
 	return base
+}
+
+@(private)
+text_runs_escape_literal :: proc(b: ^strings.Builder, text: string) {
+	for i := 0; i < len(text); {
+		if text[i] == '\\' && i + 1 < len(text) && text[i + 1] == '{' {
+			strings.write_string(b, "\\{")
+			i += 2
+
+			continue
+		}
+
+		if text[i] == '{' {
+			strings.write_string(b, "\\{")
+			i += 1
+
+			continue
+		}
+
+		_, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+		strings.write_string(b, text[i:i + w])
+		i += w
+	}
+}
+
+@(private)
+text_run_color_tag_name :: proc(color: Color) -> string {
+	#partial switch color {
+	case .FOREGROUND:
+		return "foreground"
+	case .BACKGROUND:
+		return "background"
+	case .MUTED:
+		return "muted"
+	case .MUTED_FOREGROUND:
+		return "muted_foreground"
+	case .ACCENT:
+		return "accent"
+	case .ACCENT_FOREGROUND:
+		return "accent_foreground"
+	case .PRIMARY:
+		return "primary"
+	case .PRIMARY_FOREGROUND:
+		return "primary_foreground"
+	case .SECONDARY:
+		return "secondary"
+	case .SECONDARY_FOREGROUND:
+		return "secondary_foreground"
+	case .DESTRUCTIVE:
+		return "destructive"
+	case .DESTRUCTIVE_FOREGROUND:
+		return "destructive_foreground"
+	case .SUCCESS:
+		return "success"
+	case .SUCCESS_FOREGROUND:
+		return "success_foreground"
+	case .WARNING:
+		return "warning"
+	case .WARNING_FOREGROUND:
+		return "warning_foreground"
+	case .INFO:
+		return "info"
+	case .INFO_FOREGROUND:
+		return "info_foreground"
+	case .BORDER:
+		return "border"
+	case .CARD:
+		return "card"
+	case .CARD_FOREGROUND:
+		return "card_foreground"
+	case:
+		return "foreground"
+	}
+}
+
+@(private)
+text_runs_write_style_open :: proc(b: ^strings.Builder, style: Text_Run_Style) {
+	if .color in style.fields {
+		strings.write_string(
+			b,
+			fmt.tprintf("{c:%s}", text_run_color_tag_name(style.color)),
+		)
+	}
+	if .font_weight in style.fields && style.font_weight == .Bold {
+		strings.write_string(b, "{b}")
+	}
+	if .font_style in style.fields && style.font_style == .ITALIC {
+		strings.write_string(b, "{i}")
+	}
+	if .text_decoration in style.fields && .UNDERLINE in style.text_decoration {
+		strings.write_string(b, "{u}")
+	}
+}
+
+@(private)
+text_runs_write_style_close :: proc(b: ^strings.Builder, style: Text_Run_Style) {
+	if .text_decoration in style.fields && .UNDERLINE in style.text_decoration {
+		strings.write_string(b, "{/u}")
+	}
+	if .font_style in style.fields && style.font_style == .ITALIC {
+		strings.write_string(b, "{/i}")
+	}
+	if .font_weight in style.fields && style.font_weight == .Bold {
+		strings.write_string(b, "{/b}")
+	}
+	if .color in style.fields {
+		strings.write_string(b, "{/c}")
+	}
+}
+
+/*
+Serializes styled runs into tagged author text.
+*/
+text_runs_to_tagged :: proc(runs: []Text_Run, allocator := context.allocator) -> string {
+	b := strings.builder_make(allocator)
+
+	for run in runs {
+		if len(run.text) == 0 do continue
+
+		text_runs_write_style_open(&b, run.style)
+		text_runs_escape_literal(&b, run.text)
+		text_runs_write_style_close(&b, run.style)
+	}
+
+	return strings.to_string(b)
 }

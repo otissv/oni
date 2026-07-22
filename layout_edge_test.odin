@@ -392,7 +392,8 @@ layout_text_auto_height_and_paint_from_shaped_text :: proc(t: ^testing.T) {
 			layout_test_attach_stub_text(&node, font, lines, 100, font_size = 16, line_height_mult = 1.5)
 
 			if !length_is_definite(node.config.height) && node.text.size.y > 0 {
-				node.rect.h = layout_clamp_axis(node.text.size.y, node.config.min_h, node.config.max_h)
+				inset_h := layout_text_vertical_insets(&node)
+				node.rect.h = layout_clamp_axis(node.text.size.y + inset_h, node.config.min_h, node.config.max_h)
 			}
 
 			layout_text_position_lines(&node)
@@ -404,6 +405,57 @@ layout_text_auto_height_and_paint_from_shaped_text :: proc(t: ^testing.T) {
 			testing.expect(t, len(node.text.glyphs) == 2)
 			testing.expect(t, len(node.text.decoration_strokes) >= 1)
 			layout_text_release(&node)
+		},
+	)
+}
+
+@(test)
+layout_finalize_text_node_preserves_vertical_padding :: proc(t: ^testing.T) {
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+
+			if !layout_test_font_fixtures_available() {
+				testing.expectf(
+					t,
+					false,
+					"missing font fixtures; expected %s (run from repo root)",
+					LAYOUT_TEST_INTER_FONT,
+				)
+
+				return
+			}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := layout_test_register_inter_font()
+			testing.expect(t, inter_ok)
+
+			node := Layout_Node {
+				rect = {0, 0, 120, 0},
+				padding = {t = 6, b = 6, l = 8, r = 8},
+				measure = {text = "hello"},
+				config = {
+					font = inter,
+					font_size = 16,
+					line_height = 1.5,
+					wrap = Text_Wrap_Kind.NONE,
+					text_direction = Text_Direction_Kind.LTR,
+					align = Text_Align_Kind.LEFT,
+					space = .SCREEN,
+					text_decoration = Text_Decoration_Lines{},
+					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+				},
+			}
+
+			layout_finalize_text_node(&node)
+			defer layout_text_release(&node)
+
+			expect_close(t, node.text.size.y, 24)
+			expect_close(t, node.rect.h, 36) // text + top/bottom padding
+			expect_close(t, node.text.line_origins[0].y, 6)
 		},
 	)
 }

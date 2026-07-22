@@ -9,7 +9,8 @@ Text widget configuration extending Widget_Config with display text.
 */
 Text_Config :: struct {
 	using _: o.Widget_Config,
-	text:    string,
+	text:      string,
+	selectable: bool,
 }
 
 /*
@@ -136,5 +137,8 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		text_prepare_layout_input,
 		text_refresh_merged,
 		text_refresh_merged_if_interaction_changed,
+		{
+			selectable = config.selectable,
+		},
 	)
 }

@@ -23,6 +23,7 @@ text_widget_core :: proc(
 		o.Widget_Event(S),
 		u8,
 	),
+	edit_opts: Text_Edit_Widget_Opts = {},
 ) -> o.Vec2 {
 	config := props.config
 	key := o.element_key(config.id)
@@ -123,6 +124,8 @@ text_widget_core :: proc(
 
 	widget_dispatch_events(props, frame_state, handlers, event, key, was_focused)
 
+	scroll := o.widget_scroll_get(key)
+
 	rgbaColor, color_ok := o.style_color_rgba(style, frame_state, event)
 	if !color_ok do return {}
 
@@ -130,6 +133,44 @@ text_widget_core :: proc(
 
 	laid := o.layout_text_result(layout_id)
 	if laid == nil do return {}
+
+	plain := ""
+
+	if geo := o.layout_text_edit_geometry(layout_id); geo != nil {
+		plain = geo.plain
+	}
+
+	if edit_opts.selectable || edit_opts.editable {
+		can_edit := widget_can_interact(handlers, frame_state)
+		text_edit_widget_handle_pointer(key, layout_id, layout_rect, scroll, plain, can_edit)
+
+		if edit_opts.selectable && !edit_opts.editable {
+			text_edit_widget_handle_selectable(key, plain)
+		}
+
+		if edit_opts.editable && frame_state.is_focused {
+			updated, _ := text_edit_widget_handle_keys(
+				key,
+				layout_id,
+				layout_rect,
+				scroll,
+				plain,
+				edit_opts,
+			)
+			plain = updated
+			updated_cmd, _ := text_edit_widget_consume_commands(key, plain)
+			plain = updated_cmd
+		}
+
+		text_edit_widget_draw_overlay(
+			edit_opts,
+			key,
+			layout_id,
+			layout_rect,
+			scroll,
+			frame_state.is_focused,
+		)
+	}
 
 	deco_color := rgbaColor
 	#partial switch c in style.text_decoration_color {

@@ -198,6 +198,8 @@ Pointer_Events :: proc(
 
 Accepts_Text_Input :: proc(value: bool = true) -> bool {return value}
 
+Selectable :: proc(value: bool = true) -> bool {return value}
+
 Right :: F32
 
 Bottom :: F32

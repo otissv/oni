@@ -146,6 +146,16 @@ Shortcut_Save_Bindings :: shortcut_save_bindings
 Shortcut_Load_Bindings :: shortcut_load_bindings
 Shortcut_Load_Bindings_Ex :: shortcut_load_bindings_ex
 Shortcut_Process :: shortcut_process
+Clipboard_Get_Text :: clipboard_get_text
+Clipboard_Set_Text :: clipboard_set_text
+Input_Take_Text_Input :: input_take_text_input
+Input_Ime_Preview :: input_ime_preview
+Layout_Text_Edit_Geometry :: layout_text_edit_geometry
+Text_Edit_Consume_Command :: text_edit_consume_command
+Text_Document_From_Tagged :: text_document_from_tagged
+Text_Document_To_Tagged :: text_document_to_tagged
+Text_Document_Free :: text_document_free_runs
+
 Shortcut_Install_Defaults :: shortcut_install_defaults
 Shortcut_Rebind_Builtin_Actions :: shortcut_rebind_builtin_actions
 

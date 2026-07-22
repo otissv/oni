@@ -537,11 +537,17 @@ widget_ctx_shutdown_releases_maps :: proc(t: ^testing.T) {
 			_, _ = consume_hover_transition("a", true)
 			_ = consume_pointer_click("a", true, true, false)
 
+			key := element_key("edit-field")
+			edit := widget_text_edit_ensure(key)
+			testing.expect(t, edit != nil)
+			text_edit_undo_push(&edit.undo, "undo", 4, {}, 1)
+
 			widget_ctx_shutdown()
 			testing.expect(t, w_ctx.tab_order == nil)
 			testing.expect(t, w_ctx.static_ids == nil)
 			testing.expect(t, w_ctx.element_was_hovered == nil)
 			testing.expect(t, w_ctx.element_pointer_down == nil)
+			testing.expect(t, w_ctx.text_edit_states == nil)
 			testing.expect_value(t, w_ctx.focused_id, "")
 
 			// Restore maps so with_ui_env defer can shut down cleanly.

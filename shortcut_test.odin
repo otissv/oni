@@ -680,3 +680,19 @@ shortcut_config_overrides_builtin_trigger :: proc(t: ^testing.T) {
 		},
 	)
 }
+
+@(test)
+shortcut_edit_actions_set_text_edit_command :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			text_edit_register_shortcut_actions()
+
+			text_edit_action_copy(nil)
+			testing.expect_value(t, text_edit_consume_command(), Text_Edit_Command.COPY)
+
+			text_edit_action_paste(nil)
+			testing.expect_value(t, text_edit_consume_command(), Text_Edit_Command.PASTE)
+		},
+	)
+}

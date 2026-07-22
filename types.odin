@@ -88,6 +88,62 @@ Widget_Context :: struct {
 	pointer_hit_ui_id:           UI_Id,
 	pointer_hit_valid:           bool,
 	pointer_propagation_stopped: bool,
+	text_edit_states:            map[string]Text_Edit_State,
+	text_edit_command:           Text_Edit_Command,
+}
+
+Text_Selection :: struct {
+	anchor, head: int,
+}
+
+Text_Edit_Command :: enum {
+	NONE,
+	SELECT_ALL,
+	COPY,
+	CUT,
+	PASTE,
+	UNDO,
+}
+
+TEXT_UNDO_STACK_LIMIT :: 64
+
+Text_Undo_Entry :: struct {
+	text:      string,
+	caret:     int,
+	selection: Text_Selection,
+}
+
+Text_Undo_Stack :: struct {
+	entries:      [dynamic]Text_Undo_Entry,
+	limit:        int,
+	pushed_frame: u64,
+}
+
+Text_Edit_State :: struct {
+	caret:           int,
+	selection:       Text_Selection,
+	drag_active:     bool,
+	blink_phase:     f32,
+	last_click_time: f64,
+	last_click_pos:  Vec2,
+	click_count:     int,
+	undo:            Text_Undo_Stack,
+}
+
+Text_Edit_Glyph :: struct {
+	cluster:    int,
+	x0, x1:     f32,
+	line_index: int,
+	ascent:     f32,
+	descent:    f32,
+}
+
+Text_Edit_Geometry :: struct {
+	plain:        string,
+	rich:         bool,
+	line_origins: []Vec2,
+	line_height:  f32,
+	glyphs:       []Text_Edit_Glyph,
 }
 
 /*
@@ -142,6 +198,8 @@ Widget_Kind :: enum {
 	RECT,
 	TEXT,
 	RICH_TEXT,
+	TEXT_INPUT,
+	RICH_TEXT_INPUT,
 	BUTTON,
 	TABLE,
 	TABLE_CAPTION,
@@ -1094,6 +1152,9 @@ Input_State :: struct {
 	mouse_wheel_x, mouse_wheel_y:          f32,
 	keys_down:                             [KEY_COUNT]bool,
 	text_input:                            [dynamic]u8,
+	ime_text:                              string,
+	ime_cursor:                            int,
+	ime_length:                            int,
 	modifiers:                             Input_Modifiers,
 	gamepad:                               Gamepad_Input,
 }
