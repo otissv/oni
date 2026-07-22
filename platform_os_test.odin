@@ -1,10 +1,14 @@
 package oni
 
+import "core:sync"
 import "core:testing"
 import sdl "vendor:sdl3"
 
 @(test)
 platform_os_clipboard_round_trip :: proc(t: ^testing.T) {
+	sync.mutex_lock(&test_global_state_guard)
+	defer sync.mutex_unlock(&test_global_state_guard)
+
 	if !sdl.Init({.VIDEO}) {
 		testing.expectf(t, false, "SDL_Init failed: %v", sdl.GetError())
 		return

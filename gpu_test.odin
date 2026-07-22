@@ -932,6 +932,9 @@ gpu_reload_is_safe_without_prior_init :: proc(t: ^testing.T) {
 
 @(test)
 clear_test_hooks_resets_gpu_hooks :: proc(t: ^testing.T) {
+	sync.mutex_lock(&test_global_state_guard)
+	defer sync.mutex_unlock(&test_global_state_guard)
+
 	test_hook_gpu_fail_vert_shader = true
 	test_hook_gpu_fail_frag_shader = true
 	test_hook_gpu_fail_pipeline = true
