@@ -66,6 +66,12 @@ text_document_from_tagged :: proc(tagged: string, allocator := context.allocator
 
 		delete(parsed.runs)
 
+		if len(parsed.plain) > 0 {
+			delete(parsed.plain)
+		}
+
+		delete(parsed.layout_runs)
+
 		for diagnostic in parsed.diagnostics {
 			delete(diagnostic.message)
 		}

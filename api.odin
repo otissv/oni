@@ -58,6 +58,8 @@ Draw_Texture_Fitted :: draw_texture_fitted
 Draw_Atlas :: draw_atlas_region
 Draw_Push_Opacity :: draw_push_opacity
 Draw_Pop_Opacity :: draw_pop_opacity
+Draw_Push_Space :: draw_push_space
+Draw_Pop_Space :: draw_pop_space
 Draw_Effective_Opacity :: draw_effective_opacity
 
 Begin_Artboard :: begin_artboard
@@ -150,6 +152,8 @@ Clipboard_Get_Text :: clipboard_get_text
 Clipboard_Set_Text :: clipboard_set_text
 Input_Take_Text_Input :: input_take_text_input
 Input_Ime_Preview :: input_ime_preview
+Input_Ime_Active :: input_ime_active
+Input_Clear_Ime :: input_clear_ime
 Layout_Text_Edit_Geometry :: layout_text_edit_geometry
 Text_Edit_Consume_Command :: text_edit_consume_command
 Text_Document_From_Tagged :: text_document_from_tagged

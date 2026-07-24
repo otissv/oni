@@ -693,6 +693,12 @@ shortcut_edit_actions_set_text_edit_command :: proc(t: ^testing.T) {
 
 			text_edit_action_paste(nil)
 			testing.expect_value(t, text_edit_consume_command(), Text_Edit_Command.PASTE)
+
+			text_edit_action_undo(nil)
+			testing.expect_value(t, text_edit_consume_command(), Text_Edit_Command.UNDO)
+
+			text_edit_action_redo(nil)
+			testing.expect_value(t, text_edit_consume_command(), Text_Edit_Command.REDO)
 		},
 	)
 }

@@ -131,6 +131,7 @@ widget_text_edit_map_clear :: proc() {
 
 	for key, &state in w_ctx.text_edit_states {
 		text_edit_undo_clear(&state.undo)
+		text_edit_undo_clear(&state.redo)
 		widget_release_key(key)
 	}
 
@@ -143,6 +144,7 @@ widget_text_edit_remove :: proc(key: string) {
 
 	if state, ok := w_ctx.text_edit_states[key]; ok {
 		text_edit_undo_clear(&state.undo)
+		text_edit_undo_clear(&state.redo)
 		delete_key(&w_ctx.text_edit_states, key)
 		widget_release_key(key)
 	}
@@ -158,6 +160,7 @@ widget_text_edit_ensure :: proc(key: string) -> ^Text_Edit_State {
 	if _, exists := w_ctx.text_edit_states[key]; !exists {
 		state := Text_Edit_State{}
 		text_edit_undo_stack_init(&state.undo)
+		text_edit_undo_stack_init(&state.redo)
 		w_ctx.text_edit_states[widget_retain_key(key)] = state
 	}
 
@@ -170,6 +173,52 @@ widget_text_edit_get :: proc(key: string) -> ^Text_Edit_State {
 	if _, ok := w_ctx.text_edit_states[key]; !ok do return nil
 
 	return &w_ctx.text_edit_states[key]
+}
+
+/*
+Returns the caret byte offset for a text-edit widget, or 0 when missing.
+*/
+widget_text_edit_caret :: proc(key: string) -> int {
+	edit := widget_text_edit_get(key)
+	if edit == nil do return 0
+
+	return edit.caret
+}
+
+/*
+Returns the selection for a text-edit widget, or {} when missing.
+*/
+widget_text_edit_selection :: proc(key: string) -> Text_Selection {
+	edit := widget_text_edit_get(key)
+	if edit == nil do return {}
+
+	return edit.selection
+}
+
+/*
+Sets the caret byte offset, clamped to `plain`. Clears the selection to a caret.
+*/
+widget_text_edit_set_caret :: proc(key: string, plain: string, caret: int) {
+	edit := widget_text_edit_ensure(key)
+	if edit == nil do return
+
+	edit.caret = text_edit_clamp_offset(plain, caret)
+	edit.selection = {edit.caret, edit.caret}
+	edit.has_preferred_column = false
+	text_edit_reset_blink(edit)
+}
+
+/*
+Sets caret and selection, clamped to `plain`. Caret follows selection head.
+*/
+widget_text_edit_set_selection :: proc(key: string, plain: string, sel: Text_Selection) {
+	edit := widget_text_edit_ensure(key)
+	if edit == nil do return
+
+	edit.selection = text_edit_clamp_selection(plain, sel)
+	edit.caret = edit.selection.head
+	edit.has_preferred_column = false
+	text_edit_reset_blink(edit)
 }
 
 /*
@@ -539,6 +588,7 @@ Clears per-frame pressed and released flags on a keyboard key state.
 clear_key_transients :: proc(key: ^Widget_Mouse_Key_State) {
 	key.pressed = false
 	key.released = false
+	key.repeat = false
 }
 
 /*
@@ -556,14 +606,22 @@ sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
 }
 
 /*
-Updates keyboard key down state and sets pressed/released edge flags.
+Updates keyboard key down state and sets pressed/released/repeat edge flags.
+
+Repeat edges never set `pressed`, so global shortcuts stay press-once.
 */
 @(private)
-sync_widget_key :: proc(key: ^Widget_Mouse_Key_State, is_down: bool) {
+sync_widget_key :: proc(key: ^Widget_Mouse_Key_State, is_down: bool, is_repeat := false) {
+	key.repeat = is_repeat
+
 	if is_down {
-		if !key.down do key.pressed = true
+		if !key.down && !is_repeat {
+			key.pressed = true
+		}
 	} else {
-		if key.down do key.released = true
+		if key.down {
+			key.released = true
+		}
 	}
 
 	key.down = is_down
@@ -591,7 +649,11 @@ sync_widget_input :: proc() {
 	sync_widget_button(&w_ctx.middle_mouse, state.input.mouse_middle)
 
 	for scancode in 0 ..< KEY_COUNT {
-		sync_widget_key(&w_ctx.keys[scancode], state.input.keys_down[scancode])
+		sync_widget_key(
+			&w_ctx.keys[scancode],
+			state.input.keys_down[scancode],
+			state.input.keys_repeat[scancode],
+		)
 	}
 }
 

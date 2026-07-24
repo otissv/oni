@@ -68,16 +68,22 @@ rich_text_input_report_tag_diagnostics :: proc(id_label: string, diagnostics: []
 rich_text_input_prepare_layout :: proc(
 	props: Rich_Text_Input_Props,
 	caret: int,
+	focused: bool,
 ) -> Text_Widget_Input {
 	override := props.config
 	allocator := o.layout_frame_allocator()
 	parsed := o.text_tags_parse(override.text, allocator)
 	plain := parsed.plain
+	ime := ""
 
-	if len(plain) == 0 && len(override.placeholder) > 0 {
+	if focused {
+		ime = o.state.input.ime_text
+	}
+
+	if len(plain) == 0 && len(override.placeholder) > 0 && len(ime) == 0 {
 		plain = override.placeholder
 	} else {
-		plain = o.input_ime_preview(plain, caret, o.state.input.ime_text)
+		plain = o.input_ime_preview(plain, caret, ime)
 	}
 
 	id_label := override.id != "" ? override.id : "RichTextInput"
@@ -174,7 +180,7 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 		o.widget_scroll_apply(key, props.config, &layout_config)
 		text_edit_widget_apply_layout_scroll_defaults(props.config, cfg.multiline, &layout_config)
 
-		input := rich_text_input_prepare_layout(props, caret)
+		input := rich_text_input_prepare_layout(props, caret, frame_state.is_focused)
 		node := o.layout_push_node(layout_id, layout_config)
 
 		if input.rich {
@@ -189,8 +195,14 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 			o.layout_set_measure_text(node, input.measure_text, config.max_w)
 		}
 
-		o.layout_set_edit_plain(node, rich_text_input_plain(cfg.text))
-		o.layout_pop_node()
+		value_plain := rich_text_input_plain(cfg.text)
+		ime_active := frame_state.is_focused && o.input_ime_active()
+
+		if len(value_plain) == 0 && len(cfg.placeholder) > 0 && !ime_active {
+			o.layout_set_edit_plain(node, "")
+		} else if !ime_active {
+			o.layout_set_edit_plain(node, value_plain)
+		}
 
 		scroll_frame := Widget_Scrollport_Frame {
 			layout_id  = layout_id,
@@ -202,6 +214,8 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 		if widget_scrollport_frame_begin(scroll_frame) {
 			widget_scrollport_frame_end(true, true)
 		}
+
+		o.layout_pop_node()
 
 		return
 	}
@@ -223,6 +237,9 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 		rect,
 		config,
 	)
+
+	frame_state.is_focused = widget_is_focused(key)
+	text_edit_widget_blur_ime(was_focused, frame_state.is_focused)
 
 	scroll_entry := o.widget_scroll_ensure(key)
 	scroll_before := scroll_entry^
@@ -246,6 +263,7 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	edit_opts := Text_Edit_Widget_Opts {
 		selectable = true,
 		editable   = true,
+		caret      = true,
 		multiline  = cfg.multiline,
 		max_length = cfg.max_length,
 		draw_space = config.space,
@@ -338,13 +356,29 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	laid := o.layout_text_result(layout_id)
 	text_color, text_color_ok := o.style_color_rgba(config, &frame_state, event)
 
-	if laid != nil && text_color_ok {
-		o.font_draw_layout_text(laid, text_color, text_color, nil)
+	if text_color_ok {
 		edit_opts.has_caret_color = true
 		edit_opts.caret_color = text_color
 	}
 
-	text_edit_widget_draw_overlay(edit_opts, key, layout_id, rect, scroll_entry^, frame_state.is_focused)
+	edit_opts.has_selection_color = true
+	edit_opts.selection_color = o.css_color_to_rgba(o.Color.SELECTION)
+
+	text_edit_widget_draw_selection(edit_opts, key, layout_id, rect, plain)
+
+	if laid != nil && text_color_ok {
+		o.font_draw_layout_text(laid, text_color, text_color, nil)
+	}
+
+	text_edit_widget_draw_composition(
+		edit_opts,
+		key,
+		layout_id,
+		rect,
+		plain,
+		frame_state.is_focused,
+	)
+	text_edit_widget_draw_caret(edit_opts, key, layout_id, rect, plain, frame_state.is_focused)
 
 	if scrollport_active {
 		widget_scrollport_frame_end(true, true)

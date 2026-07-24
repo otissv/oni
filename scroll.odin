@@ -50,6 +50,10 @@ layout_offset_paint_geometry :: proc(node: ^Layout_Node, dx, dy: f32) {
 		glyph.dst.x += dx
 		glyph.dst.y += dy
 	}
+	for &glyph in node.text.edit_geometry.glyphs {
+		glyph.x0 += dx
+		glyph.x1 += dx
+	}
 	for &stroke in node.text.decoration_strokes {
 		stroke.a.x += dx
 		stroke.a.y += dy

@@ -203,11 +203,7 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 	}
 
 	child.rect = {x = x, y = y, w = width, h = height}
-	layout_finalize_node(child)
-
-	if len(child.child_indices) > 0 {
-		layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
-	}
+	layout_finalize_after_rect(child)
 }
 
 /*

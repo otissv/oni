@@ -784,8 +784,10 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			testing.expect(t, !state.input.keys_down[a])
 			testing.expect(t, !state.input.modifiers.shift)
 
-			// Repeat KEY_DOWN is ignored for key state / shortcuts.
+			// Repeat KEY_DOWN records a repeat edge without press-once force_reload.
 			state.force_reload = false
+			state.input.keys_down[int(sdl.Scancode.F5)] = false
+			state.input.keys_repeat[int(sdl.Scancode.F5)] = false
 			engine_test_push(
 				t,
 				{
@@ -798,7 +800,28 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				},
 			)
 			poll_events()
+			testing.expect(t, state.input.keys_down[int(sdl.Scancode.F5)])
+			testing.expect(t, state.input.keys_repeat[int(sdl.Scancode.F5)])
 			testing.expect(t, !state.force_reload)
+
+			for &key in w_ctx.keys {
+				clear_key_transients(&key)
+			}
+			sync_widget_input()
+			testing.expect(t, w_ctx.keys[int(sdl.Scancode.F5)].down)
+			testing.expect(t, w_ctx.keys[int(sdl.Scancode.F5)].repeat)
+			testing.expect(t, !w_ctx.keys[int(sdl.Scancode.F5)].pressed)
+
+			engine_test_dispatch_shortcuts()
+			testing.expect(t, !state.force_reload)
+
+			// Release F5 so a later non-repeat press can edge-trigger shortcuts.
+			state.input.keys_down[int(sdl.Scancode.F5)] = false
+			state.input.keys_repeat[int(sdl.Scancode.F5)] = false
+			for &key in w_ctx.keys {
+				clear_key_transients(&key)
+			}
+			sync_widget_input()
 
 			engine_test_push(
 				t,

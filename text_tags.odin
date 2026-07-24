@@ -658,11 +658,16 @@ text_runs_push :: proc(
 
 	if len(runs) > 0 && text_run_style_equal(runs[len(runs) - 1].style, style) {
 		prev := &runs[len(runs) - 1]
+		old := prev.text
 		b := strings.builder_make(allocator)
-		defer strings.builder_destroy(&b)
-		strings.write_string(&b, prev.text)
+		strings.write_string(&b, old)
 		strings.write_string(&b, text)
+		// Ownership of the builder buffer transfers to prev.text.
 		prev.text = strings.to_string(b)
+
+		if allocator != context.temp_allocator && len(old) > 0 {
+			delete(old)
+		}
 
 		return
 	}

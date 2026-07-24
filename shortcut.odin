@@ -380,6 +380,15 @@ shortcut_note_text_input :: proc(id: string) {
 	state.shortcuts.text_input_by_id[id] = true
 }
 
+/*
+Clears a prior text-input note so focus does not start an SDL IME session.
+*/
+shortcut_clear_text_input_note :: proc(id: string) {
+	if state == nil || state.shortcuts.text_input_by_id == nil || id == "" do return
+
+	delete_key(&state.shortcuts.text_input_by_id, id)
+}
+
 shortcut_register_action :: proc(id: string, action: Shortcut_Action_Proc) {
 	if state == nil || id == "" || action == nil do return
 
@@ -1212,7 +1221,6 @@ shortcut_process :: proc() {
 	}
 }
 
-@(private)
 shortcut_text_input_effective :: proc(focused_id: string) -> bool {
 	if state.shortcuts.text_input_active do return true
 	if focused_id == "" || state.shortcuts.text_input_by_id == nil do return false

@@ -49,19 +49,22 @@ update_mouse_button_sets_edges_and_clear_resets_them :: proc(t: ^testing.T) {
 }
 
 @(test)
-update_key_state_ignores_repeat_on_press :: proc(t: ^testing.T) {
+update_key_state_sets_repeat_without_pressed :: proc(t: ^testing.T) {
 	key: o.Widget_Mouse_Key_State
 
 	update_key_state(&key, true, true)
 	testing.expect(t, key.down)
+	testing.expect(t, key.repeat)
 	testing.expect(t, !key.pressed)
 
 	update_key_state(&key, false, false)
 	testing.expect(t, key.released)
+	testing.expect(t, !key.repeat)
 
 	clear_key_transients(&key)
 	update_key_state(&key, true, false)
 	testing.expect(t, key.pressed)
+	testing.expect(t, !key.repeat)
 }
 
 @(test)

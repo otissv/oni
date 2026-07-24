@@ -111,11 +111,12 @@ clear_button_transients :: proc(button: ^o.Widget_Mouse_Button_State) {
 }
 
 /*
-Clears one-frame pressed and released flags on a keyboard key state.
+Clears one-frame pressed, released, and repeat flags on a keyboard key state.
 */
 clear_key_transients :: proc(key: ^o.Widget_Mouse_Key_State) {
 	key.pressed = false
 	key.released = false
+	key.repeat = false
 }
 
 /*
@@ -132,16 +133,24 @@ update_mouse_button :: proc(button: ^o.Widget_Mouse_Button_State, is_down: bool)
 }
 
 /*
-Updates keyboard key down state and sets pressed or released edge flags.
+Updates keyboard key down state and sets pressed, released, and repeat edge flags.
 
-Ignores repeat events when transitiong from up to down.
+Repeat edges never set `pressed`, so global shortcuts stay press-once.
 */
 update_key_state :: proc(key: ^o.Widget_Mouse_Key_State, is_down, is_repeat: bool) {
+	key.repeat = is_down && is_repeat
+
 	if is_down {
-		if !key.down && !is_repeat do key.pressed = true
+		if !key.down && !is_repeat {
+			key.pressed = true
+		}
+
 		key.down = true
 	} else {
-		if key.down do key.released = true
+		if key.down {
+			key.released = true
+		}
+
 		key.down = false
 	}
 }

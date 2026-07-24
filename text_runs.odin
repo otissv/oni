@@ -466,8 +466,6 @@ text_runs_to_layout :: proc(
 	if len(runs) == 0 do return {}, {}
 
 	b := strings.builder_make(allocator)
-	defer strings.builder_destroy(&b)
-
 	lruns := make([dynamic]Layout_Text_Run, 0, len(runs), allocator)
 
 	offset := 0
@@ -482,8 +480,14 @@ text_runs_to_layout :: proc(
 		append(&lruns, Layout_Text_Run{start = start, end = offset, style = run.style})
 	}
 
-	if len(lruns) == 0 do return {}, {}
+	if len(lruns) == 0 {
+		strings.builder_destroy(&b)
+		delete(lruns)
 
+		return {}, {}
+	}
+
+	// Ownership of the builder buffer transfers to the returned plain string.
 	return strings.to_string(b), lruns[:]
 }
 

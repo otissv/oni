@@ -135,10 +135,15 @@ layout_scrollport_offsets_text_leaf_content :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			ov_scroll: Overflow = .SCROLL
-			glyphs := make([]Layout_Glyph_Paint, 1, context.temp_allocator)
+			glyphs := make([]Layout_Glyph_Paint, 1)
+			defer delete(glyphs)
 			glyphs[0] = {face_id = Asset_Id(0), glyph_id = 1, dst = {4, 24, 8, 12}}
-			origins := make([]Vec2, 1, context.temp_allocator)
+			origins := make([]Vec2, 1)
+			defer delete(origins)
 			origins[0] = {4, 24}
+			edit_glyphs := make([]Text_Edit_Glyph, 1)
+			defer delete(edit_glyphs)
+			edit_glyphs[0] = {cluster = 0, x0 = 14, x1 = 22, line_index = 0}
 
 			append(
 				&state.ui.layout.nodes,
@@ -157,6 +162,12 @@ layout_scrollport_offsets_text_leaf_content :: proc(t: ^testing.T) {
 						size = {80, 120},
 						glyphs = glyphs,
 						line_origins = origins,
+						edit_geometry = {
+							plain = "a",
+							line_origins = origins,
+							line_height = 16,
+							glyphs = edit_glyphs,
+						},
 					},
 				},
 			)
@@ -168,6 +179,13 @@ layout_scrollport_offsets_text_leaf_content :: proc(t: ^testing.T) {
 			expect_close(t, node.max_scroll.y, 80)
 			expect_close(t, node.scroll.y, 20)
 			expect_close(t, node.text.glyphs[0].dst.y, 4)
+			expect_close(t, node.text.edit_geometry.glyphs[0].x0, 14)
+			expect_close(t, node.text.edit_geometry.glyphs[0].x1, 22)
+			expect_close(t, node.text.line_origins[0].y, 4)
+
+			node.text.glyphs = nil
+			node.text.line_origins = nil
+			node.text.edit_geometry = {}
 		},
 	)
 }
@@ -177,10 +195,15 @@ layout_apply_scroll_delta_offsets_text_paint_geometry :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
 		proc(t: ^testing.T) {
-			glyphs := make([]Layout_Glyph_Paint, 1, context.temp_allocator)
+			glyphs := make([]Layout_Glyph_Paint, 1)
+			defer delete(glyphs)
 			glyphs[0] = {face_id = Asset_Id(0), glyph_id = 1, dst = {4, 24, 8, 12}}
-			origins := make([]Vec2, 1, context.temp_allocator)
+			origins := make([]Vec2, 1)
+			defer delete(origins)
 			origins[0] = {4, 24}
+			edit_glyphs := make([]Text_Edit_Glyph, 1)
+			defer delete(edit_glyphs)
+			edit_glyphs[0] = {cluster = 0, x0 = 10, x1 = 18, line_index = 0}
 
 			append(
 				&state.ui.layout.nodes,
@@ -192,6 +215,12 @@ layout_apply_scroll_delta_offsets_text_paint_geometry :: proc(t: ^testing.T) {
 						size = {80, 120},
 						glyphs = glyphs,
 						line_origins = origins,
+						edit_geometry = {
+							plain = "a",
+							line_origins = origins,
+							line_height = 16,
+							glyphs = edit_glyphs,
+						},
 					},
 				},
 			)
@@ -203,6 +232,49 @@ layout_apply_scroll_delta_offsets_text_paint_geometry :: proc(t: ^testing.T) {
 			testing.expect(t, changed)
 			expect_close(t, node.scroll.y, 20)
 			expect_close(t, node.text.glyphs[0].dst.y, 4)
+			expect_close(t, node.text.edit_geometry.glyphs[0].x0, 10)
+			expect_close(t, node.text.edit_geometry.glyphs[0].x1, 18)
+
+			node.text.glyphs = nil
+			node.text.line_origins = nil
+			node.text.edit_geometry = {}
+		},
+	)
+}
+
+@(test)
+layout_offset_paint_geometry_offsets_edit_glyphs_x :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			edit_glyphs := make([]Text_Edit_Glyph, 1)
+			defer delete(edit_glyphs)
+			edit_glyphs[0] = {cluster = 0, x0 = 40, x1 = 48, line_index = 0}
+			origins := make([]Vec2, 1)
+			defer delete(origins)
+			origins[0] = {8, 6}
+
+			node := Layout_Node {
+				text = {
+					line_origins = origins,
+					edit_geometry = {
+						plain = "a",
+						line_origins = origins,
+						line_height = 16,
+						glyphs = edit_glyphs,
+					},
+				},
+			}
+
+			layout_offset_paint_geometry(&node, -12, -3)
+
+			expect_close(t, node.text.edit_geometry.glyphs[0].x0, 28)
+			expect_close(t, node.text.edit_geometry.glyphs[0].x1, 36)
+			expect_close(t, node.text.line_origins[0].x, -4)
+			expect_close(t, node.text.line_origins[0].y, 3)
+
+			node.text.line_origins = nil
+			node.text.edit_geometry = {}
 		},
 	)
 }
@@ -251,6 +323,88 @@ layout_offset_subtree_moves_text_paint_geometry :: proc(t: ^testing.T) {
 			expect_close(t, node.text.decoration_strokes[0].a.y, 25)
 			expect_close(t, node.image.dst.y, 5)
 			expect_close(t, node.collapsed_borders.strips[0].y, 5)
+		},
+	)
+}
+
+@(test)
+layout_finalize_after_rect_finalizes_leaf_scrollport :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ov_scroll: Overflow = .SCROLL
+			append(
+				&state.ui.layout.nodes,
+				Layout_Node {
+					ui_id = UI_Id(51),
+					kind = .RECT,
+					config = {
+						width = layout_len_fixed(100),
+						height = layout_len_fixed(40),
+						overflow_y = ov_scroll,
+						scroll_y = 10,
+					},
+					rect = {0, 0, 100, 40},
+					image_input = {
+						src = {0, 0, 80, 120},
+						dst = {0, 0, 80, 120},
+						fit = .FILL,
+						active = true,
+					},
+				},
+			)
+
+			node := &state.ui.layout.nodes[0]
+			layout_finalize_after_rect(node)
+
+			expect_close(t, node.content_size.y, 120)
+			expect_close(t, node.max_scroll.y, 80)
+			expect_close(t, node.scroll.y, 10)
+		},
+	)
+}
+
+@(test)
+layout_child_leaf_scrollport_finalizes_via_parent :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			ov_scroll: Overflow = .SCROLL
+			_ = layout_push_node(
+				UI_Id(60),
+				{
+					kind = .RECT,
+					width = layout_len_fixed(200),
+					height = layout_len_fixed(200),
+					direction = .VERTICAL,
+				},
+			)
+			child := layout_push_node(
+				UI_Id(61),
+				{
+					kind = .RECT,
+					width = layout_len_fixed(100),
+					height = layout_len_fixed(40),
+					overflow_y = ov_scroll,
+					scroll_y = 15,
+				},
+			)
+			layout_set_measure_size(child, {100, 40})
+			layout_set_image(child, {0, 0, 80, 120}, {0, 0, 80, 120}, .FILL, {})
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+
+			child_i := state.ui.layout.id_to_node[UI_Id(61)]
+			c := &state.ui.layout.nodes[child_i]
+
+			expect_close(t, c.max_scroll.y, 80)
+			expect_close(t, c.scroll.y, 15)
 		},
 	)
 }

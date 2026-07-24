@@ -55,6 +55,7 @@ Widget_Mouse_Key_State :: struct {
 	down:     bool,
 	pressed:  bool,
 	released: bool,
+	repeat:   bool,
 }
 
 
@@ -103,6 +104,7 @@ Text_Edit_Command :: enum {
 	CUT,
 	PASTE,
 	UNDO,
+	REDO,
 }
 
 TEXT_UNDO_STACK_LIMIT :: 64
@@ -128,6 +130,7 @@ Text_Edit_State :: struct {
 	last_click_pos:        Vec2,
 	click_count:           int,
 	undo:                  Text_Undo_Stack,
+	redo:                  Text_Undo_Stack,
 	preferred_column:      f32,
 	has_preferred_column:  bool,
 }
@@ -1153,6 +1156,7 @@ Input_State :: struct {
 	mouse_left, mouse_right, mouse_middle: bool,
 	mouse_wheel_x, mouse_wheel_y:          f32,
 	keys_down:                             [KEY_COUNT]bool,
+	keys_repeat:                           [KEY_COUNT]bool,
 	text_input:                            [dynamic]u8,
 	ime_text:                              string,
 	ime_cursor:                            int,

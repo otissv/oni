@@ -528,6 +528,37 @@ widget_prune_element_maps_removes_inactive_keys :: proc(t: ^testing.T) {
 }
 
 @(test)
+widget_text_edit_caret_selection_api_round_trips :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			key := element_key("caret-api")
+			plain := "hello"
+
+			widget_text_edit_set_caret(key, plain, 2)
+			testing.expect_value(t, widget_text_edit_caret(key), 2)
+			sel := widget_text_edit_selection(key)
+			testing.expect_value(t, sel.anchor, 2)
+			testing.expect_value(t, sel.head, 2)
+
+			widget_text_edit_set_selection(key, plain, {1, 4})
+			testing.expect_value(t, widget_text_edit_caret(key), 4)
+			sel = widget_text_edit_selection(key)
+			testing.expect_value(t, sel.anchor, 1)
+			testing.expect_value(t, sel.head, 4)
+
+			widget_text_edit_set_caret(key, plain, 99)
+			testing.expect_value(t, widget_text_edit_caret(key), len(plain))
+
+			widget_text_edit_set_selection(key, plain, {-1, 100})
+			sel = widget_text_edit_selection(key)
+			testing.expect_value(t, sel.anchor, 0)
+			testing.expect_value(t, sel.head, len(plain))
+		},
+	)
+}
+
+@(test)
 widget_ctx_shutdown_releases_maps :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,

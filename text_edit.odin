@@ -4,7 +4,8 @@ import "core:math"
 import "core:strings"
 import "core:unicode/utf8"
 
-TEXT_EDIT_BLINK_PERIOD :: f32(1.0)
+TEXT_EDIT_BLINK_PERIOD :: f32(0.53)
+TEXT_EDIT_CARET_WIDTH :: f32(2)
 TEXT_EDIT_SCROLL_MARGIN :: f32(4)
 TEXT_EDIT_DRAG_SCROLL_EDGE :: f32(24)
 TEXT_EDIT_DRAG_SCROLL_MAX_SPEED :: f32(14)
@@ -166,20 +167,19 @@ text_edit_line_at :: proc(geo: ^Text_Edit_Geometry, offset: int) -> int {
 text_edit_hit_test :: proc(
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
-	local: Vec2,
+	abs_point: Vec2,
 ) -> int {
 	if geo == nil do return 0
 
-	x := layout_rect.x - scroll.x + local.x
-	y := layout_rect.y - scroll.y + local.y
+	x := abs_point.x
+	y := abs_point.y
 	line_count := len(geo.line_origins)
 	if line_count == 0 do return 0
 
 	line_i := 0
 	for i in 0 ..< line_count {
 		origin := geo.line_origins[i]
-		line_y := layout_rect.y - scroll.y + origin.y
+		line_y := layout_rect.y + origin.y
 		if y >= line_y {
 			line_i = i
 		}
@@ -207,10 +207,18 @@ text_edit_hit_test :: proc(
 	return text_edit_clamp_offset(geo.plain, best_offset)
 }
 
+text_edit_caret_width_px :: proc() -> f32 {
+	scale: f32 = 1
+	if state != nil && state.dpi.scale > 0 {
+		scale = state.dpi.scale
+	}
+
+	return max(1, TEXT_EDIT_CARET_WIDTH * scale)
+}
+
 text_edit_caret_geometry :: proc(
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
 	offset: int,
 ) -> Text_Caret_Geometry {
 	result: Text_Caret_Geometry
@@ -221,13 +229,18 @@ text_edit_caret_geometry :: proc(
 	line_i := text_edit_line_at(geo, clamped)
 	result.line_index = line_i
 
+	origin_x := layout_rect.x
+	origin_y := layout_rect.y
+	height := geo.line_height
+
 	if line_i < len(geo.line_origins) {
 		origin := geo.line_origins[line_i]
-		result.y = layout_rect.y - scroll.y + origin.y
+		origin_x = layout_rect.x + origin.x
+		origin_y = layout_rect.y + origin.y
 	}
 
-	caret_x := layout_rect.x - scroll.x
-	height := geo.line_height
+	result.y = origin_y
+	caret_x := origin_x
 	ascent := geo.line_height * 0.8
 	descent := geo.line_height * 0.2
 	found := false
@@ -260,7 +273,7 @@ text_edit_caret_geometry :: proc(
 		}
 	}
 
-	result.x = caret_x - scroll.x
+	result.x = caret_x
 	result.height = max(ascent + descent, height)
 
 	return result
@@ -269,7 +282,6 @@ text_edit_caret_geometry :: proc(
 text_edit_selection_rects :: proc(
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
 	sel: Text_Selection,
 	allocator := context.temp_allocator,
 ) -> []Text_Selection_Rect {
@@ -285,7 +297,7 @@ text_edit_selection_rects :: proc(
 		x0: f32 = -1
 		x1: f32 = -1
 		origin := geo.line_origins[line_i]
-		line_y := layout_rect.y - scroll.y + origin.y
+		line_y := layout_rect.y + origin.y
 
 		for glyph in geo.glyphs {
 			if glyph.line_index != line_i do continue
@@ -303,7 +315,7 @@ text_edit_selection_rects :: proc(
 			append(
 				&out,
 				Text_Selection_Rect {
-					rect = {x0 - scroll.x, line_y, x1 - x0, geo.line_height},
+					rect = {x0, line_y, x1 - x0, geo.line_height},
 					line_index = line_i,
 				},
 			)
@@ -313,26 +325,43 @@ text_edit_selection_rects :: proc(
 	return out[:]
 }
 
+text_edit_draw_selection :: proc(
+	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	sel: Text_Selection,
+	selection_color: RGBA,
+) {
+	if geo == nil do return
+
+	for item in text_edit_selection_rects(geo, layout_rect, sel) {
+		draw_rect(item.rect, selection_color)
+	}
+}
+
+text_edit_draw_caret :: proc(
+	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	caret_offset: int,
+	caret_color: RGBA,
+	show_caret, caret_visible: bool,
+) {
+	if geo == nil || !show_caret || !caret_visible do return
+
+	caret := text_edit_caret_geometry(geo, layout_rect, caret_offset)
+	caret_rect := Rect{caret.x, caret.y, text_edit_caret_width_px(), caret.height}
+	draw_rect(caret_rect, caret_color)
+}
+
 text_edit_draw_overlay :: proc(
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
 	sel: Text_Selection,
 	caret_offset: int,
 	selection_color, caret_color: RGBA,
 	show_caret, caret_visible: bool,
 ) {
-	if geo == nil do return
-
-	for item in text_edit_selection_rects(geo, layout_rect, scroll, sel) {
-		draw_rect(item.rect, selection_color)
-	}
-
-	if show_caret && caret_visible {
-		caret := text_edit_caret_geometry(geo, layout_rect, scroll, caret_offset)
-		caret_rect := Rect{caret.x, caret.y, 1, caret.height}
-		draw_rect(caret_rect, caret_color)
-	}
+	text_edit_draw_selection(geo, layout_rect, sel, selection_color)
+	text_edit_draw_caret(geo, layout_rect, caret_offset, caret_color, show_caret, caret_visible)
 }
 
 text_edit_select_all :: proc(text: string) -> Text_Selection {
@@ -368,6 +397,52 @@ text_edit_word_at :: proc(text: string, offset: int) -> Text_Selection {
 	}
 
 	return {anchor = start, head = end}
+}
+
+/*
+Moves to the start of the current or previous word (HTML-like Ctrl/Cmd+Left).
+*/
+text_edit_word_prev :: proc(text: string, offset: int) -> int {
+	i := text_edit_clamp_offset(text, offset)
+
+	for i > 0 {
+		r, w := utf8.decode_last_rune_in_string(text[:i])
+		if w == 0 do break
+		if unicode_is_word_rune(r) do break
+		i -= w
+	}
+
+	for i > 0 {
+		r, w := utf8.decode_last_rune_in_string(text[:i])
+		if w == 0 do break
+		if !unicode_is_word_rune(r) do break
+		i -= w
+	}
+
+	return i
+}
+
+/*
+Moves to the start of the next word (HTML-like Ctrl/Cmd+Right).
+*/
+text_edit_word_next :: proc(text: string, offset: int) -> int {
+	i := text_edit_clamp_offset(text, offset)
+
+	for i < len(text) {
+		r, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+		if !unicode_is_word_rune(r) do break
+		i += w
+	}
+
+	for i < len(text) {
+		r, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+		if unicode_is_word_rune(r) do break
+		i += w
+	}
+
+	return i
 }
 
 text_edit_line_range_at :: proc(geo: ^Text_Edit_Geometry, offset: int) -> Text_Selection {
@@ -457,10 +532,11 @@ text_edit_undo_push :: proc(
 	caret: int,
 	selection: Text_Selection,
 	frame: u64,
+	force := false,
 ) {
 	if stack.limit <= 0 do text_edit_undo_stack_init(stack)
 
-	if stack.pushed_frame == frame && len(stack.entries) > 0 {
+	if !force && stack.pushed_frame == frame && len(stack.entries) > 0 {
 		return
 	}
 
@@ -487,6 +563,67 @@ text_edit_undo_pop :: proc(stack: ^Text_Undo_Stack) -> (entry: Text_Undo_Entry, 
 	stack.pushed_frame = 0
 
 	return entry, true
+}
+
+/*
+Records pre-mutation state on the undo stack and clears redo.
+*/
+text_edit_record_mutation :: proc(edit: ^Text_Edit_State, text: string, frame: u64) {
+	if edit == nil do return
+
+	text_edit_undo_push(&edit.undo, text, edit.caret, edit.selection, frame)
+	text_edit_undo_clear(&edit.redo)
+	text_edit_reset_blink(edit)
+}
+
+/*
+Pops undo and pushes the current document onto redo. Caller owns returned text.
+*/
+text_edit_apply_undo :: proc(
+	edit: ^Text_Edit_State,
+	current: string,
+	frame: u64,
+) -> (
+	restored: string,
+	ok: bool,
+) {
+	if edit == nil do return current, false
+
+	entry, popped := text_edit_undo_pop(&edit.undo)
+	if !popped do return current, false
+
+	text_edit_undo_push(&edit.redo, current, edit.caret, edit.selection, frame, force = true)
+	edit.caret = entry.caret
+	edit.selection = entry.selection
+	edit.has_preferred_column = false
+	text_edit_reset_blink(edit)
+
+	return entry.text, true
+}
+
+/*
+Pops redo and pushes the current document onto undo. Caller owns returned text.
+*/
+text_edit_apply_redo :: proc(
+	edit: ^Text_Edit_State,
+	current: string,
+	frame: u64,
+) -> (
+	restored: string,
+	ok: bool,
+) {
+	if edit == nil do return current, false
+
+	entry, popped := text_edit_undo_pop(&edit.redo)
+	if !popped do return current, false
+
+	text_edit_undo_push(&edit.undo, current, edit.caret, edit.selection, frame, force = true)
+	edit.caret = entry.caret
+	edit.selection = entry.selection
+	edit.has_preferred_column = false
+	text_edit_reset_blink(edit)
+
+	return entry.text, true
 }
 
 text_edit_backspace :: proc(
@@ -518,6 +655,37 @@ text_edit_backspace :: proc(
 	}
 
 	prev := text_edit_cluster_prev(text, caret)
+	new_text, new_caret = text_edit_plain_splice(text, prev, caret, "", allocator)
+	new_selection = {anchor = prev, head = prev}
+	changed = true
+
+	return
+}
+
+text_edit_backspace_word :: proc(
+	text: string,
+	caret: int,
+	selection: Text_Selection,
+	allocator := context.allocator,
+) -> (
+	new_text: string,
+	new_caret: int,
+	new_selection: Text_Selection,
+	changed: bool,
+) {
+	if text_edit_selection_active(selection) {
+		return text_edit_backspace(text, caret, selection, allocator)
+	}
+
+	if caret <= 0 {
+		new_text = text
+		new_caret = caret
+		new_selection = selection
+
+		return
+	}
+
+	prev := text_edit_word_prev(text, caret)
 	new_text, new_caret = text_edit_plain_splice(text, prev, caret, "", allocator)
 	new_selection = {anchor = prev, head = prev}
 	changed = true
@@ -561,6 +729,37 @@ text_edit_delete :: proc(
 	return
 }
 
+text_edit_delete_word :: proc(
+	text: string,
+	caret: int,
+	selection: Text_Selection,
+	allocator := context.allocator,
+) -> (
+	new_text: string,
+	new_caret: int,
+	new_selection: Text_Selection,
+	changed: bool,
+) {
+	if text_edit_selection_active(selection) {
+		return text_edit_delete(text, caret, selection, allocator)
+	}
+
+	if caret >= len(text) {
+		new_text = text
+		new_caret = caret
+		new_selection = selection
+
+		return
+	}
+
+	next := text_edit_word_next(text, caret)
+	new_text, new_caret = text_edit_plain_splice(text, caret, next, "", allocator)
+	new_selection = {anchor = caret, head = caret}
+	changed = true
+
+	return
+}
+
 text_edit_clamp_selection :: proc(text: string, sel: Text_Selection) -> Text_Selection {
 	return {
 		anchor = text_edit_clamp_offset(text, sel.anchor),
@@ -568,10 +767,106 @@ text_edit_clamp_selection :: proc(text: string, sel: Text_Selection) -> Text_Sel
 	}
 }
 
-text_edit_within_max_length :: proc(text: string, max_length: int, insert: string) -> bool {
+/*
+Returns whether inserting `insert` over the active selection would stay within
+`max_length` runes. `max_length <= 0` means unlimited.
+*/
+text_edit_within_max_length :: proc(
+	text: string,
+	max_length: int,
+	insert: string,
+	selection: Text_Selection = {},
+) -> bool {
 	if max_length <= 0 do return true
 
-	return len(text) + len(insert) <= max_length
+	start, end := text_edit_selection_normalized(selection)
+	current := utf8.rune_count_in_string(text)
+	removing := utf8.rune_count_in_string(text[start:end])
+	adding := utf8.rune_count_in_string(insert)
+
+	return current - removing + adding <= max_length
+}
+
+/*
+Truncates `insert` so the post-splice rune count stays within `max_length`.
+*/
+text_edit_truncate_insert_for_max_length :: proc(
+	text: string,
+	selection: Text_Selection,
+	insert: string,
+	max_length: int,
+	allocator := context.temp_allocator,
+) -> string {
+	if max_length <= 0 do return insert
+	if len(insert) == 0 do return insert
+
+	start, end := text_edit_selection_normalized(selection)
+	current := utf8.rune_count_in_string(text)
+	removing := utf8.rune_count_in_string(text[start:end])
+	remaining := max_length - (current - removing)
+
+	if remaining <= 0 do return ""
+
+	insert_runes := utf8.rune_count_in_string(insert)
+	if insert_runes <= remaining do return insert
+
+	return text_edit_prefix_runes(insert, remaining, allocator)
+}
+
+@(private)
+text_edit_prefix_runes :: proc(text: string, rune_count: int, allocator := context.temp_allocator) -> string {
+	if rune_count <= 0 do return ""
+
+	end := text_edit_byte_offset_for_rune_index(text, rune_count)
+	if end >= len(text) do return text
+
+	return strings.clone(text[:end], allocator)
+}
+
+/*
+Single-line paste: newlines become spaces. Multiline keeps `\n`.
+*/
+text_edit_normalize_paste :: proc(
+	text: string,
+	multiline: bool,
+	allocator := context.temp_allocator,
+) -> string {
+	if multiline || len(text) == 0 do return text
+
+	b := strings.builder_make(allocator)
+	i := 0
+
+	for i < len(text) {
+		if text[i] == '\r' {
+			strings.write_byte(&b, ' ')
+
+			if i + 1 < len(text) && text[i + 1] == '\n' {
+				i += 1
+			}
+
+			i += 1
+
+			continue
+		}
+
+		if text[i] == '\n' {
+			strings.write_byte(&b, ' ')
+			i += 1
+
+			continue
+		}
+
+		strings.write_byte(&b, text[i])
+		i += 1
+	}
+
+	return strings.to_string(b)
+}
+
+text_edit_reset_blink :: proc(edit: ^Text_Edit_State) {
+	if edit == nil do return
+
+	edit.blink_phase = 0
 }
 
 text_edit_scroll_axes :: proc(overflow_x, overflow_y: Overflow) -> Text_Edit_Scroll_Axes {
@@ -581,7 +876,7 @@ text_edit_scroll_axes :: proc(overflow_x, overflow_y: Overflow) -> Text_Edit_Scr
 	}
 }
 
-text_edit_caret_content_x :: proc(geo: ^Text_Edit_Geometry, caret: int) -> f32 {
+text_edit_caret_abs_x :: proc(geo: ^Text_Edit_Geometry, caret: int) -> f32 {
 	if geo == nil do return 0
 
 	line_i := text_edit_line_at(geo, caret)
@@ -609,6 +904,15 @@ text_edit_caret_content_x :: proc(geo: ^Text_Edit_Geometry, caret: int) -> f32 {
 	}
 
 	return last_x
+}
+
+text_edit_caret_content_x :: proc(
+	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	scroll: Vec2,
+	caret: int,
+) -> f32 {
+	return text_edit_caret_abs_x(geo, caret) - layout_rect.x + scroll.x
 }
 
 text_edit_offset_at_line_x :: proc(geo: ^Text_Edit_Geometry, line_i: int, x: f32) -> int {
@@ -659,7 +963,12 @@ text_edit_merge_content_bounds :: proc(a, b: Text_Edit_Content_Bounds) -> Text_E
 	}
 }
 
-text_edit_caret_content_bounds :: proc(geo: ^Text_Edit_Geometry, caret: int) -> Text_Edit_Content_Bounds {
+text_edit_caret_content_bounds :: proc(
+	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	scroll: Vec2,
+	caret: int,
+) -> Text_Edit_Content_Bounds {
 	if geo == nil do return {}
 
 	line_i := text_edit_line_at(geo, caret)
@@ -667,17 +976,19 @@ text_edit_caret_content_bounds :: proc(geo: ^Text_Edit_Geometry, caret: int) -> 
 	y1 := geo.line_height
 
 	if line_i < len(geo.line_origins) {
-		y0 = geo.line_origins[line_i].y
+		y0 = geo.line_origins[line_i].y + scroll.y
 		y1 = y0 + geo.line_height
 	}
 
-	x := text_edit_caret_content_x(geo, caret)
+	x := text_edit_caret_content_x(geo, layout_rect, scroll, caret)
 
 	return {x0 = x, y0 = y0, x1 = x + 1, y1 = y1}
 }
 
 text_edit_selection_content_bounds :: proc(
 	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	scroll: Vec2,
 	sel: Text_Selection,
 ) -> Text_Edit_Content_Bounds {
 	if geo == nil || !text_edit_selection_active(sel) do return {}
@@ -708,10 +1019,10 @@ text_edit_selection_content_bounds :: proc(
 		if x0 >= 0 && x1 > x0 {
 			origin := geo.line_origins[line_i]
 			line_bounds := Text_Edit_Content_Bounds {
-				x0 = x0,
-				y0 = origin.y,
-				x1 = x1,
-				y1 = origin.y + geo.line_height,
+				x0 = x0 - layout_rect.x + scroll.x,
+				y0 = origin.y + scroll.y,
+				x1 = x1 - layout_rect.x + scroll.x,
+				y1 = origin.y + scroll.y + geo.line_height,
 			}
 
 			if empty {
@@ -728,13 +1039,15 @@ text_edit_selection_content_bounds :: proc(
 
 text_edit_edit_content_bounds :: proc(
 	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	scroll: Vec2,
 	caret: int,
 	sel: Text_Selection,
 ) -> Text_Edit_Content_Bounds {
-	bounds := text_edit_caret_content_bounds(geo, caret)
+	bounds := text_edit_caret_content_bounds(geo, layout_rect, scroll, caret)
 
 	if text_edit_selection_active(sel) {
-		sel_bounds := text_edit_selection_content_bounds(geo, sel)
+		sel_bounds := text_edit_selection_content_bounds(geo, layout_rect, scroll, sel)
 		bounds = text_edit_merge_content_bounds(bounds, sel_bounds)
 	}
 
@@ -775,6 +1088,7 @@ text_edit_scroll_to_show_bounds :: proc(
 text_edit_scroll_to_show_edit :: proc(
 	scroll: ^Vec2,
 	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
 	caret: int,
 	sel: Text_Selection,
 	viewport, max_scroll: Vec2,
@@ -782,7 +1096,7 @@ text_edit_scroll_to_show_edit :: proc(
 ) {
 	if scroll == nil || geo == nil do return
 
-	bounds := text_edit_edit_content_bounds(geo, caret, sel)
+	bounds := text_edit_edit_content_bounds(geo, layout_rect, scroll^, caret, sel)
 	axes := text_edit_scroll_axes(overflow_x, overflow_y)
 	text_edit_scroll_to_show_bounds(
 		scroll,
@@ -872,7 +1186,7 @@ text_edit_set_preferred_column :: proc(
 ) {
 	if edit == nil || geo == nil do return
 
-	edit.preferred_column = text_edit_caret_content_x(geo, caret)
+	edit.preferred_column = text_edit_caret_abs_x(geo, caret)
 	edit.has_preferred_column = true
 }
 
@@ -881,7 +1195,7 @@ text_edit_preferred_column :: proc(edit: ^Text_Edit_State, geo: ^Text_Edit_Geome
 		return edit.preferred_column
 	}
 
-	return text_edit_caret_content_x(geo, caret)
+	return text_edit_caret_abs_x(geo, caret)
 }
 
 text_edit_move_to_line :: proc(
@@ -927,11 +1241,18 @@ text_edit_handle_key_navigation :: proc(
 				new_selection = {anchor = caret, head = caret}
 			}
 
-			new_caret = text_edit_cluster_prev(text, caret)
+			if ctrl {
+				new_caret = text_edit_word_prev(text, caret)
+			} else {
+				new_caret = text_edit_cluster_prev(text, caret)
+			}
+
 			new_selection.head = new_caret
 		} else {
-			if text_edit_selection_active(selection) {
+			if text_edit_selection_active(selection) && !ctrl {
 				new_caret = text_edit_selection_start(selection)
+			} else if ctrl {
+				new_caret = text_edit_word_prev(text, caret)
 			} else {
 				new_caret = text_edit_cluster_prev(text, caret)
 			}
@@ -940,6 +1261,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .RIGHT:
 		handled = true
 
@@ -948,11 +1270,18 @@ text_edit_handle_key_navigation :: proc(
 				new_selection = {anchor = caret, head = caret}
 			}
 
-			new_caret = text_edit_cluster_next(text, caret)
+			if ctrl {
+				new_caret = text_edit_word_next(text, caret)
+			} else {
+				new_caret = text_edit_cluster_next(text, caret)
+			}
+
 			new_selection.head = new_caret
 		} else {
-			if text_edit_selection_active(selection) {
+			if text_edit_selection_active(selection) && !ctrl {
 				new_caret = text_edit_selection_end(selection)
+			} else if ctrl {
+				new_caret = text_edit_word_next(text, caret)
 			} else {
 				new_caret = text_edit_cluster_next(text, caret)
 			}
@@ -961,6 +1290,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .UP:
 		if geo == nil || !multiline do break
 
@@ -980,6 +1310,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .DOWN:
 		if geo == nil || !multiline do break
 
@@ -999,6 +1330,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .PAGEUP:
 		if geo == nil || !multiline do break
 
@@ -1018,6 +1350,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .PAGEDOWN:
 		if geo == nil || !multiline do break
 
@@ -1037,6 +1370,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .HOME:
 		handled = true
 
@@ -1058,6 +1392,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	case .END:
 		handled = true
 
@@ -1079,6 +1414,7 @@ text_edit_handle_key_navigation :: proc(
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
+		text_edit_reset_blink(edit)
 	}
 
 	return new_caret, new_selection, handled
@@ -1120,45 +1456,62 @@ text_edit_update_blink :: proc(blink_phase: f32, dt: f32, focused: bool) -> f32 
 	return blink_phase + dt
 }
 
+/*
+Updates caret/selection while dragging the pointer.
+
+Always extends from the existing anchor (or caret when the selection is collapsed).
+Shift-click extension is handled by text_edit_register_click, not here.
+*/
 text_edit_pointer_selection :: proc(
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
-	local: Vec2,
-	shift: bool,
+	abs_point: Vec2,
 	caret: int,
 	selection: Text_Selection,
 ) -> (
 	new_caret: int,
 	new_selection: Text_Selection,
 ) {
-	offset := text_edit_hit_test(geo, layout_rect, scroll, local)
+	offset := text_edit_hit_test(geo, layout_rect, abs_point)
 
-	if shift {
-		if !text_edit_selection_active(selection) {
-			return offset, {anchor = caret, head = offset}
-		}
-
-		return offset, {anchor = selection.anchor, head = offset}
+	if !text_edit_selection_active(selection) {
+		return offset, {anchor = caret, head = offset}
 	}
 
-	return offset, {anchor = offset, head = offset}
+	return offset, {anchor = selection.anchor, head = offset}
 }
 
 text_edit_register_click :: proc(
 	edit: ^Text_Edit_State,
-	local: Vec2,
+	abs_point: Vec2,
 	now: f64,
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
-	scroll: Vec2,
 	text: string,
+	shift := false,
 ) -> (
 	caret: int,
 	selection: Text_Selection,
 ) {
-	offset := text_edit_hit_test(geo, layout_rect, scroll, local)
-	dist := local.x - edit.last_click_pos.x + local.y - edit.last_click_pos.y
+	offset := text_edit_hit_test(geo, layout_rect, abs_point)
+	dist := abs_point.x - edit.last_click_pos.x + abs_point.y - edit.last_click_pos.y
+
+	if shift {
+		edit.click_count = 1
+		edit.last_click_time = now
+		edit.last_click_pos = abs_point
+
+		if !text_edit_selection_active(edit.selection) {
+			selection = {anchor = edit.caret, head = offset}
+		} else {
+			selection = {anchor = edit.selection.anchor, head = offset}
+		}
+
+		caret = offset
+		text_edit_reset_blink(edit)
+
+		return caret, selection
+	}
 
 	if now - edit.last_click_time < 0.4 && abs(dist) < 4 {
 		edit.click_count += 1
@@ -1167,7 +1520,7 @@ text_edit_register_click :: proc(
 	}
 
 	edit.last_click_time = now
-	edit.last_click_pos = local
+	edit.last_click_pos = abs_point
 
 	switch edit.click_count {
 	case 2:
@@ -1179,6 +1532,184 @@ text_edit_register_click :: proc(
 	}
 
 	caret = selection.head
+	text_edit_reset_blink(edit)
 
 	return caret, selection
+}
+
+text_edit_rune_index_at_byte :: proc(text: string, byte_offset: int) -> int {
+	clamped := text_edit_clamp_offset(text, byte_offset)
+	index := 0
+	i := 0
+
+	for i < clamped {
+		_, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+		i += w
+		index += 1
+	}
+
+	return index
+}
+
+text_edit_byte_offset_for_rune_index :: proc(text: string, rune_index: int) -> int {
+	if rune_index <= 0 do return 0
+
+	index := 0
+	i := 0
+
+	for i < len(text) {
+		if index == rune_index {
+			return i
+		}
+
+		_, w := utf8.decode_rune_in_string(text[i:])
+		if w == 0 do break
+		i += w
+		index += 1
+	}
+
+	return len(text)
+}
+
+/*
+Maps a password mask byte offset (1 ASCII '*' per rune) to a value-plain byte offset.
+*/
+text_edit_password_mask_to_value_offset :: proc(value: string, mask_offset: int) -> int {
+	return text_edit_byte_offset_for_rune_index(value, mask_offset)
+}
+
+/*
+Maps a value-plain byte offset to a password mask byte offset (1 ASCII '*' per rune).
+*/
+text_edit_password_value_to_mask_offset :: proc(value: string, value_offset: int) -> int {
+	return text_edit_rune_index_at_byte(value, value_offset)
+}
+
+text_edit_password_mask_selection :: proc(value: string, sel: Text_Selection) -> Text_Selection {
+	return {
+		anchor = text_edit_password_value_to_mask_offset(value, sel.anchor),
+		head = text_edit_password_value_to_mask_offset(value, sel.head),
+	}
+}
+
+text_edit_password_value_selection :: proc(value: string, sel: Text_Selection) -> Text_Selection {
+	return {
+		anchor = text_edit_password_mask_to_value_offset(value, sel.anchor),
+		head = text_edit_password_mask_to_value_offset(value, sel.head),
+	}
+}
+
+/*
+Maps a value-plain byte offset into display-plain space where `ime` is spliced at `ime_at`.
+*/
+text_edit_ime_value_to_display_offset :: proc(ime_at: int, ime_len: int, value_offset: int) -> int {
+	if ime_len <= 0 do return value_offset
+
+	if value_offset <= ime_at do return value_offset
+
+	return value_offset + ime_len
+}
+
+/*
+Maps a display-plain byte offset back to value-plain space.
+
+Offsets inside the composition clamp to the insertion caret.
+*/
+text_edit_ime_display_to_value_offset :: proc(ime_at: int, ime_len: int, display_offset: int) -> int {
+	if ime_len <= 0 do return display_offset
+
+	if display_offset <= ime_at do return display_offset
+
+	if display_offset >= ime_at + ime_len do return display_offset - ime_len
+
+	return ime_at
+}
+
+text_edit_ime_value_selection_to_display :: proc(
+	ime_at: int,
+	ime_len: int,
+	sel: Text_Selection,
+) -> Text_Selection {
+	return {
+		anchor = text_edit_ime_value_to_display_offset(ime_at, ime_len, sel.anchor),
+		head = text_edit_ime_value_to_display_offset(ime_at, ime_len, sel.head),
+	}
+}
+
+text_edit_ime_display_selection_to_value :: proc(
+	ime_at: int,
+	ime_len: int,
+	sel: Text_Selection,
+) -> Text_Selection {
+	return {
+		anchor = text_edit_ime_display_to_value_offset(ime_at, ime_len, sel.anchor),
+		head = text_edit_ime_display_to_value_offset(ime_at, ime_len, sel.head),
+	}
+}
+
+/*
+Converts SDL TEXT_EDITING cursor/length (UTF-8 codepoint indices into `ime`) to
+a display-plain caret byte offset.
+*/
+text_edit_ime_display_caret :: proc(
+	ime_at: int,
+	ime: string,
+	ime_cursor_runes: int,
+) -> int {
+	if len(ime) == 0 do return ime_at
+
+	cursor := max(ime_cursor_runes, 0)
+	cursor_bytes := text_edit_byte_offset_for_rune_index(ime, cursor)
+
+	return ime_at + cursor_bytes
+}
+
+/*
+Returns the display-plain byte range to underline for the active composition.
+
+When `ime_length_runes` > 0, underlines that selected segment; otherwise the
+full composition.
+*/
+text_edit_ime_underline_range :: proc(
+	ime_at: int,
+	ime: string,
+	ime_cursor_runes: int,
+	ime_length_runes: int,
+) -> (
+	start: int,
+	end: int,
+) {
+	if len(ime) == 0 do return ime_at, ime_at
+
+	if ime_length_runes > 0 {
+		cursor := max(ime_cursor_runes, 0)
+		seg_start := text_edit_byte_offset_for_rune_index(ime, cursor)
+		seg_end := text_edit_byte_offset_for_rune_index(ime, cursor + ime_length_runes)
+
+		return ime_at + seg_start, ime_at + seg_end
+	}
+
+	return ime_at, ime_at + len(ime)
+}
+
+text_edit_draw_composition_underline :: proc(
+	geo: ^Text_Edit_Geometry,
+	layout_rect: Rect,
+	start: int,
+	end: int,
+	color: RGBA,
+) {
+	if geo == nil || start >= end do return
+
+	sel := Text_Selection {
+		anchor = start,
+		head = end,
+	}
+	thickness := max(1, text_edit_caret_width_px())
+
+	for item in text_edit_selection_rects(geo, layout_rect, sel) {
+		y := item.rect.y + item.rect.h - thickness
+		draw_line({item.rect.x, y}, {item.rect.x + item.rect.w, y}, color, thickness)
+	}
 }

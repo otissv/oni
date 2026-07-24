@@ -3,14 +3,17 @@ package oni_widgets
 import o ".."
 import set "../set"
 import "core:strings"
+import "core:unicode/utf8"
 
 Text_Input_Config :: struct {
-	using _:     o.Widget_Config,
-	text:        string,
-	placeholder: string,
-	multiline:   bool,
-	max_length:  int,
-	password:    bool,
+	using _:         o.Widget_Config,
+	text:            string,
+	placeholder:     string,
+	multiline:       bool,
+	max_length:      int,
+	password:        bool,
+	readonly:        bool,
+	select_on_focus: bool,
 }
 
 Text_Input_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
@@ -57,14 +60,36 @@ text_input_theme_base :: proc(frame_state: ^Text_Input_State) -> o.Widget_Config
 	}
 }
 
+/*
+Select-on-focus defaults: single-line on, multiline off unless author sets the flag.
+*/
+@(private)
+text_input_select_on_focus :: proc(cfg: Text_Input_Config) -> bool {
+	return !cfg.multiline || cfg.select_on_focus
+}
+
+@(private)
+text_input_apply_select_on_focus :: proc(key: string, plain: string, cfg: Text_Input_Config) {
+	if !text_input_select_on_focus(cfg) do return
+
+	edit := o.widget_text_edit_ensure(key)
+	if edit == nil do return
+
+	edit.selection = o.text_edit_select_all(plain)
+	edit.caret = edit.selection.head
+	edit.has_preferred_column = false
+	o.text_edit_reset_blink(edit)
+}
+
 
 @(private)
 text_input_mask_password :: proc(text: string) -> string {
 	if len(text) == 0 do return text
 
 	b := strings.builder_make(context.temp_allocator)
+	rune_count := utf8.rune_count_in_string(text)
 
-	for _ in 0 ..< len(text) {
+	for _ in 0 ..< rune_count {
 		strings.write_byte(&b, '*')
 	}
 
@@ -77,18 +102,27 @@ text_input_layout_measure_text :: proc(
 	password: bool,
 	placeholder: string,
 	caret: int,
+	focused: bool,
 ) -> string {
 	display := text
+	insert_at := caret
 
 	if password {
 		display = text_input_mask_password(text)
+		insert_at = o.text_edit_password_value_to_mask_offset(text, caret)
 	}
 
-	if len(display) == 0 && len(placeholder) > 0 {
+	ime := ""
+
+	if focused {
+		ime = o.state.input.ime_text
+	}
+
+	if len(display) == 0 && len(placeholder) > 0 && len(ime) == 0 {
 		return placeholder
 	}
 
-	return o.input_ime_preview(display, caret, o.state.input.ime_text)
+	return o.input_ime_preview(display, insert_at, ime)
 }
 
 @(private)
@@ -130,8 +164,10 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 	edit_opts := Text_Edit_Widget_Opts {
 		selectable = true,
-		editable   = true,
+		editable   = !cfg.readonly,
+		caret      = true,
 		multiline  = cfg.multiline,
+		password   = cfg.password,
 		max_length = cfg.max_length,
 		draw_space = config.space,
 	}
@@ -159,6 +195,7 @@ Text_Input :: proc(props: Text_Input_Props) {
 		if can_interact && should_auto_focus {
 			widget_apply_auto_focus(key, true)
 			frame_state.is_focused = true
+			text_input_apply_select_on_focus(key, cfg.text, cfg)
 		}
 
 		widget_register_tab_order(key, config.tabbable, can_interact)
@@ -169,6 +206,11 @@ Text_Input :: proc(props: Text_Input_Props) {
 			layout_config.style.wrap = o.Text_Wrap_Kind.BALANCE
 		} else {
 			layout_config.style.wrap = o.Text_Wrap_Kind.NONE
+
+			// Single-line vertical center inside definite height (justify.y), unless author set justify.
+			if props.config.justify.mode == .UNSET {
+				layout_config.justify.y = o.Justify_Align.CENTER
+			}
 		}
 
 		o.widget_scroll_apply(key, props.config, &layout_config)
@@ -179,11 +221,20 @@ Text_Input :: proc(props: Text_Input_Props) {
 			cfg.password,
 			cfg.placeholder,
 			caret,
+			frame_state.is_focused && !cfg.readonly,
 		)
 		node := o.layout_push_node(layout_id, layout_config)
 		o.layout_set_measure_text(node, measure_text, config.max_w)
-		o.layout_set_edit_plain(node, cfg.text)
-		o.layout_pop_node()
+
+		if cfg.readonly && cfg.id != "" {
+			o.shortcut_clear_text_input_note(cfg.id)
+		}
+
+		ime_active := frame_state.is_focused && !cfg.readonly && o.input_ime_active()
+
+		if len(cfg.text) == 0 && len(cfg.placeholder) > 0 && !ime_active {
+			o.layout_set_edit_plain(node, "")
+		}
 
 		scroll_frame := Widget_Scrollport_Frame {
 			layout_id  = layout_id,
@@ -196,6 +247,8 @@ Text_Input :: proc(props: Text_Input_Props) {
 			widget_scrollport_frame_end(true, true)
 		}
 
+		o.layout_pop_node()
+
 		return
 	}
 
@@ -205,7 +258,7 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 	rect := o.ui_layout_rect(layout_id)
 
-	widget_handle_interaction(
+	got_focus, _ := widget_handle_interaction(
 		props,
 		&frame_state,
 		handlers,
@@ -216,6 +269,17 @@ Text_Input :: proc(props: Text_Input_Props) {
 		rect,
 		config,
 	)
+	_ = got_focus
+
+	frame_state.is_focused = widget_is_focused(key)
+	text_edit_widget_blur_ime(was_focused, frame_state.is_focused)
+
+	gained_focus := frame_state.is_focused && !was_focused
+	pointer_placed_caret := gained_focus && o.w_ctx.left_mouse.pressed
+
+	if (gained_focus && !pointer_placed_caret) || widget_got_tab_focus(key) {
+		text_input_apply_select_on_focus(key, cfg.text, cfg)
+	}
 
 	scroll_entry := o.widget_scroll_ensure(key)
 	scroll_before := scroll_entry^
@@ -273,7 +337,7 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 		plain = updated_cmd
 
-		if !cfg.multiline && props.on_submit != nil {
+		if !cfg.multiline && !cfg.readonly && props.on_submit != nil {
 			enter := o.w_ctx.keys[int(o.Scancode.RETURN)]
 			kp_enter := o.w_ctx.keys[int(o.Scancode.KP_ENTER)]
 
@@ -333,7 +397,20 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 	laid := o.layout_text_result(layout_id)
 	text_color, text_color_ok := o.style_color_rgba(config, &frame_state, event)
-	show_placeholder := len(cfg.text) == 0 && len(cfg.placeholder) > 0
+	show_placeholder :=
+		len(cfg.text) == 0 &&
+		len(cfg.placeholder) > 0 &&
+		!(frame_state.is_focused && !cfg.readonly && o.input_ime_active())
+
+	if text_color_ok {
+		edit_opts.has_caret_color = true
+		edit_opts.caret_color = text_color
+	}
+
+	edit_opts.has_selection_color = true
+	edit_opts.selection_color = o.css_color_to_rgba(o.Color.SELECTION)
+
+	text_edit_widget_draw_selection(edit_opts, key, layout_id, rect, plain)
 
 	if laid != nil && text_color_ok {
 		if show_placeholder {
@@ -351,12 +428,18 @@ Text_Input :: proc(props: Text_Input_Props) {
 			}
 		} else {
 			o.font_draw_layout_text(laid, text_color, text_color, nil)
-			edit_opts.has_caret_color = true
-			edit_opts.caret_color = text_color
 		}
 	}
 
-	text_edit_widget_draw_overlay(edit_opts, key, layout_id, rect, scroll_entry^, frame_state.is_focused)
+	text_edit_widget_draw_composition(
+		edit_opts,
+		key,
+		layout_id,
+		rect,
+		plain,
+		frame_state.is_focused,
+	)
+	text_edit_widget_draw_caret(edit_opts, key, layout_id, rect, plain, frame_state.is_focused)
 
 	if scrollport_active {
 		widget_scrollport_frame_end(true, true)

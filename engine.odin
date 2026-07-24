@@ -68,6 +68,7 @@ Resets mouse wheel deltas and the text-input buffer; call at frame start.
 input_begin_frame :: proc() {
 	state.input.mouse_wheel_x = 0
 	state.input.mouse_wheel_y = 0
+	state.input.keys_repeat = {}
 	clear(&state.input.text_input)
 }
 
@@ -92,6 +93,7 @@ Used when the window loses focus so keys are not stuck down.
 */
 input_clear_keyboard_mouse :: proc() {
 	state.input.keys_down = {}
+	state.input.keys_repeat = {}
 	state.input.mouse_left = false
 	state.input.mouse_right = false
 	state.input.mouse_middle = false
@@ -191,14 +193,18 @@ poll_events :: proc() {
 			state.running = false
 
 		case .KEY_DOWN:
-			if event.key.repeat do break
-
 			input_update_modifiers(event.key.mod)
 
 			scancode := int(event.key.scancode)
 			if scancode >= 0 && scancode < KEY_COUNT {
 				state.input.keys_down[scancode] = true
+
+				if event.key.repeat {
+					state.input.keys_repeat[scancode] = true
+				}
 			}
+
+			if event.key.repeat do break
 
 			#partial switch event.key.scancode {
 			case .F5:
@@ -229,9 +235,15 @@ poll_events :: proc() {
 
 		case .TEXT_EDITING:
 			if event.edit.text != nil {
-				input_set_ime_text(string(event.edit.text))
-				state.input.ime_cursor = int(event.edit.start)
-				state.input.ime_length = int(event.edit.length)
+				editing := string(event.edit.text)
+
+				if len(editing) == 0 {
+					input_clear_ime()
+				} else {
+					input_set_ime_text(editing)
+					state.input.ime_cursor = max(int(event.edit.start), 0)
+					state.input.ime_length = max(int(event.edit.length), 0)
+				}
 			}
 
 		case .MOUSE_MOTION:

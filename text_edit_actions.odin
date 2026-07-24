@@ -5,6 +5,7 @@ SHORTCUT_EDIT_COPY :: "edit.copy"
 SHORTCUT_EDIT_CUT :: "edit.cut"
 SHORTCUT_EDIT_PASTE :: "edit.paste"
 SHORTCUT_EDIT_UNDO :: "edit.undo"
+SHORTCUT_EDIT_REDO :: "edit.redo"
 
 text_edit_register_shortcut_actions :: proc() {
 	shortcut_register_action(SHORTCUT_EDIT_SELECT_ALL, text_edit_action_select_all)
@@ -12,6 +13,7 @@ text_edit_register_shortcut_actions :: proc() {
 	shortcut_register_action(SHORTCUT_EDIT_CUT, text_edit_action_cut)
 	shortcut_register_action(SHORTCUT_EDIT_PASTE, text_edit_action_paste)
 	shortcut_register_action(SHORTCUT_EDIT_UNDO, text_edit_action_undo)
+	shortcut_register_action(SHORTCUT_EDIT_REDO, text_edit_action_redo)
 }
 
 text_edit_bind_default_shortcuts :: proc() {
@@ -68,6 +70,29 @@ text_edit_bind_default_shortcuts :: proc() {
 				source = .Builtin,
 			},
 		)
+		shortcut_bind_key(
+			{
+				id = SHORTCUT_EDIT_REDO,
+				chord = {key = .Z, ctrl = true, shift = true},
+				scope = .Focused_Kind,
+				scope_kind = kind,
+				enabled = true,
+				source = .Builtin,
+			},
+		)
+
+		when ODIN_OS != .Darwin {
+			shortcut_bind_key(
+				{
+					id = SHORTCUT_EDIT_REDO,
+					chord = {key = .Y, ctrl = true},
+					scope = .Focused_Kind,
+					scope_kind = kind,
+					enabled = true,
+					source = .Builtin,
+				},
+			)
+		}
 	}
 
 	selectable_kinds := [2]Widget_Kind{.TEXT, .RICH_TEXT}
@@ -104,4 +129,8 @@ text_edit_action_paste :: proc(_: ^Shortcut_Event) {
 
 text_edit_action_undo :: proc(_: ^Shortcut_Event) {
 	text_edit_set_command(.UNDO)
+}
+
+text_edit_action_redo :: proc(_: ^Shortcut_Event) {
+	text_edit_set_command(.REDO)
 }

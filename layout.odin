@@ -12,6 +12,7 @@ Author text and optional wrap-width hint for leaf text measurement.
 Layout_Measure :: struct {
 	text:            string,
 	edit_plain:      string,
+	edit_plain_set:  bool,
 	max_w:           f32,
 	runs:            []Layout_Text_Run,
 	rich:            bool,
@@ -623,6 +624,13 @@ layout_node_has_text :: proc(node: ^Layout_Node) -> bool {
 	return node != nil && len(node.measure.text) > 0
 }
 
+/*
+Returns whether a layout node needs text finalize for paint and/or caret geometry.
+*/
+layout_node_needs_text_finalize :: proc(node: ^Layout_Node) -> bool {
+	return layout_node_has_text(node) || (node != nil && node.config.accepts_text_input)
+}
+
 @(private)
 layout_text_horizontal_insets :: proc(node: ^Layout_Node) -> f32 {
 	return node.padding.l + node.padding.r + node.border.l + node.border.r
@@ -827,7 +835,13 @@ Destroys any previous shaped lines. Line origins are filled by layout_text_posit
 */
 layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	layout_text_release(node)
-	if !layout_node_has_text(node) do return
+	if !layout_node_has_text(node) {
+		if node.config.accepts_text_input {
+			layout_text_prepare_empty_editor(node, wrap_w)
+		}
+
+		return
+	}
 
 	config := node.config
 	resolved_font, layout_scale, ok := font_resolve(
@@ -880,11 +894,78 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	}
 }
 
+@(private)
+layout_text_prepare_empty_editor :: proc(node: ^Layout_Node, wrap_w: f32) {
+	config := node.config
+	resolved_font, layout_scale, ok := font_resolve(
+		config.font,
+		config.font_size,
+		config.space,
+		config.font_weight,
+		config.font_style,
+	)
+	if !ok do return
+
+	face := font_face_from_handle(resolved_font)
+	if face == nil do return
+
+	line_height := config.font_size * config.line_height
+	lh := font_text_line_height(face, line_height, layout_scale)
+
+	node.text = {
+		font         = resolved_font,
+		layout_scale = layout_scale,
+		wrap_w       = wrap_w,
+		line_height  = line_height,
+		size         = {0, lh},
+	}
+}
+
+/*
+Vertical offset for single-line text inside a definite-height content box.
+
+Uses justify.y (START / CENTER / END). Unset justify.y leaves y at content origin.
+*/
+layout_text_single_line_y_offset :: proc(node: ^Layout_Node, line_height: f32) -> f32 {
+	if node == nil || line_height <= 0 do return 0
+	if !length_is_definite(node.config.height) do return 0
+	if text_wrap_kind(node.config.wrap) != .NONE do return 0
+
+	align_y, ok := justify_align_from_y(node.config.justify.y)
+	if !ok do return 0
+
+	inset_h := layout_text_vertical_insets(node)
+	content_h := max(0, node.rect.h - inset_h)
+
+	return justify_align_position_offset(content_h, line_height, align_y)
+}
+
 /*
 Computes per-line draw origins relative to node.rect using text-align.
 */
 layout_text_position_lines :: proc(node: ^Layout_Node) {
-	if len(node.text.lines) == 0 do return
+	if len(node.text.lines) == 0 {
+		if node.config.accepts_text_input && node.text.line_height > 0 {
+			if !layout_uses_frame_arena() {
+				delete(node.text.line_origins)
+			}
+
+			origins := make([]Vec2, 1, layout_frame_allocator())
+			origin := layout_text_content_origin(node)
+			lh := node.text.line_height
+			face := font_face_from_handle(node.text.font)
+
+			if face != nil {
+				lh = font_text_line_height(face, node.text.line_height, node.text.layout_scale)
+			}
+
+			origin.y += layout_text_single_line_y_offset(node, lh)
+			origins[0] = origin
+			node.text.line_origins = origins
+		}
+
+		return
+	}
 
 	if !layout_uses_frame_arena() {
 		delete(node.text.line_origins)
@@ -898,7 +979,7 @@ layout_text_position_lines :: proc(node: ^Layout_Node) {
 	inset_w := layout_text_horizontal_insets(node)
 	box_w := max(0, node.rect.w - inset_w)
 
-	y := content_origin.y
+	y := content_origin.y + layout_text_single_line_y_offset(node, lh)
 	for line, i in node.text.lines {
 		line_w := line.width * node.text.layout_scale
 		x: f32
@@ -1202,20 +1283,47 @@ layout_text_build_edit_glyphs_from_lines :: proc(
 
 /*
 Builds caret/selection geometry aligned with glyph paint pen positions.
+
+Edit glyphs use the same absolute logical space as paint glyphs. When edit_plain is
+explicitly set (including empty), that string drives caret indices; otherwise measure.text.
 */
 layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 	node.text.edit_geometry = {}
-	if len(node.text.lines) == 0 || len(node.text.line_origins) == 0 do return
 
-	edit_plain := node.measure.edit_plain
-	if len(edit_plain) == 0 {
-		edit_plain = node.measure.text
+	edit_plain := node.measure.text
+	if node.measure.edit_plain_set {
+		edit_plain = node.measure.edit_plain
+	}
+
+	if len(node.text.line_origins) == 0 {
+		if !node.config.accepts_text_input do return
+
+		origins := make([]Vec2, 1, layout_frame_allocator())
+		origin := layout_text_content_origin(node)
+		lh := node.text.line_height
+		face := font_face_from_handle(node.text.font)
+
+		if face != nil {
+			lh = font_text_line_height(face, node.text.line_height, node.text.layout_scale)
+		}
+
+		origin.y += layout_text_single_line_y_offset(node, lh)
+		origins[0] = origin
+		node.text.line_origins = origins
+	}
+
+	if node.text.line_height <= 0 {
+		node.text.line_height = node.config.font_size * node.config.line_height
 	}
 
 	node.text.edit_geometry.plain = edit_plain
 	node.text.edit_geometry.rich = node.text.rich
 	node.text.edit_geometry.line_height = node.text.line_height
 	node.text.edit_geometry.line_origins = node.text.line_origins
+
+	if len(edit_plain) == 0 {
+		return
+	}
 
 	edit_glyphs: []Text_Edit_Glyph
 
@@ -1277,47 +1385,13 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 		if len(rich_glyphs) > 0 {
 			edit_glyphs = rich_glyphs[:]
 		}
-	} else if edit_plain == node.measure.text {
+	} else if edit_plain == node.measure.text && len(node.text.lines) > 0 {
 		edit_glyphs = layout_text_build_edit_glyphs_from_lines(
 			node,
 			edit_plain,
 			node.text.lines,
 			node.text.line_origins,
 		)
-	} else if len(edit_plain) > 0 {
-		config := node.config
-		face := font_face_from_handle(node.text.font)
-		if face == nil do return
-
-		scale := node.text.layout_scale
-		wrap := text_wrap_kind(config.wrap)
-		direction := text_direction_kind(config.text_direction)
-		letter_spacing := config.letter_spacing / scale
-		word_spacing := config.word_spacing / scale
-		shape_max_w := node.text.wrap_w > 0 ? node.text.wrap_w / scale : node.text.wrap_w
-		shaped := font_shape_line_build(
-			face,
-			node.text.font.id,
-			edit_plain,
-			shape_max_w,
-			letter_spacing,
-			word_spacing,
-			config.tab_size,
-			wrap,
-			direction,
-		)
-		defer if !shaped.borrowed {
-			font_destroy_shaped_lines(shaped.lines)
-		}
-
-		if len(shaped.lines) > 0 {
-			edit_glyphs = layout_text_build_edit_glyphs_from_lines(
-				node,
-				edit_plain,
-				shaped.lines,
-				node.text.line_origins[:min(len(node.text.line_origins), len(shaped.lines))],
-			)
-		}
 	}
 
 	if edit_glyphs != nil {
@@ -1539,7 +1613,7 @@ Measure leaves node.text empty; finalize always shapes once using the allocated 
 when the author did not set an explicit wrap width.
 */
 layout_finalize_text_node :: proc(node: ^Layout_Node) {
-	if !layout_node_has_text(node) do return
+	if !layout_node_needs_text_finalize(node) do return
 
 	wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
 	layout_text_build(node, wrap_w)
@@ -1610,12 +1684,33 @@ layout_finalize_node :: proc(node: ^Layout_Node) {
 }
 
 /*
+Finalizes paint geometry for a node after its rect is set, then either positions
+children or finalizes a leaf scrollport (text/image content on the node itself).
+*/
+layout_finalize_after_rect :: proc(node: ^Layout_Node) {
+	if node == nil do return
+
+	layout_finalize_node(node)
+
+	if len(node.child_indices) > 0 {
+		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))
+	} else if layout_node_is_scrollport(node) {
+		content := layout_inner_rect(node.rect, node.border, node.padding)
+		layout_finalize_scrollport(node, content)
+	}
+}
+
+/*
 Returns layout-built edit geometry for a UI id after the layout pass.
+
+Empty editors return geometry with line origins and no glyphs so caret can render.
 */
 layout_text_edit_geometry :: proc(id: UI_Id) -> ^Text_Edit_Geometry {
 	if node_index, ok := state.ui.layout.id_to_node[id]; ok {
 		node := &state.ui.layout.nodes[node_index]
-		if len(node.text.edit_geometry.glyphs) > 0 do return &node.text.edit_geometry
+		if len(node.text.edit_geometry.line_origins) > 0 {
+			return &node.text.edit_geometry
+		}
 	}
 	return nil
 }
@@ -1906,6 +2001,7 @@ Attaches author text and optional max-width hint for layout-owned shaping.
 layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.text = text
 	node.measure.edit_plain = text
+	node.measure.edit_plain_set = false
 	node.measure.max_w = max_w
 	node.measure.runs = nil
 	node.measure.rich = false
@@ -1913,13 +2009,14 @@ layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 }
 
 /*
-Sets the plain string used for caret/selection geometry when it differs from measure.text.
+Sets the plain string used for caret/selection geometry.
 
-Call after layout_set_measure_text when display text (placeholder, password mask) is shaped
-for layout but edit indices refer to a different plain document.
+Call after layout_set_measure_text when display text (placeholder) is shaped for paint
+but caret indices refer to a different plain document, including empty.
 */
 layout_set_edit_plain :: proc(node: ^Layout_Node, plain: string) {
 	node.measure.edit_plain = plain
+	node.measure.edit_plain_set = true
 }
 
 /*
@@ -1934,6 +2031,7 @@ layout_set_measure_rich_text :: proc(
 ) {
 	node.measure.text = text
 	node.measure.edit_plain = text
+	node.measure.edit_plain_set = false
 	node.measure.max_w = max_w
 	node.measure.runs = runs
 	node.measure.rich = len(runs) > 0
@@ -2643,16 +2741,8 @@ layout_position_child_rect :: proc(
 		w = size.x,
 		h = size.y,
 	}
-	layout_finalize_node(child)
-
-	if len(child.child_indices) > 0 {
-		layout_position_children(child, layout_inner_rect(child.rect, child.border, child.padding))
-	}
+	layout_finalize_after_rect(child)
 }
-
-/*
-Positions out-of-flow children of a node after in-flow flex placement.
-*/
 @(private)
 layout_position_out_of_flow_children :: proc(node: ^Layout_Node) {
 	for child_index in node.child_indices {
@@ -3153,14 +3243,7 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			w = size.x,
 			h = size.y,
 		}
-		layout_finalize_node(child)
-
-		if len(child.child_indices) > 0 {
-			layout_position_children(
-				child,
-				layout_inner_rect(child.rect, child.border, child.padding),
-			)
-		}
+		layout_finalize_after_rect(child)
 
 		if in_flow_child {
 			if !main_space {
@@ -3214,14 +3297,7 @@ layout_solve_node :: proc(node: ^Layout_Node, bounds: Rect) {
 		w = size.x,
 		h = size.y,
 	}
-	layout_finalize_node(node)
-
-	if len(node.child_indices) > 0 {
-		layout_position_children(node, layout_inner_rect(node.rect, node.border, node.padding))
-	} else if layout_node_is_scrollport(node) {
-		content := layout_inner_rect(node.rect, node.border, node.padding)
-		layout_finalize_scrollport(node, content)
-	}
+	layout_finalize_after_rect(node)
 }
 
 /*

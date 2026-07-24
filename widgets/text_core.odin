@@ -182,14 +182,46 @@ text_widget_core :: proc(
 			plain = updated_cmd
 		}
 
-		text_edit_widget_draw_overlay(
-			opts,
-			key,
-			layout_id,
-			layout_rect,
-			scroll_entry^,
-			frame_state.is_focused,
-		)
+		opts.has_caret_color = true
+		opts.caret_color = rgbaColor
+		opts.has_selection_color = true
+		opts.selection_color = o.css_color_to_rgba(o.Color.SELECTION)
+
+		text_edit_widget_draw_selection(opts, key, layout_id, layout_rect, plain)
+
+		deco_color := rgbaColor
+		#partial switch c in style.text_decoration_color {
+		case o.Color:
+			if c != .INHERIT {
+				if resolved, ok := o.style_text_decoration_color_rgba(style, frame_state, event); ok {
+					deco_color = resolved
+				}
+			}
+		case:
+			if resolved, ok := o.style_text_decoration_color_rgba(style, frame_state, event); ok {
+				deco_color = resolved
+			}
+		}
+
+		run_colors: []o.RGBA
+
+		if laid.rich && len(laid.runs) > 0 {
+			run_colors = make([]o.RGBA, len(laid.runs), context.temp_allocator)
+
+			for run, i in laid.runs {
+				run_colors[i], _ = o.text_run_resolve_color(run, rgbaColor, color_ok)
+				opacity := o.text_run_resolve_opacity(run, style.opacity)
+				run_colors[i].a = u8(clamp(f32(run_colors[i].a) * opacity, 0, 255))
+			}
+		}
+
+		o.Draw_Push_Opacity(style.opacity)
+		defer o.Draw_Pop_Opacity()
+
+		size := o.font_draw_layout_text(laid, rgbaColor, deco_color, run_colors)
+		text_edit_widget_draw_caret(opts, key, layout_id, layout_rect, plain, frame_state.is_focused)
+
+		return size
 	}
 
 	deco_color := rgbaColor
