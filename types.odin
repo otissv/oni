@@ -122,17 +122,17 @@ Text_Undo_Stack :: struct {
 }
 
 Text_Edit_State :: struct {
-	caret:                 int,
-	selection:             Text_Selection,
-	drag_active:           bool,
-	blink_phase:           f32,
-	last_click_time:       f64,
-	last_click_pos:        Vec2,
-	click_count:           int,
-	undo:                  Text_Undo_Stack,
-	redo:                  Text_Undo_Stack,
-	preferred_column:      f32,
-	has_preferred_column:  bool,
+	caret:                int,
+	selection:            Text_Selection,
+	drag_active:          bool,
+	blink_phase:          f32,
+	last_click_time:      f64,
+	last_click_pos:       Vec2,
+	click_count:          int,
+	undo:                 Text_Undo_Stack,
+	redo:                 Text_Undo_Stack,
+	preferred_column:     f32,
+	has_preferred_column: bool,
 }
 
 Text_Edit_Glyph :: struct {

@@ -43,6 +43,8 @@ ensure_persistent :: proc() {
 		persistent.app.Route = .Widgets
 	}
 	bind()
+	o.Register_App_Type_Defaults(install_app_type_defaults)
+	o.Set_App_Type_From(App_Type, App_Type.Application)
 }
 
 /*
@@ -71,7 +73,7 @@ Re-registers app-owned shortcut action procs after a DLL swap.
 Does not reload bindings from disk (in-memory table survives in Persistent).
 */
 rebind_app_shortcuts :: proc() {
-	// Register app Shortcut_Register_Action handlers here.
+	o.Register_App_Type_Defaults(install_app_type_defaults)
 }
 
 /*

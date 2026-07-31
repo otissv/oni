@@ -25,7 +25,7 @@ Scrollport_Metrics :: struct {
 Scrollbar thumb-drag latch kept across frames while the pointer is held.
 */
 Scroll_Bar_Drag :: struct {
-	active:     bool,
+	active:      bool,
 	grab_offset: f32,
 }
 
@@ -50,6 +50,7 @@ UI_State :: struct {
 Top-level engine state: window, GPU, assets, input, view, and UI subsystems.
 */
 State :: struct {
+	app_type:            App_Type_Id,
 	window:              ^sdl.Window,
 	gpu:                 ^sdl.GPUDevice,
 	gpu_state:           GPU_State,
@@ -74,7 +75,7 @@ State :: struct {
 	reload_keys_prev:    struct {
 		f5, f6: bool,
 	},
-	errors: Error_State,
+	errors:              Error_State,
 }
 
 state: ^State

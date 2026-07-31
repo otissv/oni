@@ -648,6 +648,7 @@ Transfers SDL/GPU handles, assets, view, UI, and gamepad; does not copy
 input heap data (see release_input_allocations).
 */
 copy_state_fields :: proc(dst: ^State, src: ^State) {
+	dst.app_type = src.app_type
 	dst.window = src.window
 	dst.gpu = src.gpu
 	dst.gpu_state = src.gpu_state

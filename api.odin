@@ -162,6 +162,14 @@ Text_Document_Free :: text_document_free_runs
 
 Shortcut_Install_Defaults :: shortcut_install_defaults
 Shortcut_Rebind_Builtin_Actions :: shortcut_rebind_builtin_actions
+Shortcut_Install_Tool_Defaults :: shortcut_install_tool_defaults
+Shortcut_Install_Game_Defaults :: shortcut_install_game_defaults
+
+App_Type :: app_type
+Set_App_Type :: app_type_set
+App_Type_As :: app_type_as
+Set_App_Type_From :: app_type_set_enum
+Register_App_Type_Defaults :: register_app_type_defaults
 
 Layout_Stack_Index :: ui_layout_stack_index
 Layout_Paint_Skip :: ui_layout_paint_skip

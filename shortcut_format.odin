@@ -37,6 +37,7 @@ Shortcut_Parsed_Binding :: struct {
 	priority:       i32,
 	enabled:        bool,
 	source:         Shortcut_Source,
+	app_type:       App_Type_Filter,
 }
 
 /*
@@ -50,7 +51,7 @@ shortcut_export_bindings :: proc(allocator := context.allocator) -> string {
 	fmt.sbprintf(&b, "# trigger = action {{ options }}\n")
 	fmt.sbprintf(&b, "# User overrides only. Builtins live in the engine.\n")
 	fmt.sbprintf(&b, "# Tokens: CTRL+EQUAL, CTRL+WHEEL+UP, LEFT_CLICK, GAMEPAD_START, G,S\n")
-	fmt.sbprintf(&b, "# Options: enabled, scope, scope_key, scope_kind, priority\n")
+	fmt.sbprintf(&b, "# Options: enabled, scope, scope_key, scope_kind, priority, app_type\n")
 	for binding in state.shortcuts.bindings {
 		if binding.source != .User do continue
 		shortcut_export_friendly(&b, binding)
@@ -104,12 +105,14 @@ shortcut_export_friendly :: proc(b: ^strings.Builder, binding: Shortcut_Binding)
 	trigger := shortcut_format_trigger_token(binding, context.temp_allocator)
 	fmt.sbprintf(b, "%s = %s", trigger, binding.id)
 
+	_, has_app_type := binding.app_type.(App_Type_Id)
 	needs_opts :=
 		!binding.enabled ||
 		binding.scope != .Global ||
 		binding.scope_key != "" ||
 		binding.priority != 0 ||
-		(binding.scope == .Focused_Kind && binding.scope_kind != {})
+		(binding.scope == .Focused_Kind && binding.scope_kind != {}) ||
+		has_app_type
 
 	if needs_opts {
 		fmt.sbprintf(b, " {{")
@@ -136,6 +139,11 @@ shortcut_export_friendly :: proc(b: ^strings.Builder, binding: Shortcut_Binding)
 		if binding.priority != 0 {
 			if !first do fmt.sbprintf(b, ",")
 			fmt.sbprintf(b, " priority = %d", binding.priority)
+			first = false
+		}
+		if type_id, is_type := binding.app_type.(App_Type_Id); is_type {
+			if !first do fmt.sbprintf(b, ",")
+			fmt.sbprintf(b, " app_type = %d", int(type_id))
 		}
 		_ = first
 		fmt.sbprintf(b, " }}")
@@ -383,6 +391,8 @@ shortcut_parse_opts :: proc(text: string, out: ^Shortcut_Parsed_Binding) -> bool
 			out.scope_kind = Widget_Kind(shortcut_parse_int(value))
 		case "priority":
 			out.priority = i32(shortcut_parse_int(value))
+		case "app_type":
+			out.app_type = App_Type_Filter(App_Type_Id(shortcut_parse_int(value)))
 		case:
 			return false
 		}
@@ -767,6 +777,7 @@ shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
 				priority = row.priority,
 				enabled = row.enabled,
 				source = .User,
+				app_type = row.app_type,
 			},
 		)
 	case .Wheel_Y:
@@ -781,6 +792,7 @@ shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
 				priority = row.priority,
 				enabled = row.enabled,
 				source = .User,
+				app_type = row.app_type,
 			},
 		)
 	case .Mouse_Button:
@@ -795,6 +807,7 @@ shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
 				priority = row.priority,
 				enabled = row.enabled,
 				source = .User,
+				app_type = row.app_type,
 			},
 		)
 	case .Sequence:
@@ -811,6 +824,7 @@ shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
 				priority = row.priority,
 				enabled = row.enabled,
 				source = .User,
+				app_type = row.app_type,
 			},
 		)
 	case .Gamepad:
@@ -824,6 +838,7 @@ shortcut_apply_parsed :: proc(row: Shortcut_Parsed_Binding) -> bool {
 				priority = row.priority,
 				enabled = row.enabled,
 				source = .User,
+				app_type = row.app_type,
 			},
 		)
 	}

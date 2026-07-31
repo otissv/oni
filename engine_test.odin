@@ -30,6 +30,9 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	state = &test_state
 	widget_ctx_sync()
 	theme = nil
+	register_app_type_defaults(proc(_: App_Type_Id) {
+		shortcut_install_tool_defaults()
+	})
 	clear_test_hooks()
 	defer clear_test_hooks()
 	state.running = true
@@ -1854,6 +1857,7 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	src.ui.frame = 7
 	src.gamepad = transmute(^sdl.Gamepad)uintptr(5)
 	src.gamepad_instance_id = 99
+	src.app_type = App_Type_Id(3)
 	src.force_reload = true
 	src.force_restart = true
 	append(&src.input.text_input, 'z')
@@ -1877,6 +1881,7 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	testing.expect_value(t, dst.ui.frame, u64(7))
 	testing.expect(t, dst.gamepad == src.gamepad)
 	testing.expect_value(t, dst.gamepad_instance_id, sdl.JoystickID(99))
+	testing.expect_value(t, int(dst.app_type), 3)
 	testing.expect(t, dst.shortcuts.defaults_installed == src.shortcuts.defaults_installed)
 	testing.expect_value(t, len(dst.input.text_input), 0)
 	testing.expect(t, !dst.force_reload)

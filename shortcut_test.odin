@@ -702,3 +702,50 @@ shortcut_edit_actions_set_text_edit_command :: proc(t: ^testing.T) {
 		},
 	)
 }
+
+@(test)
+shortcut_app_type_filter :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			shortcut_init()
+			shortcut_register_action("test.action", proc(_: ^Shortcut_Event) {})
+
+			tool_only := App_Type_Filter(App_Type_Id(0))
+			game_only := App_Type_Filter(App_Type_Id(1))
+
+			shortcut_bind_key(
+				{
+					id = "test.action",
+					chord = {key = .K},
+					scope = .Global,
+					enabled = true,
+					source = .User,
+					app_type = tool_only,
+				},
+			)
+			shortcut_bind_key(
+				{
+					id = "test.action",
+					chord = {key = .L},
+					scope = .Global,
+					enabled = true,
+					source = .User,
+					app_type = game_only,
+				},
+			)
+
+			state.app_type = App_Type_Id(0)
+			shortcut_test_press(.K)
+			testing.expect(t, shortcut_key_consumed(.K))
+			shortcut_test_press(.L)
+			testing.expect(t, !shortcut_key_consumed(.L))
+
+			state.app_type = App_Type_Id(1)
+			shortcut_test_press(.K)
+			testing.expect(t, !shortcut_key_consumed(.K))
+			shortcut_test_press(.L)
+			testing.expect(t, shortcut_key_consumed(.L))
+		},
+	)
+}

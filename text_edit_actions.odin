@@ -16,7 +16,7 @@ text_edit_register_shortcut_actions :: proc() {
 	shortcut_register_action(SHORTCUT_EDIT_REDO, text_edit_action_redo)
 }
 
-text_edit_bind_default_shortcuts :: proc() {
+text_edit_bind_default_shortcuts :: proc(app_type: App_Type_Filter) {
 	input_kinds := [?]Widget_Kind{.TEXT_INPUT, .RICH_TEXT_INPUT}
 
 	for kind in input_kinds {
@@ -28,6 +28,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 		shortcut_bind_key(
@@ -38,6 +39,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 		shortcut_bind_key(
@@ -48,6 +50,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 		shortcut_bind_key(
@@ -58,6 +61,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 		shortcut_bind_key(
@@ -68,6 +72,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 		shortcut_bind_key(
@@ -78,6 +83,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 
@@ -90,6 +96,7 @@ text_edit_bind_default_shortcuts :: proc() {
 					scope_kind = kind,
 					enabled = true,
 					source = .Builtin,
+					app_type = app_type,
 				},
 			)
 		}
@@ -106,6 +113,7 @@ text_edit_bind_default_shortcuts :: proc() {
 				scope_kind = kind,
 				enabled = true,
 				source = .Builtin,
+				app_type = app_type,
 			},
 		)
 	}

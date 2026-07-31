@@ -25,6 +25,7 @@ run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 
 	dt := frame_time()
 	input_begin_frame()
+
 	poll_events()
 
 	if !can_render() do return

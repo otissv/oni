@@ -45,6 +45,7 @@ Shortcut_Key_Binding :: struct {
 	scope_key:  string,
 	scope_kind: Widget_Kind,
 	source:     Shortcut_Source,
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Wheel_Binding :: struct {
@@ -57,6 +58,7 @@ Shortcut_Wheel_Binding :: struct {
 	scope_key:  string,
 	scope_kind: Widget_Kind,
 	source:     Shortcut_Source,
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Mouse_Binding :: struct {
@@ -69,6 +71,7 @@ Shortcut_Mouse_Binding :: struct {
 	scope_key:  string,
 	scope_kind: Widget_Kind,
 	source:     Shortcut_Source,
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Sequence_Binding :: struct {
@@ -81,6 +84,7 @@ Shortcut_Sequence_Binding :: struct {
 	scope_key:  string,
 	scope_kind: Widget_Kind,
 	source:     Shortcut_Source,
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Gamepad_Binding :: struct {
@@ -92,6 +96,7 @@ Shortcut_Gamepad_Binding :: struct {
 	scope_key:  string,
 	scope_kind: Widget_Kind,
 	source:     Shortcut_Source,
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Key_Bindings :: [Shortcut_IDS]Shortcut_Key_Binding
@@ -189,6 +194,7 @@ Shortcut_Binding :: struct {
 	priority:       i32,
 	enabled:        bool,
 	source:         Shortcut_Source,
+	app_type:       App_Type_Filter,
 }
 
 Shortcut_Bind_Opts :: struct {
@@ -198,6 +204,7 @@ Shortcut_Bind_Opts :: struct {
 	priority:   i32,
 	disabled:   bool,
 	source:     Shortcut_Source, // default User; pass .Builtin only when restoring builtins
+	app_type:   App_Type_Filter,
 }
 
 Shortcut_Event :: struct {
@@ -487,6 +494,7 @@ shortcut_bind :: proc(id: string, chord: Shortcut_Chord, opts: Shortcut_Bind_Opt
 			priority = opts.priority,
 			enabled = !opts.disabled,
 			source = opts.source,
+			app_type = opts.app_type,
 		},
 	)
 }
@@ -500,6 +508,7 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 	priority := key_binding.priority
 	enabled := key_binding.enabled
 	source := key_binding.source
+	app_type := key_binding.app_type
 
 	if state == nil || id == "" || chord.key == .UNKNOWN do return false
 
@@ -514,6 +523,7 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 			b.priority = priority
 			b.enabled = enabled
 			b.source = source
+			b.app_type = app_type
 
 			return true
 		}
@@ -529,6 +539,7 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 		priority   = priority,
 		enabled    = enabled,
 		source     = source,
+		app_type   = app_type,
 	}
 
 	append(&state.shortcuts.bindings, binding)
@@ -573,6 +584,7 @@ shortcut_bind_wheel :: proc(binding: Shortcut_Wheel_Binding) -> bool {
 			b.enabled = binding.enabled
 			b.source = binding.source
 			b.chord = chord
+			b.app_type = binding.app_type
 
 			return true
 		}
@@ -589,6 +601,7 @@ shortcut_bind_wheel :: proc(binding: Shortcut_Wheel_Binding) -> bool {
 		priority   = binding.priority,
 		enabled    = binding.enabled,
 		source     = binding.source,
+		app_type   = binding.app_type,
 	}
 
 	append(&state.shortcuts.bindings, out)
@@ -630,6 +643,7 @@ shortcut_bind_mouse :: proc(binding: Shortcut_Mouse_Binding) -> bool {
 			b.enabled = binding.enabled
 			b.source = binding.source
 			b.chord = chord
+			b.app_type = binding.app_type
 
 			return true
 		}
@@ -646,6 +660,7 @@ shortcut_bind_mouse :: proc(binding: Shortcut_Mouse_Binding) -> bool {
 		priority     = binding.priority,
 		enabled      = binding.enabled,
 		source       = binding.source,
+		app_type     = binding.app_type,
 	}
 
 	append(&state.shortcuts.bindings, out)
@@ -701,6 +716,7 @@ shortcut_bind_sequence :: proc(binding: Shortcut_Sequence_Binding) -> bool {
 			b.enabled = binding.enabled
 			b.source = binding.source
 			b.chord = chord
+			b.app_type = binding.app_type
 
 			return true
 		}
@@ -718,6 +734,7 @@ shortcut_bind_sequence :: proc(binding: Shortcut_Sequence_Binding) -> bool {
 		priority     = binding.priority,
 		enabled      = binding.enabled,
 		source       = binding.source,
+		app_type     = binding.app_type,
 	}
 
 	append(&state.shortcuts.bindings, out)
@@ -746,6 +763,7 @@ shortcut_bind_gamepad :: proc(binding: Shortcut_Gamepad_Binding) -> bool {
 			b.priority = binding.priority
 			b.enabled = binding.enabled
 			b.source = binding.source
+			b.app_type = binding.app_type
 
 			return true
 		}
@@ -761,6 +779,7 @@ shortcut_bind_gamepad :: proc(binding: Shortcut_Gamepad_Binding) -> bool {
 		priority       = binding.priority,
 		enabled        = binding.enabled,
 		source         = binding.source,
+		app_type       = binding.app_type,
 	}
 
 	append(&state.shortcuts.bindings, out)
@@ -1080,11 +1099,67 @@ shortcut_install_defaults :: proc() {
 
 	if state.shortcuts.defaults_installed do return
 
-	shortcut_defaults()
-	text_edit_bind_default_shortcuts()
-
-	// app.quit action is registered; Escape is not bound by default.
+	shortcut_defaults_universal()
+	shortcut_install_app_type_defaults()
 	state.shortcuts.defaults_installed = true
+}
+
+@(private)
+shortcut_install_app_type_defaults :: proc() {
+	if state == nil do return
+
+	if app_type_defaults_installer != nil {
+		app_type_defaults_installer(state.app_type)
+	}
+}
+
+/*
+Removes builtin bindings restricted to a specific app type, then re-runs the
+registered app-type defaults installer for the current type.
+*/
+shortcut_refresh_app_type_defaults :: proc() {
+	if state == nil do return
+
+	shortcut_strip_app_type_builtins()
+	shortcut_install_app_type_defaults()
+}
+
+@(private)
+shortcut_strip_app_type_builtins :: proc() {
+	if state == nil do return
+
+	for i := len(state.shortcuts.bindings) - 1; i >= 0; i -= 1 {
+		b := state.shortcuts.bindings[i]
+
+		if b.source != .Builtin do continue
+		if _, is_type := b.app_type.(App_Type_Id); !is_type do continue
+
+		shortcut_free_binding(&state.shortcuts.bindings[i])
+		ordered_remove(&state.shortcuts.bindings, i)
+	}
+}
+
+/*
+Installs view, text-edit, and desktop navigation builtins for tool/application UIs.
+
+Tag bindings with the current app type so they are removed when the type changes.
+*/
+shortcut_install_tool_defaults :: proc() {
+	if state == nil do return
+
+	filter := App_Type_Filter(state.app_type)
+	shortcut_defaults_view(filter)
+	text_edit_bind_default_shortcuts(filter)
+}
+
+/*
+Installs game-oriented builtins: gamepad fullscreen only (no view zoom / text edit).
+*/
+shortcut_install_game_defaults :: proc() {
+	if state == nil do return
+
+	filter := App_Type_Filter(state.app_type)
+	shortcut_defaults_game(filter)
 }
 
 shortcut_rebind_builtin_actions :: proc() {
@@ -1615,6 +1690,7 @@ shortcut_best_sequence_binding :: proc(
 		}
 
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
 
 		cand := Shortcut_Ranked {
 			priority = b.priority,
@@ -1861,6 +1937,7 @@ shortcut_best_key_binding :: proc(
 		if !shortcut_modifiers_match(b.chord, dispatch.mods) do continue
 		if dispatch.text_filter && !shortcut_chord_is_command(b.chord) do continue
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
 
 		cand := Shortcut_Ranked {
 			priority = b.priority,
@@ -1893,6 +1970,7 @@ shortcut_best_wheel_binding :: proc(
 		if b.wheel_sign != 0 && b.wheel_sign != sign do continue
 		if !shortcut_modifiers_match(b.chord, dispatch.mods) do continue
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
 
 		cand := Shortcut_Ranked {
 			priority = b.priority,
@@ -1963,6 +2041,7 @@ shortcut_best_mouse_binding :: proc(
 		if b.mouse_button != button do continue
 		if !shortcut_modifiers_match(b.chord, dispatch.mods) do continue
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
 
 		cand := Shortcut_Ranked {
 			priority = b.priority,
@@ -1994,6 +2073,7 @@ shortcut_best_gamepad_binding :: proc(
 		if !b.enabled || b.trigger != .Gamepad do continue
 		if b.gamepad_button != button do continue
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
 
 		cand := Shortcut_Ranked {
 			priority = b.priority,
