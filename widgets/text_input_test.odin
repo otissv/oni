@@ -139,14 +139,7 @@ text_input_layout_registers_and_centers_single_line :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Text_Input({
-			config = {
-				id = "ti-center",
-				text = "Hi",
-				width = set.Width(f32(200)),
-				height = set.Height(f32(48)),
-			},
-		})
+		Text_Input({config = {id = "ti-center", text = "Hi", width = set.Width(f32(200)), height = set.Height(f32(48))}})
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "ti-center")
@@ -167,14 +160,16 @@ text_input_readonly_clears_text_input_note :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Text_Input({
-			config = {
-				id = "ti-readonly",
-				text = "locked",
-				readonly = true,
-				width = set.Width(f32(160)),
+		Text_Input(
+			{
+				config = {
+					id = "ti-readonly",
+					text = "locked",
+					readonly = true,
+					width = set.Width(f32(160)),
+				},
 			},
-		})
+		)
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "ti-readonly")

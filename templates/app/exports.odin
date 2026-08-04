@@ -68,9 +68,10 @@ register_shortcuts :: proc() {
 }
 
 /*
-Re-registers app-owned shortcut action procs after a DLL swap.
+Re-registers app-owned shortcut hooks after a DLL swap.
 
-Does not reload bindings from disk (in-memory table survives in Persistent).
+Engine builtin actions and default bindings are reinstalled by On_Reload.
+User bindings in Persistent engine state are preserved (not reloaded from disk).
 */
 rebind_app_shortcuts :: proc() {
 	o.Register_App_Type_Defaults(install_app_type_defaults)

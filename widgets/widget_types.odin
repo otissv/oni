@@ -108,6 +108,7 @@ Clears one-frame pressed and released flags on a mouse button state.
 clear_button_transients :: proc(button: ^o.Widget_Mouse_Button_State) {
 	button.pressed = false
 	button.released = false
+	button.clicks = 0
 }
 
 /*

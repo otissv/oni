@@ -156,10 +156,15 @@ text_widget_core :: proc(
 		)
 
 		if opts.selectable && !opts.editable {
+			if frame_state.is_focused {
+				text_edit_widget_process_shortcuts(key, opts.widget_kind)
+			}
+
 			text_edit_widget_handle_selectable(key, plain)
 		}
 
 		if opts.editable && frame_state.is_focused {
+			text_edit_widget_process_shortcuts(key, opts.widget_kind)
 			updated, _ := text_edit_widget_handle_keys(
 				key,
 				layout_id,

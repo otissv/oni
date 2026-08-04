@@ -835,7 +835,7 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.running)
 
-			shortcut_bind(SHORTCUT_APP_QUIT, {key = .ESCAPE})
+			shortcut_bind(Shortcut_Action_Type.SHORTCUT_APP_QUIT, {key = .ESCAPE})
 			state.input.keys_down[int(sdl.Scancode.ESCAPE)] = false
 			for &key in w_ctx.keys {
 				clear_key_transients(&key)

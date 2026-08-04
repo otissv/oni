@@ -2,6 +2,7 @@ package oni
 
 import "core:math"
 import "core:strings"
+import "core:unicode"
 import "core:unicode/utf8"
 
 TEXT_EDIT_BLINK_PERIOD :: f32(0.53)
@@ -164,11 +165,7 @@ text_edit_line_at :: proc(geo: ^Text_Edit_Geometry, offset: int) -> int {
 	return min(hard_line, line_count - 1)
 }
 
-text_edit_hit_test :: proc(
-	geo: ^Text_Edit_Geometry,
-	layout_rect: Rect,
-	abs_point: Vec2,
-) -> int {
+text_edit_hit_test :: proc(geo: ^Text_Edit_Geometry, layout_rect: Rect, abs_point: Vec2) -> int {
 	if geo == nil do return 0
 
 	x := abs_point.x
@@ -370,11 +367,9 @@ text_edit_select_all :: proc(text: string) -> Text_Selection {
 
 @(private)
 unicode_is_word_rune :: proc(r: rune) -> bool {
-	if r == '_' do return true
+	if r == '_' || r == '\'' do return true
 
-	return (r >= '0' && r <= '9') ||
-	       (r >= 'A' && r <= 'Z') ||
-	       (r >= 'a' && r <= 'z')
+	return unicode.is_letter(r) || unicode.is_digit(r)
 }
 
 text_edit_word_at :: proc(text: string, offset: int) -> Text_Selection {
@@ -640,7 +635,10 @@ text_edit_backspace :: proc(
 	if text_edit_selection_active(selection) {
 		start, end := text_edit_selection_normalized(selection)
 		new_text, new_caret = text_edit_plain_splice(text, start, end, "", allocator)
-		new_selection = {anchor = start, head = start}
+		new_selection = {
+			anchor = start,
+			head   = start,
+		}
 		changed = true
 
 		return
@@ -656,7 +654,10 @@ text_edit_backspace :: proc(
 
 	prev := text_edit_cluster_prev(text, caret)
 	new_text, new_caret = text_edit_plain_splice(text, prev, caret, "", allocator)
-	new_selection = {anchor = prev, head = prev}
+	new_selection = {
+		anchor = prev,
+		head   = prev,
+	}
 	changed = true
 
 	return
@@ -687,7 +688,10 @@ text_edit_backspace_word :: proc(
 
 	prev := text_edit_word_prev(text, caret)
 	new_text, new_caret = text_edit_plain_splice(text, prev, caret, "", allocator)
-	new_selection = {anchor = prev, head = prev}
+	new_selection = {
+		anchor = prev,
+		head   = prev,
+	}
 	changed = true
 
 	return
@@ -707,7 +711,10 @@ text_edit_delete :: proc(
 	if text_edit_selection_active(selection) {
 		start, end := text_edit_selection_normalized(selection)
 		new_text, new_caret = text_edit_plain_splice(text, start, end, "", allocator)
-		new_selection = {anchor = start, head = start}
+		new_selection = {
+			anchor = start,
+			head   = start,
+		}
 		changed = true
 
 		return
@@ -723,7 +730,10 @@ text_edit_delete :: proc(
 
 	next := text_edit_cluster_next(text, caret)
 	new_text, new_caret = text_edit_plain_splice(text, caret, next, "", allocator)
-	new_selection = {anchor = caret, head = caret}
+	new_selection = {
+		anchor = caret,
+		head   = caret,
+	}
 	changed = true
 
 	return
@@ -754,7 +764,10 @@ text_edit_delete_word :: proc(
 
 	next := text_edit_word_next(text, caret)
 	new_text, new_caret = text_edit_plain_splice(text, caret, next, "", allocator)
-	new_selection = {anchor = caret, head = caret}
+	new_selection = {
+		anchor = caret,
+		head   = caret,
+	}
 	changed = true
 
 	return
@@ -814,7 +827,11 @@ text_edit_truncate_insert_for_max_length :: proc(
 }
 
 @(private)
-text_edit_prefix_runes :: proc(text: string, rune_count: int, allocator := context.temp_allocator) -> string {
+text_edit_prefix_runes :: proc(
+	text: string,
+	rune_count: int,
+	allocator := context.temp_allocator,
+) -> string {
 	if rune_count <= 0 do return ""
 
 	end := text_edit_byte_offset_for_rune_index(text, rune_count)
@@ -870,10 +887,7 @@ text_edit_reset_blink :: proc(edit: ^Text_Edit_State) {
 }
 
 text_edit_scroll_axes :: proc(overflow_x, overflow_y: Overflow) -> Text_Edit_Scroll_Axes {
-	return {
-		x = layout_node_scrolls_axis(overflow_x),
-		y = layout_node_scrolls_axis(overflow_y),
-	}
+	return {x = layout_node_scrolls_axis(overflow_x), y = layout_node_scrolls_axis(overflow_y)}
 }
 
 text_edit_caret_abs_x :: proc(geo: ^Text_Edit_Geometry, caret: int) -> f32 {
@@ -951,16 +965,13 @@ text_edit_offset_at_line_x :: proc(geo: ^Text_Edit_Geometry, line_i: int, x: f32
 	return text_edit_clamp_offset(geo.plain, best_offset)
 }
 
-text_edit_merge_content_bounds :: proc(a, b: Text_Edit_Content_Bounds) -> Text_Edit_Content_Bounds {
+text_edit_merge_content_bounds :: proc(
+	a, b: Text_Edit_Content_Bounds,
+) -> Text_Edit_Content_Bounds {
 	if a.x1 < a.x0 do return b
 	if b.x1 < b.x0 do return a
 
-	return {
-		x0 = min(a.x0, b.x0),
-		y0 = min(a.y0, b.y0),
-		x1 = max(a.x1, b.x1),
-		y1 = max(a.y1, b.y1),
-	}
+	return {x0 = min(a.x0, b.x0), y0 = min(a.y0, b.y0), x1 = max(a.x1, b.x1), y1 = max(a.y1, b.y1)}
 }
 
 text_edit_caret_content_bounds :: proc(
@@ -1190,7 +1201,11 @@ text_edit_set_preferred_column :: proc(
 	edit.has_preferred_column = true
 }
 
-text_edit_preferred_column :: proc(edit: ^Text_Edit_State, geo: ^Text_Edit_Geometry, caret: int) -> f32 {
+text_edit_preferred_column :: proc(
+	edit: ^Text_Edit_State,
+	geo: ^Text_Edit_Geometry,
+	caret: int,
+) -> f32 {
 	if edit != nil && edit.has_preferred_column {
 		return edit.preferred_column
 	}
@@ -1198,11 +1213,7 @@ text_edit_preferred_column :: proc(edit: ^Text_Edit_State, geo: ^Text_Edit_Geome
 	return text_edit_caret_abs_x(geo, caret)
 }
 
-text_edit_move_to_line :: proc(
-	geo: ^Text_Edit_Geometry,
-	line_i: int,
-	preferred_x: f32,
-) -> int {
+text_edit_move_to_line :: proc(geo: ^Text_Edit_Geometry, line_i: int, preferred_x: f32) -> int {
 	if geo == nil do return 0
 
 	line_count := len(geo.line_origins)
@@ -1238,7 +1249,10 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = caret}
+				new_selection = {
+					anchor = caret,
+					head   = caret,
+				}
 			}
 
 			if ctrl {
@@ -1257,7 +1271,10 @@ text_edit_handle_key_navigation :: proc(
 				new_caret = text_edit_cluster_prev(text, caret)
 			}
 
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1267,7 +1284,10 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = caret}
+				new_selection = {
+					anchor = caret,
+					head   = caret,
+				}
 			}
 
 			if ctrl {
@@ -1286,7 +1306,10 @@ text_edit_handle_key_navigation :: proc(
 				new_caret = text_edit_cluster_next(text, caret)
 			}
 
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1301,12 +1324,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1321,12 +1350,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1341,12 +1376,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1361,12 +1402,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1383,12 +1430,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1405,12 +1458,18 @@ text_edit_handle_key_navigation :: proc(
 
 		if shift {
 			if !text_edit_selection_active(selection) {
-				new_selection = {anchor = caret, head = new_caret}
+				new_selection = {
+					anchor = caret,
+					head   = new_caret,
+				}
 			} else {
 				new_selection.head = new_caret
 			}
 		} else {
-			new_selection = {anchor = new_caret, head = new_caret}
+			new_selection = {
+				anchor = new_caret,
+				head   = new_caret,
+			}
 		}
 
 		text_edit_set_preferred_column(edit, geo, new_caret)
@@ -1444,6 +1503,21 @@ text_edit_set_command :: proc(cmd: Text_Edit_Command) {
 	if w_ctx == nil do return
 
 	w_ctx.text_edit_command = cmd
+}
+
+text_edit_set_nav :: proc(key: Scancode, shift, ctrl: bool) {
+	if w_ctx == nil do return
+
+	w_ctx.text_edit_nav = {key = key, shift = shift, ctrl = ctrl}
+	w_ctx.text_edit_nav_pending = true
+}
+
+text_edit_take_nav :: proc(focused: bool) -> (nav: Text_Edit_Nav, ok: bool) {
+	if w_ctx == nil || !focused || !w_ctx.text_edit_nav_pending do return {}, false
+
+	w_ctx.text_edit_nav_pending = false
+
+	return w_ctx.text_edit_nav, true
 }
 
 text_edit_caret_visible :: proc(blink_phase: f32) -> bool {
@@ -1481,10 +1555,16 @@ text_edit_pointer_selection :: proc(
 	return offset, {anchor = selection.anchor, head = offset}
 }
 
+/*
+Handles pointer clicks for caret placement and multi-click selection.
+
+`click_count` comes from SDL (1 = single, 2 = double, 3 = triple). Shift-click
+extends the existing selection without applying word/line selection.
+*/
 text_edit_register_click :: proc(
 	edit: ^Text_Edit_State,
 	abs_point: Vec2,
-	now: f64,
+	click_count: int,
 	geo: ^Text_Edit_Geometry,
 	layout_rect: Rect,
 	text: string,
@@ -1494,17 +1574,18 @@ text_edit_register_click :: proc(
 	selection: Text_Selection,
 ) {
 	offset := text_edit_hit_test(geo, layout_rect, abs_point)
-	dist := abs_point.x - edit.last_click_pos.x + abs_point.y - edit.last_click_pos.y
 
 	if shift {
-		edit.click_count = 1
-		edit.last_click_time = now
-		edit.last_click_pos = abs_point
-
 		if !text_edit_selection_active(edit.selection) {
-			selection = {anchor = edit.caret, head = offset}
+			selection = {
+				anchor = edit.caret,
+				head   = offset,
+			}
 		} else {
-			selection = {anchor = edit.selection.anchor, head = offset}
+			selection = {
+				anchor = edit.selection.anchor,
+				head   = offset,
+			}
 		}
 
 		caret = offset
@@ -1513,22 +1594,16 @@ text_edit_register_click :: proc(
 		return caret, selection
 	}
 
-	if now - edit.last_click_time < 0.4 && abs(dist) < 4 {
-		edit.click_count += 1
-	} else {
-		edit.click_count = 1
-	}
-
-	edit.last_click_time = now
-	edit.last_click_pos = abs_point
-
-	switch edit.click_count {
+	switch click_count {
 	case 2:
 		selection = text_edit_word_at(text, offset)
 	case 3:
 		selection = text_edit_line_range_at(geo, offset)
 	case:
-		selection = {anchor = offset, head = offset}
+		selection = {
+			anchor = offset,
+			head   = offset,
+		}
 	}
 
 	caret = selection.head
@@ -1603,7 +1678,11 @@ text_edit_password_value_selection :: proc(value: string, sel: Text_Selection) -
 /*
 Maps a value-plain byte offset into display-plain space where `ime` is spliced at `ime_at`.
 */
-text_edit_ime_value_to_display_offset :: proc(ime_at: int, ime_len: int, value_offset: int) -> int {
+text_edit_ime_value_to_display_offset :: proc(
+	ime_at: int,
+	ime_len: int,
+	value_offset: int,
+) -> int {
 	if ime_len <= 0 do return value_offset
 
 	if value_offset <= ime_at do return value_offset
@@ -1616,7 +1695,11 @@ Maps a display-plain byte offset back to value-plain space.
 
 Offsets inside the composition clamp to the insertion caret.
 */
-text_edit_ime_display_to_value_offset :: proc(ime_at: int, ime_len: int, display_offset: int) -> int {
+text_edit_ime_display_to_value_offset :: proc(
+	ime_at: int,
+	ime_len: int,
+	display_offset: int,
+) -> int {
 	if ime_len <= 0 do return display_offset
 
 	if display_offset <= ime_at do return display_offset
@@ -1652,11 +1735,7 @@ text_edit_ime_display_selection_to_value :: proc(
 Converts SDL TEXT_EDITING cursor/length (UTF-8 codepoint indices into `ime`) to
 a display-plain caret byte offset.
 */
-text_edit_ime_display_caret :: proc(
-	ime_at: int,
-	ime: string,
-	ime_cursor_runes: int,
-) -> int {
+text_edit_ime_display_caret :: proc(ime_at: int, ime: string, ime_cursor_runes: int) -> int {
 	if len(ime) == 0 do return ime_at
 
 	cursor := max(ime_cursor_runes, 0)
@@ -1704,7 +1783,7 @@ text_edit_draw_composition_underline :: proc(
 
 	sel := Text_Selection {
 		anchor = start,
-		head = end,
+		head   = end,
 	}
 	thickness := max(1, text_edit_caret_width_px())
 

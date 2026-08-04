@@ -163,7 +163,8 @@ Text_Input :: proc(props: Text_Input_Props) {
 	text_input_sync_edit_state(key, cfg.text)
 
 	edit_opts := Text_Edit_Widget_Opts {
-		selectable = true,
+		widget_kind = .TEXT_INPUT,
+		selectable  = true,
 		editable   = !cfg.readonly,
 		caret      = true,
 		multiline  = cfg.multiline,
@@ -226,8 +227,12 @@ Text_Input :: proc(props: Text_Input_Props) {
 		node := o.layout_push_node(layout_id, layout_config)
 		o.layout_set_measure_text(node, measure_text, config.max_w)
 
-		if cfg.readonly && cfg.id != "" {
-			o.shortcut_clear_text_input_note(cfg.id)
+		o.shortcut_note_kind(key, .TEXT_INPUT)
+
+		if cfg.readonly {
+			o.shortcut_clear_text_input_note(key)
+		} else {
+			o.shortcut_note_text_input(key)
 		}
 
 		ime_active := frame_state.is_focused && !cfg.readonly && o.input_ime_active()
@@ -306,6 +311,7 @@ Text_Input :: proc(props: Text_Input_Props) {
 	submit := false
 
 	if frame_state.is_focused {
+		text_edit_widget_process_shortcuts(key, edit_opts.widget_kind)
 		updated, changed := text_edit_widget_handle_keys(
 			key,
 			layout_id,

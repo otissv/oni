@@ -157,6 +157,7 @@ RichText :: proc(props: Rich_Text_Props) -> o.Vec2 {
 		rich_text_refresh_merged,
 		rich_text_refresh_merged_if_interaction_changed,
 		{
+			widget_kind = .RICH_TEXT,
 			selectable = config.selectable,
 		},
 	)

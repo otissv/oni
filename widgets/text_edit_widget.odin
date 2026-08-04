@@ -3,6 +3,7 @@ package oni_widgets
 import o ".."
 
 Text_Edit_Widget_Opts :: struct {
+	widget_kind:         o.Widget_Kind,
 	selectable:          bool,
 	editable:            bool,
 	caret:               bool,
@@ -17,10 +18,7 @@ Text_Edit_Widget_Opts :: struct {
 }
 
 @(private)
-text_edit_widget_edit_plain :: proc(
-	geo: ^o.Text_Edit_Geometry,
-	plain: string,
-) -> string {
+text_edit_widget_edit_plain :: proc(geo: ^o.Text_Edit_Geometry, plain: string) -> string {
 	if geo != nil && len(geo.plain) > 0 {
 		return geo.plain
 	}
@@ -299,8 +297,7 @@ text_edit_widget_handle_pointer :: proc(
 	edit_plain := text_edit_widget_edit_plain(geo, plain)
 	abs_point := text_edit_widget_abs_point()
 
-	if o.w_ctx.left_mouse.pressed &&
-	   o.pointer_hits(layout_id, layout_rect, opts.draw_space) {
+	if o.w_ctx.left_mouse.pressed && o.pointer_hits(layout_id, layout_rect, opts.draw_space) {
 		edit.drag_active = true
 		shift := o.state.input.modifiers.shift
 
@@ -308,14 +305,24 @@ text_edit_widget_handle_pointer :: proc(
 			geo_caret, geo_sel := o.text_edit_register_click(
 				edit,
 				abs_point,
-				f64(o.state.ui.frame),
+				o.w_ctx.left_mouse.clicks,
 				geo,
 				layout_rect,
 				edit_plain,
 				shift,
 			)
-			edit.caret = text_edit_widget_map_geo_offset_to_value(opts, plain, geo_caret, edit.caret)
-			edit.selection = text_edit_widget_map_geo_selection_to_value(opts, plain, geo_sel, edit.caret)
+			edit.caret = text_edit_widget_map_geo_offset_to_value(
+				opts,
+				plain,
+				geo_caret,
+				edit.caret,
+			)
+			edit.selection = text_edit_widget_map_geo_selection_to_value(
+				opts,
+				plain,
+				geo_sel,
+				edit.caret,
+			)
 			o.text_edit_set_preferred_column(
 				edit,
 				geo,
@@ -331,10 +338,20 @@ text_edit_widget_handle_pointer :: proc(
 			o.input_clear_ime()
 		}
 
-		text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
 	}
 
-	if edit.drag_active && o.w_ctx.left_mouse.down && geo != nil {
+	if edit.drag_active && o.w_ctx.left_mouse.down && !o.w_ctx.left_mouse.pressed && geo != nil {
 		before := scroll^
 		metrics, metrics_ok := o.Scrollport_Metrics_Get(layout_id)
 
@@ -351,8 +368,18 @@ text_edit_widget_handle_pointer :: proc(
 		}
 
 		if o.w_ctx.mouse_moved || scroll^ != before {
-			geo_caret := text_edit_widget_map_value_offset_to_geo(opts, plain, edit.caret, edit.caret)
-			geo_sel := text_edit_widget_map_value_selection_to_geo(opts, plain, edit.selection, edit.caret)
+			geo_caret := text_edit_widget_map_value_offset_to_geo(
+				opts,
+				plain,
+				edit.caret,
+				edit.caret,
+			)
+			geo_sel := text_edit_widget_map_value_selection_to_geo(
+				opts,
+				plain,
+				edit.selection,
+				edit.caret,
+			)
 			new_geo_caret, new_geo_sel := o.text_edit_pointer_selection(
 				geo,
 				layout_rect,
@@ -360,11 +387,31 @@ text_edit_widget_handle_pointer :: proc(
 				geo_caret,
 				geo_sel,
 			)
-			edit.caret = text_edit_widget_map_geo_offset_to_value(opts, plain, new_geo_caret, edit.caret)
-			edit.selection = text_edit_widget_map_geo_selection_to_value(opts, plain, new_geo_sel, edit.caret)
+			edit.caret = text_edit_widget_map_geo_offset_to_value(
+				opts,
+				plain,
+				new_geo_caret,
+				edit.caret,
+			)
+			edit.selection = text_edit_widget_map_geo_selection_to_value(
+				opts,
+				plain,
+				new_geo_sel,
+				edit.caret,
+			)
 		}
 
-		text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
 	}
 
 	if o.w_ctx.left_mouse.released {
@@ -446,14 +493,7 @@ text_edit_widget_draw_caret :: proc(
 	o.Draw_Push_Space(opts.draw_space)
 	defer o.Draw_Pop_Space()
 
-	o.text_edit_draw_caret(
-		geo,
-		layout_rect,
-		geo_caret,
-		caret_color,
-		show_caret,
-		caret_visible,
-	)
+	o.text_edit_draw_caret(geo, layout_rect, geo_caret, caret_color, show_caret, caret_visible)
 }
 
 text_edit_widget_draw_composition :: proc(
@@ -533,12 +573,7 @@ text_edit_widget_sync_ime_caret :: proc(
 	if geo != nil {
 		geo_caret := text_edit_widget_display_caret_offset(opts, plain, edit.caret)
 		caret_geom := o.text_edit_caret_geometry(geo, layout_rect, geo_caret)
-		caret_rect = {
-			caret_geom.x,
-			caret_geom.y,
-			o.text_edit_caret_width_px(),
-			caret_geom.height,
-		}
+		caret_rect = {caret_geom.x, caret_geom.y, o.text_edit_caret_width_px(), caret_geom.height}
 	}
 
 	o.input_sync_text_input_session(caret_rect, 0)
@@ -607,7 +642,17 @@ text_edit_widget_consume_commands :: proc(
 	}
 
 	if cmd != .NONE && cmd != .COPY {
-		text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
 	}
 
 	if opts.editable {
@@ -615,6 +660,211 @@ text_edit_widget_consume_commands :: proc(
 	}
 
 	return new_plain, changed
+}
+
+@(private)
+text_edit_widget_apply_pending_shortcut_input :: proc(
+	key: string,
+	layout_id: o.UI_Id,
+	layout_rect: o.Rect,
+	scroll: ^o.Vec2,
+	plain: string,
+	record_text: string,
+	config: o.Resolved_Widget_Config,
+	opts: Text_Edit_Widget_Opts,
+	edit: ^o.Text_Edit_State,
+	geo: ^o.Text_Edit_Geometry,
+	page_lines: int,
+) -> (
+	new_plain: string,
+	changed: bool,
+) {
+	new_plain = plain
+	if edit == nil do return new_plain, false
+
+	nav, ok := o.text_edit_take_nav(true)
+	if !ok do return new_plain, false
+
+	edit_plain := text_edit_widget_edit_plain(geo, plain)
+
+	#partial switch nav.key {
+	case .LEFT, .RIGHT, .UP, .DOWN, .HOME, .END, .PAGEUP, .PAGEDOWN:
+		nav_text := plain
+		nav_caret := edit.caret
+		nav_sel := edit.selection
+
+		if opts.password {
+			nav_text = edit_plain
+			nav_caret = text_edit_widget_map_value_offset_to_geo(
+				opts,
+				plain,
+				edit.caret,
+				edit.caret,
+			)
+			nav_sel = text_edit_widget_map_value_selection_to_geo(
+				opts,
+				plain,
+				edit.selection,
+				edit.caret,
+			)
+		}
+
+		handled: bool
+		nav_caret, nav_sel, handled = o.text_edit_handle_key_navigation(
+			nav_text,
+			nav_caret,
+			nav_sel,
+			geo,
+			nav.key,
+			nav.shift,
+			nav.ctrl,
+			opts.multiline,
+			page_lines,
+			edit,
+		)
+
+		if !handled do return new_plain, false
+
+		if opts.password {
+			edit.caret = text_edit_widget_map_geo_offset_to_value(
+				opts,
+				plain,
+				nav_caret,
+				edit.caret,
+			)
+			edit.selection = text_edit_widget_map_geo_selection_to_value(
+				opts,
+				plain,
+				nav_sel,
+				edit.caret,
+			)
+		} else {
+			edit.caret = nav_caret
+			edit.selection = nav_sel
+		}
+
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
+
+		return new_plain, false
+	case .RETURN, .KP_ENTER:
+		if !opts.editable do return new_plain, false
+
+		if opts.multiline {
+			new_plain, changed = text_edit_widget_insert_text(edit, new_plain, "\n", opts)
+
+			if changed {
+				text_edit_widget_sync_edit_scroll(
+					key,
+					layout_id,
+					layout_rect,
+					edit,
+					geo,
+					scroll,
+					config,
+					opts,
+					plain,
+				)
+			}
+		}
+
+		return new_plain, changed
+	case .BACKSPACE:
+		if !opts.editable do return new_plain, false
+
+		result_plain: string
+		result_caret: int
+		result_sel: o.Text_Selection
+		result_changed: bool
+
+		if nav.ctrl {
+			result_plain, result_caret, result_sel, result_changed =
+				o.text_edit_backspace_word(new_plain, edit.caret, edit.selection)
+		} else {
+			result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace(
+				new_plain,
+				edit.caret,
+				edit.selection,
+			)
+		}
+
+		if !result_changed do return new_plain, false
+
+		o.text_edit_record_mutation(edit, record_text, o.state.ui.frame)
+		new_plain = result_plain
+		edit.caret = result_caret
+		edit.selection = result_sel
+		edit.has_preferred_column = false
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
+
+		return new_plain, true
+	case .DELETE:
+		if !opts.editable do return new_plain, false
+
+		result_plain: string
+		result_caret: int
+		result_sel: o.Text_Selection
+		result_changed: bool
+
+		if nav.ctrl {
+			result_plain, result_caret, result_sel, result_changed =
+				o.text_edit_delete_word(new_plain, edit.caret, edit.selection)
+		} else {
+			result_plain, result_caret, result_sel, result_changed = o.text_edit_delete(
+				new_plain,
+				edit.caret,
+				edit.selection,
+			)
+		}
+
+		if !result_changed do return new_plain, false
+
+		o.text_edit_record_mutation(edit, record_text, o.state.ui.frame)
+		new_plain = result_plain
+		edit.caret = result_caret
+		edit.selection = result_sel
+		edit.has_preferred_column = false
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
+
+		return new_plain, true
+	}
+
+	return new_plain, false
+}
+
+text_edit_widget_process_shortcuts :: proc(key: string, kind: o.Widget_Kind) {
+	if !widget_is_focused(key) do return
+
+	o.text_edit_shortcut_process(key, kind)
 }
 
 text_edit_widget_handle_keys :: proc(
@@ -635,133 +885,27 @@ text_edit_widget_handle_keys :: proc(
 	if !opts.editable && !opts.selectable do return new_plain, false
 
 	geo := o.layout_text_edit_geometry(layout_id)
-	edit_plain := text_edit_widget_edit_plain(geo, plain)
 	page_lines := text_edit_widget_page_lines(layout_id, geo)
-	shift := o.state.input.modifiers.shift
-	ctrl := o.state.input.modifiers.ctrl || o.state.input.modifiers.super
 	ime_active := o.input_ime_active()
 
 	if !ime_active {
-		for scancode in 0 ..< o.KEY_COUNT {
-			if o.shortcut_key_consumed(o.Scancode(scancode)) do continue
+		updated, input_changed := text_edit_widget_apply_pending_shortcut_input(
+			key,
+			layout_id,
+			layout_rect,
+			scroll,
+			new_plain,
+			new_plain,
+			config,
+			opts,
+			edit,
+			geo,
+			page_lines,
+		)
+		new_plain = updated
 
-			key_state := o.w_ctx.keys[scancode]
-			if !(key_state.pressed || key_state.repeat) do continue
-
-			nav_text := plain
-			nav_caret := edit.caret
-			nav_sel := edit.selection
-
-			if opts.password {
-				nav_text = edit_plain
-				nav_caret = text_edit_widget_map_value_offset_to_geo(opts, plain, edit.caret, edit.caret)
-				nav_sel = text_edit_widget_map_value_selection_to_geo(opts, plain, edit.selection, edit.caret)
-			}
-
-			handled: bool
-			nav_caret, nav_sel, handled = o.text_edit_handle_key_navigation(
-				nav_text,
-				nav_caret,
-				nav_sel,
-				geo,
-				o.Scancode(scancode),
-				shift,
-				ctrl,
-				opts.multiline,
-				page_lines,
-				edit,
-			)
-
-			if handled {
-				if opts.password {
-					edit.caret = text_edit_widget_map_geo_offset_to_value(opts, plain, nav_caret, edit.caret)
-					edit.selection = text_edit_widget_map_geo_selection_to_value(opts, plain, nav_sel, edit.caret)
-				} else {
-					edit.caret = nav_caret
-					edit.selection = nav_sel
-				}
-
-				o.shortcut_consume_key(o.Scancode(scancode))
-				text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-
-				continue
-			}
-
-			if !opts.editable do continue
-
-			#partial switch o.Scancode(scancode) {
-			case .RETURN, .KP_ENTER:
-				if opts.multiline {
-					new_plain, changed = text_edit_widget_insert_text(edit, new_plain, "\n", opts)
-
-					if changed {
-						o.shortcut_consume_key(o.Scancode(scancode))
-						text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-					}
-				} else {
-					o.shortcut_consume_key(o.Scancode(scancode))
-				}
-			case .BACKSPACE:
-				result_plain: string
-				result_caret: int
-				result_sel: o.Text_Selection
-				result_changed: bool
-
-				if ctrl {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace_word(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				} else {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				}
-
-				if result_changed {
-					o.text_edit_record_mutation(edit, new_plain, o.state.ui.frame)
-					new_plain = result_plain
-					edit.caret = result_caret
-					edit.selection = result_sel
-					changed = true
-					edit.has_preferred_column = false
-					o.shortcut_consume_key(o.Scancode(scancode))
-					text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-				}
-			case .DELETE:
-				result_plain: string
-				result_caret: int
-				result_sel: o.Text_Selection
-				result_changed: bool
-
-				if ctrl {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_delete_word(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				} else {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_delete(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				}
-
-				if result_changed {
-					o.text_edit_record_mutation(edit, new_plain, o.state.ui.frame)
-					new_plain = result_plain
-					edit.caret = result_caret
-					edit.selection = result_sel
-					changed = true
-					edit.has_preferred_column = false
-					o.shortcut_consume_key(o.Scancode(scancode))
-					text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-				}
-			}
+		if input_changed {
+			changed = true
 		}
 	}
 
@@ -776,7 +920,17 @@ text_edit_widget_handle_keys :: proc(
 			new_plain, changed = text_edit_widget_insert_text(edit, new_plain, inserted, opts)
 
 			if changed {
-				text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+				text_edit_widget_sync_edit_scroll(
+					key,
+					layout_id,
+					layout_rect,
+					edit,
+					geo,
+					scroll,
+					config,
+					opts,
+					plain,
+				)
 			}
 		}
 
@@ -791,10 +945,7 @@ text_edit_widget_handle_keys :: proc(
 	return new_plain, changed
 }
 
-text_edit_widget_handle_selectable :: proc(
-	key: string,
-	plain: string,
-) {
+text_edit_widget_handle_selectable :: proc(key: string, plain: string) {
 	if !widget_is_focused(key) do return
 
 	edit := o.widget_text_edit_get(key)
@@ -893,7 +1044,17 @@ text_edit_widget_apply_document_plain :: proc(
 	}
 
 	if cmd != .NONE && cmd != .COPY {
-		text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+		text_edit_widget_sync_edit_scroll(
+			key,
+			layout_id,
+			layout_rect,
+			edit,
+			geo,
+			scroll,
+			config,
+			opts,
+			plain,
+		)
 	}
 
 	text_edit_widget_sync_ime_caret(key, layout_id, layout_rect, edit, geo, opts, plain)
@@ -922,114 +1083,26 @@ text_edit_widget_apply_document_keys :: proc(
 	new_plain := plain
 	plain_changed := false
 	page_lines := text_edit_widget_page_lines(layout_id, geo)
-	shift := o.state.input.modifiers.shift
-	ctrl := o.state.input.modifiers.ctrl || o.state.input.modifiers.super
 	ime_active := o.input_ime_active()
 
 	if !ime_active {
-		for scancode in 0 ..< o.KEY_COUNT {
-			if o.shortcut_key_consumed(o.Scancode(scancode)) do continue
+		updated, input_changed := text_edit_widget_apply_pending_shortcut_input(
+			key,
+			layout_id,
+			layout_rect,
+			scroll,
+			new_plain,
+			tagged,
+			config,
+			opts,
+			edit,
+			geo,
+			page_lines,
+		)
+		new_plain = updated
 
-			key_state := o.w_ctx.keys[scancode]
-			if !(key_state.pressed || key_state.repeat) do continue
-
-			nav_caret, nav_sel, handled := o.text_edit_handle_key_navigation(
-				new_plain,
-				edit.caret,
-				edit.selection,
-				geo,
-				o.Scancode(scancode),
-				shift,
-				ctrl,
-				opts.multiline,
-				page_lines,
-				edit,
-			)
-
-			if handled {
-				edit.caret = nav_caret
-				edit.selection = nav_sel
-				o.shortcut_consume_key(o.Scancode(scancode))
-				text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-
-				continue
-			}
-
-			#partial switch o.Scancode(scancode) {
-			case .RETURN, .KP_ENTER:
-				if opts.multiline {
-					inserted, inserted_changed := text_edit_widget_insert_text(edit, new_plain, "\n", opts)
-
-					if inserted_changed {
-						new_plain = inserted
-						plain_changed = true
-						o.shortcut_consume_key(o.Scancode(scancode))
-						text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-					}
-				} else {
-					o.shortcut_consume_key(o.Scancode(scancode))
-				}
-			case .BACKSPACE:
-				result_plain: string
-				result_caret: int
-				result_sel: o.Text_Selection
-				result_changed: bool
-
-				if ctrl {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace_word(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				} else {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				}
-
-				if result_changed {
-					o.text_edit_record_mutation(edit, tagged, o.state.ui.frame)
-					new_plain = result_plain
-					edit.caret = result_caret
-					edit.selection = result_sel
-					plain_changed = true
-					edit.has_preferred_column = false
-					o.shortcut_consume_key(o.Scancode(scancode))
-					text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-				}
-			case .DELETE:
-				result_plain: string
-				result_caret: int
-				result_sel: o.Text_Selection
-				result_changed: bool
-
-				if ctrl {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_delete_word(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				} else {
-					result_plain, result_caret, result_sel, result_changed = o.text_edit_delete(
-						new_plain,
-						edit.caret,
-						edit.selection,
-					)
-				}
-
-				if result_changed {
-					o.text_edit_record_mutation(edit, tagged, o.state.ui.frame)
-					new_plain = result_plain
-					edit.caret = result_caret
-					edit.selection = result_sel
-					plain_changed = true
-					edit.has_preferred_column = false
-					o.shortcut_consume_key(o.Scancode(scancode))
-					text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
-				}
-			}
+		if input_changed {
+			plain_changed = true
 		}
 	}
 
@@ -1043,7 +1116,17 @@ text_edit_widget_apply_document_keys :: proc(
 		new_plain, plain_changed = text_edit_widget_insert_text(edit, new_plain, inserted, opts)
 
 		if plain_changed {
-			text_edit_widget_sync_edit_scroll(key, layout_id, layout_rect, edit, geo, scroll, config, opts, plain)
+			text_edit_widget_sync_edit_scroll(
+				key,
+				layout_id,
+				layout_rect,
+				edit,
+				geo,
+				scroll,
+				config,
+				opts,
+				plain,
+			)
 		}
 	}
 

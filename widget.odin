@@ -580,6 +580,7 @@ Clears per-frame pressed and released flags on a mouse button state.
 clear_button_transients :: proc(button: ^Widget_Mouse_Button_State) {
 	button.pressed = false
 	button.released = false
+	button.clicks = 0
 }
 
 /*
@@ -595,11 +596,13 @@ clear_key_transients :: proc(key: ^Widget_Mouse_Key_State) {
 Updates mouse button down state and sets pressed/released edge flags.
 */
 @(private)
-sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool) {
+sync_widget_button :: proc(button: ^Widget_Mouse_Button_State, is_down: bool, clicks: int) {
 	if is_down {
 		if !button.down do button.pressed = true
+		button.clicks = clicks
 	} else {
 		if button.down do button.released = true
+		button.clicks = 0
 	}
 
 	button.down = is_down
@@ -644,9 +647,13 @@ sync_widget_input :: proc() {
 	w_ctx.mouse_x = new_x
 	w_ctx.mouse_y = new_y
 
-	sync_widget_button(&w_ctx.left_mouse, state.input.mouse_left)
-	sync_widget_button(&w_ctx.right_mouse, state.input.mouse_right)
-	sync_widget_button(&w_ctx.middle_mouse, state.input.mouse_middle)
+	sync_widget_button(&w_ctx.left_mouse, state.input.mouse_left, state.input.mouse_left_clicks)
+	sync_widget_button(&w_ctx.right_mouse, state.input.mouse_right, state.input.mouse_right_clicks)
+	sync_widget_button(
+		&w_ctx.middle_mouse,
+		state.input.mouse_middle,
+		state.input.mouse_middle_clicks,
+	)
 
 	for scancode in 0 ..< KEY_COUNT {
 		sync_widget_key(

@@ -195,6 +195,9 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 			o.layout_set_measure_text(node, input.measure_text, config.max_w)
 		}
 
+		o.shortcut_note_kind(key, .RICH_TEXT_INPUT)
+		o.shortcut_note_text_input(key)
+
 		value_plain := rich_text_input_plain(cfg.text)
 		ime_active := frame_state.is_focused && o.input_ime_active()
 
@@ -261,7 +264,8 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	plain := rich_text_input_plain(cfg.text)
 	can_interact := widget_can_interact(handlers, &frame_state)
 	edit_opts := Text_Edit_Widget_Opts {
-		selectable = true,
+		widget_kind = .RICH_TEXT_INPUT,
+		selectable  = true,
 		editable   = true,
 		caret      = true,
 		multiline  = cfg.multiline,
@@ -272,6 +276,7 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	tagged := cfg.text
 
 	if frame_state.is_focused {
+		text_edit_widget_process_shortcuts(key, edit_opts.widget_kind)
 		updated, changed := text_edit_widget_apply_document_keys(
 			tagged,
 			key,

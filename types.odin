@@ -46,6 +46,7 @@ Widget_Mouse_Button_State :: struct {
 	down:     bool,
 	pressed:  bool,
 	released: bool,
+	clicks:   int,
 }
 
 /*
@@ -91,10 +92,18 @@ Widget_Context :: struct {
 	pointer_propagation_stopped: bool,
 	text_edit_states:            map[string]Text_Edit_State,
 	text_edit_command:           Text_Edit_Command,
+	text_edit_nav:               Text_Edit_Nav,
+	text_edit_nav_pending:       bool,
 }
 
 Text_Selection :: struct {
 	anchor, head: int,
+}
+
+Text_Edit_Nav :: struct {
+	key:   Scancode,
+	shift: bool,
+	ctrl:  bool,
 }
 
 Text_Edit_Command :: enum {
@@ -126,9 +135,6 @@ Text_Edit_State :: struct {
 	selection:            Text_Selection,
 	drag_active:          bool,
 	blink_phase:          f32,
-	last_click_time:      f64,
-	last_click_pos:       Vec2,
-	click_count:          int,
 	undo:                 Text_Undo_Stack,
 	redo:                 Text_Undo_Stack,
 	preferred_column:     f32,
@@ -1154,6 +1160,9 @@ Per-frame input snapshot: mouse, keyboard, text input, modifiers, and gamepad.
 Input_State :: struct {
 	mouse_x, mouse_y:                      f32,
 	mouse_left, mouse_right, mouse_middle: bool,
+	mouse_left_clicks:                     int,
+	mouse_right_clicks:                    int,
+	mouse_middle_clicks:                   int,
 	mouse_wheel_x, mouse_wheel_y:          f32,
 	keys_down:                             [KEY_COUNT]bool,
 	keys_repeat:                           [KEY_COUNT]bool,

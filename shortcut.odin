@@ -4,16 +4,6 @@ import "core:strconv"
 import "core:strings"
 import sdl "vendor:sdl3"
 
-Shortcut_IDS :: enum {
-	SHORTCUT_VIEW_ZOOM_IN,
-	SHORTCUT_VIEW_ZOOM_OUT,
-	SHORTCUT_VIEW_RESET,
-	SHORTCUT_WINDOW_TOGGLE_FULLSCREEN,
-	SHORTCUT_APP_QUIT,
-	SHORTCUT_HOST_RELOAD,
-	SHORTCUT_HOST_RESTART,
-}
-
 /*
 Stable action ids for built-in engine shortcuts.
 
@@ -21,13 +11,6 @@ Apps bind extra ids and register handlers with Shortcut_Register_Action.
 `app.quit` has a builtin handler but no default binding (apps opt in).
 Host reload/restart are remappable builtins (default F5/F6).
 */
-SHORTCUT_VIEW_ZOOM_IN :: "view.zoom_in"
-SHORTCUT_VIEW_ZOOM_OUT :: "view.zoom_out"
-SHORTCUT_VIEW_RESET :: "view.reset"
-SHORTCUT_WINDOW_TOGGLE_FULLSCREEN :: "window.toggle_fullscreen"
-SHORTCUT_APP_QUIT :: "app.quit"
-SHORTCUT_HOST_RELOAD :: "host.reload"
-SHORTCUT_HOST_RESTART :: "host.restart"
 
 SHORTCUT_CONTEXT_POPOVER :: "popover"
 SHORTCUT_SEQUENCE_MAX :: 4
@@ -41,6 +24,7 @@ Shortcut_Key_Binding :: struct {
 	priority:   i32,
 	chord:      Shortcut_Chord,
 	enabled:    bool,
+	repeat:     bool,
 	scope:      Shortcut_Scope,
 	scope_key:  string,
 	scope_kind: Widget_Kind,
@@ -98,8 +82,6 @@ Shortcut_Gamepad_Binding :: struct {
 	source:     Shortcut_Source,
 	app_type:   App_Type_Filter,
 }
-
-Shortcut_Key_Bindings :: [Shortcut_IDS]Shortcut_Key_Binding
 
 @(private)
 Shortcut_Scope_Spec :: struct {
@@ -193,6 +175,7 @@ Shortcut_Binding :: struct {
 	scope_kind:     Widget_Kind,
 	priority:       i32,
 	enabled:        bool,
+	repeat:         bool,
 	source:         Shortcut_Source,
 	app_type:       App_Type_Filter,
 }
@@ -396,12 +379,40 @@ shortcut_clear_text_input_note :: proc(id: string) {
 	delete_key(&state.shortcuts.text_input_by_id, id)
 }
 
-shortcut_register_action :: proc(id: string, action: Shortcut_Action_Proc) {
+@(private)
+shortcut_register_action_id :: proc(id: string, action: Shortcut_Action_Proc, label: string = "") {
 	if state == nil || id == "" || action == nil do return
 
 	shortcut_init()
 
 	state.shortcuts.actions[id] = action
+
+	if label != "" {
+		shortcut_set_action_label_string(id, label)
+	}
+}
+
+shortcut_register_action_builtin :: proc(id: Shortcut_Action_Type, action: Shortcut_Action_Proc) {
+	if action == nil do return
+
+	action_id := shortcut_action_types[id]
+	if action_id == "" do return
+
+	shortcut_register_action_id(action_id, action)
+	shortcut_set_action_label_builtin(id)
+}
+
+shortcut_register_action_string :: proc(
+	id: string,
+	action: Shortcut_Action_Proc,
+	label: string = "",
+) {
+	shortcut_register_action_id(id, action, label)
+}
+
+shortcut_register_action :: proc {
+	shortcut_register_action_builtin,
+	shortcut_register_action_string,
 }
 
 shortcut_unregister_action :: proc(id: string) {
@@ -427,15 +438,20 @@ Sets a human-readable label for an action id (bindings-table display).
 
 Caller may pass a temporary string; it is cloned. Empty label removes the entry.
 */
-shortcut_set_action_label :: proc(id: string, label: string) {
+shortcut_set_action_label_builtin :: proc(id: Shortcut_Action_Type) {
+	label := shortcut_labels[id]
+	if label == "" do return
+
+	shortcut_set_action_label_string(shortcut_action_types[id], label)
+}
+
+shortcut_set_action_label_string :: proc(id: string, label: string) {
 	if state == nil || id == "" do return
 
 	shortcut_init()
 
 	if old, ok := state.shortcuts.action_labels[id]; ok {
-
 		delete(old)
-
 		delete_key(&state.shortcuts.action_labels, id)
 	}
 
@@ -444,17 +460,44 @@ shortcut_set_action_label :: proc(id: string, label: string) {
 	state.shortcuts.action_labels[id] = strings.clone(label)
 }
 
-shortcut_action_label :: proc(id: string) -> string {
+shortcut_set_action_label :: proc {
+	shortcut_set_action_label_builtin,
+	shortcut_set_action_label_string,
+}
+
+shortcut_action_label_builtin :: proc(id: Shortcut_Action_Type) -> string {
+	action_id := shortcut_action_types[id]
+
+	if state != nil && state.shortcuts.action_labels != nil {
+		if label, ok := state.shortcuts.action_labels[action_id]; ok && label != "" {
+			return label
+		}
+	}
+
+	return shortcut_labels[id]
+}
+
+shortcut_action_label_string :: proc(id: string) -> string {
 	if state == nil || id == "" do return id
 
 	if state.shortcuts.action_labels != nil {
-
 		if label, ok := state.shortcuts.action_labels[id]; ok && label != "" {
 			return label
 		}
 	}
 
+	for action in Shortcut_Action_Type {
+		if shortcut_action_types[action] == id {
+			return shortcut_labels[action]
+		}
+	}
+
 	return id
+}
+
+shortcut_action_label :: proc {
+	shortcut_action_label_builtin,
+	shortcut_action_label_string,
 }
 
 @(private)
@@ -483,7 +526,11 @@ shortcut_set_reload_hook :: proc(hook: Shortcut_Reload_Hook) {
 	state.shortcuts.reload_hook = hook
 }
 
-shortcut_bind :: proc(id: string, chord: Shortcut_Chord, opts: Shortcut_Bind_Opts = {}) -> bool {
+shortcut_bind_string :: proc(
+	id: string,
+	chord: Shortcut_Chord,
+	opts: Shortcut_Bind_Opts = {},
+) -> bool {
 	return shortcut_bind_key(
 		{
 			id = id,
@@ -499,6 +546,19 @@ shortcut_bind :: proc(id: string, chord: Shortcut_Chord, opts: Shortcut_Bind_Opt
 	)
 }
 
+shortcut_bind_builtin :: proc(
+	id: Shortcut_Action_Type,
+	chord: Shortcut_Chord,
+	opts: Shortcut_Bind_Opts = {},
+) -> bool {
+	return shortcut_bind_string(shortcut_action_types[id], chord, opts)
+}
+
+shortcut_bind :: proc {
+	shortcut_bind_string,
+	shortcut_bind_builtin,
+}
+
 shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 	id := key_binding.id
 	chord := key_binding.chord
@@ -507,6 +567,7 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 	scope_kind := key_binding.scope_kind
 	priority := key_binding.priority
 	enabled := key_binding.enabled
+	repeat := key_binding.repeat
 	source := key_binding.source
 	app_type := key_binding.app_type
 
@@ -514,19 +575,23 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 
 	shortcut_init()
 
-	for &b in state.shortcuts.bindings {
-		if b.trigger == .Key && b.id == id && shortcut_chord_equal(b.chord, chord) {
-			shortcut_update_scope(
-				&b,
-				{scope = scope, scope_key = scope_key, scope_kind = scope_kind},
-			)
-			b.priority = priority
-			b.enabled = enabled
-			b.source = source
-			b.app_type = app_type
+	incoming_scope := Shortcut_Scope_Spec {
+		scope      = scope,
+		scope_key  = scope_key,
+		scope_kind = scope_kind,
+	}
 
-			return true
-		}
+	for &b in state.shortcuts.bindings {
+		if b.trigger != .Key || b.id != id || !shortcut_chord_equal(b.chord, chord) do continue
+		if !shortcut_scope_equal(shortcut_binding_scope_spec(b), incoming_scope) do continue
+
+		b.priority = priority
+		b.enabled = enabled
+		b.repeat = repeat
+		b.source = source
+		b.app_type = app_type
+
+		return true
 	}
 
 	binding := Shortcut_Binding {
@@ -538,6 +603,7 @@ shortcut_bind_key :: proc(key_binding: Shortcut_Key_Binding) -> bool {
 		scope_kind = scope_kind,
 		priority   = priority,
 		enabled    = enabled,
+		repeat     = repeat,
 		source     = source,
 		app_type   = app_type,
 	}
@@ -575,19 +641,17 @@ shortcut_bind_wheel :: proc(binding: Shortcut_Wheel_Binding) -> bool {
 	}
 
 	for &b in state.shortcuts.bindings {
-		if b.trigger == .Wheel_Y &&
-		   b.id == id &&
-		   b.wheel_sign == wheel_sign &&
-		   shortcut_chord_mods_equal(b.chord, chord) {
-			shortcut_update_scope(&b, scope)
-			b.priority = binding.priority
-			b.enabled = binding.enabled
-			b.source = binding.source
-			b.chord = chord
-			b.app_type = binding.app_type
+		if b.trigger != .Wheel_Y || b.id != id || b.wheel_sign != wheel_sign do continue
+		if !shortcut_chord_mods_equal(b.chord, chord) do continue
+		if !shortcut_scope_equal(shortcut_binding_scope_spec(b), scope) do continue
 
-			return true
-		}
+		b.priority = binding.priority
+		b.enabled = binding.enabled
+		b.source = binding.source
+		b.chord = chord
+		b.app_type = binding.app_type
+
+		return true
 	}
 
 	out := Shortcut_Binding {
@@ -634,19 +698,17 @@ shortcut_bind_mouse :: proc(binding: Shortcut_Mouse_Binding) -> bool {
 	}
 
 	for &b in state.shortcuts.bindings {
-		if b.trigger == .Mouse_Button &&
-		   b.id == id &&
-		   b.mouse_button == button &&
-		   shortcut_chord_mods_equal(b.chord, chord) {
-			shortcut_update_scope(&b, scope)
-			b.priority = binding.priority
-			b.enabled = binding.enabled
-			b.source = binding.source
-			b.chord = chord
-			b.app_type = binding.app_type
+		if b.trigger != .Mouse_Button || b.id != id || b.mouse_button != button do continue
+		if !shortcut_chord_mods_equal(b.chord, chord) do continue
+		if !shortcut_scope_equal(shortcut_binding_scope_spec(b), scope) do continue
 
-			return true
-		}
+		b.priority = binding.priority
+		b.enabled = binding.enabled
+		b.source = binding.source
+		b.chord = chord
+		b.app_type = binding.app_type
+
+		return true
 	}
 
 	out := Shortcut_Binding {
@@ -706,20 +768,18 @@ shortcut_bind_sequence :: proc(binding: Shortcut_Sequence_Binding) -> bool {
 	}
 
 	for &b in state.shortcuts.bindings {
-		if b.trigger == .Sequence &&
-		   b.id == id &&
-		   b.sequence_len == slen &&
-		   shortcut_sequence_equal(b.sequence, seq, slen) &&
-		   shortcut_chord_mods_equal(b.chord, chord) {
-			shortcut_update_scope(&b, scope)
-			b.priority = binding.priority
-			b.enabled = binding.enabled
-			b.source = binding.source
-			b.chord = chord
-			b.app_type = binding.app_type
+		if b.trigger != .Sequence || b.id != id || b.sequence_len != slen do continue
+		if !shortcut_sequence_equal(b.sequence, seq, slen) do continue
+		if !shortcut_chord_mods_equal(b.chord, chord) do continue
+		if !shortcut_scope_equal(shortcut_binding_scope_spec(b), scope) do continue
 
-			return true
-		}
+		b.priority = binding.priority
+		b.enabled = binding.enabled
+		b.source = binding.source
+		b.chord = chord
+		b.app_type = binding.app_type
+
+		return true
 	}
 
 	out := Shortcut_Binding {
@@ -758,15 +818,15 @@ shortcut_bind_gamepad :: proc(binding: Shortcut_Gamepad_Binding) -> bool {
 	}
 
 	for &b in state.shortcuts.bindings {
-		if b.trigger == .Gamepad && b.id == id && b.gamepad_button == btn {
-			shortcut_update_scope(&b, scope)
-			b.priority = binding.priority
-			b.enabled = binding.enabled
-			b.source = binding.source
-			b.app_type = binding.app_type
+		if b.trigger != .Gamepad || b.id != id || b.gamepad_button != btn do continue
+		if !shortcut_scope_equal(shortcut_binding_scope_spec(b), scope) do continue
 
-			return true
-		}
+		b.priority = binding.priority
+		b.enabled = binding.enabled
+		b.source = binding.source
+		b.app_type = binding.app_type
+
+		return true
 	}
 
 	out := Shortcut_Binding {
@@ -894,7 +954,7 @@ shortcut_unbind_all :: proc(id: string) {
 	}
 }
 
-shortcut_set_enabled :: proc(id: string, enabled: bool) {
+shortcut_set_enabled_string :: proc(id: string, enabled: bool) {
 	if state == nil || id == "" do return
 
 	for &b in state.shortcuts.bindings {
@@ -902,6 +962,15 @@ shortcut_set_enabled :: proc(id: string, enabled: bool) {
 			b.enabled = enabled
 		}
 	}
+}
+
+shortcut_set_enabled_builtin :: proc(id: Shortcut_Action_Type, enabled: bool) {
+	shortcut_set_enabled_string(shortcut_action_types[id], enabled)
+}
+
+shortcut_set_enabled :: proc {
+	shortcut_set_enabled_string,
+	shortcut_set_enabled_builtin,
 }
 
 shortcut_clear_bindings :: proc() {
@@ -1166,7 +1235,9 @@ shortcut_rebind_builtin_actions :: proc() {
 	if state == nil do return
 
 	shortcut_init()
+	shortcut_clear_actions()
 	shortcut_register_builtin_actions()
+	shortcut_reinstall_builtin_bindings()
 
 	if state.shortcuts.reload_hook != nil {
 		state.shortcuts.reload_hook()
@@ -1174,23 +1245,45 @@ shortcut_rebind_builtin_actions :: proc() {
 }
 
 @(private)
-shortcut_register_builtin_actions :: proc() {
-	shortcut_register_action(SHORTCUT_VIEW_ZOOM_IN, shortcut_action_view_zoom_in)
-	shortcut_register_action(SHORTCUT_VIEW_ZOOM_OUT, shortcut_action_view_zoom_out)
-	shortcut_register_action(SHORTCUT_VIEW_RESET, shortcut_action_view_reset)
-	shortcut_register_action(SHORTCUT_WINDOW_TOGGLE_FULLSCREEN, shortcut_action_toggle_fullscreen)
-	shortcut_register_action(SHORTCUT_APP_QUIT, shortcut_action_app_quit)
-	shortcut_register_action(SHORTCUT_HOST_RELOAD, shortcut_action_host_reload)
-	shortcut_register_action(SHORTCUT_HOST_RESTART, shortcut_action_host_restart)
-	text_edit_register_shortcut_actions()
+shortcut_reinstall_builtin_bindings :: proc() {
+	if state == nil do return
 
-	shortcut_set_action_label(SHORTCUT_VIEW_ZOOM_IN, "Zoom In")
-	shortcut_set_action_label(SHORTCUT_VIEW_ZOOM_OUT, "Zoom Out")
-	shortcut_set_action_label(SHORTCUT_VIEW_RESET, "Reset View")
-	shortcut_set_action_label(SHORTCUT_WINDOW_TOGGLE_FULLSCREEN, "Toggle Fullscreen")
-	shortcut_set_action_label(SHORTCUT_APP_QUIT, "Quit")
-	shortcut_set_action_label(SHORTCUT_HOST_RELOAD, "Hot Reload")
-	shortcut_set_action_label(SHORTCUT_HOST_RESTART, "Hot Restart")
+	shortcut_strip_builtin_bindings()
+	shortcut_strip_user_edit_bindings()
+	shortcut_defaults_universal()
+	shortcut_install_app_type_defaults()
+	state.shortcuts.defaults_installed = true
+}
+
+@(private)
+shortcut_strip_user_edit_bindings :: proc() {
+	if state == nil do return
+
+	for i := len(state.shortcuts.bindings) - 1; i >= 0; i -= 1 {
+		b := state.shortcuts.bindings[i]
+		if b.source != .User do continue
+		if !strings.has_prefix(b.id, "edit.") do continue
+
+		shortcut_free_binding(&state.shortcuts.bindings[i])
+		ordered_remove(&state.shortcuts.bindings, i)
+	}
+}
+
+@(private)
+shortcut_strip_builtin_bindings :: proc() {
+	if state == nil do return
+
+	for i := len(state.shortcuts.bindings) - 1; i >= 0; i -= 1 {
+		if state.shortcuts.bindings[i].source != .Builtin do continue
+
+		shortcut_free_binding(&state.shortcuts.bindings[i])
+		ordered_remove(&state.shortcuts.bindings, i)
+	}
+}
+
+@(private)
+shortcut_register_builtin_actions :: proc() {
+	register_shortcut_actions()
 }
 
 shortcut_process :: proc() {
@@ -1221,12 +1314,16 @@ shortcut_process :: proc() {
 
 		key_state := w_ctx.keys[scancode]
 
-		if !key_state.pressed do continue
+		if !key_state.pressed && !key_state.repeat do continue
 		if shortcut_is_modifier_scancode(Scancode(scancode)) do continue
 
 		best_i, ok := shortcut_best_key_binding(Scancode(scancode), dispatch)
 
 		if ok {
+			b := state.shortcuts.bindings[best_i]
+
+			if key_state.repeat && !b.repeat do continue
+
 			if shortcut_fire_binding(
 				{
 					index = best_i,
@@ -1376,6 +1473,27 @@ shortcut_parse_scope :: proc(s: string) -> Shortcut_Scope {
 	}
 
 	return .Global
+}
+
+@(private)
+shortcut_scope_equal :: proc(a, b: Shortcut_Scope_Spec) -> bool {
+	if a.scope != b.scope do return false
+
+	switch a.scope {
+	case .Context, .Focused_Id:
+		return a.scope_key == b.scope_key
+	case .Focused_Kind:
+		return a.scope_kind == b.scope_kind
+	case .Global, .Focused_Any:
+		return true
+	}
+
+	return false
+}
+
+@(private)
+shortcut_binding_scope_spec :: proc(b: Shortcut_Binding) -> Shortcut_Scope_Spec {
+	return {scope = b.scope, scope_key = b.scope_key, scope_kind = b.scope_kind}
 }
 
 @(private)
@@ -1685,7 +1803,8 @@ shortcut_best_sequence_binding :: proc(
 
 		if dispatch.text_filter &&
 		   cur_len == b.sequence_len &&
-		   !shortcut_chord_is_command(b.chord) {
+		   !shortcut_chord_is_command(b.chord) &&
+		   !shortcut_binding_allowed_in_text_input(b) {
 			continue
 		}
 
@@ -1765,6 +1884,29 @@ shortcut_chord_mods_equal :: proc(a, b: Shortcut_Chord) -> bool {
 @(private)
 shortcut_chord_is_command :: proc(chord: Shortcut_Chord) -> bool {
 	return chord.ctrl || chord.alt || chord.super
+}
+
+@(private)
+shortcut_binding_allowed_in_text_input :: proc(b: Shortcut_Binding) -> bool {
+	if b.scope != .Focused_Kind do return false
+
+	#partial switch b.scope_kind {
+	case .TEXT_INPUT, .RICH_TEXT_INPUT, .TEXT, .RICH_TEXT:
+		return strings.has_prefix(b.id, "edit.")
+	}
+
+	return false
+}
+
+@(private)
+shortcut_key_allowed_in_text_input :: proc(
+	b: Shortcut_Binding,
+	dispatch: Shortcut_Dispatch,
+) -> bool {
+	if !dispatch.text_filter do return true
+	if shortcut_chord_is_command(b.chord) do return true
+
+	return shortcut_binding_allowed_in_text_input(b)
 }
 
 @(private)
@@ -1935,7 +2077,8 @@ shortcut_best_key_binding :: proc(
 		if !b.enabled || b.trigger != .Key do continue
 		if b.chord.key != key do continue
 		if !shortcut_modifiers_match(b.chord, dispatch.mods) do continue
-		if dispatch.text_filter && !shortcut_chord_is_command(b.chord) do continue
+		if shortcut_binding_is_edit(b.id) do continue
+		if !shortcut_key_allowed_in_text_input(b, dispatch) do continue
 		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
 		if !app_type_filter_matches(b.app_type) do continue
 
@@ -1951,6 +2094,94 @@ shortcut_best_key_binding :: proc(
 	}
 
 	return best_i, found
+}
+
+@(private)
+shortcut_binding_is_edit :: proc(id: string) -> bool {
+	return strings.has_prefix(id, "edit.")
+}
+
+/*
+Matches edit.* key bindings for a focused text widget during the draw pass.
+
+Layout-pass shortcut_process skips edit bindings; the focused widget calls this
+with its element key and Widget_Kind so scope resolution does not depend on
+kind_by_id from the layout pass.
+*/
+shortcut_best_edit_key_binding :: proc(
+	key: Scancode,
+	dispatch: Shortcut_Dispatch,
+) -> (
+	index: int,
+	ok: bool,
+) {
+	best_i := -1
+	best := Shortcut_Ranked{}
+	found := false
+
+	for b, i in state.shortcuts.bindings {
+		if !b.enabled || b.trigger != .Key do continue
+		if !shortcut_binding_is_edit(b.id) do continue
+		if b.chord.key != key do continue
+		if !shortcut_modifiers_match(b.chord, dispatch.mods) do continue
+		if !shortcut_key_allowed_in_text_input(b, dispatch) do continue
+		if !shortcut_scope_matches(b, dispatch.focused_id, dispatch.focused_kind) do continue
+		if !app_type_filter_matches(b.app_type) do continue
+
+		cand := Shortcut_Ranked {
+			priority = b.priority,
+			rank     = shortcut_scope_rank(b.scope),
+		}
+		if shortcut_better_candidate(cand, best, found) {
+			best_i = i
+			best = cand
+			found = true
+		}
+	}
+
+	return best_i, found
+}
+
+shortcut_process_edit_keys :: proc(focused_key: string, focused_kind: Widget_Kind) {
+	if state == nil || w_ctx == nil do return
+	if focused_key == "" do return
+	if state.shortcuts.capture.active do return
+
+	dispatch := Shortcut_Dispatch {
+		mods         = state.input.modifiers,
+		mouse        = input_mouse_screen(),
+		focused_id   = focused_key,
+		focused_kind = focused_kind,
+		text_filter  = shortcut_text_input_effective(focused_key),
+	}
+
+	for scancode in 0 ..< KEY_COUNT {
+		if state.shortcuts.consumed_keys[scancode] do continue
+
+		key_state := w_ctx.keys[scancode]
+
+		if !key_state.pressed && !key_state.repeat do continue
+		if shortcut_is_modifier_scancode(Scancode(scancode)) do continue
+
+		best_i, ok := shortcut_best_edit_key_binding(Scancode(scancode), dispatch)
+
+		if !ok do continue
+
+		b := state.shortcuts.bindings[best_i]
+
+		if key_state.repeat && !b.repeat do continue
+
+		if shortcut_fire_binding(
+			{
+				index = best_i,
+				mouse = dispatch.mouse,
+				focused_id = dispatch.focused_id,
+				focused_kind = dispatch.focused_kind,
+			},
+		) {
+			state.shortcuts.consumed_keys[scancode] = true
+		}
+	}
 }
 
 @(private)

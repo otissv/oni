@@ -114,6 +114,23 @@ text_edit_take_command_requires_focus :: proc(t: ^testing.T) {
 }
 
 @(test)
+text_edit_nav_pending_requires_focus :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			text_edit_set_nav(.LEFT, false, true)
+			_, ok := text_edit_take_nav(false)
+			testing.expect(t, !ok)
+			testing.expect(t, w_ctx.text_edit_nav_pending)
+			nav, nav_ok := text_edit_take_nav(true)
+			testing.expect(t, nav_ok)
+			testing.expect_value(t, nav.key, Scancode.LEFT)
+			testing.expect(t, nav.ctrl)
+		},
+	)
+}
+
+@(test)
 text_edit_within_max_length_respects_limit :: proc(t: ^testing.T) {
 	testing.expect(t, text_edit_within_max_length("abc", 5, "d"))
 	testing.expect(t, !text_edit_within_max_length("abcd", 5, "de"))
@@ -238,6 +255,72 @@ text_edit_register_click_shift_extends_selection :: proc(t: ^testing.T) {
 	testing.expect_value(t, sel.anchor, 1)
 	testing.expect_value(t, sel.head, 3)
 	testing.expect_value(t, edit.blink_phase, f32(0))
+}
+
+@(test)
+text_edit_register_click_double_selects_word :: proc(t: ^testing.T) {
+	glyphs := []Text_Edit_Glyph {
+		{cluster = 0, x0 = 0, x1 = 8, line_index = 0},
+		{cluster = 1, x0 = 8, x1 = 16, line_index = 0},
+		{cluster = 2, x0 = 16, x1 = 24, line_index = 0},
+		{cluster = 3, x0 = 24, x1 = 32, line_index = 0},
+		{cluster = 4, x0 = 32, x1 = 40, line_index = 0},
+		{cluster = 5, x0 = 40, x1 = 48, line_index = 0},
+		{cluster = 6, x0 = 48, x1 = 56, line_index = 0},
+	}
+	geo := text_edit_test_geometry("one two", glyphs, 1)
+	edit := Text_Edit_State{}
+	layout_rect := Rect{0, 0, 100, 20}
+
+	caret, sel := text_edit_register_click(
+		&edit,
+		{44, 4},
+		2,
+		&geo,
+		layout_rect,
+		"one two",
+	)
+
+	testing.expect_value(t, caret, 7)
+	testing.expect_value(t, sel.anchor, 4)
+	testing.expect_value(t, sel.head, 7)
+}
+
+@(test)
+text_edit_register_click_triple_selects_line :: proc(t: ^testing.T) {
+	glyphs := []Text_Edit_Glyph {
+		{cluster = 0, x0 = 0, x1 = 8, line_index = 0},
+		{cluster = 1, x0 = 8, x1 = 16, line_index = 0},
+		{cluster = 2, x0 = 16, x1 = 24, line_index = 0},
+		{cluster = 3, x0 = 24, x1 = 32, line_index = 0},
+		{cluster = 4, x0 = 32, x1 = 40, line_index = 0},
+		{cluster = 5, x0 = 40, x1 = 48, line_index = 0},
+		{cluster = 6, x0 = 48, x1 = 56, line_index = 0},
+	}
+	geo := text_edit_test_geometry("one two", glyphs, 1)
+	edit := Text_Edit_State{}
+	layout_rect := Rect{0, 0, 100, 20}
+
+	caret, sel := text_edit_register_click(
+		&edit,
+		{44, 4},
+		3,
+		&geo,
+		layout_rect,
+		"one two",
+	)
+
+	testing.expect_value(t, caret, 7)
+	testing.expect_value(t, sel.anchor, 0)
+	testing.expect_value(t, sel.head, 7)
+}
+
+@(test)
+text_edit_word_at_finds_unicode_word :: proc(t: ^testing.T) {
+	sel := text_edit_word_at("café βeta", 6)
+
+	testing.expect_value(t, sel.anchor, 6)
+	testing.expect_value(t, sel.head, 11)
 }
 
 @(test)

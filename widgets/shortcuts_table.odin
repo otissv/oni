@@ -16,7 +16,7 @@ Shortcuts_Table_Session :: struct {
 	initialized:    bool,
 	mode:           Shortcuts_Table_Mode,
 	rebind_index:   int, // binding index when mode == .Rebind; -1 otherwise
-	add_action_id:  string, // owned; action id when mode == .Add
+	add_action_id:  o.Shortcut_Action_Type, // action id when mode == .Add
 	status:         string, // owned status line; empty uses default summary
 	picking_action: bool, // Add flow: show registered-action picker
 }
@@ -56,7 +56,7 @@ shortcuts_table_ctx: struct {
 	btn_id:        string,
 	btn_text_id:   string,
 	btn_label:     string,
-	action_id:     string,
+	action_id:     o.Shortcut_Action_Type,
 	action_label:  string,
 	chord:         string,
 	scope:         string,
@@ -91,10 +91,6 @@ Shortcuts_Table_Session_Destroy :: proc(s: ^Shortcuts_Table_Session) {
 		delete(s.status)
 		s.status = ""
 	}
-	if s.add_action_id != "" {
-		delete(s.add_action_id)
-		s.add_action_id = ""
-	}
 	s^ = {}
 }
 
@@ -111,6 +107,41 @@ shortcuts_table_set_status :: proc(session: ^Shortcuts_Table_Session, msg: strin
 shortcuts_table_path :: proc(path: string) -> string {
 	if path != "" do return path
 	return o.SHORTCUT_DEFAULT_BINDINGS_PATH
+}
+
+@(private)
+shortcuts_table_action_type_from_id :: proc(
+	id: string,
+) -> (
+	action: o.Shortcut_Action_Type,
+	ok: bool,
+) {
+	for candidate in o.Shortcut_Action_Type {
+		if o.shortcut_action_types[candidate] == id {
+			return candidate, true
+		}
+	}
+
+	return {}, false
+}
+
+@(private)
+shortcuts_table_action_id :: proc(action: o.Shortcut_Action_Type) -> string {
+	return o.shortcut_action_types[action]
+}
+
+@(private)
+shortcuts_table_action_label :: proc(id: string) -> string {
+	if action, ok := shortcuts_table_action_type_from_id(id); ok {
+		return o.shortcut_labels[action]
+	}
+
+	return id
+}
+
+@(private)
+shortcuts_table_action_label_type :: proc(action: o.Shortcut_Action_Type) -> string {
+	return o.shortcut_labels[action]
 }
 
 @(private)
@@ -162,10 +193,6 @@ shortcuts_table_cancel_capture :: proc(session: ^Shortcuts_Table_Session) {
 	session.mode = .Idle
 	session.rebind_index = -1
 	session.picking_action = false
-	if session.add_action_id != "" {
-		delete(session.add_action_id)
-		session.add_action_id = ""
-	}
 }
 
 @(private)
@@ -309,18 +336,15 @@ shortcuts_table_poll_capture :: proc(session: ^Shortcuts_Table_Session) {
 	result, done, cancelled := o.Shortcut_Capture_Take()
 	mode := session.mode
 	index := session.rebind_index
-	add_id := session.add_action_id
+	add_action := session.add_action_id
 	session.mode = .Idle
 	session.rebind_index = -1
-	session.add_action_id = ""
 
 	if cancelled {
-		if add_id != "" do delete(add_id)
 		shortcuts_table_set_status(session, "Capture cancelled")
 		return
 	}
 	if !done {
-		if add_id != "" do delete(add_id)
 		shortcuts_table_set_status(session, "Capture idle")
 		return
 	}
@@ -330,6 +354,7 @@ shortcuts_table_poll_capture :: proc(session: ^Shortcuts_Table_Session) {
 	case .Rebind:
 		ok = shortcuts_table_apply_rebind(index, result)
 	case .Add:
+		add_id := shortcuts_table_action_id(add_action)
 		if add_id != "" {
 			ok = shortcuts_table_bind_capture(add_id, result, .Global, "", {}, 0)
 		}
@@ -342,7 +367,6 @@ shortcuts_table_poll_capture :: proc(session: ^Shortcuts_Table_Session) {
 	} else {
 		shortcuts_table_set_status(session, "Bind failed")
 	}
-	if add_id != "" do delete(add_id)
 }
 
 @(private)
@@ -361,19 +385,22 @@ shortcuts_table_start_rebind :: proc(session: ^Shortcuts_Table_Session, index: i
 }
 
 @(private)
-shortcuts_table_start_add :: proc(session: ^Shortcuts_Table_Session, action_id: string) {
-	if session == nil || action_id == "" do return
+shortcuts_table_start_add :: proc(
+	session: ^Shortcuts_Table_Session,
+	action: o.Shortcut_Action_Type,
+) {
+	if session == nil do return
 	shortcuts_table_cancel_capture(session)
 	session.mode = .Add
 	session.rebind_index = -1
 	session.picking_action = false
-	session.add_action_id = strings.clone(action_id)
+	session.add_action_id = action
 	o.Shortcut_Capture_Begin(.Any)
 	shortcuts_table_set_status(
 		session,
 		fmt.tprintf(
 			"Bind %s — press a key, click, wheel, or gamepad (Esc cancels)",
-			o.Shortcut_Action_Label(action_id),
+			shortcuts_table_action_label_type(action),
 		),
 	)
 }
@@ -697,7 +724,7 @@ shortcuts_table_emit_binding_row :: proc(index: int, binding: o.Shortcut_Binding
 	session := shortcuts_table_ctx.session
 	shortcuts_table_ctx.row_index = index
 	shortcuts_table_ctx.action_label = strings.clone(
-		o.Shortcut_Action_Label(binding.id),
+		shortcuts_table_action_label(binding.id),
 		context.temp_allocator,
 	)
 	shortcuts_table_ctx.chord = o.Shortcut_Format_Binding(binding, context.temp_allocator)
@@ -779,11 +806,13 @@ shortcuts_table_picker_child :: proc(_: Rectangle_State) {
 	actions := o.Shortcut_List_Actions(context.temp_allocator)
 	defer o.Shortcut_Free_Action_List(actions, context.temp_allocator)
 	prefix := shortcuts_table_ctx.id_prefix
-	for action, i in actions {
+	for action_id, i in actions {
+		action, ok := shortcuts_table_action_type_from_id(action_id)
+		if !ok do continue
 		shortcuts_table_ctx.action_id = action
 		shortcuts_table_ctx.btn_id = fmt.tprintf("%s_pick_%d", prefix, i)
 		shortcuts_table_ctx.btn_text_id = fmt.tprintf("%s_pick_%d_t", prefix, i)
-		shortcuts_table_ctx.btn_label = o.Shortcut_Action_Label(action)
+		shortcuts_table_ctx.btn_label = shortcuts_table_action_label(action_id)
 		Button(
 			{
 				config = {
@@ -834,8 +863,8 @@ shortcuts_table_conflicts_child :: proc(_: Rectangle_State) {
 		shortcuts_table_ctx.conflict_i = i
 		shortcuts_table_ctx.conflict_text = fmt.tprintf(
 			"Conflict: %s vs %s on %s (%s)",
-			o.Shortcut_Action_Label(c.id_a),
-			o.Shortcut_Action_Label(c.id_b),
+			shortcuts_table_action_label(c.id_a),
+			shortcuts_table_action_label(c.id_b),
 			trigger,
 			shortcuts_table_scope_label(c.scope, "", {}),
 		)

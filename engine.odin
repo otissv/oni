@@ -68,6 +68,9 @@ Resets mouse wheel deltas and the text-input buffer; call at frame start.
 input_begin_frame :: proc() {
 	state.input.mouse_wheel_x = 0
 	state.input.mouse_wheel_y = 0
+	state.input.mouse_left_clicks = 0
+	state.input.mouse_right_clicks = 0
+	state.input.mouse_middle_clicks = 0
 	state.input.keys_repeat = {}
 	clear(&state.input.text_input)
 }
@@ -97,6 +100,9 @@ input_clear_keyboard_mouse :: proc() {
 	state.input.mouse_left = false
 	state.input.mouse_right = false
 	state.input.mouse_middle = false
+	state.input.mouse_left_clicks = 0
+	state.input.mouse_right_clicks = 0
+	state.input.mouse_middle_clicks = 0
 	state.input.modifiers = {}
 	clear(&state.input.text_input)
 	input_clear_ime()
@@ -265,10 +271,13 @@ poll_events :: proc() {
 			switch event.button.button {
 			case sdl.BUTTON_LEFT:
 				state.input.mouse_left = true
+				state.input.mouse_left_clicks = int(event.button.clicks)
 			case sdl.BUTTON_RIGHT:
 				state.input.mouse_right = true
+				state.input.mouse_right_clicks = int(event.button.clicks)
 			case sdl.BUTTON_MIDDLE:
 				state.input.mouse_middle = true
+				state.input.mouse_middle_clicks = int(event.button.clicks)
 			}
 
 		case .MOUSE_BUTTON_UP:

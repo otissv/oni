@@ -17,8 +17,8 @@ Human-friendly bindings file format (versionless):
 	G,S = goto.save { scope = context, scope_key = "artboard" }
 	GAMEPAD_START = window.toggle_fullscreen
 
-Config rows are always user overrides: they replace any builtin with the same
-trigger. Only user bindings are exported.
+Config rows are user overrides: they replace any binding with the same trigger
+in an overlapping scope. Only user bindings are exported.
 */
 
 @(private)
@@ -741,8 +741,11 @@ shortcut_parse_gamepad_button :: proc(name: string) -> (sdl.GamepadButton, bool)
 }
 
 /*
-Removes every binding whose trigger matches `row` (any action id / scope).
-Used so config lines override builtins that share the same trigger.
+Removes bindings whose trigger and scope overlap `row`.
+
+Used so config lines override builtins (or other user rows) that share the same
+trigger in the same scope, without stripping parallel bindings for other scopes
+(e.g. TEXT_INPUT vs RICH_TEXT_INPUT).
 */
 @(private)
 shortcut_remove_trigger_matches :: proc(row: Shortcut_Parsed_Binding) {
@@ -755,9 +758,14 @@ shortcut_remove_trigger_matches :: proc(row: Shortcut_Parsed_Binding) {
 		sequence_len   = row.sequence_len,
 		gamepad_button = row.gamepad_button,
 		mouse_button   = row.mouse_button,
+		scope          = row.scope,
+		scope_key      = row.scope_key,
+		scope_kind     = row.scope_kind,
 	}
 	for i := len(state.shortcuts.bindings) - 1; i >= 0; i -= 1 {
-		if !shortcut_triggers_conflict(state.shortcuts.bindings[i], probe) do continue
+		b := state.shortcuts.bindings[i]
+		if !shortcut_triggers_conflict(b, probe) do continue
+		if !shortcut_scopes_overlap(b, probe) do continue
 		shortcut_free_binding(&state.shortcuts.bindings[i])
 		ordered_remove(&state.shortcuts.bindings, i)
 	}

@@ -138,6 +138,7 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		text_refresh_merged,
 		text_refresh_merged_if_interaction_changed,
 		{
+			widget_kind = .TEXT,
 			selectable = config.selectable,
 		},
 	)
