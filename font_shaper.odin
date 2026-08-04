@@ -856,12 +856,12 @@ font_line_byte_range :: proc(text: string, line: Shaped_Line) -> (start, end: in
 	start = int(line.glyphs[0].cluster)
 	end = int(line.glyphs[len(line.glyphs) - 1].cluster)
 
-	for end < len(text) {
+	if end < len(text) {
 		_, w := utf8.decode_rune_in_string(text[end:])
 
-		if w == 0 do break
-
-		end += w
+		if w > 0 {
+			end += w
+		}
 	}
 
 	return start, end

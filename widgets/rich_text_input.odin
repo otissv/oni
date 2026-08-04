@@ -1,6 +1,5 @@
 package oni_widgets
 
-import "core:strings"
 import o ".."
 import set "../set"
 
@@ -36,7 +35,7 @@ Rich_Text_Input_Props :: struct {
 	on_contextmenu:               proc(event: Rich_Text_Input_Event),
 	on_key_pressed:               proc(event: Rich_Text_Input_Event),
 	on_key_down:                  proc(event: Rich_Text_Input_Event),
-	on_key_released:               proc(event: Rich_Text_Input_Event),
+	on_key_released:              proc(event: Rich_Text_Input_Event),
 }
 
 @(private)
@@ -58,7 +57,10 @@ rich_text_input_theme_base :: proc(frame_state: ^Rich_Text_Input_State) -> o.Wid
 
 
 @(private)
-rich_text_input_report_tag_diagnostics :: proc(id_label: string, diagnostics: []o.Text_Tag_Diagnostic) {
+rich_text_input_report_tag_diagnostics :: proc(
+	id_label: string,
+	diagnostics: []o.Text_Tag_Diagnostic,
+) {
 	for diagnostic in diagnostics {
 		o.error_reportf("RichTextInput %q: %s", id_label, diagnostic.message)
 	}
@@ -266,49 +268,47 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	edit_opts := Text_Edit_Widget_Opts {
 		widget_kind = .RICH_TEXT_INPUT,
 		selectable  = true,
-		editable   = true,
-		caret      = true,
-		multiline  = cfg.multiline,
-		max_length = cfg.max_length,
-		draw_space = config.space,
+		editable    = true,
+		caret       = true,
+		multiline   = cfg.multiline,
+		max_length  = cfg.max_length,
+		draw_space  = config.space,
 	}
-	text_edit_widget_handle_pointer(key, layout_id, rect, scroll_entry, plain, can_interact, config, edit_opts)
+	text_edit_widget_handle_pointer(
+		key,
+		layout_id,
+		rect,
+		scroll_entry,
+		plain,
+		can_interact,
+		config,
+		edit_opts,
+	)
 	tagged := cfg.text
 
 	if frame_state.is_focused {
 		text_edit_widget_process_shortcuts(key, edit_opts.widget_kind)
-		updated, changed := text_edit_widget_apply_document_keys(
+		updated, changed := text_edit_widget_apply_document_edits(
 			tagged,
 			key,
 			layout_id,
 			rect,
 			scroll_entry,
-			plain,
 			config,
 			edit_opts,
 		)
 
-		if changed && props.on_change != nil {
-			props.on_change(event, strings.clone(updated))
+		if changed {
+			if props.on_change != nil {
+				props.on_change(event, updated)
+			} else {
+				delete(updated)
+			}
+
+			tagged = updated
 		}
 
-		tagged = updated
-		updated_cmd, cmd_changed := text_edit_widget_apply_document_plain(
-			tagged,
-			key,
-			layout_id,
-			rect,
-			scroll_entry,
-			plain,
-			config,
-			edit_opts,
-		)
-
-		if cmd_changed && props.on_change != nil {
-			props.on_change(event, strings.clone(updated_cmd))
-		}
-
-		tagged = updated_cmd
+		plain = rich_text_input_plain(tagged)
 	}
 
 	background: o.RGBA

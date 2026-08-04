@@ -1,6 +1,5 @@
 package oni
 
-import "core:fmt"
 import "core:mem"
 import "core:strings"
 import "core:unicode/utf8"
@@ -737,10 +736,9 @@ text_run_color_tag_name :: proc(color: Color) -> string {
 @(private)
 text_runs_write_style_open :: proc(b: ^strings.Builder, style: Text_Run_Style) {
 	if .color in style.fields {
-		strings.write_string(
-			b,
-			fmt.tprintf("{c:%s}", text_run_color_tag_name(style.color)),
-		)
+		strings.write_string(b, "{c:")
+		strings.write_string(b, text_run_color_tag_name(style.color))
+		strings.write_byte(b, '}')
 	}
 	if .font_weight in style.fields && style.font_weight == .Bold {
 		strings.write_string(b, "{b}")

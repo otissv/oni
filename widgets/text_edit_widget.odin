@@ -1,6 +1,7 @@
 package oni_widgets
 
 import o ".."
+import "core:mem"
 
 Text_Edit_Widget_Opts :: struct {
 	widget_kind:         o.Widget_Kind,
@@ -958,15 +959,170 @@ text_edit_widget_handle_selectable :: proc(key: string, plain: string) {
 	}
 }
 
-text_edit_widget_apply_document_plain :: proc(
+@(private)
+text_edit_widget_tagged_plain :: proc(tagged: string) -> string {
+	parsed := o.text_tags_parse(tagged, context.temp_allocator)
+
+	return parsed.plain
+}
+
+@(private)
+text_edit_widget_document_delete_range :: proc(
+	doc: ^o.Text_Document,
+	edit: ^o.Text_Edit_State,
+	tagged: string,
+	start, end: int,
+	frame: u64,
+	allocator: mem.Allocator,
+) -> bool {
+	if start >= end do return false
+
+	o.text_edit_record_mutation(edit, tagged, frame)
+
+	if !o.text_document_delete_range(doc, start, end, allocator) do return false
+
+	edit.caret = start
+	edit.selection = {start, start}
+	edit.has_preferred_column = false
+
+	return true
+}
+
+@(private)
+text_edit_widget_document_backspace :: proc(
+	doc: ^o.Text_Document,
+	edit: ^o.Text_Edit_State,
+	tagged: string,
+	word: bool,
+	frame: u64,
+	allocator: mem.Allocator,
+) -> bool {
+	plain := doc.plain
+	start, end: int
+
+	if o.text_edit_selection_active(edit.selection) {
+		start, end = o.text_edit_selection_normalized(edit.selection)
+	} else if edit.caret <= 0 {
+		return false
+	} else if word {
+		start = o.text_edit_word_prev(plain, edit.caret)
+		end = edit.caret
+	} else {
+		start = o.text_edit_cluster_prev(plain, edit.caret)
+		end = edit.caret
+	}
+
+	return text_edit_widget_document_delete_range(doc, edit, tagged, start, end, frame, allocator)
+}
+
+@(private)
+text_edit_widget_document_delete :: proc(
+	doc: ^o.Text_Document,
+	edit: ^o.Text_Edit_State,
+	tagged: string,
+	word: bool,
+	frame: u64,
+	allocator: mem.Allocator,
+) -> bool {
+	plain := doc.plain
+	start, end: int
+
+	if o.text_edit_selection_active(edit.selection) {
+		start, end = o.text_edit_selection_normalized(edit.selection)
+	} else if edit.caret >= len(plain) {
+		return false
+	} else if word {
+		start = edit.caret
+		end = o.text_edit_word_next(plain, edit.caret)
+	} else {
+		start = edit.caret
+		end = o.text_edit_cluster_next(plain, edit.caret)
+	}
+
+	return text_edit_widget_document_delete_range(doc, edit, tagged, start, end, frame, allocator)
+}
+
+@(private)
+text_edit_widget_document_insert :: proc(
+	doc: ^o.Text_Document,
+	edit: ^o.Text_Edit_State,
+	tagged: string,
+	insert: string,
+	max_length: int,
+	frame: u64,
+	allocator: mem.Allocator,
+) -> bool {
+	if len(insert) == 0 do return false
+
+	truncated := o.text_edit_truncate_insert_for_max_length(
+		doc.plain,
+		edit.selection,
+		insert,
+		max_length,
+	)
+
+	if len(truncated) == 0 do return false
+
+	o.text_edit_record_mutation(edit, tagged, frame)
+	start, end := o.text_edit_selection_normalized(edit.selection)
+
+	if start != end {
+		o.text_document_delete_range(doc, start, end, allocator)
+	}
+
+	if !o.text_document_insert_plain(doc, start, truncated, allocator) do return false
+
+	edit.caret = start + len(truncated)
+	edit.selection = {edit.caret, edit.caret}
+	edit.has_preferred_column = false
+
+	return true
+}
+
+@(private)
+text_edit_widget_apply_document_nav :: proc(
+	doc: ^o.Text_Document,
+	edit: ^o.Text_Edit_State,
+	geo: ^o.Text_Edit_Geometry,
+	nav: o.Text_Edit_Nav,
+	page_lines: int,
+	multiline: bool,
+) -> bool {
+	nav_caret, nav_sel, handled := o.text_edit_handle_key_navigation(
+		doc.plain,
+		edit.caret,
+		edit.selection,
+		geo,
+		nav.key,
+		nav.shift,
+		nav.ctrl,
+		multiline,
+		page_lines,
+		edit,
+	)
+
+	if !handled do return false
+
+	edit.caret = nav_caret
+	edit.selection = nav_sel
+
+	return true
+}
+
+/*
+Applies navigation, typed input, and edit commands to a tagged rich-text document.
+
+Mutations preserve inline styling via text_document_* helpers and record undo entries
+using the tagged source string.
+*/
+text_edit_widget_apply_document_edits :: proc(
 	tagged: string,
 	key: string,
 	layout_id: o.UI_Id,
 	layout_rect: o.Rect,
 	scroll: ^o.Vec2,
-	plain: string,
 	config: o.Resolved_Widget_Config,
-	opts: Text_Edit_Widget_Opts = {},
+	opts: Text_Edit_Widget_Opts,
 ) -> (
 	new_tagged: string,
 	changed: bool,
@@ -974,76 +1130,205 @@ text_edit_widget_apply_document_plain :: proc(
 	new_tagged = tagged
 	edit := o.widget_text_edit_get(key)
 	if edit == nil || !widget_is_focused(key) do return new_tagged, false
+	if !opts.editable && !opts.selectable do return new_tagged, false
 
 	geo := o.layout_text_edit_geometry(layout_id)
+	page_lines := text_edit_widget_page_lines(layout_id, geo)
+	ime_active := o.input_ime_active()
+	frame := o.state.ui.frame
+
+	doc := o.text_document_from_tagged(tagged)
+	defer o.text_document_free_runs(&doc)
+	doc_alloc := context.allocator
+
+	plain := doc.plain
+	doc_changed := false
+	scroll_after_mutation := false
+
+	if !ime_active {
+		nav, nav_ok := o.text_edit_take_nav(true)
+
+		if nav_ok {
+			#partial switch nav.key {
+			case .LEFT, .RIGHT, .UP, .DOWN, .HOME, .END, .PAGEUP, .PAGEDOWN:
+				if text_edit_widget_apply_document_nav(
+					&doc,
+					edit,
+					geo,
+					nav,
+					page_lines,
+					opts.multiline,
+				) {
+					text_edit_widget_sync_edit_scroll(
+						key,
+						layout_id,
+						layout_rect,
+						edit,
+						geo,
+						scroll,
+						config,
+						opts,
+						plain,
+					)
+				}
+			case .RETURN, .KP_ENTER:
+				if opts.editable && opts.multiline {
+					if text_edit_widget_document_insert(
+						&doc,
+						edit,
+						tagged,
+						"\n",
+						opts.max_length,
+						frame,
+						doc_alloc,
+					) {
+						doc_changed = true
+						scroll_after_mutation = true
+					}
+				}
+			case .BACKSPACE:
+				if opts.editable &&
+				   text_edit_widget_document_backspace(&doc, edit, tagged, nav.ctrl, frame, doc_alloc) {
+					doc_changed = true
+					scroll_after_mutation = true
+				}
+			case .DELETE:
+				if opts.editable &&
+				   text_edit_widget_document_delete(&doc, edit, tagged, nav.ctrl, frame, doc_alloc) {
+					doc_changed = true
+					scroll_after_mutation = true
+				}
+			}
+		}
+	}
+
+	if opts.editable {
+		inserted := o.input_take_text_input()
+
+		if len(inserted) > 0 {
+			if ime_active {
+				o.input_clear_ime()
+			}
+
+			if text_edit_widget_document_insert(
+				&doc,
+				edit,
+				tagged,
+				inserted,
+				opts.max_length,
+				frame,
+				doc_alloc,
+			) {
+				doc_changed = true
+				scroll_after_mutation = true
+			}
+		}
+	}
+
 	cmd := o.text_edit_take_command(true)
 
 	switch cmd {
 	case .SELECT_ALL:
-		edit.selection = o.text_edit_select_all(plain)
+		edit.selection = o.text_edit_select_all(doc.plain)
 		edit.caret = edit.selection.head
 		edit.has_preferred_column = false
 		o.text_edit_reset_blink(edit)
 	case .COPY:
-		o.text_edit_copy_plain(plain, edit.selection)
+		o.text_edit_copy_plain(doc.plain, edit.selection)
 	case .CUT:
-		if opts.editable && o.text_edit_copy_plain(plain, edit.selection) {
-			o.text_edit_record_mutation(edit, tagged, o.state.ui.frame)
-			doc := o.text_document_from_tagged(tagged)
-			defer o.text_document_free_runs(&doc)
+		if opts.editable && o.text_edit_copy_plain(doc.plain, edit.selection) {
 			start, end := o.text_edit_selection_normalized(edit.selection)
-			o.text_document_delete_range(&doc, start, end)
-			new_tagged = o.text_document_to_tagged(&doc)
-			edit.caret = start
-			edit.selection = {start, start}
-			edit.has_preferred_column = false
-			changed = true
+
+			if text_edit_widget_document_delete_range(
+				&doc,
+				edit,
+				tagged,
+				start,
+				end,
+				frame,
+				doc_alloc,
+			) {
+				doc_changed = true
+				scroll_after_mutation = true
+			}
 		}
 	case .PASTE:
 		if opts.editable {
 			if paste, ok := o.clipboard_get_text(); ok {
 				defer delete(paste)
 				normalized := o.text_edit_normalize_paste(paste, opts.multiline)
-				truncated := o.text_edit_truncate_insert_for_max_length(
-					plain,
-					edit.selection,
+
+				if text_edit_widget_document_insert(
+					&doc,
+					edit,
+					tagged,
 					normalized,
 					opts.max_length,
-				)
-
-				if len(truncated) > 0 {
-					doc := o.text_document_from_tagged(tagged)
-					defer o.text_document_free_runs(&doc)
-					o.text_edit_record_mutation(edit, tagged, o.state.ui.frame)
-					start, end := o.text_edit_selection_normalized(edit.selection)
-					o.text_document_delete_range(&doc, start, end)
-					o.text_document_insert_plain(&doc, start, truncated)
-					new_tagged = o.text_document_to_tagged(&doc)
-					edit.caret = start + len(truncated)
-					edit.selection = {edit.caret, edit.caret}
-					edit.has_preferred_column = false
-					changed = true
+					frame,
+					doc_alloc,
+				) {
+					doc_changed = true
+					scroll_after_mutation = true
 				}
 			}
 		}
 	case .UNDO:
 		if opts.editable {
-			if restored, ok := o.text_edit_apply_undo(edit, tagged, o.state.ui.frame); ok {
+			if restored, ok := o.text_edit_apply_undo(edit, tagged, frame); ok {
 				new_tagged = restored
 				changed = true
+				restored_plain := text_edit_widget_tagged_plain(new_tagged)
+
+				edit.caret = o.text_edit_clamp_offset(restored_plain, edit.caret)
+				edit.selection = o.text_edit_clamp_selection(restored_plain, edit.selection)
+				text_edit_widget_sync_ime_caret(
+					key,
+					layout_id,
+					layout_rect,
+					edit,
+					geo,
+					opts,
+					restored_plain,
+				)
+
+				return new_tagged, changed
 			}
 		}
 	case .REDO:
 		if opts.editable {
-			if restored, ok := o.text_edit_apply_redo(edit, tagged, o.state.ui.frame); ok {
+			if restored, ok := o.text_edit_apply_redo(edit, tagged, frame); ok {
 				new_tagged = restored
 				changed = true
+				restored_plain := text_edit_widget_tagged_plain(new_tagged)
+
+				edit.caret = o.text_edit_clamp_offset(restored_plain, edit.caret)
+				edit.selection = o.text_edit_clamp_selection(restored_plain, edit.selection)
+				text_edit_widget_sync_ime_caret(
+					key,
+					layout_id,
+					layout_rect,
+					edit,
+					geo,
+					opts,
+					restored_plain,
+				)
+
+				return new_tagged, changed
 			}
 		}
 	case .NONE:
 	}
 
-	if cmd != .NONE && cmd != .COPY {
+	if doc_changed {
+		new_tagged = o.text_document_to_tagged(&doc, context.allocator)
+		changed = true
+		plain = doc.plain
+	}
+
+	edit.caret = o.text_edit_clamp_offset(plain, edit.caret)
+	edit.selection = o.text_edit_clamp_selection(plain, edit.selection)
+
+	if scroll_after_mutation || (cmd != .NONE && cmd != .COPY) {
 		text_edit_widget_sync_edit_scroll(
 			key,
 			layout_id,
@@ -1057,96 +1342,9 @@ text_edit_widget_apply_document_plain :: proc(
 		)
 	}
 
-	text_edit_widget_sync_ime_caret(key, layout_id, layout_rect, edit, geo, opts, plain)
-
-	return new_tagged, changed
-}
-
-text_edit_widget_apply_document_keys :: proc(
-	tagged: string,
-	key: string,
-	layout_id: o.UI_Id,
-	layout_rect: o.Rect,
-	scroll: ^o.Vec2,
-	plain: string,
-	config: o.Resolved_Widget_Config,
-	opts: Text_Edit_Widget_Opts,
-) -> (
-	new_tagged: string,
-	changed: bool,
-) {
-	new_tagged = tagged
-	edit := o.widget_text_edit_get(key)
-	if edit == nil || !opts.editable || !widget_is_focused(key) do return new_tagged, false
-
-	geo := o.layout_text_edit_geometry(layout_id)
-	new_plain := plain
-	plain_changed := false
-	page_lines := text_edit_widget_page_lines(layout_id, geo)
-	ime_active := o.input_ime_active()
-
-	if !ime_active {
-		updated, input_changed := text_edit_widget_apply_pending_shortcut_input(
-			key,
-			layout_id,
-			layout_rect,
-			scroll,
-			new_plain,
-			tagged,
-			config,
-			opts,
-			edit,
-			geo,
-			page_lines,
-		)
-		new_plain = updated
-
-		if input_changed {
-			plain_changed = true
-		}
+	if opts.editable {
+		text_edit_widget_sync_ime_caret(key, layout_id, layout_rect, edit, geo, opts, plain)
 	}
-
-	inserted := o.input_take_text_input()
-
-	if len(inserted) > 0 {
-		if ime_active {
-			o.input_clear_ime()
-		}
-
-		new_plain, plain_changed = text_edit_widget_insert_text(edit, new_plain, inserted, opts)
-
-		if plain_changed {
-			text_edit_widget_sync_edit_scroll(
-				key,
-				layout_id,
-				layout_rect,
-				edit,
-				geo,
-				scroll,
-				config,
-				opts,
-				plain,
-			)
-		}
-	}
-
-	if plain_changed {
-		doc := o.text_document_from_tagged(tagged)
-		defer o.text_document_free_runs(&doc)
-
-		if new_plain != doc.plain {
-			if !o.text_document_splice_plain(&doc, 0, len(doc.plain), new_plain) {
-				changed = false
-			} else {
-				new_tagged = o.text_document_to_tagged(&doc)
-				changed = true
-			}
-		}
-	}
-
-	edit.caret = o.text_edit_clamp_offset(new_plain, edit.caret)
-	edit.selection = o.text_edit_clamp_selection(new_plain, edit.selection)
-	text_edit_widget_sync_ime_caret(key, layout_id, layout_rect, edit, geo, opts, plain)
 
 	return new_tagged, changed
 }

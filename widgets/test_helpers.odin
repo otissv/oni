@@ -150,6 +150,16 @@ len_fixed :: proc(v: f32) -> o.Length {
 }
 
 @(private)
+widget_test_press_shortcut :: proc(key: o.Scancode, mods: o.Input_Modifiers = {}) {
+	o.state.input.modifiers = mods
+	o.state.shortcuts.consumed_keys = {}
+	o.w_ctx.keys[int(key)] = {
+		down    = true,
+		pressed = true,
+	}
+}
+
+@(private)
 set_bool :: proc(v: bool) -> o.Cfg(o.Style_Bool) {
 	return set.Bool(v)
 }

@@ -1,6 +1,7 @@
 package oni
 
 import "core:os"
+import "core:strings"
 import "core:sync"
 import "core:testing"
 
@@ -2695,6 +2696,82 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 			testing.expect(t, len(node.text.line_origins) > 0)
 			testing.expect(t, node.text.size.x > 0)
 			testing.expect(t, node.text.size.y > 0)
+		},
+	)
+}
+
+@(test)
+layout_rich_edit_geometry_offsets_segment_clusters :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := font_register_family(
+				"LayoutRichEditGeometryTest",
+				{
+					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
+					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Bold},
+					{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
+				},
+			)
+			testing.expect(t, inter_ok)
+			inter = font_with_size(inter, 16)
+
+			tagged := "{c:accent}Accent{/c} {b}bold{/b} {i}italic{/i} — edit with inline tags"
+			parsed := text_tags_parse(tagged, context.temp_allocator)
+			target := strings.index(parsed.plain, "t with")
+
+			testing.expect(t, target >= 0)
+
+			node := Layout_Node {
+				kind = .RICH_TEXT_INPUT,
+				rect = {0, 0, 520, 40},
+				config = {
+					font = inter,
+					font_size = 16,
+					line_height = 1.5,
+					wrap = Text_Wrap_Kind.NONE,
+					text_direction = Text_Direction_Kind.LTR,
+					align = Text_Align_Kind.LEFT,
+					space = .SCREEN,
+					text_decoration = Text_Decoration_Lines{},
+					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+					accepts_text_input = true,
+				},
+			}
+			layout_set_measure_rich_text(&node, parsed.plain, parsed.layout_runs, 0, false)
+			layout_finalize_text_node(&node)
+			defer layout_text_release(&node)
+
+			testing.expect(t, len(node.text.edit_geometry.glyphs) > 0)
+
+			found_target_cluster := false
+			for glyph in node.text.edit_geometry.glyphs {
+				if glyph.cluster == target {
+					found_target_cluster = true
+
+					break
+				}
+			}
+
+			testing.expect(t, found_target_cluster)
 		},
 	)
 }

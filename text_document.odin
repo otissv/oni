@@ -18,19 +18,19 @@ text_document_free_runs :: proc(doc: ^Text_Document, allocator := context.alloca
 	if doc.runs != nil {
 		for run in doc.runs {
 			if len(run.text) > 0 {
-				delete(run.text)
+				delete(run.text, allocator)
 			}
 		}
 
-		delete(doc.runs)
+		delete(doc.runs, allocator)
 	}
 
 	if doc.layout_runs != nil {
-		delete(doc.layout_runs)
+		delete(doc.layout_runs, allocator)
 	}
 
 	if len(doc.plain) > 0 {
-		delete(doc.plain)
+		delete(doc.plain, allocator)
 	}
 
 	doc^ = {}
@@ -60,23 +60,23 @@ text_document_from_tagged :: proc(tagged: string, allocator := context.allocator
 	if allocator != context.temp_allocator {
 		for run in parsed.runs {
 			if len(run.text) > 0 {
-				delete(run.text)
+				delete(run.text, allocator)
 			}
 		}
 
-		delete(parsed.runs)
+		delete(parsed.runs, allocator)
 
 		if len(parsed.plain) > 0 {
-			delete(parsed.plain)
+			delete(parsed.plain, allocator)
 		}
 
-		delete(parsed.layout_runs)
+		delete(parsed.layout_runs, allocator)
 
 		for diagnostic in parsed.diagnostics {
-			delete(diagnostic.message)
+			delete(diagnostic.message, allocator)
 		}
 
-		delete(parsed.diagnostics)
+		delete(parsed.diagnostics, allocator)
 	}
 
 	return doc

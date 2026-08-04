@@ -666,7 +666,7 @@ text_runs_push :: proc(
 		prev.text = strings.to_string(b)
 
 		if allocator != context.temp_allocator && len(old) > 0 {
-			delete(old)
+			delete(old, allocator)
 		}
 
 		return
@@ -753,6 +753,16 @@ text_tag_entry_close_name :: proc(entry: Text_Run_Tag_Entry) -> string {
 	return entry.tag
 }
 
+@(private)
+text_tag_wrap_braces :: proc(tag: string) -> string {
+	b := strings.builder_make(context.temp_allocator)
+	strings.write_byte(&b, '{')
+	strings.write_string(&b, tag)
+	strings.write_byte(&b, '}')
+
+	return strings.to_string(b)
+}
+
 /*
 Parses rich-text tags in `source` into flattened plain text and styled runs.
 
@@ -837,14 +847,17 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 			if !close_name_ok {
 				text_tags_push_diagnostic(
 					&diagnostics,
-					fmt.tprintf("unknown close tag {%s}", body),
+					fmt.tprintf("unknown close tag %s", text_tag_wrap_braces(body)),
 					i,
 					allocator,
 				)
 			} else if len(stack) == 0 {
 				text_tags_push_diagnostic(
 					&diagnostics,
-					fmt.tprintf("close tag {%s} without matching open tag", body),
+					fmt.tprintf(
+						"close tag %s without matching open tag",
+						text_tag_wrap_braces(body),
+					),
 					i,
 					allocator,
 				)
@@ -853,9 +866,9 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 				text_tags_push_diagnostic(
 					&diagnostics,
 					fmt.tprintf(
-						"mis-nested close tag {%s}; expected {/%s}",
-						body,
-						expected,
+						"mis-nested close tag %s; expected %s",
+						text_tag_wrap_braces(body),
+						text_tag_wrap_braces(fmt.tprintf("/%s", expected)),
 					),
 					i,
 					allocator,
@@ -869,7 +882,7 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 		} else {
 			text_tags_push_diagnostic(
 				&diagnostics,
-				fmt.tprintf("unknown or invalid tag {%s}", body),
+				fmt.tprintf("unknown or invalid tag %s", text_tag_wrap_braces(body)),
 				i,
 				allocator,
 			)
@@ -888,7 +901,11 @@ text_tags_parse :: proc(source: string, allocator: mem.Allocator) -> Text_Tag_Pa
 	for entry in stack {
 		text_tags_push_diagnostic(
 			&diagnostics,
-			fmt.tprintf("unclosed {%s} tag opened at offset %d", entry.tag, entry.offset),
+			fmt.tprintf(
+				"unclosed %s tag opened at offset %d",
+				text_tag_wrap_braces(entry.tag),
+				entry.offset,
+			),
 			entry.offset,
 			allocator,
 		)

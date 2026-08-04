@@ -14,6 +14,31 @@ font_fixture_available :: proc() -> bool {
 	return os.exists(INTER_FONT_FIXTURE) && os.exists(PIXEL_FONT_FIXTURE)
 }
 
+@(test)
+font_line_byte_range_stops_after_last_glyph_rune :: proc(t: ^testing.T) {
+	line := Shaped_Line {
+		glyphs = []Shaped_Glyph {
+			{cluster = 0},
+			{cluster = 1},
+			{cluster = 2},
+		},
+	}
+	start, end := font_line_byte_range("abc\ndef", line)
+
+	testing.expect_value(t, start, 0)
+	testing.expect_value(t, end, 3)
+
+	unicode_line := Shaped_Line {
+		glyphs = []Shaped_Glyph {
+			{cluster = 0},
+		},
+	}
+	start, end = font_line_byte_range("é\nx", unicode_line)
+
+	testing.expect_value(t, start, 0)
+	testing.expect_value(t, end, len("é"))
+}
+
 @(private)
 with_font_fixtures :: proc(t: ^testing.T, body: proc(inter, pixel: Font_Handle, t: ^testing.T)) {
 	if !font_fixture_available() {

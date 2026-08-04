@@ -1369,7 +1369,7 @@ layout_text_build_edit_geometry :: proc(node: ^Layout_Node) {
 					append(
 						&rich_glyphs,
 						Text_Edit_Glyph {
-							cluster = int(glyph.cluster),
+							cluster = seg_start + int(glyph.cluster),
 							x0 = glyph_x,
 							x1 = glyph_x + advance,
 							line_index = line_i,

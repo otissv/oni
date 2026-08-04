@@ -58,7 +58,6 @@ app_tick :: proc(dt: f32) {
 Registers the hot-reload hook and loads the user bindings table (first init).
 */
 register_shortcuts :: proc() {
-	o.Shortcut_Set_Reload_Hook(rebind_app_shortcuts)
 	rebind_app_shortcuts()
 	path := g.app.shortcuts_path
 	if path == "" {
@@ -74,6 +73,7 @@ Engine builtin actions and default bindings are reinstalled by On_Reload.
 User bindings in Persistent engine state are preserved (not reloaded from disk).
 */
 rebind_app_shortcuts :: proc() {
+	o.Shortcut_Set_Reload_Hook(rebind_app_shortcuts)
 	o.Register_App_Type_Defaults(install_app_type_defaults)
 }
 
@@ -232,6 +232,7 @@ notifies o so engine resources survive the DLL swap.
 app_hot_reloaded :: proc(mem: rawptr) {
 	persistent = cast(^Persistent)mem
 	bind()
+	rebind_app_shortcuts()
 	o.On_Reload()
 }
 

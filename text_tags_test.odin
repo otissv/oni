@@ -97,6 +97,8 @@ text_tags_parse_literal_brace_escape :: proc(t: ^testing.T) {
 text_tags_unknown_tag_stays_literal :: proc(t: ^testing.T) {
 	parsed := text_tags_parse("{unknown}", context.temp_allocator)
 	testing.expect_value(t, parsed.plain, "{unknown}")
+	testing.expect(t, len(parsed.diagnostics) == 1)
+	testing.expect_value(t, parsed.diagnostics[0].message, "unknown or invalid tag {unknown}")
 }
 
 @(test)
@@ -126,6 +128,21 @@ text_tags_misnested_close_stays_literal :: proc(t: ^testing.T) {
 	testing.expect(t, text_run_style_has(parsed.runs[0].style, .color))
 	testing.expect(t, text_run_style_has(parsed.runs[0].style, .font_weight))
 	testing.expect(t, len(parsed.diagnostics) >= 1)
+	testing.expect(
+		t,
+		strings.contains(parsed.diagnostics[0].message, "mis-nested close tag {/c}; expected {/b}"),
+	)
+}
+
+@(test)
+text_tags_close_without_open_reports_braces :: proc(t: ^testing.T) {
+	parsed := text_tags_parse("{/c}", context.temp_allocator)
+	testing.expect(t, len(parsed.diagnostics) == 1)
+	testing.expect_value(
+		t,
+		parsed.diagnostics[0].message,
+		"close tag {/c} without matching open tag",
+	)
 }
 
 @(test)

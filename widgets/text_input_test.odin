@@ -176,3 +176,55 @@ text_input_readonly_clears_text_input_note :: proc(t: ^testing.T) {
 		testing.expect(t, !o.shortcut_text_input_effective("ti-readonly"))
 	})
 }
+
+@(test)
+text_input_widget_draw_ctrl_a_selects_all :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		o.Shortcut_Install_Defaults()
+		o.Shortcut_Install_Tool_Defaults()
+
+		key := o.element_key("ti-shortcut")
+
+		widget_test_begin_layout()
+
+		Text_Input(
+			{
+				config = {
+					id = "ti-shortcut",
+					text = "hello",
+					multiline = true,
+					width = set.Width(f32(200)),
+					height = set.Height(f32(80)),
+				},
+			},
+		)
+
+		widget_test_finish_layout()
+
+		o.w_ctx.focused_id = key
+		edit := o.widget_text_edit_ensure(key)
+		testing.expect(t, edit != nil)
+		edit.caret = 2
+		edit.selection = {2, 2}
+		widget_test_press_shortcut(.A, {ctrl = true})
+
+		widget_test_begin_draw()
+
+		Text_Input(
+			{
+				config = {
+					id = "ti-shortcut",
+					text = "hello",
+					multiline = true,
+					width = set.Width(f32(200)),
+					height = set.Height(f32(80)),
+				},
+			},
+		)
+
+		widget_test_end_frame()
+
+		testing.expect_value(t, edit.selection.anchor, 0)
+		testing.expect_value(t, edit.selection.head, len("hello"))
+	})
+}
