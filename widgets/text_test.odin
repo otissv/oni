@@ -108,3 +108,121 @@ text_unmount_skips_layout_node :: proc(t: ^testing.T) {
 		widget_test_finish_layout()
 	})
 }
+
+@(private)
+text_for_id_tree :: proc() {
+	_ = Text(
+		{
+			config = {
+				id = "lbl",
+				text = "Email",
+				for_id = "email",
+				width = set.Width(f32(80)),
+				height = set.Height(f32(20)),
+			},
+		},
+	)
+	Button(
+		{
+			config = {
+				id = "email",
+				tabbable = set.Bool(true),
+				width = set.Width(f32(80)),
+				height = set.Height(f32(32)),
+			},
+		},
+	)
+}
+
+@(test)
+text_for_id_click_focuses_target :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		text_for_id_tree()
+		widget_test_finish_layout()
+
+		label, label_ok := widget_test_layout_node("lbl")
+		target, target_ok := widget_test_layout_node("email")
+		testing.expect(t, label_ok && target_ok)
+
+		if !label_ok || !target_ok {
+			return
+		}
+
+		label.rect = {0, 0, 80, 20}
+		target.rect = {0, 40, 80, 32}
+
+		o.w_ctx.mouse_x = 10
+		o.w_ctx.mouse_y = 10
+		widget_test_begin_draw()
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.left_mouse.down = true
+		text_for_id_tree()
+
+		testing.expect_value(t, o.w_ctx.focused_id, "email")
+		testing.expect_value(t, o.w_ctx.label_focus_id, "email")
+	})
+}
+
+@(test)
+text_for_id_disabled_does_not_focus_target :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		_ = Text(
+			{
+				config = {
+					id = "lbl",
+					text = "Email",
+					for_id = "email",
+					disabled = set.Bool(true),
+					width = set.Width(f32(80)),
+					height = set.Height(f32(20)),
+				},
+			},
+		)
+		Button(
+			{
+				config = {
+					id = "email",
+					tabbable = set.Bool(true),
+					width = set.Width(f32(80)),
+					height = set.Height(f32(32)),
+				},
+			},
+		)
+		widget_test_finish_layout()
+
+		label, label_ok := widget_test_layout_node("lbl")
+		testing.expect(t, label_ok)
+
+		if !label_ok {
+			return
+		}
+
+		label.rect = {0, 0, 80, 20}
+		o.w_ctx.mouse_x = 10
+		o.w_ctx.mouse_y = 10
+		widget_test_begin_draw()
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.left_mouse.down = true
+
+		_ = Text(
+			{
+				config = {
+					id = "lbl",
+					text = "Email",
+					for_id = "email",
+					disabled = set.Bool(true),
+					width = set.Width(f32(80)),
+					height = set.Height(f32(20)),
+				},
+			},
+		)
+
+		testing.expect_value(t, o.w_ctx.focused_id, "")
+	})
+}

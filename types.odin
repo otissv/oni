@@ -74,6 +74,7 @@ Widget_Context :: struct {
 	tab_order:                   [dynamic]Widget_ID,
 	tab_focus_previous_id:       Widget_ID,
 	tab_focus_changed:           bool,
+	label_focus_id:              Widget_ID,
 	auto_element_index:          u32,
 	static_ids:                  map[string]Widget_ID,
 	scroll_offsets:              map[string]Vec2,

@@ -16,6 +16,7 @@ Text_Edit_Widget_Opts :: struct {
 	has_caret_color:     bool,
 	selection_color:     o.RGBA,
 	has_selection_color: bool,
+	for_id:              string,
 }
 
 @(private)

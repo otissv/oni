@@ -67,6 +67,12 @@ widget_handle_pointer_focus :: proc(
 			got_focus = true
 		}
 	} else if was_focused {
+		if o.w_ctx.label_focus_id == element_id {
+			is_focused^ = true
+
+			return
+		}
+
 		o.widget_set_focused_id("")
 		is_focused^ = false
 		lost_focus = true
@@ -87,4 +93,35 @@ Returns whether this element lost focus from Tab navigation this frame.
 */
 widget_lost_tab_focus :: proc(element_id: o.Widget_ID) -> bool {
 	return o.w_ctx.tab_focus_changed && o.w_ctx.tab_focus_previous_id == element_id
+}
+
+/*
+Moves keyboard focus to the widget identified by `for_id`.
+
+Named element keys equal `config.id`. The target may not be in this pass's
+static id map yet (labels are often declared before their control), so this
+also matches the layout-pass tab order.
+*/
+widget_focus_for_id :: proc(for_id: string) -> bool {
+	if for_id == "" {
+
+		return false
+	}
+
+	if FocusElement(for_id) {
+		o.w_ctx.label_focus_id = for_id
+
+		return true
+	}
+
+	for id in o.w_ctx.tab_order {
+		if id == for_id {
+			o.widget_set_focused_id(for_id)
+			o.w_ctx.label_focus_id = for_id
+
+			return true
+		}
+	}
+
+	return false
 }

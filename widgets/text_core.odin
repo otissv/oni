@@ -11,6 +11,33 @@ Text_Widget_Input :: struct {
 	tag_diagnostics: bool,
 }
 
+@(private)
+text_widget_apply_for_id_focus :: proc(
+	handlers: Widget_Lifecycle_Handlers($S),
+	frame_state: ^S,
+	key: string,
+	for_id: string,
+) {
+	if for_id == "" || for_id == key {
+
+		return
+	}
+
+	if !widget_can_interact(handlers, frame_state) {
+
+		return
+	}
+
+	if !frame_state.is_left_clicked || o.w_ctx.pointer_propagation_stopped {
+
+		return
+	}
+
+	if widget_focus_for_id(for_id) {
+		frame_state.is_focused = widget_is_focused(key)
+	}
+}
+
 /*
 Shared layout, interaction, and draw implementation for Text and RichText widgets.
 */
@@ -19,10 +46,7 @@ text_widget_core :: proc(
 	frame_state: ^$S,
 	prepare_input: proc(props: P, frame_state: ^S) -> Text_Widget_Input,
 	refresh_merged: proc(props: P, frame_state: ^S) -> o.Widget_Event(S),
-	refresh_if_changed: proc(props: P, frame_state: ^S, prev_fp: u8) -> (
-		o.Widget_Event(S),
-		u8,
-	),
+	refresh_if_changed: proc(props: P, frame_state: ^S, prev_fp: u8) -> (o.Widget_Event(S), u8),
 	edit_opts: Text_Edit_Widget_Opts = {},
 ) -> o.Vec2 {
 	config := props.config
@@ -101,6 +125,7 @@ text_widget_core :: proc(
 		layout_rect,
 		style,
 	)
+	text_widget_apply_for_id_focus(handlers, frame_state, key, edit_opts.for_id)
 
 	event, _ = refresh_if_changed(props, frame_state, style_fp)
 	style = frame_state.style
@@ -198,7 +223,8 @@ text_widget_core :: proc(
 		#partial switch c in style.text_decoration_color {
 		case o.Color:
 			if c != .INHERIT {
-				if resolved, ok := o.style_text_decoration_color_rgba(style, frame_state, event); ok {
+				if resolved, ok := o.style_text_decoration_color_rgba(style, frame_state, event);
+				   ok {
 					deco_color = resolved
 				}
 			}
@@ -224,7 +250,14 @@ text_widget_core :: proc(
 		defer o.Draw_Pop_Opacity()
 
 		size := o.font_draw_layout_text(laid, rgbaColor, deco_color, run_colors)
-		text_edit_widget_draw_caret(opts, key, layout_id, layout_rect, plain, frame_state.is_focused)
+		text_edit_widget_draw_caret(
+			opts,
+			key,
+			layout_id,
+			layout_rect,
+			plain,
+			frame_state.is_focused,
+		)
 
 		return size
 	}

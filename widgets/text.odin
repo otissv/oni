@@ -8,9 +8,10 @@ import set "../set"
 Text widget configuration extending Widget_Config with display text.
 */
 Text_Config :: struct {
-	using _: o.Widget_Config,
-	text:      string,
+	using _:    o.Widget_Config,
+	text:       string,
 	selectable: bool,
+	for_id:     string,
 }
 
 /*
@@ -137,9 +138,6 @@ Text :: proc(props: Text_Props) -> o.Vec2 {
 		text_prepare_layout_input,
 		text_refresh_merged,
 		text_refresh_merged_if_interaction_changed,
-		{
-			widget_kind = .TEXT,
-			selectable = config.selectable,
-		},
+		{widget_kind = .TEXT, selectable = config.selectable, for_id = config.for_id},
 	)
 }

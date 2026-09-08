@@ -374,4 +374,3 @@ rich_text_input_layout_registers_rich_measure :: proc(t: ^testing.T) {
 		}
 	})
 }
-

@@ -252,3 +252,45 @@ widget_tab_focus_transition_helpers :: proc(t: ^testing.T) {
 		testing.expect(t, !widget_lost_tab_focus("next"))
 	})
 }
+
+@(test)
+widget_focus_for_id_uses_registered_static_id :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		key := element_key("email")
+		testing.expect(t, widget_focus_for_id("email"))
+		testing.expect_value(t, o.w_ctx.focused_id, key)
+		testing.expect_value(t, o.w_ctx.label_focus_id, "email")
+		testing.expect(t, !widget_focus_for_id(""))
+		testing.expect(t, !widget_focus_for_id("missing"))
+	})
+}
+
+@(test)
+widget_focus_for_id_uses_tab_order_when_static_ids_cleared :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		o.register_tabbable("email")
+
+		if o.w_ctx.static_ids != nil {
+			clear(&o.w_ctx.static_ids)
+		}
+
+		testing.expect(t, widget_focus_for_id("email"))
+		testing.expect_value(t, o.w_ctx.focused_id, "email")
+		testing.expect_value(t, o.w_ctx.label_focus_id, "email")
+	})
+}
+
+@(test)
+widget_handle_pointer_focus_keeps_label_focus_target :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		focused := true
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.focused_id = "email"
+		o.w_ctx.label_focus_id = "email"
+
+		got, lost := widget_handle_pointer_focus("email", true, true, false, &focused)
+		testing.expect(t, !got && !lost)
+		testing.expect(t, focused)
+		testing.expect_value(t, o.w_ctx.focused_id, "email")
+	})
+}

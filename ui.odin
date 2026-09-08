@@ -114,6 +114,7 @@ ui_begin_frame :: proc() {
 		widget_release_key(w_ctx.tab_focus_previous_id)
 	}
 	w_ctx.tab_focus_previous_id = {}
+	w_ctx.label_focus_id = {}
 	w_ctx.pointer_hit_valid = false
 	w_ctx.pointer_hit_ui_id = {}
 	w_ctx.pointer_propagation_stopped = false

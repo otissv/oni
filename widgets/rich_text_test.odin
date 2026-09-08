@@ -18,10 +18,7 @@ rich_text_prepare_layout_input_parses_tags :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Rich_Text_Props {
-			config = {
-				id = "rich",
-				text = "{c:accent}Hi{/c}",
-			},
+			config = {id = "rich", text = "{c:accent}Hi{/c}"},
 		}
 		frame := Rich_Text_Merged_State{}
 		input := rich_text_prepare_layout_input(props, &frame)
@@ -73,28 +70,32 @@ rich_text_parses_tags_only_on_layout_pass :: proc(t: ^testing.T) {
 
 		widget_test_begin_layout()
 
-		_ = RichText({
-			config = {
-				id = "rich-once",
-				text = "{c:accent}Once{/c}",
-				width = set.Width(f32(120)),
-				height = set.Height(f32(24)),
+		_ = RichText(
+			{
+				config = {
+					id = "rich-once",
+					text = "{c:accent}Once{/c}",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(24)),
+				},
 			},
-		})
+		)
 
 		widget_test_finish_layout()
 		testing.expect_value(t, o.Test_Text_Tags_Parse_Call_Count(), 1)
 
 		widget_test_begin_draw()
 
-		_ = RichText({
-			config = {
-				id = "rich-once",
-				text = "{c:accent}Once{/c}",
-				width = set.Width(f32(120)),
-				height = set.Height(f32(24)),
+		_ = RichText(
+			{
+				config = {
+					id = "rich-once",
+					text = "{c:accent}Once{/c}",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(24)),
+				},
 			},
-		})
+		)
 
 		widget_test_end_frame()
 		testing.expect_value(t, o.Test_Text_Tags_Parse_Call_Count(), 1)
@@ -106,14 +107,16 @@ rich_text_layout_runs_survive_to_draw_pass :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 
-		_ = RichText({
-			config = {
-				id = "rich-draw",
-				text = "{c:accent}Paint{/c}",
-				width = set.Width(f32(120)),
-				height = set.Height(f32(24)),
+		_ = RichText(
+			{
+				config = {
+					id = "rich-draw",
+					text = "{c:accent}Paint{/c}",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(24)),
+				},
 			},
-		})
+		)
 
 		widget_test_finish_layout()
 
@@ -128,14 +131,16 @@ rich_text_layout_runs_survive_to_draw_pass :: proc(t: ^testing.T) {
 
 		widget_test_begin_draw()
 
-		_ = RichText({
-			config = {
-				id = "rich-draw",
-				text = "{c:accent}Paint{/c}",
-				width = set.Width(f32(120)),
-				height = set.Height(f32(24)),
+		_ = RichText(
+			{
+				config = {
+					id = "rich-draw",
+					text = "{c:accent}Paint{/c}",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(24)),
+				},
 			},
-		})
+		)
 
 		widget_test_end_frame()
 	})

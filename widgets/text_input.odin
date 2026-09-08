@@ -165,12 +165,12 @@ Text_Input :: proc(props: Text_Input_Props) {
 	edit_opts := Text_Edit_Widget_Opts {
 		widget_kind = .TEXT_INPUT,
 		selectable  = true,
-		editable   = !cfg.readonly,
-		caret      = true,
-		multiline  = cfg.multiline,
-		password   = cfg.password,
-		max_length = cfg.max_length,
-		draw_space = config.space,
+		editable    = !cfg.readonly,
+		caret       = true,
+		multiline   = cfg.multiline,
+		password    = cfg.password,
+		max_length  = cfg.max_length,
+		draw_space  = config.space,
 	}
 
 	if o.ui_pass() == .Layout {
@@ -306,7 +306,16 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 	plain := cfg.text
 	can_interact := widget_can_interact(handlers, &frame_state)
-	text_edit_widget_handle_pointer(key, layout_id, rect, scroll_entry, plain, can_interact, config, edit_opts)
+	text_edit_widget_handle_pointer(
+		key,
+		layout_id,
+		rect,
+		scroll_entry,
+		plain,
+		can_interact,
+		config,
+		edit_opts,
+	)
 
 	submit := false
 
