@@ -854,6 +854,16 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .BUTTON, true
 	case "table":
 		return .TABLE, true
+	case "select":
+		return .SELECT, true
+	case "select-trigger":
+		return .SELECT_TRIGGER, true
+	case "select-value":
+		return .SELECT_VALUE, true
+	case "option-group":
+		return .OPTION_GROUP, true
+	case "option":
+		return .OPTION, true
 	}
 	return .RECT, false
 }
