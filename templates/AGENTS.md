@@ -21,6 +21,7 @@ Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU. It is a **framework 
 | `*.odin`, `widgets/`, `set/` | Engine: GPU, layout, draw, fonts, UI frame, hot-reload lifecycle |
 | `api.odin` | Public PascalCase aliases for the engine API |
 | `shaders/` | UI shaders (SPIR-V embedded via `#load`) |
+| `assets/fonts/` | Engine default Inter faces (`#directory`; fallback when settings.kdl has no faces) |
 | `libs/colors`, `libs/tengu` | Standalone libs via `-collection:libs=...` |
 | `templates/main.odin` | Starter host |
 | `templates/app/` | Starter app (routes, components, theme, exports) |

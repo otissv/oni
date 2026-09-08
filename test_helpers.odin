@@ -55,6 +55,8 @@ with_ui_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 			ui_pop_style()
 		}
 		ui_shutdown()
+		shortcut_shutdown()
+		settings_shutdown()
 		batch_delete_cpu_arrays(&state.gpu_state)
 	}
 

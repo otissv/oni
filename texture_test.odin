@@ -1402,6 +1402,19 @@ texture_register_surface_rolls_back_index8_convert_failure :: proc(t: ^testing.T
 }
 
 @(test)
+texture_transfer_byte_size_accepts_rgba_and_rejects_u32_overflow :: proc(t: ^testing.T) {
+	size, ok := texture_transfer_byte_size(2, 2)
+	testing.expect(t, ok)
+	testing.expect_value(t, size, u32(16))
+
+	_, overflow := texture_transfer_byte_size(65536, 65536)
+	testing.expect(t, !overflow)
+
+	_, non_positive := texture_transfer_byte_size(0, 4)
+	testing.expect(t, !non_positive)
+}
+
+@(test)
 texture_upload_surface_fails_when_transfer_buffer_create_fails :: proc(t: ^testing.T) {
 	with_texture_gpu_env(
 		t,
@@ -1414,8 +1427,8 @@ texture_upload_surface_fails_when_transfer_buffer_create_fails :: proc(t: ^testi
 			testing.expect(t, ok)
 			gpu_tex := state.textures.records[int(id)].gpu
 
-			// dst 65536×65536 makes row_bytes*dst_h overflow u32 to 0, so
-			// CreateGPUTransferBuffer(size=0) fails without allocating tens of GiB.
+			// 65536×65536 RGBA overflows u32; reject before CreateGPUTransferBuffer
+			// so a wrapped size-0 map cannot be filled with a 64Ki stride.
 			testing.expect(
 				t,
 				!texture_upload_surface(state.gpu, gpu_tex, rgba, 0, 0, 65536, 65536),

@@ -506,9 +506,11 @@ shortcut_friendly_format_roundtrip :: proc(t: ^testing.T) {
 
 			data := shortcut_export_bindings(context.temp_allocator)
 			testing.expect(t, !strings.contains(data, "oni-shortcuts"))
-			testing.expect(t, strings.contains(data, "CTRL+P = demo.ping"))
-			testing.expect(t, strings.contains(data, "enabled = false"))
-			testing.expect(t, strings.contains(data, "WHEEL+UP = view.zoom_in"))
+			testing.expect(t, strings.contains(data, "CTRL+P"))
+			testing.expect(t, strings.contains(data, "demo.ping"))
+			testing.expect(t, strings.contains(data, "enabled=#false"))
+			testing.expect(t, strings.contains(data, "WHEEL+UP"))
+			testing.expect(t, strings.contains(data, "view.zoom_in"))
 			testing.expect(t, !strings.contains(data, "source"))
 
 			shortcut_clear_bindings()
@@ -539,8 +541,8 @@ shortcut_friendly_format_roundtrip :: proc(t: ^testing.T) {
 @(test)
 shortcut_friendly_parse_mod_wheel_and_gamepad :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
-		friendly := "MOD+WHEEL+UP = view.zoom_in { enabled = false }\nCTRL+EQUAL = view.zoom_in\nGAMEPAD_START = window.toggle_fullscreen\n"
-		testing.expect(t, shortcut_import_bindings(friendly, true))
+		doc := "bind trigger=\"MOD+WHEEL+UP\" action=\"view.zoom_in\" enabled=#false\nbind trigger=\"CTRL+EQUAL\" action=\"view.zoom_in\"\nbind trigger=\"GAMEPAD_START\" action=\"window.toggle_fullscreen\"\n"
+		testing.expect(t, shortcut_import_bindings(doc, true))
 
 		mod_wheel := false
 		equals := false
@@ -581,9 +583,9 @@ shortcut_config_overrides_builtin_trigger :: proc(t: ^testing.T) {
 		}
 		testing.expect(t, before_builtin)
 
-		friendly := "CTRL+WHEEL+UP = demo.ping\n"
+		doc := "bind trigger=\"CTRL+WHEEL+UP\" action=\"demo.ping\"\n"
 		shortcut_register_action("demo.ping", shortcut_test_action_set_flag)
-		testing.expect(t, shortcut_import_bindings(friendly, true))
+		testing.expect(t, shortcut_import_bindings(doc, true))
 
 		user_override := false
 		builtin_left := false
@@ -629,7 +631,7 @@ shortcut_import_scoped_override_preserves_other_kinds :: proc(t: ^testing.T) {
 		testing.expect(t, text_input_before)
 		testing.expect(t, rich_text_input_before)
 
-		row := "CTRL+LEFT = edit.move_left { scope = focused_kind, scope_kind = 4 }\n"
+		row := "bind trigger=\"CTRL+LEFT\" action=\"edit.move_left\" scope=\"focused_kind\" scope-kind=4\n"
 		testing.expect(t, shortcut_import_bindings(row, false))
 
 		text_input_after := false

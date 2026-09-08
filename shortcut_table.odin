@@ -145,16 +145,14 @@ shortcut_format_binding :: proc(
 }
 
 /*
-Writes the bindings table to a UTF-8 text file.
+Writes the settings document (window, DPI, fonts, user shortcuts) to path.
 */
 shortcut_save_bindings :: proc(path: string) -> bool {
-	if state == nil || path == "" do return false
-	data := shortcut_export_bindings(context.temp_allocator)
-	return os.write_entire_file(path, transmute([]byte)data) == nil
+	return settings_save(path)
 }
 
 /*
-Loads bindings from a UTF-8 text file previously written by Shortcut_Save_Bindings.
+Loads settings.kdl and applies user shortcut rows.
 
 Missing files return false without mutating bindings.
 */
@@ -165,7 +163,9 @@ shortcut_load_bindings :: proc(path: string, replace_user := true) -> bool {
 
 shortcut_load_bindings_ex :: proc(path: string, replace_user := true) -> Shortcut_Import_Error {
 	if state == nil || path == "" do return {ok = false, line = 0}
-	data, read_err := os.read_entire_file(path, context.temp_allocator)
-	if read_err != nil do return {ok = false, line = 0}
-	return shortcut_import_bindings_ex(string(data), replace_user)
+	if !os.exists(path) do return {ok = false, line = 0}
+	err := settings_load_ex(path)
+	if !err.ok do return err
+	if !settings_apply_shortcuts(replace_user) do return {ok = false, line = 0}
+	return {ok = true, line = 0}
 }

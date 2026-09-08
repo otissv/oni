@@ -67,6 +67,8 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer {
 		drain_style_stack()
 		o.ui_shutdown()
+		o.shortcut_shutdown()
+		o.settings_shutdown()
 		o.batch_delete_cpu_arrays(&o.state.gpu_state)
 	}
 

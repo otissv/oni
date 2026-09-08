@@ -1,0 +1,84 @@
+// Oni application settings (settings.kdl).
+// Loaded at window create; Save / Reload from the Shortcuts UI rewrites this file.
+// The running app watches this file and applies changes live (dev and production).
+// Missing file → built-in defaults. User shortcut binds override engine builtins.
+//
+// Nested fields use child nodes with values (KDL):
+//   title "Oni GUI"     // not title="Oni GUI" inside { }
+//   family Inter { … }  // family name is an argument, not family=Inter
+
+// ---------------------------------------------------------------------------
+// window — title / size / minimums / mode (applied live on file change)
+//   mode window | borderless | maximize | fullscreen
+// ---------------------------------------------------------------------------
+window {
+    mode window
+    title "Oni GUI"
+    width 1280
+    height 720
+    min-width 320
+    min-height 180
+}
+
+// ---------------------------------------------------------------------------
+// dpi — logical vs drawable pixel scale
+//   scale "auto"  — follow OS (SDL drawable size / window size)
+//   scale 2       — force 2× (logical size derived from the drawable buffer)
+// ---------------------------------------------------------------------------
+dpi scale="auto"
+// dpi scale=2
+
+// ---------------------------------------------------------------------------
+// fonts — theme body/heading sizes and one registered family
+//   body-size / heading-size — logical px (DPI applied when rasterizing)
+//   family <Name> { face { … } } — Name is the Register_Font_Family name
+//   face: path, style (normal|italic), weight (thin…heavy or 100–900)
+//   omitted faces → engine Inter from oni/assets/fonts
+// ---------------------------------------------------------------------------
+fonts {
+    body-size 16
+    heading-size 20
+
+    family Inter {
+        face {
+            path "assets/fonts/Inter-VariableFont_opsz,wght.ttf"
+            style normal
+            weight normal
+        }
+        face {
+            path "assets/fonts/Inter-Italic-VariableFont_opsz,wght.ttf"
+            style italic
+            weight normal
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// shortcuts — user binds only (builtins live in the engine)
+//
+//   bind trigger="<chord>" action="<id>" [options…]
+//
+// Triggers:
+//   CTRL+EQUAL   CTRL+SHIFT+S   F5
+//   CTRL+WHEEL+UP   WHEEL+DOWN
+//   LEFT_CLICK   RIGHT_CLICK
+//   GAMEPAD_START
+//   G,S          (key sequence; mods apply to the last key)
+//
+// Options:
+//   enabled=#false
+//   scope="global"|"context"|"focused_id"|"focused_any"|"focused_kind"
+//   scope-key="artboard"
+//   scope-kind=4          (Widget_Kind ordinal; focused_kind only)
+//   priority=10
+//   app-type=0
+//
+// Examples:
+//   bind trigger="CTRL+P" action="demo.ping" enabled=#false
+//   bind trigger="CTRL+WHEEL+UP" action="view.zoom_in"
+//   bind trigger="G,S" action="goto.save" scope="context" scope-key="artboard"
+//   bind trigger="GAMEPAD_START" action="window.toggle_fullscreen"
+// ---------------------------------------------------------------------------
+shortcuts {
+    // bind trigger="CTRL+P" action="demo.ping" enabled=#false
+}

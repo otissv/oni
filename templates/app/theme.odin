@@ -2,38 +2,31 @@ package app
 
 import o "../oni"
 
-
-WINDOW_WIDTH :: 1280
-WINDOW_HEIGHT :: 720
-WINDOW_TITLE :: "Oni GUI"
-
-MIN_WINDOW_W :: 320
-MIN_WINDOW_H :: 180
-INTER_FONT_PATH :: "assets/fonts/Inter-VariableFont_opsz,wght.ttf"
-INTER_ITALIC_FONT_PATH :: "assets/fonts/Inter-Italic-VariableFont_opsz,wght.ttf"
-FONT_BODY_SIZE :: f32(16)
-FONT_HEADING_SIZE :: f32(20)
-
 /*
-Builds the default app theme with Inter body and heading fonts.
+Builds the default app theme with fonts from settings.kdl.
 
-Registers the Inter family (roman + italic variable fonts) and logs errors on
-failure. Palette, spacing, and layout defaults come from o.
+Replaces registered font families from settings, then sets body/heading sizes.
+Engine Inter faces are used when settings omit faces.
+Palette, spacing, and layout defaults come from o.
 */
 build_theme :: proc() -> o.Theme {
-	inter, inter_ok := o.Register_Font_Family(
-		"Inter",
-		{
-			{path = INTER_FONT_PATH, style = .NORMAL, weight = .Normal},
-			{path = INTER_ITALIC_FONT_PATH, style = .ITALIC, weight = .Normal},
-		},
-	)
-	if !inter_ok {
-		o.Log_Errorf("build_theme: failed to register Inter font family")
+	s := o.Settings_Get()
+	body_size := o.SETTINGS_DEFAULT_FONT_BODY_SIZE
+	heading_size := o.SETTINGS_DEFAULT_FONT_HEADING_SIZE
+	if s != nil {
+		body_size = s.font_body_size
+		heading_size = s.font_heading_size
 	}
 
-	body := o.Font_With_Size(inter, FONT_BODY_SIZE)
-	heading := o.Font_With_Size(inter, FONT_HEADING_SIZE)
+	family, family_ok := o.Settings_Register_Fonts()
+	if !family_ok {
+		name := o.SETTINGS_DEFAULT_FONT_FAMILY
+		if s != nil do name = s.font_family
+		o.Log_Errorf("build_theme: failed to register %s font family", name)
+	}
+
+	body := o.Font_With_Size(family, body_size)
+	heading := o.Font_With_Size(family, heading_size)
 
 	return o.Theme {
 		palette = o.palette,

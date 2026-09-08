@@ -7,16 +7,45 @@ import sdl "vendor:sdl3"
 MAX_FRAME_TIME :: 0.25
 
 /*
-Initial SDL window title, size, and minimum dimensions for app startup.
+Initial SDL window title, size, minimum dimensions, and display mode for app startup.
 */
+Window_Mode :: enum u8 {
+	Window,
+	Borderless,
+	Maximize,
+	Fullscreen,
+}
+
 Window_Config :: struct {
 	title:                 cstring,
 	width, height:         i32,
 	min_width, min_height: i32,
+	mode:                  Window_Mode,
+}
+
+@(private)
+window_mode_create_flags :: proc(mode: Window_Mode) -> sdl.WindowFlags {
+	flags := sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY
+
+	switch mode {
+	case .Fullscreen:
+		flags += sdl.WINDOW_FULLSCREEN
+	case .Borderless:
+		flags += sdl.WINDOW_BORDERLESS
+	case .Maximize:
+		flags += sdl.WINDOW_MAXIMIZED
+	case .Window:
+	}
+
+	return flags
 }
 
 /*
 Refreshes logical and drawable window size, DPI scale, and can_render.
+
+When settings.dpi_scale is greater than 0, that value is used as the pixel
+ratio and logical size is derived from the drawable buffer. Otherwise scale
+is SDL drawable / logical size.
 
 Updates the GPU projection matrix; call after resize, display-scale change,
 or hot reload when the window handle is valid.
@@ -48,11 +77,24 @@ dpi_sync :: proc() {
 	}
 
 	prev_scale := state.dpi.scale
-	state.dpi.logical_w = log_w
-	state.dpi.logical_h = log_h
 	state.dpi.drawable_w = i32(px_w)
 	state.dpi.drawable_h = i32(px_h)
-	state.dpi.scale = log_w > 0 ? f32(px_w) / f32(log_w) : 1
+
+	user_scale := state.settings.dpi_scale
+	if user_scale > 0 {
+		state.dpi.scale = user_scale
+		if px_w > 0 && px_h > 0 {
+			state.dpi.logical_w = max(i32(f32(px_w) / user_scale + 0.5), 1)
+			state.dpi.logical_h = max(i32(f32(px_h) / user_scale + 0.5), 1)
+		} else {
+			state.dpi.logical_w = 0
+			state.dpi.logical_h = 0
+		}
+	} else {
+		state.dpi.logical_w = log_w
+		state.dpi.logical_h = log_h
+		state.dpi.scale = log_w > 0 ? f32(px_w) / f32(log_w) : 1
+	}
 	if prev_scale != state.dpi.scale {
 		font_shape_cache_clear()
 	}
@@ -139,29 +181,82 @@ input_mouse_world :: proc() -> Vec2 {
 }
 
 /*
-Sets SDL window fullscreen mode and updates state.fullscreen.
+Applies a window display mode: window, borderless, maximize, or fullscreen.
 
-Returns false if the window is nil or SDL rejects the request.
+Updates `state.fullscreen` and, when settings are ready, `settings.window_mode`.
 */
-set_fullscreen :: proc(fullscreen: bool) -> bool {
-	if state.window == nil do return false
+set_window_mode :: proc(mode: Window_Mode) -> bool {
+	if state == nil || state.window == nil do return false
 
-	if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, fullscreen) {
-		fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
-		return false
+	switch mode {
+	case .Fullscreen:
+		if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, true) {
+			fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
+			return false
+		}
+
+		state.fullscreen = true
+	case .Window:
+		if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, false) {
+			fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
+			return false
+		}
+
+		_ = sdl.SetWindowBordered(state.window, true)
+		_ = sdl.RestoreWindow(state.window)
+		state.fullscreen = false
+	case .Borderless:
+		if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, false) {
+			fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
+			return false
+		}
+
+		_ = sdl.RestoreWindow(state.window)
+		_ = sdl.SetWindowBordered(state.window, false)
+		state.fullscreen = false
+	case .Maximize:
+		if test_hook_set_fullscreen_fail || !sdl.SetWindowFullscreen(state.window, false) {
+			fmt.eprintln("SDL_SetWindowFullscreen failed:", sdl.GetError())
+			return false
+		}
+
+		_ = sdl.SetWindowBordered(state.window, true)
+		_ = sdl.MaximizeWindow(state.window)
+		state.fullscreen = false
 	}
 
-	state.fullscreen = fullscreen
+	if state.settings.ready {
+		state.settings.window_mode = mode
+	}
+
 	return true
 }
 
 /*
-Toggles between windowed and fullscreen display.
+Sets SDL window fullscreen mode and updates state.fullscreen.
 
-Delegates to set_fullscreen with the inverted current flag.
+`true` maps to `.Fullscreen`; `false` maps to `.Window`.
+Returns false if the window is nil or SDL rejects the request.
+*/
+set_fullscreen :: proc(fullscreen: bool) -> bool {
+	if fullscreen {
+		return set_window_mode(.Fullscreen)
+	}
+
+	return set_window_mode(.Window)
+}
+
+/*
+Toggles between fullscreen and a normal bordered window.
 */
 toggle_fullscreen :: proc() {
-	set_fullscreen(!state.fullscreen)
+	if state == nil do return
+
+	if state.fullscreen || (state.settings.ready && state.settings.window_mode == .Fullscreen) {
+		_ = set_window_mode(.Window)
+	} else {
+		_ = set_window_mode(.Fullscreen)
+	}
 }
 
 /*
@@ -409,7 +504,7 @@ create_window :: proc(config: Window_Config) -> bool {
 		config.title,
 		config.width,
 		config.height,
-		sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY,
+		window_mode_create_flags(config.mode),
 	)
 	if test_hook_create_window_fail == .Window && state.window != nil {
 		sdl.DestroyWindow(state.window)
@@ -464,10 +559,18 @@ create_window :: proc(config: Window_Config) -> bool {
 
 	state.perf_frequency = sdl.GetPerformanceFrequency()
 	state.last_counter = sdl.GetPerformanceCounter()
-	state.fullscreen = false
+	state.fullscreen = config.mode == .Fullscreen
 	state.view = view_default()
 
 	sdl.SetWindowMinimumSize(state.window, config.min_width, config.min_height)
+
+	if state.settings.ready {
+		state.settings.window_mode = config.mode
+	}
+
+	// Re-apply mode after create so borderless / maximize / fullscreen settle
+	// consistently across compositors that ignore create flags.
+	_ = set_window_mode(config.mode)
 	dpi_sync()
 	sdl.ShowWindow(state.window)
 	gamepad_open_first_available()
@@ -523,6 +626,7 @@ shutdown :: proc() {
 	gamepad_close()
 	ui_shutdown()
 	error_shutdown()
+	settings_shutdown()
 	font_shutdown()
 	assets_shutdown()
 	gpu_destroy()
@@ -673,6 +777,7 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.running = src.running
 	dst.ui = src.ui
 	dst.shortcuts = src.shortcuts
+	dst.settings = src.settings
 	dst.errors = src.errors
 	dst.gamepad = src.gamepad
 	dst.gamepad_instance_id = src.gamepad_instance_id

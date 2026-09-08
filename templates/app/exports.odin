@@ -55,15 +55,20 @@ app_tick :: proc(dt: f32) {
 }
 
 /*
-Registers the hot-reload hook and loads the user bindings table (first init).
+Rebuilds the theme after settings.kdl is reloaded from disk.
+*/
+on_settings_applied :: proc() {
+	if persistent == nil do return
+	persistent.app.theme = build_theme()
+	bind()
+}
+
+/*
+Registers the hot-reload hook and applies user shortcut rows from settings.kdl.
 */
 register_shortcuts :: proc() {
 	rebind_app_shortcuts()
-	path := g.app.shortcuts_path
-	if path == "" {
-		path = o.SHORTCUT_DEFAULT_BINDINGS_PATH
-	}
-	_ = o.Shortcut_Load_Bindings(path, true)
+	_ = o.Settings_Apply_Shortcuts(true)
 }
 
 /*
@@ -74,32 +79,27 @@ User bindings in Persistent engine state are preserved (not reloaded from disk).
 */
 rebind_app_shortcuts :: proc() {
 	o.Shortcut_Set_Reload_Hook(rebind_app_shortcuts)
+	o.Settings_Set_Apply_Hook(on_settings_applied)
 	o.Register_App_Type_Defaults(install_app_type_defaults)
 }
 
 /*
-Persists the bindings table to disk.
+Persists settings (including user shortcuts) to disk.
 */
 save_shortcuts :: proc() {
 	if g.app == nil do return
-	path := g.app.shortcuts_path
+	path := g.app.settings_path
 	if path == "" {
-		path = o.SHORTCUT_DEFAULT_BINDINGS_PATH
+		path = o.SETTINGS_DEFAULT_PATH
 	}
-	_ = o.Shortcut_Save_Bindings(path)
+	_ = o.Settings_Save(path)
 }
 
 /*
-Returns the initial SDL window configuration for this app.
+Returns the initial SDL window configuration from settings.kdl.
 */
 window_config :: proc() -> o.Window_Config {
-	return {
-		title = WINDOW_TITLE,
-		width = WINDOW_WIDTH,
-		height = WINDOW_HEIGHT,
-		min_width = MIN_WINDOW_W,
-		min_height = MIN_WINDOW_H,
-	}
+	return o.Settings_Window_Config()
 }
 
 /*
@@ -122,6 +122,11 @@ Exported hot-reload entry point called once by the host before app_init.
 @(export)
 app_init_window :: proc() {
 	ensure_persistent()
+	path := g.app.settings_path
+	if path == "" {
+		path = o.SETTINGS_DEFAULT_PATH
+	}
+	_ = o.Settings_Load(path)
 	if !o.Init_Window_Only(window_config()) {
 		persistent.engine.running = false
 		return
@@ -143,6 +148,7 @@ app_init :: proc() {
 	}
 
 	if !o.Init_Runtime(proc() -> bool {
+		o.Settings_Set_Apply_Hook(on_settings_applied)
 		persistent.app.theme = build_theme()
 		register_shortcuts()
 		return true

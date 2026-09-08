@@ -274,6 +274,19 @@ texture_surface_as_rgba8888 :: proc(surface: ^sdl.Surface) -> (converted: ^sdl.S
 }
 
 /*
+RGBA upload byte count for a w×h region, or false when the size overflows u32.
+*/
+@(private)
+texture_transfer_byte_size :: proc(w, h: i32) -> (size: u32, ok: bool) {
+	if w <= 0 || h <= 0 do return 0, false
+
+	wide := u64(w) * u64(h) * 4
+	if wide > u64(max(u32)) do return 0, false
+
+	return u32(wide), true
+}
+
+/*
 Fills a mapped transfer buffer with a sub-rect of a surface in GPU R8G8B8A8 order.
 */
 @(private)
@@ -284,8 +297,10 @@ texture_fill_transfer_from_surface :: proc(
 	src_x, src_y, copy_w, copy_h: i32,
 ) -> bool {
 	if gpu == nil || transfer == nil || surface == nil do return false
-	if copy_w <= 0 || copy_h <= 0 do return false
 	if src_x < 0 || src_y < 0 do return false
+
+	_, size_ok := texture_transfer_byte_size(copy_w, copy_h)
+	if !size_ok do return false
 
 	mapped := sdl.MapGPUTransferBuffer(gpu, transfer, false)
 	if mapped == nil {
@@ -300,7 +315,7 @@ texture_fill_transfer_from_surface :: proc(
 	}
 	defer if owned do sdl.DestroySurface(converted)
 
-	row_bytes := u32(copy_w * 4)
+	row_bytes := u32(copy_w) * 4
 	src_pitch := u32(converted.pitch)
 	dst := cast([^]u8)mapped
 	src := cast([^]u8)converted.pixels
@@ -313,7 +328,7 @@ texture_fill_transfer_from_surface :: proc(
 	}
 	use_w := min(copy_w, avail_w)
 	use_h := min(copy_h, avail_h)
-	use_row_bytes := u32(use_w * 4)
+	use_row_bytes := u32(use_w) * 4
 
 	for row in 0 ..< use_h {
 		row_u := u32(row)
@@ -334,10 +349,14 @@ texture_create_filled_transfer :: proc(
 	surface: ^sdl.Surface,
 	src_x, src_y, w, h: i32,
 ) -> ^sdl.GPUTransferBuffer {
-	if gpu == nil || surface == nil || w <= 0 || h <= 0 do return nil
+	if gpu == nil || surface == nil do return nil
 
-	row_bytes := u32(w * 4)
-	byte_size := row_bytes * u32(h)
+	byte_size, size_ok := texture_transfer_byte_size(w, h)
+	if !size_ok {
+		log_errorf("texture transfer size overflows u32 (%dx%d)", w, h)
+		return nil
+	}
+
 	transfer := sdl.CreateGPUTransferBuffer(gpu, {usage = .UPLOAD, size = byte_size})
 	if transfer == nil {
 		log_errorf("SDL_CreateGPUTransferBuffer failed: %s", sdl.GetError())

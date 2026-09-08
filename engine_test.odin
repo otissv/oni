@@ -20,6 +20,8 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		shortcut_shutdown()
+		settings_shutdown()
+		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -61,6 +63,8 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		shortcut_shutdown()
+		settings_shutdown()
+		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -109,6 +113,8 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	defer {
 		shortcut_shutdown()
+		settings_shutdown()
+		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state

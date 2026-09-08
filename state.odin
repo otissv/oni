@@ -61,6 +61,7 @@ State :: struct {
 	running:             bool,
 	input:               Input_State,
 	shortcuts:           Shortcut_State,
+	settings:            Settings,
 	dpi:                 Dpi_Info,
 	perf_frequency:      u64,
 	last_counter:        u64,

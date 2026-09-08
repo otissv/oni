@@ -13,7 +13,7 @@ shortcuts_route_child :: proc(_: w.Rectangle_State) {
 	w.Shortcuts_Table({
 		config = {id = "shortcuts_settings"},
 		session = &g.app.shortcuts_table,
-		bindings_path = g.app.shortcuts_path,
+		bindings_path = g.app.settings_path,
 	})
 }
 

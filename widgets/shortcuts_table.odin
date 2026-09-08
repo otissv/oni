@@ -36,7 +36,7 @@ Shortcuts_Table_Event :: o.Widget_Event(Shortcuts_Table_State)
 /*
 Props for the shortcuts settings table.
 
-`session` is required. `bindings_path` empty uses SHORTCUT_DEFAULT_BINDINGS_PATH.
+`session` is required. `bindings_path` empty uses SETTINGS_DEFAULT_PATH.
 */
 Shortcuts_Table_Props :: struct {
 	config:        Shortcuts_Table_Config,
@@ -106,7 +106,7 @@ shortcuts_table_set_status :: proc(session: ^Shortcuts_Table_Session, msg: strin
 @(private)
 shortcuts_table_path :: proc(path: string) -> string {
 	if path != "" do return path
-	return o.SHORTCUT_DEFAULT_BINDINGS_PATH
+	return o.SETTINGS_DEFAULT_PATH
 }
 
 @(private)

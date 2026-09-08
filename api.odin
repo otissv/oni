@@ -30,6 +30,23 @@ Peek_Force_Restart :: peek_force_restart
 Consume_Force_Reload :: consume_force_reload
 Consume_Force_Restart :: consume_force_restart
 Dpi_Sync :: dpi_sync
+Set_Window_Mode :: set_window_mode
+Set_Fullscreen :: set_fullscreen
+Toggle_Fullscreen :: toggle_fullscreen
+
+Settings_Get :: settings_get
+Settings_Load :: settings_load
+Settings_Load_Ex :: settings_load_ex
+Settings_Save :: settings_save
+Settings_Window_Config :: settings_window_config
+Settings_Apply_Shortcuts :: settings_apply_shortcuts
+Settings_Apply_Runtime :: settings_apply_runtime
+Settings_Set_Apply_Hook :: settings_set_apply_hook
+Settings_Poll :: settings_poll
+Settings_Reload :: settings_reload
+Settings_Register_Fonts :: settings_register_fonts
+Settings_Export :: settings_export
+Settings_Default_Path :: SETTINGS_DEFAULT_PATH
 
 Log_Error :: log_error
 Log_Errorf :: log_errorf

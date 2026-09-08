@@ -8,17 +8,8 @@ import "core:unicode/utf8"
 import sdl "vendor:sdl3"
 
 /*
-Human-friendly bindings file format (versionless):
-
-	# comments
-	CTRL+EQUAL = view.zoom_in
-	CTRL+WHEEL+UP = view.zoom_in
-	CTRL+WHEEL+UP = view.zoom_in { enabled = false }
-	G,S = goto.save { scope = context, scope_key = "artboard" }
-	GAMEPAD_START = window.toggle_fullscreen
-
-Config rows are user overrides: they replace any binding with the same trigger
-in an overlapping scope. Only user bindings are exported.
+settings.kdl bind rows are user overrides: they replace any binding with the
+same trigger in an overlapping scope. Only user bindings are exported.
 */
 
 @(private)
@@ -41,30 +32,20 @@ Shortcut_Parsed_Binding :: struct {
 }
 
 /*
-Serializes all user bindings to the human-friendly text format.
+Serializes current settings and user shortcut bindings as settings.kdl.
 
 Caller owns the returned string (allocator).
 */
 shortcut_export_bindings :: proc(allocator := context.allocator) -> string {
-	if state == nil do return strings.clone("", allocator)
-	b := strings.builder_make(allocator)
-	fmt.sbprintf(&b, "# trigger = action {{ options }}\n")
-	fmt.sbprintf(&b, "# User overrides only. Builtins live in the engine.\n")
-	fmt.sbprintf(&b, "# Tokens: CTRL+EQUAL, CTRL+WHEEL+UP, LEFT_CLICK, GAMEPAD_START, G,S\n")
-	fmt.sbprintf(&b, "# Options: enabled, scope, scope_key, scope_kind, priority, app_type\n")
-	for binding in state.shortcuts.bindings {
-		if binding.source != .User do continue
-		shortcut_export_friendly(&b, binding)
-	}
-	return strings.to_string(b)
+	return settings_export(allocator)
 }
 
 /*
-Imports bindings from Shortcut_Export text.
+Imports user bindings from a settings.kdl document.
 
 Validates the entire payload before mutating. When `replace_user` is true and
-validation succeeds, clears user bindings then applies rows.
-No version header; blank lines and `#` comments are skipped.
+validation succeeds, clears user bindings then applies `bind` rows.
+Window, DPI, and font nodes in the document are ignored here; use Settings_Load.
 */
 shortcut_import_bindings :: proc(data: string, replace_user := true) -> bool {
 	err := shortcut_import_bindings_ex(data, replace_user)
@@ -72,83 +53,44 @@ shortcut_import_bindings :: proc(data: string, replace_user := true) -> bool {
 }
 
 /*
-Like Shortcut_Import_Bindings but returns the 1-based failing line (0 = empty/apply).
+Like Shortcut_Import_Bindings but returns a failing line (1) on parse/apply error.
 */
 shortcut_import_bindings_ex :: proc(data: string, replace_user := true) -> Shortcut_Import_Error {
 	if state == nil do return {ok = false, line = 0}
 	shortcut_init()
-	lines := strings.split_lines(data, context.temp_allocator)
 
-	parsed := make([dynamic]Shortcut_Parsed_Binding, context.temp_allocator)
-	for line, i in lines {
-		trimmed := strings.trim_space(line)
-		if trimmed == "" || strings.has_prefix(trimmed, "#") do continue
-		row: Shortcut_Parsed_Binding
-		if !shortcut_parse_friendly_line(trimmed, &row) do return {ok = false, line = i + 1}
-		append(&parsed, row)
+	parsed, err := settings_parse_document(data)
+	if !err.ok {
+		settings_destroy_value(parsed)
+		return err
 	}
 
 	if replace_user {
 		shortcut_clear_user_bindings()
 	}
 
-	for &row in parsed {
-		// Config always installs as user and overrides matching builtin triggers.
+	for row in parsed.shortcut_rows {
 		shortcut_remove_trigger_matches(row)
-		if !shortcut_apply_parsed(row) do return {ok = false, line = 0}
+		if !shortcut_apply_parsed(row) {
+			settings_destroy_value(parsed)
+			return {ok = false, line = 1}
+		}
 	}
+
+	if state.settings.ready {
+		for row in state.settings.shortcut_rows {
+			if row.id != "" do delete(row.id)
+			if row.scope_key != "" do delete(row.scope_key)
+		}
+		if state.settings.shortcut_rows != nil do delete(state.settings.shortcut_rows)
+		state.settings.shortcut_rows = parsed.shortcut_rows
+		parsed.shortcut_rows = {}
+		settings_destroy_value(parsed)
+	} else {
+		settings_assign(parsed)
+	}
+
 	return {ok = true, line = 0}
-}
-
-@(private)
-shortcut_export_friendly :: proc(b: ^strings.Builder, binding: Shortcut_Binding) {
-	trigger := shortcut_format_trigger_token(binding, context.temp_allocator)
-	fmt.sbprintf(b, "%s = %s", trigger, binding.id)
-
-	_, has_app_type := binding.app_type.(App_Type_Id)
-	needs_opts :=
-		!binding.enabled ||
-		binding.scope != .Global ||
-		binding.scope_key != "" ||
-		binding.priority != 0 ||
-		(binding.scope == .Focused_Kind && binding.scope_kind != {}) ||
-		has_app_type
-
-	if needs_opts {
-		fmt.sbprintf(b, " {{")
-		first := true
-		if !binding.enabled {
-			fmt.sbprintf(b, " enabled = false")
-			first = false
-		}
-		if binding.scope != .Global {
-			if !first do fmt.sbprintf(b, ",")
-			fmt.sbprintf(b, " scope = %s", shortcut_scope_name_lower(binding.scope))
-			first = false
-		}
-		if binding.scope_key != "" {
-			if !first do fmt.sbprintf(b, ",")
-			fmt.sbprintf(b, " scope_key = %q", binding.scope_key)
-			first = false
-		}
-		if binding.scope == .Focused_Kind {
-			if !first do fmt.sbprintf(b, ",")
-			fmt.sbprintf(b, " scope_kind = %d", int(binding.scope_kind))
-			first = false
-		}
-		if binding.priority != 0 {
-			if !first do fmt.sbprintf(b, ",")
-			fmt.sbprintf(b, " priority = %d", binding.priority)
-			first = false
-		}
-		if type_id, is_type := binding.app_type.(App_Type_Id); is_type {
-			if !first do fmt.sbprintf(b, ",")
-			fmt.sbprintf(b, " app_type = %d", int(type_id))
-		}
-		_ = first
-		fmt.sbprintf(b, " }}")
-	}
-	fmt.sbprintf(b, "\n")
 }
 
 @(private)
@@ -327,85 +269,6 @@ shortcut_scope_name_lower :: proc(scope: Shortcut_Scope) -> string {
 		return "global"
 	}
 	return "global"
-}
-
-@(private)
-shortcut_parse_friendly_line :: proc(line: string, out: ^Shortcut_Parsed_Binding) -> bool {
-	out^ = {
-		enabled = true,
-		source  = .User,
-		scope   = .Global,
-	}
-
-	// Prefer first " = " so options like { enabled = false } stay in the RHS,
-	// while triggers such as CTRL+EQUAL still round-trip.
-	sep := strings.index(line, " = ")
-	trigger_text: string
-	rest: string
-	if sep >= 0 {
-		trigger_text = strings.trim_space(line[:sep])
-		rest = strings.trim_space(line[sep + 3:])
-	} else {
-		eq := strings.index_byte(line, '=')
-		if eq <= 0 do return false
-		trigger_text = strings.trim_space(line[:eq])
-		rest = strings.trim_space(line[eq + 1:])
-	}
-	if trigger_text == "" || rest == "" do return false
-
-	action_text := rest
-	opts_text := ""
-	if brace := strings.index_byte(rest, '{'); brace >= 0 {
-		action_text = strings.trim_space(rest[:brace])
-		end := strings.last_index_byte(rest, '}')
-		if end <= brace do return false
-		opts_text = rest[brace + 1:end]
-	}
-	if action_text == "" do return false
-	out.id = action_text
-	out.source = .User
-
-	if opts_text != "" && !shortcut_parse_opts(opts_text, out) do return false
-	out.source = .User // config never owns "builtin"
-	return shortcut_parse_trigger(trigger_text, out)
-}
-
-@(private)
-shortcut_parse_opts :: proc(text: string, out: ^Shortcut_Parsed_Binding) -> bool {
-	parts := strings.split(text, ",", context.temp_allocator)
-	for part in parts {
-		kv := strings.trim_space(part)
-		if kv == "" do continue
-		eq := strings.index_byte(kv, '=')
-		if eq <= 0 do return false
-		key := strings.to_lower(strings.trim_space(kv[:eq]), context.temp_allocator)
-		value := strings.trim_space(kv[eq + 1:])
-		switch key {
-		case "enabled":
-			out.enabled = shortcut_parse_bool(value)
-		case "scope":
-			out.scope = shortcut_parse_scope(value)
-		case "scope_key":
-			out.scope_key = shortcut_parse_quoted(value)
-		case "scope_kind":
-			out.scope_kind = Widget_Kind(shortcut_parse_int(value))
-		case "priority":
-			out.priority = i32(shortcut_parse_int(value))
-		case "app_type":
-			out.app_type = App_Type_Filter(App_Type_Id(shortcut_parse_int(value)))
-		case:
-			return false
-		}
-	}
-	return true
-}
-
-@(private)
-shortcut_parse_quoted :: proc(value: string) -> string {
-	if len(value) >= 2 && value[0] == '"' && value[len(value) - 1] == '"' {
-		return value[1:len(value) - 1]
-	}
-	return value
 }
 
 @(private)

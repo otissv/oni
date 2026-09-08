@@ -69,6 +69,8 @@ with_runtime_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	saved_init := has_init_run_once
 	defer {
+		shortcut_shutdown()
+		settings_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state
@@ -110,6 +112,8 @@ with_runtime_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_theme := theme
 	saved_init := has_init_run_once
 	defer {
+		shortcut_shutdown()
+		settings_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
 		state = saved_state

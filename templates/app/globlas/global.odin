@@ -24,7 +24,7 @@ Global_State :: struct {
 	image_texture:   o.Texture_Handle,
 	frame_dt:        f32,
 	Route:           Routes,
-	shortcuts_path:  string,
+	settings_path:   string,
 	shortcuts_table: w.Shortcuts_Table_Session,
 }
 
