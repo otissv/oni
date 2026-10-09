@@ -488,9 +488,44 @@ layout_text_single_line_centers_vertically_when_height_definite :: proc(t: ^test
 			layout_text_position_lines(&node)
 			defer layout_text_release(&node)
 
-			// content_h = 40 - 8 = 32; line_h = 12; center offset = (32-12)/2 = 10
+			// content_h = 40 - 8 = 32; em = ascent+descent = 12; center offset = (32-12)/2 = 10
 			// origin.y = padding.t + offset = 4 + 10 = 14
 			expect_close(t, node.text.line_origins[0].y, 14)
+		},
+	)
+}
+
+@(test)
+layout_text_single_line_centers_em_when_content_shorter_than_line :: proc(t: ^testing.T) {
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+
+			font := layout_test_stub_font()
+			defer layout_test_clear_stub_fonts()
+
+			line := layout_test_make_line({1}, {20})
+			lines := layout_test_make_lines({line})
+			node := Layout_Node {
+				rect = {0, 0, 100, 28},
+				padding = {t = 6, b = 6, l = 8, r = 8},
+				config = {
+					wrap = Text_Wrap_Kind.NONE,
+					height = {kind = .FIXED, value = 28},
+					justify = {y = Justify_Align.CENTER},
+					accepts_text_input = true,
+					line_height = 1.2,
+				},
+			}
+			layout_test_attach_stub_text(&node, font, lines, 100, font_size = 16, line_height_mult = 1.2)
+
+			layout_text_position_lines(&node)
+			defer layout_text_release(&node)
+
+			// content_h = 28 - 12 = 16; em = 10+2 = 12; offset = (16-12)/2 = 2
+			// origin.y = padding.t + offset = 6 + 2 = 8
+			expect_close(t, node.text.line_origins[0].y, 8)
 		},
 	)
 }

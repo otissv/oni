@@ -216,3 +216,78 @@ Tab_Size :: F32
 Word_Spacing :: F32
 
 Z_Index :: F32
+
+/*
+Tailwind `grid-cols-{n}`: `repeat(n, minmax(0, 1fr))`.
+*/
+Grid_Cols :: proc(n: int) -> oni.Cfg(oni.Grid_Template_Columns) {
+	return cfg_value(oni.Grid_Template_Columns(n))
+}
+
+/*
+Tailwind `grid-rows-{n}`: `repeat(n, minmax(0, 1fr))`.
+*/
+Grid_Rows :: proc(n: int) -> oni.Cfg(oni.Grid_Template_Rows) {
+	return cfg_value(oni.Grid_Template_Rows(n))
+}
+
+/*
+Raw CSS grid-template-columns track list.
+*/
+Grid_Template_Columns :: proc(list: string) -> oni.Cfg(oni.Grid_Template_Columns) {
+	return cfg_value(oni.Grid_Template_Columns(list))
+}
+
+/*
+Raw CSS grid-template-rows track list.
+*/
+Grid_Template_Rows :: proc(list: string) -> oni.Cfg(oni.Grid_Template_Rows) {
+	return cfg_value(oni.Grid_Template_Rows(list))
+}
+
+/*
+Tailwind `auto-cols-auto|min|max|fr`.
+*/
+Grid_Auto_Columns :: proc(preset: oni.Grid_Auto_Preset) -> oni.Cfg(oni.Grid_Auto_Track) {
+	return cfg_value(oni.Grid_Auto_Track(preset))
+}
+
+Grid_Auto_Rows :: proc(preset: oni.Grid_Auto_Preset) -> oni.Cfg(oni.Grid_Auto_Track) {
+	return cfg_value(oni.Grid_Auto_Track(preset))
+}
+
+Grid_Auto_Flow :: proc(flow: oni.Grid_Auto_Flow) -> oni.Cfg(oni.Grid_Auto_Flow) {
+	return cfg_value(flow)
+}
+
+Grid_Template_Areas :: proc(areas: string) -> oni.Cfg(string) {return cfg_value(areas)}
+
+Grid_Column :: proc(value: string) -> oni.Cfg(string) {return cfg_value(value)}
+
+Grid_Row :: proc(value: string) -> oni.Cfg(string) {return cfg_value(value)}
+
+Grid_Area :: proc(name: string) -> oni.Cfg(string) {return cfg_value(name)}
+
+Col_Start :: proc(line: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{line = line}))
+}
+
+Col_End :: proc(line: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{line = line}))
+}
+
+Col_Span :: proc(span: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{span = span}))
+}
+
+Row_Start :: proc(line: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{line = line}))
+}
+
+Row_End :: proc(line: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{line = line}))
+}
+
+Row_Span :: proc(span: int) -> oni.Cfg(oni.Grid_Line_Value) {
+	return cfg_value(oni.Grid_Line_Value(oni.Grid_Line{span = span}))
+}

@@ -557,6 +557,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		z_index               = 0,
 		tab_size              = DEFAULT_TAB_SIZE,
 		word_spacing          = 0,
+		grid_auto_flow        = .ROW,
 	}
 	theme_widget_style_cache_valid = true
 	theme_widget_style_cache_sig = sig
@@ -632,6 +633,20 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 
 	if scroll_value_is_set(override.scroll_x) do result.scroll_x = override.scroll_x
 	if scroll_value_is_set(override.scroll_y) do result.scroll_y = override.scroll_y
+
+	merge_cfg(Grid_Template_Columns, &result.grid_template_columns, override.grid_template_columns)
+	merge_cfg(Grid_Template_Rows, &result.grid_template_rows, override.grid_template_rows)
+	merge_cfg(Grid_Auto_Track, &result.grid_auto_columns, override.grid_auto_columns)
+	merge_cfg(Grid_Auto_Track, &result.grid_auto_rows, override.grid_auto_rows)
+	merge_cfg(Grid_Auto_Flow, &result.grid_auto_flow, override.grid_auto_flow)
+	merge_cfg(string, &result.grid_template_areas, override.grid_template_areas)
+	merge_cfg(Grid_Line_Value, &result.grid_column_start, override.grid_column_start)
+	merge_cfg(Grid_Line_Value, &result.grid_column_end, override.grid_column_end)
+	merge_cfg(Grid_Line_Value, &result.grid_row_start, override.grid_row_start)
+	merge_cfg(Grid_Line_Value, &result.grid_row_end, override.grid_row_end)
+	merge_cfg(string, &result.grid_column, override.grid_column)
+	merge_cfg(string, &result.grid_row, override.grid_row)
+	merge_cfg(string, &result.grid_area, override.grid_area)
 
 	return result
 }
@@ -1278,7 +1293,77 @@ resolve_widget_config :: proc(
 		accepts_text_input    = decl.accepts_text_input,
 		scroll_x              = 0,
 		scroll_y              = 0,
+		grid_template_columns = resolve_cfg_grid_template_columns(
+			decl.grid_template_columns,
+			parent.grid_template_columns,
+			theme.grid_template_columns,
+			state,
+			event,
+		),
+		grid_template_rows = resolve_cfg_grid_template_rows(
+			decl.grid_template_rows,
+			parent.grid_template_rows,
+			theme.grid_template_rows,
+			state,
+			event,
+		),
+		grid_auto_columns = resolve_cfg_grid_auto_track(
+			decl.grid_auto_columns,
+			parent.grid_auto_columns,
+			theme.grid_auto_columns,
+			state,
+			event,
+		),
+		grid_auto_rows = resolve_cfg_grid_auto_track(
+			decl.grid_auto_rows,
+			parent.grid_auto_rows,
+			theme.grid_auto_rows,
+			state,
+			event,
+		),
+		grid_auto_flow = resolve_cfg_grid_auto_flow(
+			decl.grid_auto_flow,
+			parent.grid_auto_flow,
+			theme.grid_auto_flow,
+		),
+		grid_template_areas = resolve_cfg_grid_string(
+			decl.grid_template_areas,
+			parent.grid_template_areas,
+		),
+		grid_column_start = resolve_cfg_grid_line(
+			decl.grid_column_start,
+			parent.grid_column_start,
+			theme.grid_column_start,
+			state,
+			event,
+		),
+		grid_column_end = resolve_cfg_grid_line(
+			decl.grid_column_end,
+			parent.grid_column_end,
+			theme.grid_column_end,
+			state,
+			event,
+		),
+		grid_row_start = resolve_cfg_grid_line(
+			decl.grid_row_start,
+			parent.grid_row_start,
+			theme.grid_row_start,
+			state,
+			event,
+		),
+		grid_row_end = resolve_cfg_grid_line(
+			decl.grid_row_end,
+			parent.grid_row_end,
+			theme.grid_row_end,
+			state,
+			event,
+		),
+		grid_column = resolve_cfg_grid_string(decl.grid_column, parent.grid_column),
+		grid_row = resolve_cfg_grid_string(decl.grid_row, parent.grid_row),
+		grid_area = resolve_cfg_grid_string(decl.grid_area, parent.grid_area),
 	}
+
+	grid_apply_line_shorthands(&style)
 
 	resolved := Resolved_Widget_Config {
 		id    = decl.id,

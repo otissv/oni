@@ -56,8 +56,9 @@ UI_State :: struct {
 	label_crc:           map[string]u32,
 	scrollports:         map[UI_Id]Scrollport_Metrics,
 	scroll_bar_drags:    map[UI_Id]Scroll_Bar_Drag,
-	slider_drags:        map[UI_Id]Slider_Drag,
-	slider_root_rects:   map[UI_Id]Rect,
+	slider_drags:         map[UI_Id]Slider_Drag,
+	slider_root_rects:    map[UI_Id]Rect,
+	color_picker_drags:   map[UI_Id]Color_Picker_Drag,
 }
 
 /*

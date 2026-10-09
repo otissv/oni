@@ -55,6 +55,7 @@ text_input_theme_base :: proc(frame_state: ^Text_Input_State) -> o.Widget_Config
 		border_color = set.Border_color(o.Color.BORDER),
 		background = set.Background(o.Color.BACKGROUND),
 		color = set.Colors(o.Color.FOREGROUND),
+		justify = set.Justify(o.Justify_Pos{x = .START, y = .CENTER}),
 		tabbable = set.Tabbable(true),
 		accepts_text_input = set.Accepts_Text_Input(),
 	}
@@ -205,10 +206,15 @@ Text_Input :: proc(props: Text_Input_Props) {
 
 		if cfg.multiline {
 			layout_config.style.wrap = o.Text_Wrap_Kind.BALANCE
+
+			// Multiline stays top-aligned unless the author set justify.
+			if props.config.justify.mode == .UNSET {
+				layout_config.justify.y = o.Justify_Align.START
+			}
 		} else {
 			layout_config.style.wrap = o.Text_Wrap_Kind.NONE
 
-			// Single-line vertical center inside definite height (justify.y), unless author set justify.
+			// Single-line vertical center inside the content box (justify.y), unless author set justify.
 			if props.config.justify.mode == .UNSET {
 				layout_config.justify.y = o.Justify_Align.CENTER
 			}

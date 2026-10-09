@@ -19,15 +19,15 @@ Settings_Kdl_Node :: enum {
 
 @(private)
 Settings_Kdl_Bind_Acc :: struct {
-	trigger:    string,
-	action:     string,
-	enabled:    bool,
+	trigger:     string,
+	action:      string,
+	enabled:     bool,
 	has_enabled: bool,
-	scope:      Shortcut_Scope,
-	scope_key:  string,
-	scope_kind: Widget_Kind,
-	priority:   i32,
-	app_type:   App_Type_Filter,
+	scope:       Shortcut_Scope,
+	scope_key:   string,
+	scope_kind:  Widget_Kind,
+	priority:    i32,
+	app_type:    App_Type_Filter,
 }
 
 /*
@@ -98,7 +98,9 @@ settings_parse_document :: proc(
 				append(&out.font_faces, Font_Face_Desc{style = .NORMAL, weight = .Normal})
 			}
 			if kind == .Bind {
-				bind = {enabled = true}
+				bind = {
+					enabled = true,
+				}
 			}
 			append(&stack, kind)
 		case .End_Node:
@@ -615,7 +617,11 @@ settings_kdl_emit_bind :: proc(emitter: ^kdl.Emitter, binding: Shortcut_Binding)
 		kdl.emit_property(emitter, "enabled", settings_kdl_bool(false))
 	}
 	if binding.scope != .Global {
-		kdl.emit_property(emitter, "scope", settings_kdl_str(shortcut_scope_name_lower(binding.scope)))
+		kdl.emit_property(
+			emitter,
+			"scope",
+			settings_kdl_str(shortcut_scope_name_lower(binding.scope)),
+		)
 	}
 	if binding.scope_key != "" {
 		kdl.emit_property(emitter, "scope-key", settings_kdl_str(binding.scope_key))
@@ -874,6 +880,10 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .RADIO, true
 	case "slider":
 		return .SLIDER, true
+	case "color-picker":
+		return .COLOR_PICKER, true
+	case "calendar":
+		return .CALENDAR, true
 	}
 	return .RECT, false
 }

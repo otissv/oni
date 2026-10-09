@@ -738,9 +738,17 @@ font_shape :: proc(
 	infos := buffer_get_glyph_infos(buffer, &glyph_len)
 	pos_len: c.uint
 	positions := buffer_get_glyph_positions(buffer, &pos_len)
+	if infos == nil || positions == nil do return nil
+
 	n := int(min(glyph_len, pos_len))
+	if n <= 0 do return nil
 
 	glyphs := make([]Shaped_Glyph, n, layout_frame_allocator())
+	if len(glyphs) != n {
+		log_error("font_shape: layout frame allocator exhausted")
+		return nil
+	}
+
 	for i in 0 ..< n {
 		glyphs[i] = {
 			glyph_id  = u32(infos[i].codepoint),
@@ -824,6 +832,11 @@ font_make_shaped_line :: proc(
 	word_spacing: f32,
 ) -> Shaped_Line {
 	line_glyphs := make([]Shaped_Glyph, len(glyphs), layout_frame_allocator())
+	if len(line_glyphs) != len(glyphs) {
+		log_error("font_make_shaped_line: layout frame allocator exhausted")
+		return Shaped_Line{direction = direction}
+	}
+
 	copy(line_glyphs, glyphs)
 
 	if letter_spacing != 0 && len(line_glyphs) > 1 {

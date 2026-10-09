@@ -6,25 +6,51 @@ Color :: col.Color
 RGBA :: col.RGBA
 Hex :: col.Hex
 HSLA :: col.HSLA
+HSVA :: col.HSVA
 HWBA :: col.HWBA
 LCHA :: col.LCHA
 OKLCHA :: col.OKLCHA
+LABA :: col.LABA
+CMYKA :: col.CMYKA
 Palette :: col.Palette
+
+WEB_SAFE_STEP :: col.WEB_SAFE_STEP
 
 palette := col.palette
 
 css_color_to_rgba :: col.css_color_to_rgba
 to_rgba_color :: col.to_rgba_color
 rgba_to_f32 :: col.rgba_to_f32
+hsva_to_rgba :: col.hsva_to_rgba
+rgba_to_hsva :: col.rgba_to_hsva
+rgba_to_hsla :: col.rgba_to_hsla
+hsla_to_rgba :: col.hsla_to_rgba
+rgba_to_hex :: col.rgba_to_hex
+hex_parse :: col.hex_parse
+hex_format :: col.hex_format
+color_hue_wrap :: col.color_hue_wrap
+color_clamp01 :: col.color_clamp01
+color_u8_from01 :: col.color_u8_from01
+color_hue_to_rgb :: col.color_hue_to_rgb
+laba_to_rgba :: col.laba_to_rgba
+rgba_to_laba :: col.rgba_to_laba
+cmyka_to_rgba :: col.cmyka_to_rgba
+rgba_to_cmyka :: col.rgba_to_cmyka
+rgba_to_hwba :: col.rgba_to_hwba
+is_web_safe :: col.is_web_safe
+rgba_to_web_safe :: col.rgba_to_web_safe
 
 Colors :: union {
 	Color,
 	RGBA,
 	Hex,
 	HSLA,
+	HSVA,
 	HWBA,
 	LCHA,
 	OKLCHA,
+	LABA,
+	CMYKA,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Colors,
 }
 
@@ -66,11 +92,17 @@ to_rgba :: proc(c: Colors, state: ^$S, event: Widget_Event(S)) -> (rgba: RGBA, o
 		return to_rgba_color(v), true
 	case HSLA:
 		return to_rgba_color(v), true
+	case HSVA:
+		return to_rgba_color(v), true
 	case HWBA:
 		return to_rgba_color(v), true
 	case LCHA:
 		return to_rgba_color(v), true
 	case OKLCHA:
+		return to_rgba_color(v), true
+	case LABA:
+		return to_rgba_color(v), true
+	case CMYKA:
 		return to_rgba_color(v), true
 	case proc(
 		     frame_state: Widget_Frame_State,
@@ -103,11 +135,17 @@ color_to_f32 :: proc(c: Colors) -> [4]f32 {
 		rgba = to_rgba_color(v)
 	case HSLA:
 		rgba = to_rgba_color(v)
+	case HSVA:
+		rgba = to_rgba_color(v)
 	case HWBA:
 		rgba = to_rgba_color(v)
 	case LCHA:
 		rgba = to_rgba_color(v)
 	case OKLCHA:
+		rgba = to_rgba_color(v)
+	case LABA:
+		rgba = to_rgba_color(v)
+	case CMYKA:
 		rgba = to_rgba_color(v)
 	}
 
@@ -125,11 +163,17 @@ colors_as_concrete_rgba :: proc(c: Colors) -> (rgba: RGBA, ok: bool) {
 		return to_rgba_color(v), true
 	case HSLA:
 		return to_rgba_color(v), true
+	case HSVA:
+		return to_rgba_color(v), true
 	case HWBA:
 		return to_rgba_color(v), true
 	case LCHA:
 		return to_rgba_color(v), true
 	case OKLCHA:
+		return to_rgba_color(v), true
+	case LABA:
+		return to_rgba_color(v), true
+	case CMYKA:
 		return to_rgba_color(v), true
 	}
 	return {}, false

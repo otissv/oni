@@ -64,9 +64,13 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	o.batch_current().index_capacity = 64 * 1024 * 6
 
 	radio_shutdown()
+	color_picker_shutdown()
+	calendar_shutdown()
 	o.ui_init()
 	defer {
 		radio_shutdown()
+		color_picker_shutdown()
+		calendar_shutdown()
 		drain_style_stack()
 		o.ui_shutdown()
 		o.shortcut_shutdown()
@@ -166,6 +170,20 @@ widget_test_press_shortcut :: proc(key: o.Scancode, mods: o.Input_Modifiers = {}
 @(private)
 set_bool :: proc(v: bool) -> o.Cfg(o.Style_Bool) {
 	return set.Bool(v)
+}
+
+/*
+Returns whether the layout tree contains a node whose size is near the given dimensions.
+*/
+@(private)
+widget_test_has_layout_size :: proc(want_w, want_h, tol: f32) -> bool {
+	for node in o.state.ui.layout.nodes {
+		if abs(node.rect.w - want_w) <= tol && abs(node.rect.h - want_h) <= tol {
+			return true
+		}
+	}
+
+	return false
 }
 
 /*

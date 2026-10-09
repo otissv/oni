@@ -123,7 +123,7 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 layout_test_begin :: proc() -> Layout_State {
 	layout := Layout_State {
 		table_tracks = make(map[int]Layout_Table_Tracks),
-		id_to_node = make(map[UI_Id]int),
+		id_to_node   = make(map[UI_Id]int),
 	}
 	layout_frame_arena_ensure(&layout)
 	return layout
@@ -894,43 +894,43 @@ table_border_strip_rect_matches_side_geometry :: proc(t: ^testing.T) {
 @(test)
 radius_inherit_resolves_parent_corners :: proc(t: ^testing.T) {
 	with_ui_env(t, proc(t: ^testing.T) {
-			frame, event := ui_test_frame_event()
+		frame, event := ui_test_frame_event()
 
-			parent := resolve_widget_config(
-				{},
-				{radius = {mode = .Value, value = f32(10)}},
-				&frame,
-				event,
-			)
-			ui_push_style(style_child_context(parent))
-			defer ui_pop_style()
+		parent := resolve_widget_config(
+			{},
+			{radius = {mode = .Value, value = f32(10)}},
+			&frame,
+			event,
+		)
+		ui_push_style(style_child_context(parent))
+		defer ui_pop_style()
 
-			child := resolve_widget_config(
-				{},
-				{radius = {mode = .Value, value = .INHERIT}},
-				&frame,
-				event,
-			)
-			corners, ok := resolve_radius_value(child.radius)
-			testing.expect(t, ok)
-			expect_close(t, corners.tl, 10)
-			expect_close(t, corners.tr, 10)
-			expect_close(t, corners.bl, 10)
-			expect_close(t, corners.br, 10)
+		child := resolve_widget_config(
+			{},
+			{radius = {mode = .Value, value = .INHERIT}},
+			&frame,
+			event,
+		)
+		corners, ok := resolve_radius_value(child.radius)
+		testing.expect(t, ok)
+		expect_close(t, corners.tl, 10)
+		expect_close(t, corners.tr, 10)
+		expect_close(t, corners.bl, 10)
+		expect_close(t, corners.br, 10)
 
-			partial := resolve_widget_config(
-				{},
-				{radius = {mode = .Value, value = Radius_corners{tl = .INHERIT, tr = .INHERIT}}},
-				&frame,
-				event,
-			)
-			pc, pok := resolve_radius_value(partial.radius)
-			testing.expect(t, pok)
-			expect_close(t, pc.tl, 10)
-			expect_close(t, pc.tr, 10)
-			expect_close(t, pc.bl, 0)
-			expect_close(t, pc.br, 0)
-		})
+		partial := resolve_widget_config(
+			{},
+			{radius = {mode = .Value, value = Radius_corners{tl = .INHERIT, tr = .INHERIT}}},
+			&frame,
+			event,
+		)
+		pc, pok := resolve_radius_value(partial.radius)
+		testing.expect(t, pok)
+		expect_close(t, pc.tl, 10)
+		expect_close(t, pc.tr, 10)
+		expect_close(t, pc.bl, 0)
+		expect_close(t, pc.br, 0)
+	})
 }
 
 @(test)
@@ -1176,10 +1176,7 @@ layout_push_node_caches_direction_info :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
 		_ = layout
 
-		node := layout_push_node(
-			UI_Id(1),
-			{kind = .RECT, direction = .HORIZONTAL_WRAP_REVERSE},
-		)
+		node := layout_push_node(UI_Id(1), {kind = .RECT, direction = .HORIZONTAL_WRAP_REVERSE})
 		expected := layout_direction_info(.HORIZONTAL_WRAP_REVERSE)
 
 		testing.expect(t, node.direction_info.is_horizontal == expected.is_horizontal)
@@ -2595,14 +2592,7 @@ layout_flex_order_sorts_many_children :: proc(t: ^testing.T) {
 		)
 		for i in 0 ..< LAYOUT_TEST_MANY_CHILDREN {
 			order := f32(LAYOUT_TEST_MANY_CHILDREN - 1 - i)
-			_ = layout_test_append_node(
-				layout,
-				root,
-				.RECT,
-				{},
-				{10, 20},
-				{order = order},
-			)
+			_ = layout_test_append_node(layout, root, .RECT, {}, {10, 20}, {order = order})
 		}
 
 		layout_sort_children_by_order(&layout.nodes[root])
@@ -2641,63 +2631,64 @@ layout_measure_pop_leaves_text_empty_until_finalize :: proc(t: ^testing.T) {
 		return
 	}
 
-	with_layout_solve(
-		t,
-		proc(layout: ^Layout_State, t: ^testing.T) {
-			_ = layout
-			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		_ = layout
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
 
-			testing.expect(t, font_init())
-			defer font_shutdown()
+		testing.expect(t, font_init())
+		defer font_shutdown()
 
-			inter, inter_ok := font_register_family(
-				"LayoutTextTest",
-				{
-					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
-					{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
-				},
-			)
-			testing.expect(t, inter_ok)
-			inter = font_with_size(inter, 16)
+		inter, inter_ok := font_register_family(
+			"LayoutTextTest",
+			{
+				{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
+				{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
+			},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
 
-			clear_test_hooks()
-			defer clear_test_hooks()
+		clear_test_hooks()
+		defer clear_test_hooks()
 
-			ui_push_style(Style_Context{content_w = 800, content_h = 600})
-			defer ui_pop_style()
+		ui_push_style(Style_Context{content_w = 800, content_h = 600})
+		defer ui_pop_style()
 
-			node := layout_push_node(UI_Id(100), {kind = .TEXT})
-			node.config.font = inter
-			node.config.font_size = 16
-			node.config.line_height = 1.5
-			node.config.space = .SCREEN
-			node.config.wrap = Text_Wrap_Kind.NONE
-			node.config.text_direction = Text_Direction_Kind.LTR
-			node.config.align = Text_Align_Kind.LEFT
-			node.config.text_decoration = Text_Decoration_Lines{}
-			node.config.text_decoration_style = Text_Decoration_Style_Kind.SOLID
-			layout_set_measure_text(node, "hello", 0)
-			layout_pop_node()
+		node := layout_push_node(UI_Id(100), {kind = .TEXT})
+		node.config.font = inter
+		node.config.font_size = 16
+		node.config.line_height = 1.5
+		node.config.space = .SCREEN
+		node.config.wrap = Text_Wrap_Kind.NONE
+		node.config.text_direction = Text_Direction_Kind.LTR
+		node.config.align = Text_Align_Kind.LEFT
+		node.config.text_decoration = Text_Decoration_Lines{}
+		node.config.text_decoration_style = Text_Decoration_Style_Kind.SOLID
+		layout_set_measure_text(node, "hello", 0)
+		layout_pop_node()
 
-			testing.expect_value(t, test_hook_font_shape_call_count, 0)
-			testing.expect_value(t, len(node.text.lines), 0)
-			testing.expect_value(t, len(node.text.glyphs), 0)
-			testing.expect(t, node.desired.x > 0)
-			testing.expect(t, node.desired.y > 0)
+		testing.expect_value(t, test_hook_font_shape_call_count, 0)
+		testing.expect_value(t, len(node.text.lines), 0)
+		testing.expect_value(t, len(node.text.glyphs), 0)
+		testing.expect(t, node.desired.x > 0)
+		testing.expect(t, node.desired.y > 0)
 
-			node.rect = {0, 0, node.desired.x, node.desired.y}
+		node.rect = {0, 0, node.desired.x, node.desired.y}
 
-			layout_finalize_text_node(node)
-			defer layout_text_release(node)
+		layout_finalize_text_node(node)
+		defer layout_text_release(node)
 
-			testing.expect_value(t, test_hook_font_shape_call_count, 1)
-			testing.expect(t, len(node.text.lines) > 0)
-			testing.expect(t, node.text.lines_borrowed)
-			testing.expect(t, len(node.text.line_origins) > 0)
-			testing.expect(t, node.text.size.x > 0)
-			testing.expect(t, node.text.size.y > 0)
-		},
-	)
+		testing.expect_value(t, test_hook_font_shape_call_count, 1)
+		testing.expect(t, len(node.text.lines) > 0)
+		testing.expect(t, node.text.lines_borrowed)
+		testing.expect(t, len(node.text.line_origins) > 0)
+		testing.expect(t, node.text.size.x > 0)
+		testing.expect(t, node.text.size.y > 0)
+	})
 }
 
 @(test)
@@ -2714,66 +2705,67 @@ layout_rich_edit_geometry_offsets_segment_clusters :: proc(t: ^testing.T) {
 		return
 	}
 
-	with_layout_solve(
-		t,
-		proc(layout: ^Layout_State, t: ^testing.T) {
-			_ = layout
-			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		_ = layout
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
 
-			testing.expect(t, font_init())
-			defer font_shutdown()
+		testing.expect(t, font_init())
+		defer font_shutdown()
 
-			inter, inter_ok := font_register_family(
-				"LayoutRichEditGeometryTest",
-				{
-					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
-					{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Bold},
-					{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
-				},
-			)
-			testing.expect(t, inter_ok)
-			inter = font_with_size(inter, 16)
+		inter, inter_ok := font_register_family(
+			"LayoutRichEditGeometryTest",
+			{
+				{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal},
+				{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Bold},
+				{path = LAYOUT_TEST_INTER_ITALIC_FONT, style = .ITALIC, weight = .Normal},
+			},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
 
-			tagged := "{c:accent}Accent{/c} {b}bold{/b} {i}italic{/i} — edit with inline tags"
-			parsed := text_tags_parse(tagged, context.temp_allocator)
-			target := strings.index(parsed.plain, "t with")
+		tagged := "{c:accent}Accent{/c} {b}bold{/b} {i}italic{/i} — edit with inline tags"
+		parsed := text_tags_parse(tagged, context.temp_allocator)
+		target := strings.index(parsed.plain, "t with")
 
-			testing.expect(t, target >= 0)
+		testing.expect(t, target >= 0)
 
-			node := Layout_Node {
-				kind = .RICH_TEXT_INPUT,
-				rect = {0, 0, 520, 40},
-				config = {
-					font = inter,
-					font_size = 16,
-					line_height = 1.5,
-					wrap = Text_Wrap_Kind.NONE,
-					text_direction = Text_Direction_Kind.LTR,
-					align = Text_Align_Kind.LEFT,
-					space = .SCREEN,
-					text_decoration = Text_Decoration_Lines{},
-					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
-					accepts_text_input = true,
-				},
+		node := Layout_Node {
+			kind = .RICH_TEXT_INPUT,
+			rect = {0, 0, 520, 40},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.5,
+				wrap = Text_Wrap_Kind.NONE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+				accepts_text_input = true,
+			},
+		}
+		layout_set_measure_rich_text(&node, parsed.plain, parsed.layout_runs, 0, false)
+		layout_finalize_text_node(&node)
+		defer layout_text_release(&node)
+
+		testing.expect(t, len(node.text.edit_geometry.glyphs) > 0)
+
+		found_target_cluster := false
+		for glyph in node.text.edit_geometry.glyphs {
+			if glyph.cluster == target {
+				found_target_cluster = true
+
+				break
 			}
-			layout_set_measure_rich_text(&node, parsed.plain, parsed.layout_runs, 0, false)
-			layout_finalize_text_node(&node)
-			defer layout_text_release(&node)
+		}
 
-			testing.expect(t, len(node.text.edit_geometry.glyphs) > 0)
-
-			found_target_cluster := false
-			for glyph in node.text.edit_geometry.glyphs {
-				if glyph.cluster == target {
-					found_target_cluster = true
-
-					break
-				}
-			}
-
-			testing.expect(t, found_target_cluster)
-		},
-	)
+		testing.expect(t, found_target_cluster)
+	})
 }
 
 @(test)
@@ -2789,52 +2781,53 @@ layout_text_estimate_uses_shape_cache_after_finalize :: proc(t: ^testing.T) {
 		return
 	}
 
-	with_layout_solve(
-		t,
-		proc(layout: ^Layout_State, t: ^testing.T) {
-			_ = layout
-			state.dpi = {logical_w = 800, logical_h = 600, scale = 1}
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		_ = layout
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
 
-			testing.expect(t, font_init())
-			defer font_shutdown()
+		testing.expect(t, font_init())
+		defer font_shutdown()
 
-			inter, inter_ok := font_register_family(
-				"LayoutEstimateCacheTest",
-				{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
-			)
-			testing.expect(t, inter_ok)
-			inter = font_with_size(inter, 16)
+		inter, inter_ok := font_register_family(
+			"LayoutEstimateCacheTest",
+			{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
 
-			node := Layout_Node {
-				measure = {text = "Cached estimate"},
-				config = {
-					font = inter,
-					font_size = 16,
-					line_height = 1.5,
-					wrap = Text_Wrap_Kind.NONE,
-					text_direction = Text_Direction_Kind.LTR,
-					align = Text_Align_Kind.LEFT,
-					space = .SCREEN,
-					text_decoration = Text_Decoration_Lines{},
-					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
-				},
-			}
+		node := Layout_Node {
+			measure = {text = "Cached estimate"},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.5,
+				wrap = Text_Wrap_Kind.NONE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		}
 
-			clear_test_hooks()
-			defer clear_test_hooks()
+		clear_test_hooks()
+		defer clear_test_hooks()
 
-			layout_finalize_text_node(&node)
-			defer layout_text_release(&node)
-			testing.expect_value(t, test_hook_font_shape_call_count, 1)
+		layout_finalize_text_node(&node)
+		defer layout_text_release(&node)
+		testing.expect_value(t, test_hook_font_shape_call_count, 1)
 
-			final_size := node.text.size
-			layout_text_release(&node)
-			node.text = {}
+		final_size := node.text.size
+		layout_text_release(&node)
+		node.text = {}
 
-			estimated := layout_text_estimate_size(&node, 800)
-			testing.expect_value(t, test_hook_font_shape_call_count, 1)
-			expect_close(t, estimated.x, final_size.x)
-			expect_close(t, estimated.y, final_size.y)
-		},
-	)
+		estimated := layout_text_estimate_size(&node, 800)
+		testing.expect_value(t, test_hook_font_shape_call_count, 1)
+		expect_close(t, estimated.x, final_size.x)
+		expect_close(t, estimated.y, final_size.y)
+	})
 }

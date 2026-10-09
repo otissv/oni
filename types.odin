@@ -235,6 +235,9 @@ Widget_Kind :: enum {
 	RADIO_GROUP,
 	RADIO,
 	SLIDER,
+	COLOR_PICKER,
+	CALENDAR,
+	GRID,
 }
 
 /*
@@ -397,6 +400,19 @@ Widget_Config :: struct {
 	right:                 Cfg(Style_F32),
 	bottom:                Cfg(Style_F32),
 	z_index:               Cfg(Style_F32),
+	grid_template_columns: Cfg(Grid_Template_Columns),
+	grid_template_rows:    Cfg(Grid_Template_Rows),
+	grid_auto_columns:     Cfg(Grid_Auto_Track),
+	grid_auto_rows:        Cfg(Grid_Auto_Track),
+	grid_auto_flow:        Cfg(Grid_Auto_Flow),
+	grid_template_areas:   Cfg(string),
+	grid_column_start:     Cfg(Grid_Line_Value),
+	grid_column_end:       Cfg(Grid_Line_Value),
+	grid_row_start:        Cfg(Grid_Line_Value),
+	grid_row_end:          Cfg(Grid_Line_Value),
+	grid_column:           Cfg(string),
+	grid_row:              Cfg(string),
+	grid_area:             Cfg(string),
 }
 
 Resolved_Widget_Style :: struct {
@@ -466,6 +482,19 @@ Resolved_Widget_Style :: struct {
 	scroll_y:                      f32,
 	tab_size:                      f32,
 	word_spacing:                  f32,
+	grid_template_columns:         Grid_Template_Tracks,
+	grid_template_rows:            Grid_Template_Tracks,
+	grid_auto_columns:             Grid_Track_Size,
+	grid_auto_rows:                Grid_Track_Size,
+	grid_auto_flow:                Grid_Auto_Flow,
+	grid_template_areas:           string,
+	grid_column_start:             Grid_Line,
+	grid_column_end:               Grid_Line,
+	grid_row_start:                Grid_Line,
+	grid_row_end:                  Grid_Line,
+	grid_column:                   string,
+	grid_row:                      string,
+	grid_area:                     string,
 }
 
 /*

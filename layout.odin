@@ -3,7 +3,7 @@ package oni
 import "core:mem"
 import "core:slice"
 
-LAYOUT_FRAME_ARENA_INITIAL :: 1 * mem.Megabyte
+LAYOUT_FRAME_ARENA_INITIAL :: 8 * mem.Megabyte
 LAYOUT_CHILD_SORT_INSERTION_THRESHOLD :: 16
 
 /*
@@ -46,20 +46,20 @@ not be destroyed in layout_text_release. Borrowed slices are invalid after
 font_shape_cache_clear, DPI scale changes, or hot reload.
 */
 Layout_Text :: struct {
-	lines:               []Shaped_Line,
-	line_origins:        []Vec2,
-	glyphs:              []Layout_Glyph_Paint,
-	decoration_strokes:  []Layout_Decoration_Stroke,
-	runs:                []Layout_Text_Run,
-	font:                Font_Face_Handle,
-	layout_scale:        f32,
-	wrap_w:              f32,
-	line_height:         f32,
-	size:                Vec2,
-	rich:                bool,
-	tag_diagnostics:     bool,
-	lines_borrowed:      bool,
-	edit_geometry:       Text_Edit_Geometry,
+	lines:              []Shaped_Line,
+	line_origins:       []Vec2,
+	glyphs:             []Layout_Glyph_Paint,
+	decoration_strokes: []Layout_Decoration_Stroke,
+	runs:               []Layout_Text_Run,
+	font:               Font_Face_Handle,
+	layout_scale:       f32,
+	wrap_w:             f32,
+	line_height:        f32,
+	size:               Vec2,
+	rich:               bool,
+	tag_diagnostics:    bool,
+	lines_borrowed:     bool,
+	edit_geometry:      Text_Edit_Geometry,
 }
 
 /*
@@ -130,13 +130,13 @@ Layout_Node :: struct {
 Column widths and row heights computed for a table with TABLE_CELL alignment.
 */
 Layout_Table_Tracks :: struct {
-	rows:                [dynamic]int,
-	col_widths:          [dynamic]f32,
-	row_heights:         [dynamic]f32,
-	col_count:           int,
-	collapsed:           bool,
-	cell_positions:      map[int]Table_Grid_Pos,
-	collapsed_borders:   map[int]Layout_Collapsed_Borders,
+	rows:              [dynamic]int,
+	col_widths:        [dynamic]f32,
+	row_heights:       [dynamic]f32,
+	col_count:         int,
+	collapsed:         bool,
+	cell_positions:    map[int]Table_Grid_Pos,
+	collapsed_borders: map[int]Layout_Collapsed_Borders,
 }
 
 /*
@@ -164,27 +164,27 @@ Layout_Popup_Anchor :: struct {
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
-	nodes:                [dynamic]Layout_Node,
-	peak_node_count:      int,
-	node_stack:           [dynamic]int,
-	bounds_stack:         [dynamic]Rect,
-	space_markers:        [dynamic]int,
-	id_to_node:           map[UI_Id]int,
-	table_tracks:         map[int]Layout_Table_Tracks,
-	paint_list_screen:    [dynamic]int,
-	paint_list_artboard:  [dynamic]int,
-	paint_list_popover:   [dynamic]int,
-	paint_list_overlay:   [dynamic]int,
-	current_space:        Draw_Space,
-	space_stack:          [dynamic]Draw_Space,
-	stack_counter:        u32,
-	anchors_below:        [dynamic]Layout_Anchor_Below,
-	popup_anchors:        [dynamic]Layout_Popup_Anchor,
-	frame_arena:          mem.Arena,
-	frame_backing:        [dynamic]byte,
+	nodes:               [dynamic]Layout_Node,
+	peak_node_count:     int,
+	node_stack:          [dynamic]int,
+	bounds_stack:        [dynamic]Rect,
+	space_markers:       [dynamic]int,
+	id_to_node:          map[UI_Id]int,
+	table_tracks:        map[int]Layout_Table_Tracks,
+	paint_list_screen:   [dynamic]int,
+	paint_list_artboard: [dynamic]int,
+	paint_list_popover:  [dynamic]int,
+	paint_list_overlay:  [dynamic]int,
+	current_space:       Draw_Space,
+	space_stack:         [dynamic]Draw_Space,
+	stack_counter:       u32,
+	anchors_below:       [dynamic]Layout_Anchor_Below,
+	popup_anchors:       [dynamic]Layout_Popup_Anchor,
+	frame_arena:         mem.Arena,
+	frame_backing:       [dynamic]byte,
 	// Artboard zoom captured once per layout frame / view change.
-	artboard_zoom:        f32,
-	artboard_zoom_valid:  bool,
+	artboard_zoom:       f32,
+	artboard_zoom_valid: bool,
 }
 
 /*
@@ -235,8 +235,10 @@ layout_frame_arena_reset :: proc(layout: ^Layout_State) {
 	layout_frame_arena_ensure(layout)
 	used := layout.frame_arena.peak_used
 	backing_len := len(layout.frame_backing)
-	if used > 0 && used > backing_len * 3 / 4 {
-		new_cap := max(backing_len * 2, used * 2)
+	// Grow before the next frame when the last pass used most of the backing.
+	// The arena cannot expand mid-frame without invalidating live pointers.
+	if used > 0 && used > backing_len * 1 / 2 {
+		new_cap := max(backing_len * 2, used * 2, LAYOUT_FRAME_ARENA_INITIAL)
 		resize(&layout.frame_backing, new_cap)
 		mem.arena_init(&layout.frame_arena, layout.frame_backing[:])
 	} else {
@@ -532,7 +534,11 @@ layout_wrap_store_lines :: proc(node: ^Layout_Node, lines: [dynamic]Layout_Wrap_
 /*
 Measures a wrap container's natural size from child desired sizes.
 */
-layout_wrap_measure :: proc(node: ^Layout_Node, is_horizontal: bool, gap_main, gap_cross: f32) -> Vec2 {
+layout_wrap_measure :: proc(
+	node: ^Layout_Node,
+	is_horizontal: bool,
+	gap_main, gap_cross: f32,
+) -> Vec2 {
 	sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 
 	for child_index, i in node.child_indices {
@@ -671,10 +677,7 @@ layout_text_vertical_insets :: proc(node: ^Layout_Node) -> f32 {
 
 @(private)
 layout_text_content_origin :: proc(node: ^Layout_Node) -> Vec2 {
-	return {
-		node.border.l + node.padding.l,
-		node.border.t + node.padding.t,
-	}
+	return {node.border.l + node.padding.l, node.border.t + node.padding.t}
 }
 
 /*
@@ -906,19 +909,19 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	size := font_measure_lines(face, shaped.lines, line_height, layout_scale)
 
 	node.text = {
-		lines               = shaped.lines,
-		line_origins        = nil,
-		glyphs              = nil,
-		decoration_strokes  = nil,
-		runs                = node.measure.runs,
-		font                = resolved_font,
-		layout_scale        = layout_scale,
-		wrap_w              = wrap_w,
-		line_height         = line_height,
-		size                = size,
-		rich                = node.measure.rich,
-		tag_diagnostics     = node.measure.tag_diagnostics,
-		lines_borrowed      = shaped.borrowed,
+		lines              = shaped.lines,
+		line_origins       = nil,
+		glyphs             = nil,
+		decoration_strokes = nil,
+		runs               = node.measure.runs,
+		font               = resolved_font,
+		layout_scale       = layout_scale,
+		wrap_w             = wrap_w,
+		line_height        = line_height,
+		size               = size,
+		rich               = node.measure.rich,
+		tag_diagnostics    = node.measure.tag_diagnostics,
+		lines_borrowed     = shaped.borrowed,
 	}
 }
 
@@ -950,22 +953,53 @@ layout_text_prepare_empty_editor :: proc(node: ^Layout_Node, wrap_w: f32) {
 }
 
 /*
-Vertical offset for single-line text inside a definite-height content box.
+Height of the painted em box for a text input, in the same space as line origins.
+
+Falls back to the line box when face metrics are missing.
+*/
+@(private)
+layout_text_em_height :: proc(node: ^Layout_Node, line_height: f32) -> f32 {
+	face := font_face_from_handle(node.text.font)
+	if face == nil do return line_height
+
+	scale := node.text.layout_scale
+	if scale <= 0 do scale = 1
+
+	em := (face.ascent + face.descent) * scale
+	if em <= 0 do return line_height
+
+	return em
+}
+
+/*
+Vertical offset for single-line text inside the content box.
 
 Uses justify.y (START / CENTER / END). Unset justify.y leaves y at content origin.
+Text inputs center the font em box, including when it is taller than the content box.
 */
 layout_text_single_line_y_offset :: proc(node: ^Layout_Node, line_height: f32) -> f32 {
 	if node == nil || line_height <= 0 do return 0
-	if !length_is_definite(node.config.height) do return 0
 	if text_wrap_kind(node.config.wrap) != .NONE do return 0
 
 	align_y, ok := justify_align_from_y(node.config.justify.y)
 	if !ok do return 0
 
+	text_input := node.config.accepts_text_input
+	if !text_input && !length_is_definite(node.config.height) do return 0
+
 	inset_h := layout_text_vertical_insets(node)
 	content_h := max(0, node.rect.h - inset_h)
+	size := line_height
 
-	return justify_align_position_offset(content_h, line_height, align_y)
+	if text_input {
+		size = layout_text_em_height(node, line_height)
+	}
+
+	if text_input && align_y == .CENTER {
+		return (content_h - size) * 0.5
+	}
+
+	return justify_align_position_offset(content_h, size, align_y)
 }
 
 /*
@@ -1043,16 +1077,17 @@ layout_glyph_paint_quad :: proc(
 	glyph_x := pen_x + glyph.x_offset * scale
 	glyph_y := baseline_y + glyph.y_offset * scale - bearing_y * scale
 	return Layout_Glyph_Paint {
-		face_id   = face_id,
-		glyph_id  = glyph.glyph_id,
-		dst = {
-			x = snap_logical(glyph_x + bearing_x * scale),
-			y = snap_logical(glyph_y),
-			w = w * scale,
-			h = h * scale,
+			face_id = face_id,
+			glyph_id = glyph.glyph_id,
+			dst = {
+				x = snap_logical(glyph_x + bearing_x * scale),
+				y = snap_logical(glyph_y),
+				w = w * scale,
+				h = h * scale,
+			},
+			run_index = run_index,
 		},
-		run_index = run_index,
-	}, true
+		true
 }
 
 /*
@@ -1194,14 +1229,8 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 			if len(sub) == 0 do continue
 
 			scale := node.text.layout_scale
-			seg_line, seg_face, resolved_font, seg_scale, shape_ok := layout_rich_text_shape_segment(
-				text,
-				seg_start,
-				seg_end,
-				run,
-				config,
-				scale,
-			)
+			seg_line, seg_face, resolved_font, seg_scale, shape_ok :=
+				layout_rich_text_shape_segment(text, seg_start, seg_end, run, config, scale)
 
 			if !shape_ok do continue
 
@@ -1441,8 +1470,14 @@ layout_text_append_decoration_stroke :: proc(
 		append(strokes, Layout_Decoration_Stroke{{x0, y}, {x1, y}, thickness, color})
 	case .DOUBLE:
 		gap := thickness * 1.5
-		append(strokes, Layout_Decoration_Stroke{{x0, y - gap * 0.5}, {x1, y - gap * 0.5}, thickness, color})
-		append(strokes, Layout_Decoration_Stroke{{x0, y + gap * 0.5}, {x1, y + gap * 0.5}, thickness, color})
+		append(
+			strokes,
+			Layout_Decoration_Stroke{{x0, y - gap * 0.5}, {x1, y - gap * 0.5}, thickness, color},
+		)
+		append(
+			strokes,
+			Layout_Decoration_Stroke{{x0, y + gap * 0.5}, {x1, y + gap * 0.5}, thickness, color},
+		)
 	case .DOTTED:
 		dot := max(thickness, 1)
 		gap := dot
@@ -1607,23 +1642,48 @@ layout_rich_text_position_decorations :: proc(node: ^Layout_Node) {
 			style := segment.text_decoration_style
 			deco_color := base_deco_color
 
-			if color, color_ok := colors_as_concrete_rgba(segment.text_decoration_color); color_ok {
+			if color, color_ok := colors_as_concrete_rgba(segment.text_decoration_color);
+			   color_ok {
 				deco_color = color
 			}
 
 			if .UNDERLINE in lines {
 				y := baseline_y - underline_pos_scaled
-				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+				layout_text_append_decoration_stroke(
+					&strokes,
+					x0,
+					x1,
+					y,
+					thickness,
+					style,
+					deco_color,
+				)
 			}
 
 			if .LINE_THROUGH in lines {
 				y := baseline_y - line_through_offset
-				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+				layout_text_append_decoration_stroke(
+					&strokes,
+					x0,
+					x1,
+					y,
+					thickness,
+					style,
+					deco_color,
+				)
 			}
 
 			if .OVERLINE in lines {
 				y := pos.y + thickness * 0.5
-				layout_text_append_decoration_stroke(&strokes, x0, x1, y, thickness, style, deco_color)
+				layout_text_append_decoration_stroke(
+					&strokes,
+					x0,
+					x1,
+					y,
+					thickness,
+					style,
+					deco_color,
+				)
 			}
 
 			pen_x += seg_w
@@ -1648,7 +1708,11 @@ layout_finalize_text_node :: proc(node: ^Layout_Node) {
 
 	if !length_is_definite(node.config.height) && node.text.size.y > 0 {
 		inset_h := layout_text_vertical_insets(node)
-		node.rect.h = layout_clamp_axis(node.text.size.y + inset_h, node.config.min_h, node.config.max_h)
+		node.rect.h = layout_clamp_axis(
+			node.text.size.y + inset_h,
+			node.config.min_h,
+			node.config.max_h,
+		)
 	}
 
 	layout_text_position_lines(node)
@@ -1666,7 +1730,13 @@ layout_set_image :: proc(
 	fit: Texture_Fit,
 	pos: Resolved_Texture_Pos,
 ) {
-	node.image_input = {src = src, dst = dst, fit = fit, pos = pos, active = true}
+	node.image_input = {
+		src    = src,
+		dst    = dst,
+		fit    = fit,
+		pos    = pos,
+		active = true,
+	}
 	node.image = {}
 }
 
@@ -1841,6 +1911,10 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 	gap_main := layout_config_gap_main(node.config, info.is_horizontal)
 	gap_cross := layout_config_gap_cross(node.config, info.is_horizontal)
 
+	if node.kind == .GRID && len(node.child_indices) > 0 {
+		return layout_grid_measure(node)
+	}
+
 	if len(node.child_indices) > 0 {
 		if info.is_wrap {
 			return layout_wrap_measure(node, info.is_horizontal, gap_main, gap_cross)
@@ -1982,11 +2056,11 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 		config         = style,
 		direction_info = layout_direction_info(layout_config_direction(style)),
 		padding        = padding,
-		border        = border,
-		parent        = parent_index,
-		child_indices = make([dynamic]int, layout_frame_allocator()),
-		in_flex_flow  = layout_position_in_flex_flow(style.position),
-		space         = space,
+		border         = border,
+		parent         = parent_index,
+		child_indices  = make([dynamic]int, layout_frame_allocator()),
+		in_flex_flow   = layout_position_in_flex_flow(style.position),
+		space          = space,
 	}
 	append(&state.ui.layout.nodes, node)
 
@@ -3069,6 +3143,11 @@ Positions children in a non-wrap flex container.
 layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	if len(node.child_indices) == 0 do return
 
+	if node.kind == .GRID {
+		layout_grid_position_children(node, content)
+		return
+	}
+
 	if node.kind == .TABLE {
 		layout_table_prepare(layout_node_index(node))
 	}
@@ -3177,7 +3256,12 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 			size := child_sizes[idx]
 			append(&main_sizes, is_horizontal ? size.x : size.y)
 		}
-		main_positions = layout_space_positions(main_align, main_available, main_sizes[:], gap_main)
+		main_positions = layout_space_positions(
+			main_align,
+			main_available,
+			main_sizes[:],
+			gap_main,
+		)
 	}
 
 	cross_positions: [dynamic]f32
@@ -3354,21 +3438,12 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 /*
 Registers a floating node to be placed below an anchor after layout solve.
 */
-layout_anchor_below :: proc(
-	anchor_id, floating_id: UI_Id,
-	gap: f32,
-	match_width := true,
-) {
+layout_anchor_below :: proc(anchor_id, floating_id: UI_Id, gap: f32, match_width := true) {
 	if state == nil || state.ui.pass != .Layout do return
 
 	append(
 		&state.ui.layout.anchors_below,
-		{
-			anchor_id = anchor_id,
-			floating_id = floating_id,
-			gap = gap,
-			match_width = match_width,
-		},
+		{anchor_id = anchor_id, floating_id = floating_id, gap = gap, match_width = match_width},
 	)
 }
 
@@ -3510,11 +3585,7 @@ layout_constrain_visible_items :: proc(
 		if item_height <= 0 do return
 
 		node.desired.y += f32(max_items - item_count) * item_height
-		node.desired.y = layout_clamp_axis(
-			node.desired.y,
-			node.config.min_h,
-			node.config.max_h,
-		)
+		node.desired.y = layout_clamp_axis(node.desired.y, node.config.min_h, node.config.max_h)
 
 		return
 	}
@@ -3581,8 +3652,9 @@ layout_resolve_anchors :: proc() {
 		available_below := max(0, bottom - below_y)
 		available_above := max(0, above_bottom - top)
 		preferred_h := rect.h
-		place_below := preferred_h <= available_below ||
-		               (preferred_h > available_above && available_below >= available_above)
+		place_below :=
+			preferred_h <= available_below ||
+			(preferred_h > available_above && available_below >= available_above)
 		available := place_below ? available_below : available_above
 
 		rect.h = min(preferred_h, available)

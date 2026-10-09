@@ -1,0 +1,241 @@
+package oni_widgets
+
+import o ".."
+
+Grid_Config :: o.Widget_Config
+
+Grid_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
+
+Grid_Event :: o.Widget_Event(Grid_State)
+
+Grid_Props :: struct {
+	config:                       Grid_Config,
+	child:                        proc(frame_state: Grid_State),
+	unmount:                      bool,
+	can_interactive_during_mount: bool,
+	on_mount:                     proc(frame_state: Grid_State) -> o.Mount,
+	on_unmount:                   proc(frame_state: Grid_State) -> o.Mount,
+	on_scroll:                    proc(scroll_x, scroll_y: f32),
+	scroll_bar:                   Scroll_Bar_Style,
+	on_focus:                     proc(event: Grid_Event),
+	on_blur:                      proc(event: Grid_Event),
+	on_mouse_enter:               proc(event: Grid_Event),
+	on_mouse_leave:               proc(event: Grid_Event),
+	on_mouse_pressed:             proc(event: Grid_Event),
+	on_mouse_down:                proc(event: Grid_Event),
+	on_mouse_released:            proc(event: Grid_Event),
+	on_mouse_move:                proc(event: Grid_Event),
+	on_click:                     proc(event: Grid_Event),
+	on_contextmenu:               proc(event: Grid_Event),
+	on_key_pressed:               proc(event: Grid_Event),
+	on_key_down:                  proc(event: Grid_Event),
+	on_key_released:              proc(event: Grid_Event),
+}
+
+grid_theme_base :: proc(frame_state: ^Grid_State) -> Grid_Config {
+	return Grid_Config{kind = .GRID}
+}
+
+/*
+CSS grid container: children use grid placement fields on their own config.
+
+Flex layout is unchanged; only nodes with kind `.GRID` run the grid track solver.
+*/
+Grid :: proc(props: Grid_Props) {
+	cfg := props.config
+	key := o.element_key(cfg.id)
+
+	was_focused := widget_is_focused(key)
+
+	frame_state := Grid_State {
+		is_disabled = o.cfg_style_bool(cfg.disabled),
+		is_focused  = was_focused,
+	}
+
+	event := widget_refresh_merged(props, &frame_state, grid_theme_base)
+	style_fp := widget_style_interaction_fp(&frame_state)
+	config := frame_state.config
+	child := props.child
+	handlers := widget_lifecycle_handlers(props, Grid_State)
+	should_auto_focus := widget_should_auto_focus(config, key)
+
+	layout_label := cfg.id != "" ? cfg.id : key
+	layout_id := o.ui_id(layout_label)
+	layout_rect := o.ui_layout_rect(layout_id)
+	rect := layout_rect
+
+	if o.ui_pass() == .Layout {
+		skip_layout, ran_unmount := widget_run_layout_lifecycle(
+			handlers,
+			layout_id,
+			cfg.id != "",
+			&frame_state,
+			config.visibility,
+		)
+
+		if ran_unmount {
+			event = widget_refresh_merged(props, &frame_state, grid_theme_base)
+			config = frame_state.config
+			should_auto_focus = widget_should_auto_focus(config, key)
+		}
+
+		if !skip_layout {
+			can_interact := widget_can_interact(handlers, &frame_state)
+			if can_interact && should_auto_focus {
+				widget_apply_auto_focus(key, true)
+				frame_state.is_focused = true
+			}
+			widget_register_tab_order(key, config.tabbable, can_interact)
+			widget_children(
+				child,
+				layout_id,
+				config,
+				frame_state,
+				key,
+				props.config,
+				props.on_scroll,
+				props.scroll_bar,
+				frame_state.is_hovered,
+			)
+		}
+
+		return
+	}
+
+	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return
+
+	frame_state.is_focused = widget_is_focused(key)
+
+	widget_handle_interaction(
+		props,
+		&frame_state,
+		handlers,
+		key,
+		was_focused,
+		config.tabbable,
+		layout_id,
+		rect,
+		config,
+	)
+	widget_handle_scroll_wheel(
+		layout_id,
+		config,
+		frame_state.is_hovered,
+		key,
+		props.on_scroll,
+	)
+	scroll := o.widget_scroll_get(key)
+	config.scroll_x = scroll.x
+	config.scroll_y = scroll.y
+	frame_state.config = config
+
+	event, _ = widget_refresh_merged_if_interaction_changed(
+		props,
+		&frame_state,
+		grid_theme_base,
+		style_fp,
+	)
+	config = frame_state.config
+
+	if widget_can_interact(handlers, &frame_state) {
+		if widget_got_tab_focus(key) && props.on_focus != nil {
+			props.on_focus(event)
+		}
+
+		if widget_lost_tab_focus(key) && props.on_blur != nil {
+			props.on_blur(event)
+		}
+	}
+
+	if should_auto_focus &&
+	   !was_focused &&
+	   props.on_focus != nil &&
+	   widget_can_interact(handlers, &frame_state) {
+		props.on_focus(event)
+	}
+
+	draw_widget_grid(
+		{
+			frame_state = &frame_state,
+			event = event,
+			rect = rect,
+			child = child,
+			layout_id = layout_id,
+			element_id = key,
+			author = props.config,
+			on_scroll = props.on_scroll,
+			scroll_bar = props.scroll_bar,
+		},
+	)
+
+	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
+}
+
+@(private)
+Draw_Widget_Grid :: struct {
+	frame_state: ^Grid_State,
+	event:       Grid_Event,
+	rect:        o.Rect,
+	child:       proc(frame_state: Grid_State),
+	layout_id:   o.UI_Id,
+	element_id:  string,
+	author:      o.Widget_Config,
+	on_scroll:   proc(scroll_x, scroll_y: f32),
+	scroll_bar:  Scroll_Bar_Style,
+}
+
+@(private)
+draw_widget_grid :: proc(props: Draw_Widget_Grid) {
+	child := props.child
+	event := props.event
+	frame_state := props.frame_state
+	layout_id := props.layout_id
+	rect := props.rect
+
+	config := frame_state.config
+
+	background: o.RGBA
+	if resolved_background, background_ok := o.style_background_rgba(config, frame_state, event);
+	   background_ok {
+		background = resolved_background
+	}
+
+	border: o.Bd_px
+	if resolved_border, border_ok := o.resolve_border(config.border, frame_state, event);
+	   border_ok {
+		border = resolved_border
+	}
+
+	border_color: o.RGBA
+	if resolved_border_color, border_color_ok := o.style_border_color_rgba(
+		config,
+		frame_state,
+		event,
+	); border_color_ok {
+		border_color = resolved_border_color
+	}
+
+	radius: o.Radius_px
+	if resolved_radius, ok := o.resolve_radius(config.radius, frame_state, event); ok {
+		radius = resolved_radius
+	}
+
+	o.Draw_Push_Opacity(config.opacity)
+	defer o.Draw_Pop_Opacity()
+
+	widget_draw_box_background(layout_id, rect, background, radius)
+
+	widget_children(
+		child,
+		layout_id,
+		config,
+		frame_state^,
+		props.element_id,
+		props.author,
+		props.on_scroll,
+		props.scroll_bar,
+		frame_state.is_hovered,
+	)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
+}

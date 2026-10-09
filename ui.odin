@@ -72,6 +72,7 @@ ui_shutdown :: proc() {
 	}
 	scroll_shutdown()
 	slider_shutdown()
+	color_picker_shutdown()
 	shortcut_shutdown()
 	widget_ctx_shutdown()
 	input_shutdown()
@@ -119,8 +120,7 @@ ui_begin_frame :: proc() {
 	w_ctx.label_focus_id = {}
 	// Label activation may be set late in the prior draw pass (control before
 	// label). Keep it for one extra frame so the target can consume it.
-	if w_ctx.label_activate_id != "" &&
-	   w_ctx.label_activate_frame + 1 < state.ui.frame {
+	if w_ctx.label_activate_id != "" && w_ctx.label_activate_frame + 1 < state.ui.frame {
 		w_ctx.label_activate_id = {}
 		w_ctx.label_activate_frame = 0
 	}

@@ -164,6 +164,8 @@ Call when tearing down the widget layer or shutting down the application.
 Shutdown :: proc() {
 	select_shutdown()
 	radio_shutdown()
+	color_picker_shutdown()
+	calendar_shutdown()
 	o.widget_ctx_shutdown()
 }
 
