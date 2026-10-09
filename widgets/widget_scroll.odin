@@ -326,7 +326,7 @@ widget_children :: proc(
 			hovered = hovered,
 			on_scroll = on_scroll,
 			user_fn = invoke,
-			user_data = &binder,
+			user_data = rawptr(&binder),
 		},
 	)
 	defer widget_scroll_pop()

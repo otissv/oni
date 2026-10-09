@@ -602,9 +602,17 @@ Call before upload or flush when recording is complete.
 */
 batch_finalize_segments :: proc() {
 	if batch_current().has_current_key && len(batch_current().segments) > 0 {
-		seg := batch_current().segments[len(batch_current().segments) - 1]
+		last_index := 0
+
+		for segment, index in batch_current().segments {
+			if segment.first_index > batch_current().segments[last_index].first_index {
+				last_index = index
+			}
+		}
+
+		seg := batch_current().segments[last_index]
 		seg.index_count = u32(len(batch_current().indices)) - seg.first_index
-		batch_current().segments[len(batch_current().segments) - 1] = seg
+		batch_current().segments[last_index] = seg
 	}
 
 	segs := batch_current().segments[:]

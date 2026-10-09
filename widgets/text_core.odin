@@ -28,12 +28,25 @@ text_widget_apply_for_id_focus :: proc(
 		return
 	}
 
-	if !frame_state.is_left_clicked || o.w_ctx.pointer_propagation_stopped {
+	if o.w_ctx.pointer_propagation_stopped {
 
 		return
 	}
 
-	if widget_focus_for_id(for_id) {
+	// Focus on press, matching typical label → control focus transfer.
+	if frame_state.is_left_clicked {
+		if widget_focus_for_id(for_id) {
+			frame_state.is_focused = widget_is_focused(key)
+		}
+	}
+
+	// Activate on completed click (press+release on this label), matching HTML
+	// `<label for>`. Peek pointer-down before widget_dispatch_events consumes it.
+	if frame_state.is_hovered &&
+	   o.w_ctx.left_mouse.released &&
+	   o.w_ctx.element_pointer_down[key] {
+		widget_focus_for_id(for_id)
+		widget_request_label_activate(for_id)
 		frame_state.is_focused = widget_is_focused(key)
 	}
 }

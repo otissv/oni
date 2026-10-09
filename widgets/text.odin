@@ -6,6 +6,10 @@ import set "../set"
 
 /*
 Text widget configuration extending Widget_Config with display text.
+
+`for_id` mirrors HTML `<label for>`: a pointer press focuses the named widget,
+and a completed click synthesizes a click on it (so checkboxes toggle, buttons
+activate, inputs focus).
 */
 Text_Config :: struct {
 	using _:    o.Widget_Config,

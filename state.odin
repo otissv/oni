@@ -30,6 +30,18 @@ Scroll_Bar_Drag :: struct {
 }
 
 /*
+Slider thumb-drag latch kept across frames while the pointer is held.
+
+`thumb_index` also records which thumb keyboard navigation should move when the
+slider is focused and not actively dragging.
+*/
+Slider_Drag :: struct {
+	active:      bool,
+	thumb_index: int,
+	grab_offset: f32,
+}
+
+/*
 Per-frame UI bookkeeping: pass, scope/style stacks, widgets, and layout.
 */
 UI_State :: struct {
@@ -44,6 +56,8 @@ UI_State :: struct {
 	label_crc:           map[string]u32,
 	scrollports:         map[UI_Id]Scrollport_Metrics,
 	scroll_bar_drags:    map[UI_Id]Scroll_Bar_Drag,
+	slider_drags:        map[UI_Id]Slider_Drag,
+	slider_root_rects:   map[UI_Id]Rect,
 }
 
 /*

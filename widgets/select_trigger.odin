@@ -60,6 +60,8 @@ select_trigger_theme_base :: proc(frame_state: ^Select_Trigger_State) -> Select_
 		border_color = set.Border_color(o.Color.BORDER),
 		radius = set.Radius(f32(6)),
 		background = set.Background(o.Color.BACKGROUND),
+		overflow_x = set.Overflow_X(.HIDDEN),
+		overflow_y = set.Overflow_Y(.HIDDEN),
 		line_height = set.F32(1),
 	}
 }
@@ -102,6 +104,8 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
+		select_set_trigger(key, layout_id, {})
+
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -145,7 +149,7 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
-	select_set_trigger(key, rect)
+	select_set_trigger(key, layout_id, rect)
 
 	widget_handle_interaction(
 		props_with_toggle,
@@ -231,9 +235,7 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
 		child,
@@ -246,6 +248,8 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 		props.scroll_bar,
 		frame_state.is_hovered,
 	)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
 	widget_dispatch_events(props_with_toggle, &frame_state, handlers, event, key, was_focused)
 }

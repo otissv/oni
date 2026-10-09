@@ -45,6 +45,10 @@ with_batch_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
 
+	if !test_require_gpu_device_unlocked() {
+		return
+	}
+
 	if !sdl.Init({.VIDEO}) {
 		testing.expectf(t, false, "SDL_Init failed: %s", sdl.GetError())
 		return
@@ -434,6 +438,35 @@ batch_finalize_segments_sorts_by_stack_index :: proc(t: ^testing.T) {
 			testing.expect_value(t, batch_current().segments[0].key.stack_index, u32(1))
 			testing.expect_value(t, batch_current().segments[1].key.stack_index, u32(5))
 			testing.expect_value(t, batch_current().segments[2].key.stack_index, u32(9))
+		},
+	)
+}
+
+@(test)
+batch_finalize_segments_is_idempotent_after_sort :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_set_stack_index(9)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(0)
+
+			batch_set_stack_index(1)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(4)
+
+			batch_set_stack_index(5)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(8)
+
+			batch_finalize_segments()
+			batch_finalize_segments()
+
+			testing.expect_value(t, len(batch_current().segments), 3)
+
+			for segment in batch_current().segments {
+				testing.expect_value(t, segment.index_count, u32(6))
+			}
 		},
 	)
 }

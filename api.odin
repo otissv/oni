@@ -167,6 +167,8 @@ Shortcut_Load_Bindings_Ex :: shortcut_load_bindings_ex
 Shortcut_Process :: shortcut_process
 Clipboard_Get_Text :: clipboard_get_text
 Clipboard_Set_Text :: clipboard_set_text
+Open_URL :: open_url
+URL_Is_Openable :: url_is_openable
 Input_Take_Text_Input :: input_take_text_input
 Input_Ime_Preview :: input_ime_preview
 Input_Ime_Active :: input_ime_active
@@ -194,6 +196,16 @@ Layout_Hit_Skip :: ui_layout_hit_skip
 Layout_Clip_Rect :: ui_layout_clip_rect
 Scrollport_Metrics_Get :: ui_scrollport_metrics
 Layout_Apply_Scroll_Delta :: layout_apply_scroll_delta
+Slider_Snap :: slider_snap
+Slider_Normalize_Values :: slider_normalize_values
+Slider_Set_Thumb_Value :: slider_set_thumb_value
+Slider_Drag_Get :: slider_drag_get
+Slider_Drag_Entry :: slider_drag_entry
+Slider_Drag_End :: slider_drag_end
+Slider_Drag_Clear :: slider_drag_clear
+Slider_Root_Rect_Store :: slider_root_rect_store
+Slider_Root_Rect_Get :: slider_root_rect_get
+Slider_Root_Rect_Clear :: slider_root_rect_clear
 Draw_Push_Clip :: draw_push_clip
 Draw_Pop_Clip :: draw_pop_clip
 Draw_Push_Layout_Clip :: draw_push_layout_clip

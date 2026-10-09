@@ -15,7 +15,16 @@ SELECT_OPTIONS_MAX :: 256
 SELECT_VALUES_MAX :: 64
 
 @(private)
-SELECT_OPTION_ROW_PX :: f32(32)
+SELECT_DROPDOWN_MAX_VISIBLE_ROWS :: 20
+
+@(private)
+SELECT_DROPDOWN_GAP_PX :: f32(4)
+
+@(private)
+SELECT_DROPDOWN_VIEWPORT_MARGIN_PX :: f32(8)
+
+@(private)
+SELECT_OPTION_FALLBACK_ROW_PX :: f32(32)
 
 /*
 Per-option registration collected while a Select content tree runs.
@@ -47,39 +56,40 @@ Live compound context pushed by `Select` for Trigger / Value / Option parts.
 */
 @(private)
 Select_Ctx :: struct {
-	select_key:           string,
-	value:                string,
-	value_label:          string,
-	values:               [SELECT_VALUES_MAX]string,
-	value_labels:         [SELECT_VALUES_MAX]string,
-	value_count:          int,
-	open:                 bool,
-	disabled:             bool,
-	required:             bool,
-	multiple:             bool,
-	size:                 u8,
-	autocomplete:         string,
-	listbox:              bool,
-	name:                 string,
-	on_value_change:      proc(value: string),
-	on_values_change:     proc(values: []string),
-	on_open_change:       proc(open: bool),
-	options:              [SELECT_OPTIONS_MAX]Select_Option_Entry,
-	option_count:         int,
-	highlight:            int,
-	trigger_key:          string,
-	trigger_rect:         o.Rect,
-	has_trigger:          bool,
-	pointer_owned:        bool,
-	value_controlled:     bool,
-	open_controlled:      bool,
-	user_child:           proc(frame_state: Select_State),
-	user_content:         proc(frame_state: Select_State),
-	content_frame:        Select_State,
-	trigger_user_click:   proc(event: Select_Trigger_Event),
-	value_child:          proc(frame_state: Select_Value_State),
-	option_child:         proc(frame_state: Option_State),
-	option_user_click:    proc(event: Option_Event),
+	select_key:         string,
+	value:              string,
+	value_label:        string,
+	values:             [SELECT_VALUES_MAX]string,
+	value_labels:       [SELECT_VALUES_MAX]string,
+	value_count:        int,
+	open:               bool,
+	disabled:           bool,
+	required:           bool,
+	multiple:           bool,
+	size:               u8,
+	autocomplete:       string,
+	listbox:            bool,
+	name:               string,
+	on_value_change:    proc(value: string),
+	on_values_change:   proc(values: []string),
+	on_open_change:     proc(open: bool),
+	options:            [SELECT_OPTIONS_MAX]Select_Option_Entry,
+	option_count:       int,
+	highlight:          int,
+	trigger_key:        string,
+	trigger_layout_id:  o.UI_Id,
+	trigger_rect:       o.Rect,
+	has_trigger:        bool,
+	pointer_owned:      bool,
+	value_controlled:   bool,
+	open_controlled:    bool,
+	user_child:         proc(frame_state: Select_State),
+	user_content:       proc(frame_state: Select_State),
+	content_frame:      Select_State,
+	trigger_user_click: proc(event: Select_Trigger_Event),
+	value_child:        proc(frame_state: Select_Value_State),
+	option_child:       proc(frame_state: Option_State),
+	option_user_click:  proc(event: Option_Event),
 }
 
 @(private)
@@ -142,7 +152,7 @@ select_runtime_ensure :: proc(key: string) -> ^Select_Runtime {
 	}
 
 	if _, ok := select_runtimes[key]; !ok {
-		select_runtimes[strings.clone(key)] = {}
+		select_runtimes[strings.clone(key)] = {highlight = -1}
 	}
 
 	return &select_runtimes[key]
@@ -152,11 +162,13 @@ select_runtime_ensure :: proc(key: string) -> ^Select_Runtime {
 select_runtime_set_string :: proc(dst: ^string, value: string) {
 	if dst^ == value do return
 
+	replacement := value != "" ? strings.clone(value) : ""
+
 	if dst^ != "" {
 		delete(dst^)
 	}
 
-	dst^ = value != "" ? strings.clone(value) : ""
+	dst^ = replacement
 }
 
 @(private)
@@ -268,20 +280,18 @@ select_note_pointer :: proc() {
 }
 
 @(private)
-select_set_trigger :: proc(key: string, rect: o.Rect) {
+select_set_trigger :: proc(key: string, layout_id: o.UI_Id, rect: o.Rect) {
 	if !select_ctx_ok() do return
 
 	ctx := select_ctx_top()
 	ctx.trigger_key = key
+	ctx.trigger_layout_id = layout_id
 	ctx.trigger_rect = rect
 	ctx.has_trigger = true
 }
 
 @(private)
-select_register_option :: proc(
-	value, text, element_id: string,
-	disabled: bool,
-) -> int {
+select_register_option :: proc(value, text, element_id: string, disabled: bool) -> int {
 	if !select_ctx_ok() do return -1
 
 	ctx := select_ctx_top()
@@ -326,6 +336,7 @@ select_cache_value_label :: proc(ctx: ^Select_Ctx, text: string) {
 
 	if rt == nil do return
 
+	select_runtime_set_string(&rt.value, ctx.value)
 	select_runtime_set_string(&rt.value_label, text)
 }
 
@@ -379,7 +390,7 @@ select_resolve_value_label :: proc(ctx: ^Select_Ctx) -> string {
 
 	rt := select_runtime_ensure(ctx.select_key)
 
-	if rt != nil && rt.value_label != "" {
+	if rt != nil && rt.value == ctx.value && rt.value_label != "" {
 		return rt.value_label
 	}
 
@@ -398,9 +409,11 @@ select_copy_values_into_ctx :: proc(ctx: ^Select_Ctx, values: []string) {
 	ctx.value_count = 0
 
 	for v in values {
+		if v == "" || select_ctx_has_value(ctx, v) do continue
+
 		if ctx.value_count >= SELECT_VALUES_MAX do break
 
-		ctx.values[ctx.value_count] = v
+		ctx.values[ctx.value_count] = strings.clone(v, context.temp_allocator)
 		ctx.value_labels[ctx.value_count] = ""
 		ctx.value_count += 1
 	}
@@ -415,14 +428,14 @@ select_load_runtime_values :: proc(ctx: ^Select_Ctx, rt: ^Select_Runtime) {
 	for i in 0 ..< len(rt.values) {
 		if ctx.value_count >= SELECT_VALUES_MAX do break
 
-		ctx.values[ctx.value_count] = rt.values[i]
+		ctx.values[ctx.value_count] = strings.clone(rt.values[i], context.temp_allocator)
 		lab := ""
 
 		if i < len(rt.value_labels) {
 			lab = rt.value_labels[i]
 		}
 
-		ctx.value_labels[ctx.value_count] = lab
+		ctx.value_labels[ctx.value_count] = strings.clone(lab, context.temp_allocator)
 		ctx.value_count += 1
 	}
 }
@@ -434,7 +447,9 @@ select_notify_values_change :: proc(ctx: ^Select_Ctx) {
 	out := make([]string, ctx.value_count, context.temp_allocator)
 
 	for i in 0 ..< ctx.value_count {
-		out[i] = ctx.values[i]
+		// A controlled callback may release or replace its source values before
+		// it reads this snapshot, so the callback must not alias those strings.
+		out[i] = strings.clone(ctx.values[i], context.temp_allocator)
 	}
 
 	ctx.on_values_change(out)
@@ -442,6 +457,34 @@ select_notify_values_change :: proc(ctx: ^Select_Ctx) {
 
 @(private)
 select_runtime_replace_values :: proc(rt: ^Select_Runtime, values, labels: []string) {
+	replacement_values := make([dynamic]string, 0, len(values))
+	replacement_labels := make([dynamic]string, 0, len(values))
+
+	for value, i in values {
+		if value == "" do continue
+
+		duplicate := false
+
+		for existing in replacement_values {
+			if existing == value {
+				duplicate = true
+
+				break
+			}
+		}
+
+		if duplicate do continue
+
+		append(&replacement_values, strings.clone(value))
+		label := value
+
+		if i < len(labels) && labels[i] != "" {
+			label = labels[i]
+		}
+
+		append(&replacement_labels, strings.clone(label))
+	}
+
 	for v in rt.values {
 		if v != "" {
 			delete(v)
@@ -454,23 +497,10 @@ select_runtime_replace_values :: proc(rt: ^Select_Runtime, values, labels: []str
 		}
 	}
 
-	clear(&rt.values)
-	clear(&rt.value_labels)
-
-	for i in 0 ..< len(values) {
-		append(&rt.values, strings.clone(values[i]))
-		lab := ""
-
-		if i < len(labels) {
-			lab = labels[i]
-		}
-
-		if lab == "" {
-			lab = values[i]
-		}
-
-		append(&rt.value_labels, strings.clone(lab))
-	}
+	delete(rt.values)
+	delete(rt.value_labels)
+	rt.values = replacement_values
+	rt.value_labels = replacement_labels
 
 	rt.value_set = true
 }
@@ -544,12 +574,13 @@ select_set_value :: proc(value, text: string) {
 		label = value
 	}
 
-	ctx.value = value
-	select_cache_value_label(ctx, label)
+	ctx.value = strings.clone(value, context.temp_allocator)
+	ctx.value_label = strings.clone(label, context.temp_allocator)
+	select_cache_value_label(ctx, ctx.value_label)
 
 	if ctx.value_controlled {
 		if ctx.on_value_change != nil {
-			ctx.on_value_change(value)
+			ctx.on_value_change(ctx.value)
 		}
 	} else {
 		rt := select_runtime_ensure(ctx.select_key)
@@ -601,10 +632,14 @@ select_toggle_value :: proc(value, text: string) {
 		}
 
 		ctx.value_count -= 1
+		ctx.values[ctx.value_count] = ""
+		ctx.value_labels[ctx.value_count] = ""
 	} else if ctx.value_count < SELECT_VALUES_MAX {
-		ctx.values[ctx.value_count] = value
-		ctx.value_labels[ctx.value_count] = label
+		ctx.values[ctx.value_count] = strings.clone(value, context.temp_allocator)
+		ctx.value_labels[ctx.value_count] = strings.clone(label, context.temp_allocator)
 		ctx.value_count += 1
+	} else {
+		return
 	}
 
 	if ctx.value_controlled {
@@ -753,9 +788,10 @@ select_handle_typing_keys :: proc() {
 }
 
 @(private)
-select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool, rows: u8) -> o.Widget_Config {
-	height := f32(rows) * SELECT_OPTION_ROW_PX + 8
-
+select_content_theme_config :: proc(
+	trigger_rect: o.Rect,
+	listbox: bool,
+) -> o.Widget_Config {
 	if listbox {
 		return o.Widget_Config {
 			kind = .RECT,
@@ -763,7 +799,6 @@ select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool, rows: u
 			gap_y = set.Gap_Y(u16(2)),
 			padding = set.Padding(f32(4)),
 			width = set.Width(max(trigger_rect.w, f32(240))),
-			height = set.Height(height),
 			overflow_y = set.Overflow_Y(.SCROLL),
 			background = set.Background(o.Color.BACKGROUND),
 			border = set.Border(f32(1)),
@@ -777,9 +812,8 @@ select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool, rows: u
 		space = set.Space(.POPOVER),
 		position = set.Position(.ABSOLUTE),
 		x = set.F32(trigger_rect.x),
-		y = set.F32(trigger_rect.y + trigger_rect.h + 4),
+		y = set.F32(trigger_rect.y + trigger_rect.h + SELECT_DROPDOWN_GAP_PX),
 		width = set.Width(max(trigger_rect.w, f32(120))),
-		height = set.Height(height),
 		overflow_y = set.Overflow_Y(.SCROLL),
 		direction = set.Direction(.VERTICAL),
 		gap_y = set.Gap_Y(u16(2)),
@@ -846,7 +880,7 @@ select_render_content :: proc(frame_state: Select_State) {
 	}
 
 	rows := select_visible_rows(ctx.multiple, ctx.size)
-	cfg := select_content_theme_config(trigger_rect, ctx.listbox, rows)
+	cfg := select_content_theme_config(trigger_rect, ctx.listbox)
 	content_id := ctx.select_key != "" ? fmt_select_content_id(ctx.select_key) : ""
 
 	if content_id != "" {
@@ -856,11 +890,23 @@ select_render_content :: proc(frame_state: Select_State) {
 	ctx.content_frame = frame_state
 
 	if ctx.listbox {
-		Rectangle({
-			config = cfg,
-			child = select_listbox_child,
-			on_mouse_enter = select_listbox_mouse_enter,
-		})
+		Rectangle(
+			{
+				config = cfg,
+				child = select_listbox_child,
+				on_mouse_enter = select_listbox_mouse_enter,
+			},
+		)
+
+		if o.ui_pass() == .Layout {
+			o.layout_constrain_visible_items(
+				o.ui_id(content_id),
+				.OPTION,
+				int(rows),
+				true,
+				SELECT_OPTION_FALLBACK_ROW_PX,
+			)
+		}
 
 		if o.ui_pass() == .Draw {
 			content_layout_id := o.ui_id(content_id != "" ? content_id : o.element_key(cfg.id))
@@ -874,11 +920,24 @@ select_render_content :: proc(frame_state: Select_State) {
 		return
 	}
 
-	Popover({
-		config = cfg,
-		child = select_popover_child,
-		on_mouse_enter = select_popover_mouse_enter,
-	})
+	Popover(
+		{config = cfg, child = select_popover_child, on_mouse_enter = select_popover_mouse_enter},
+	)
+
+	if o.ui_pass() == .Layout && ctx.trigger_key != "" {
+		content_layout_id := o.ui_id(content_id)
+		o.layout_constrain_visible_items(
+			content_layout_id,
+			.OPTION,
+			SELECT_DROPDOWN_MAX_VISIBLE_ROWS,
+		)
+		o.layout_anchor_popup(
+			ctx.trigger_layout_id,
+			content_layout_id,
+			SELECT_DROPDOWN_GAP_PX,
+			SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
+		)
+	}
 
 	if o.ui_pass() == .Draw {
 		content_layout_id := o.ui_id(content_id != "" ? content_id : o.element_key(cfg.id))

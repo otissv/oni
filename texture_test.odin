@@ -41,6 +41,10 @@ with_texture_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
 
+	if !test_require_gpu_device_unlocked() {
+		return
+	}
+
 	if !sdl.Init({.VIDEO}) {
 		testing.expectf(t, false, "SDL_Init failed: %s", sdl.GetError())
 		return
@@ -401,13 +405,14 @@ texture_get_gpu_and_handle_for_white_invalid_and_registered :: proc(t: ^testing.
 			testing.expect(t, texture_get_gpu(Asset_Id(0)) == &sentinel) // white id
 			testing.expect_value(t, texture_handle(Asset_Id(0)).id, TEXTURE_WHITE_ID)
 
-			fake_gpu: sdl.GPUTexture
+			fake_gpu := new(sdl.GPUTexture)
+			defer free(fake_gpu)
 			append(
 				&state.textures.records,
-				Texture_Record{gpu = &fake_gpu, w = 32, h = 48},
+				Texture_Record{gpu = fake_gpu, w = 32, h = 48},
 			)
 			id := Asset_Id(1)
-			testing.expect(t, texture_get_gpu(id) == &fake_gpu)
+			testing.expect(t, texture_get_gpu(id) == fake_gpu)
 			handle := texture_handle(id)
 			testing.expect_value(t, handle.id, id)
 			expect_close(t, handle.w, 32)

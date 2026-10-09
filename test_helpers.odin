@@ -1,7 +1,134 @@
 package oni
 
+import "core:log"
 import "core:sync"
 import "core:testing"
+import sdl "vendor:sdl3"
+
+@(private)
+Test_Backend_Status :: enum u8 {
+	Unknown,
+	Available,
+	Unavailable,
+}
+
+@(private)
+test_gpu_device_status: Test_Backend_Status
+
+@(private)
+test_gpu_window_status: Test_Backend_Status
+
+@(private)
+test_gpu_device_skip_logged: bool
+
+@(private)
+test_gpu_window_skip_logged: bool
+
+/*
+Shared GPU/window capability probes for tests that require a real SDL GPU backend.
+
+Callers must hold `test_global_state_guard` before invoking these helpers so the
+cached probe state and SDL init/quit sequence stay serialized across parallel tests.
+*/
+@(private)
+test_gpu_device_available_unlocked :: proc() -> bool {
+	if test_gpu_device_status != .Unknown {
+		return test_gpu_device_status == .Available
+	}
+
+	if !sdl.Init({.VIDEO}) {
+		test_gpu_device_status = .Unavailable
+		return false
+	}
+	defer sdl.Quit()
+
+	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	if gpu == nil {
+		test_gpu_device_status = .Unavailable
+		return false
+	}
+
+	sdl.DestroyGPUDevice(gpu)
+	test_gpu_device_status = .Available
+	return true
+}
+
+@(private)
+test_gpu_window_available_unlocked :: proc() -> bool {
+	if test_gpu_window_status != .Unknown {
+		return test_gpu_window_status == .Available
+	}
+
+	if test_gpu_device_status == .Unavailable {
+		test_gpu_window_status = .Unavailable
+		return false
+	}
+
+	if !sdl.Init({.VIDEO}) {
+		test_gpu_window_status = .Unavailable
+		test_gpu_device_status = .Unavailable
+		return false
+	}
+	defer sdl.Quit()
+
+	window := sdl.CreateWindow("oni test probe", 64, 64, sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY)
+	if window == nil {
+		test_gpu_window_status = .Unavailable
+		return false
+	}
+	defer sdl.DestroyWindow(window)
+
+	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	if gpu == nil {
+		test_gpu_window_status = .Unavailable
+		test_gpu_device_status = .Unavailable
+		return false
+	}
+	defer sdl.DestroyGPUDevice(gpu)
+	test_gpu_device_status = .Available
+
+	if !sdl.ClaimWindowForGPUDevice(gpu, window) {
+		test_gpu_window_status = .Unavailable
+		return false
+	}
+	defer sdl.ReleaseWindowFromGPUDevice(gpu, window)
+
+	if !sdl.SetGPUSwapchainParameters(gpu, window, .SDR, .VSYNC) {
+		test_gpu_window_status = .Unavailable
+		return false
+	}
+
+	test_gpu_window_status = .Available
+	return true
+}
+
+@(private)
+test_require_gpu_device_unlocked :: proc(loc := #caller_location) -> bool {
+	if test_gpu_device_available_unlocked() {
+		return true
+	}
+
+	if !test_gpu_device_skip_logged {
+		log.info("SKIP: GPU device tests require an SDL GPU backend on this machine", location = loc)
+		test_gpu_device_skip_logged = true
+	}
+
+	return false
+}
+
+@(private)
+test_require_gpu_window_unlocked :: proc(loc := #caller_location) -> bool {
+	if test_gpu_window_available_unlocked() {
+		return true
+	}
+
+	if !test_gpu_window_skip_logged {
+		log.info("SKIP: window + GPU tests require an SDL GPU backend on this machine", location = loc)
+		test_gpu_window_skip_logged = true
+	}
+
+	return false
+}
 
 /*
 Runs body with engine state, theme, and UI maps ready for style/widget/ui tests.

@@ -357,22 +357,12 @@ Image :: proc(props: Image_Props) {
 		tint = resolved_tint
 	}
 
-	has_chrome :=
-		background.a > 0 ||
-		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0) ||
-		radius.tl > 0 ||
-		radius.tr > 0 ||
-		radius.bl > 0 ||
-		radius.br > 0
-
 	paint := !o.ui_layout_paint_skip(layout_id)
 
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if paint && has_chrome {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	if paint {
 		if laid := o.layout_image_result(layout_id); laid != nil {
@@ -381,6 +371,8 @@ Image :: proc(props: Image_Props) {
 	}
 
 	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
 	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }

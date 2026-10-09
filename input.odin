@@ -112,7 +112,7 @@ input_sync_text_input_session :: proc(caret_screen_rect: Rect, cursor_x_offset: 
 
 		input_release_session_id()
 		input_session_active_id = widget_retain_key(focused)
-		input_session_active_id_owned = widget_key_is_owned(input_session_active_id)
+		input_session_active_id_owned = input_session_active_id != ""
 	} else if !active {
 		if len(input_session_active_id) > 0 || input_ime_active() {
 			input_clear_ime()

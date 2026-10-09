@@ -56,6 +56,10 @@ with_present_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
 
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
 	test_state: State
 	test_theme := present_test_theme()
 	saved_state := state
@@ -111,6 +115,7 @@ present_frame_noop_when_cannot_render :: proc(t: ^testing.T) {
 			state.gpu_state.pipeline = transmute(^sdl.GPUGraphicsPipeline)uintptr(1)
 			theme_local := present_test_theme()
 			theme = &theme_local
+			defer theme = nil
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 0)
@@ -132,6 +137,7 @@ present_frame_noop_when_window_nil :: proc(t: ^testing.T) {
 			state.gpu_state.pipeline = transmute(^sdl.GPUGraphicsPipeline)uintptr(1)
 			theme_local := present_test_theme()
 			theme = &theme_local
+			defer theme = nil
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 0)
@@ -152,6 +158,7 @@ present_frame_noop_when_gpu_nil :: proc(t: ^testing.T) {
 			state.gpu_state.pipeline = transmute(^sdl.GPUGraphicsPipeline)uintptr(1)
 			theme_local := present_test_theme()
 			theme = &theme_local
+			defer theme = nil
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 0)
@@ -172,6 +179,7 @@ present_frame_noop_when_pipeline_nil :: proc(t: ^testing.T) {
 			state.gpu_state.pipeline = nil
 			theme_local := present_test_theme()
 			theme = &theme_local
+			defer theme = nil
 			present_test_draw_calls = 0
 			present_frame(present_test_noop_draw)
 			testing.expect_value(t, present_test_draw_calls, 0)

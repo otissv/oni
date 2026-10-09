@@ -852,6 +852,10 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .RICH_TEXT_INPUT, true
 	case "button":
 		return .BUTTON, true
+	case "checkbox":
+		return .CHECKBOX, true
+	case "link":
+		return .LINK, true
 	case "table":
 		return .TABLE, true
 	case "select":
@@ -864,6 +868,12 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .OPTION_GROUP, true
 	case "option":
 		return .OPTION, true
+	case "radio-group":
+		return .RADIO_GROUP, true
+	case "radio":
+		return .RADIO, true
+	case "slider":
+		return .SLIDER, true
 	}
 	return .RECT, false
 }

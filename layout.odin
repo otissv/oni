@@ -140,6 +140,27 @@ Layout_Table_Tracks :: struct {
 }
 
 /*
+Positions a floating node below an anchor after the layout tree is solved.
+*/
+Layout_Anchor_Below :: struct {
+	anchor_id:   UI_Id,
+	floating_id: UI_Id,
+	gap:         f32,
+	match_width: bool,
+}
+
+/*
+Viewport-aware floating relation used by menu-like popovers.
+*/
+Layout_Popup_Anchor :: struct {
+	anchor_id:   UI_Id,
+	floating_id: UI_Id,
+	gap:         f32,
+	margin:      f32,
+	match_width: bool,
+}
+
+/*
 Per-frame flex layout tree, stacks, and UI_Id to node index map.
 */
 Layout_State :: struct {
@@ -157,6 +178,8 @@ Layout_State :: struct {
 	current_space:        Draw_Space,
 	space_stack:          [dynamic]Draw_Space,
 	stack_counter:        u32,
+	anchors_below:        [dynamic]Layout_Anchor_Below,
+	popup_anchors:        [dynamic]Layout_Popup_Anchor,
 	frame_arena:          mem.Arena,
 	frame_backing:        [dynamic]byte,
 	// Artboard zoom captured once per layout frame / view change.
@@ -278,6 +301,8 @@ layout_reset :: proc() {
 	clear(&layout.paint_list_popover)
 	clear(&layout.paint_list_overlay)
 	clear(&layout.space_stack)
+	clear(&layout.anchors_below)
+	clear(&layout.popup_anchors)
 	layout.current_space = .SCREEN
 	layout.stack_counter = 0
 	layout.artboard_zoom_valid = false
@@ -335,7 +360,10 @@ layout_shutdown :: proc() {
 	state.ui.layout.paint_list_overlay = nil
 	delete(state.ui.layout.space_stack)
 	state.ui.layout.space_stack = nil
-	state.ui.layout.space_stack = nil
+	delete(state.ui.layout.anchors_below)
+	state.ui.layout.anchors_below = nil
+	delete(state.ui.layout.popup_anchors)
+	state.ui.layout.popup_anchors = nil
 	layout_frame_arena_destroy(&state.ui.layout)
 }
 
@@ -3321,6 +3349,248 @@ layout_space_bounds :: proc(space: Draw_Space) -> Rect {
 
 	// SCREEN, POPOVER, and OVERLAY share logical viewport bounds.
 	return {0, 0, logical_w, logical_h}
+}
+
+/*
+Registers a floating node to be placed below an anchor after layout solve.
+*/
+layout_anchor_below :: proc(
+	anchor_id, floating_id: UI_Id,
+	gap: f32,
+	match_width := true,
+) {
+	if state == nil || state.ui.pass != .Layout do return
+
+	append(
+		&state.ui.layout.anchors_below,
+		{
+			anchor_id = anchor_id,
+			floating_id = floating_id,
+			gap = gap,
+			match_width = match_width,
+		},
+	)
+}
+
+/*
+Registers a menu-like floating node that flips and shrinks to the viewport.
+*/
+layout_anchor_popup :: proc(
+	anchor_id, floating_id: UI_Id,
+	gap: f32,
+	margin: f32,
+	match_width := true,
+) {
+	if state == nil || state.ui.pass != .Layout do return
+
+	append(
+		&state.ui.layout.popup_anchors,
+		{
+			anchor_id = anchor_id,
+			floating_id = floating_id,
+			gap = max(gap, 0),
+			margin = max(margin, 0),
+			match_width = match_width,
+		},
+	)
+}
+
+/*
+Counts descendants of `kind`, treating a matching node as one complete item.
+*/
+@(private)
+layout_descendant_kind_count :: proc(node: ^Layout_Node, kind: Widget_Kind) -> int {
+	if node == nil do return 0
+	if node.kind == kind do return 1
+
+	count := 0
+
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
+		count += layout_descendant_kind_count(child, kind)
+	}
+
+	return count
+}
+
+/*
+Returns the tallest measured descendant item of `kind`.
+*/
+@(private)
+layout_descendant_kind_max_height :: proc(node: ^Layout_Node, kind: Widget_Kind) -> f32 {
+	if node == nil do return 0
+	if node.kind == kind do return node.desired.y
+
+	height: f32
+
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
+		height = max(height, layout_descendant_kind_max_height(child, kind))
+	}
+
+	return height
+}
+
+/*
+Measures the leading portion of a vertical tree containing at most `limit`
+descendants of `kind`. Insets and gaps before the final visible item are kept.
+*/
+@(private)
+layout_visible_items_height :: proc(
+	node: ^Layout_Node,
+	kind: Widget_Kind,
+	limit: int,
+	count: ^int,
+) -> f32 {
+	if node == nil || count^ >= limit do return 0
+
+	if node.kind == kind {
+		count^ += 1
+
+		return node.desired.y
+	}
+
+	if len(node.child_indices) == 0 || node.direction_info.is_horizontal {
+		return node.desired.y
+	}
+
+	inset := node.padding.t + node.padding.b + node.border.t + node.border.b
+	gap := layout_config_gap_main(node.config, false)
+	height := inset
+	included := 0
+
+	for child_index in node.child_indices {
+		if count^ >= limit do break
+
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
+
+		child_height := layout_visible_items_height(child, kind, limit, count)
+		if child_height <= 0 do continue
+
+		if included > 0 {
+			height += gap
+		}
+
+		height += child_height
+		included += 1
+	}
+
+	return layout_clamp_axis(height, node.config.min_h, node.config.max_h)
+}
+
+/*
+Sizes a container from measured descendant rows.
+
+The height is capped to the first `max_items`. With `reserve_items`, missing
+rows are reserved using the tallest measured row or the supplied fallback.
+Call after the container's children have been popped and measured, but before
+its parent is popped, so normal flex measurement sees the resulting height.
+*/
+layout_constrain_visible_items :: proc(
+	container_id: UI_Id,
+	item_kind: Widget_Kind,
+	max_items: int,
+	reserve_items := false,
+	fallback_item_height := f32(0),
+) {
+	if state == nil || state.ui.pass != .Layout || max_items <= 0 do return
+
+	node_index, ok := state.ui.layout.id_to_node[container_id]
+	if !ok do return
+
+	node := &state.ui.layout.nodes[node_index]
+	item_count := layout_descendant_kind_count(node, item_kind)
+
+	if item_count < max_items && reserve_items {
+		item_height := layout_descendant_kind_max_height(node, item_kind)
+		if item_height <= 0 do item_height = fallback_item_height
+		if item_height <= 0 do return
+
+		node.desired.y += f32(max_items - item_count) * item_height
+		node.desired.y = layout_clamp_axis(
+			node.desired.y,
+			node.config.min_h,
+			node.config.max_h,
+		)
+
+		return
+	}
+
+	if item_count <= max_items do return
+
+	count := 0
+	height := layout_visible_items_height(node, item_kind, max_items, &count)
+	if count == 0 || height <= 0 do return
+
+	node.desired.y = min(node.desired.y, height)
+
+	if node.config.max_h > 0 {
+		node.config.max_h = min(node.config.max_h, height)
+	} else {
+		node.config.max_h = height
+	}
+}
+
+/*
+Applies registered floating anchors before stack order and pointer hits resolve.
+*/
+layout_resolve_anchors :: proc() {
+	for relation in state.ui.layout.anchors_below {
+		anchor_index, anchor_ok := state.ui.layout.id_to_node[relation.anchor_id]
+		floating_index, floating_ok := state.ui.layout.id_to_node[relation.floating_id]
+
+		if !anchor_ok || !floating_ok do continue
+
+		anchor := &state.ui.layout.nodes[anchor_index]
+		floating := &state.ui.layout.nodes[floating_index]
+		rect := floating.rect
+		rect.x = anchor.rect.x
+		rect.y = anchor.rect.y + anchor.rect.h + relation.gap
+
+		if relation.match_width {
+			rect.w = max(rect.w, anchor.rect.w)
+		}
+
+		floating.rect = rect
+		layout_finalize_after_rect(floating)
+	}
+
+	viewport := layout_space_bounds(.POPOVER)
+
+	for relation in state.ui.layout.popup_anchors {
+		anchor_index, anchor_ok := state.ui.layout.id_to_node[relation.anchor_id]
+		floating_index, floating_ok := state.ui.layout.id_to_node[relation.floating_id]
+
+		if !anchor_ok || !floating_ok do continue
+
+		anchor := &state.ui.layout.nodes[anchor_index]
+		floating := &state.ui.layout.nodes[floating_index]
+		rect := floating.rect
+
+		if relation.match_width {
+			rect.w = max(rect.w, anchor.rect.w)
+		}
+
+		top := viewport.y + relation.margin
+		bottom := viewport.y + viewport.h - relation.margin
+		below_y := anchor.rect.y + anchor.rect.h + relation.gap
+		above_bottom := anchor.rect.y - relation.gap
+		available_below := max(0, bottom - below_y)
+		available_above := max(0, above_bottom - top)
+		preferred_h := rect.h
+		place_below := preferred_h <= available_below ||
+		               (preferred_h > available_above && available_below >= available_above)
+		available := place_below ? available_below : available_above
+
+		rect.h = min(preferred_h, available)
+		rect.x = anchor.rect.x
+		rect.y = place_below ? below_y : above_bottom - rect.h
+		floating.rect = rect
+		layout_finalize_after_rect(floating)
+	}
 }
 
 /*

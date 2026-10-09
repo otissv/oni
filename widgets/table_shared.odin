@@ -3,7 +3,16 @@ package oni_widgets
 import o ".."
 
 /*
-Draws widget chrome respecting the owning table's gap-driven collapse mode.
+One CSS-style table box paint layer.
+*/
+@(private)
+Table_Box_Layer :: enum {
+	BACKGROUND,
+	BORDER,
+}
+
+/*
+Draws one widget box layer respecting the owning table's gap-driven collapse mode.
 
 Gap 0 collapses borders: cells paint conflict-resolved strips (including the table
 border on the outer perimeter). Table/row/group chrome paints fill only.
@@ -17,6 +26,7 @@ table_widget_draw_chrome :: proc(
 	config: o.Resolved_Widget_Config,
 	frame_state: ^$S,
 	event: o.Widget_Event(S),
+	layer: Table_Box_Layer,
 ) {
 	if o.ui_layout_paint_skip(layout_id) do return
 	collapsed := o.table_layout_borders_collapsed_for_widget(layout_id, kind)
@@ -45,18 +55,26 @@ table_widget_draw_chrome :: proc(
 		case .TABLE_CELL, .TABLE_HEADING:
 			if collapsed_borders := o.layout_collapsed_borders_result(layout_id);
 			   collapsed_borders != nil {
-				o.table_draw_collapsed_cell(
-					rect,
-					background,
-					collapsed_borders^,
-					radius,
-					frame_state,
-					event,
-				)
+				if layer == .BACKGROUND {
+					o.table_draw_collapsed_cell_background(
+						rect,
+						background,
+						collapsed_borders^,
+						radius,
+					)
+				} else {
+					o.table_draw_collapsed_cell_border(
+						rect,
+						collapsed_borders^,
+						radius,
+						frame_state,
+						event,
+					)
+				}
 				return
 			}
 		case .TABLE, .TABLE_ROW, .TABLE_BODY, .TABLE_HEAD, .TABLE_FOOT:
-			if background.a > 0 {
+			if layer == .BACKGROUND && background.a > 0 {
 				o.Draw_Rectangle(rect, background, radius)
 			}
 			return
@@ -78,5 +96,9 @@ table_widget_draw_chrome :: proc(
 		border_color = resolved_border_color
 	}
 
-	o.Draw_Rectangle(rect, background, radius, border, border_color)
+	if layer == .BACKGROUND {
+		widget_draw_box_background(layout_id, rect, background, radius)
+	} else {
+		widget_draw_box_border(layout_id, rect, radius, border, border_color)
+	}
 }

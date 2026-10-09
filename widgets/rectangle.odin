@@ -235,9 +235,7 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
 		child,
@@ -250,4 +248,6 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		props.scroll_bar,
 		frame_state.is_hovered,
 	)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 }

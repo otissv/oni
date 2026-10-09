@@ -234,9 +234,9 @@ draw_widget_popover :: proc(props: Draw_Widget_Popover) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(child, layout_id, config, frame_state^, props.element_id, props.author, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 }

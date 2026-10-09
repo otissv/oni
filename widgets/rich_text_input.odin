@@ -340,9 +340,7 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	scroll_frame := Widget_Scrollport_Frame {
 		layout_id  = layout_id,
@@ -392,6 +390,8 @@ Rich_Text_Input :: proc(props: Rich_Text_Input_Props) {
 	if clipped {
 		o.Draw_Pop_Clip()
 	}
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
 	if widget_can_interact(handlers, &frame_state) {
 		if widget_got_tab_focus(key) && props.on_focus != nil {

@@ -35,7 +35,7 @@ Select_Event :: o.Widget_Event(Select_State)
 Select root props: controlled value/open, compound children, and handlers.
 
 `child` builds the trigger tree. `content` is the options panel (Radix Content);
-when open it is laid out in a popover anchored under the trigger.
+when open it is laid out in a viewport-aware popover beside the trigger.
 
 HTML-like fields:
 - `disabled` — blocks interaction (also honors `config.disabled`)
@@ -153,7 +153,7 @@ select_resolve_open_value :: proc(
 		value = props.value
 	}
 
-	if !props.multiple && rt != nil {
+	if !props.multiple && rt != nil && rt.value == value {
 		value_label = rt.value_label
 	}
 
@@ -375,9 +375,7 @@ Select :: proc(props: Select_Props) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
 		select_compound_child,
@@ -405,6 +403,8 @@ Select :: proc(props: Select_Props) {
 			select_set_open(false)
 		}
 	}
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
 	widget_dispatch_events(props_resolved, &frame_state, handlers, event, key, was_focused)
 }

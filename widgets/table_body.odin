@@ -175,9 +175,11 @@ Table_Body :: proc(props: Table_Body_Props) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	table_widget_draw_chrome(layout_id, .TABLE_BODY, rect, config, &frame_state, event)
+	table_widget_draw_chrome(layout_id, .TABLE_BODY, rect, config, &frame_state, event, .BACKGROUND)
 
 	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+
+	table_widget_draw_chrome(layout_id, .TABLE_BODY, rect, config, &frame_state, event, .BORDER)
 
 	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }

@@ -234,6 +234,10 @@ widget_dispatch_events :: proc(
 		o.w_ctx.left_mouse.pressed,
 		o.w_ctx.left_mouse.released,
 	)
+	label_activated := widget_consume_label_activate(key)
+	if label_activated {
+		clicked = true
+	}
 	click_event := widget_event(state, mouse_button = sdl.BUTTON_LEFT)
 
 	if state.is_focused && props.on_click != nil {
@@ -251,7 +255,7 @@ widget_dispatch_events :: proc(
 
 	if clicked && props.on_click != nil {
 		keyboard_click := click_event.key != o.Scancode(0)
-		if propagate || keyboard_click {
+		if propagate || keyboard_click || label_activated {
 			props.on_click(click_event)
 		}
 	}

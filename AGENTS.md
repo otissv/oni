@@ -171,6 +171,10 @@ Rules:
 - Draw pass: use solved rects from `o.ui_layout_rect`; do not re-solve layout
 - Keep both passes’ tree structure identical for the same ids (children order, conditional widgets)
 - App code calls `o.Render(...)` once; only call `ui_end_layout_pass` / `ui_end_frame` manually if you are not using `Render`
+- Fully implement without backwards compatibility, legacy or temporary code
+- Ensure defense-in-depth
+- Cleaned up all manual memory
+- Exit criteria wis when you can clearly and confidently say there are no gaps in the implementation
 
 Frame order around this: poll input → app tick → UI begin → layout pass → draw pass → UI end → present.
 

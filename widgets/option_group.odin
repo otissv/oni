@@ -204,9 +204,7 @@ Option_Group :: proc(props: Option_Group_Props) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	if !o.ui_layout_paint_skip(layout_id) {
-		o.Draw_Rectangle(rect, background, radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
 		child,
@@ -219,6 +217,8 @@ Option_Group :: proc(props: Option_Group_Props) {
 		props.scroll_bar,
 		frame_state.is_hovered,
 	)
+
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
 	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
 }

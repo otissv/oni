@@ -8,6 +8,54 @@ Build a **production HUD/APP UI** on the hot-reload stack (`main.odin` host + `a
 
 ---
 
+## System requirements
+
+Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Build and run need the toolchain below plus a working Vulkan ICD for at least one GPU.
+
+### Build / link
+
+| Dependency | Role |
+| ---------- | ---- |
+| [Odin](https://odin-lang.org/) | Compiler |
+| `glslc` | Compiles `oni/shaders/ui.{vert,frag}` to SPIR-V (`shaderc` / Vulkan SDK) |
+| SDL3 | Window, input, SDL_GPU |
+| SDL3_image | Texture loading |
+| FreeType | Font rasterization |
+| HarfBuzz | Text shaping |
+| `inotify-tools` (Linux) | Hot-reload file watch in `build_hot_reload.sh` |
+
+Build flags used by the scripts: `-vet -strict-style -debug`.
+
+Arch / CachyOS example packages: `odin` (or a local Odin install), `shaderc`, `sdl3`, `sdl3_image`, `freetype2`, `harfbuzz`, `inotify-tools`.
+
+### Runtime GPU (Vulkan)
+
+At startup the engine calls `SDL_CreateGPUDevice` with SPIR-V. That fails with `No supported SDL_GPU backend found!` if Vulkan cannot enumerate any physical device.
+
+| Need | Notes |
+| ---- | ----- |
+| Vulkan ICD for the GPU in use | Install the driver package for **each** GPU you expect to use |
+| Intel iGPU | `vulkan-intel` → `/usr/share/vulkan/icd.d/intel_icd.*.json` |
+| AMD GPU | `vulkan-radeon` |
+| NVIDIA discrete | `nvidia-utils` (provides `nvidia_icd.json`) |
+
+Hybrid machines must install the iGPU ICD as well as the discrete one. If only the NVIDIA ICD is present and the discrete driver is unavailable (`nvidia-smi` failing, GPU powered off, etc.), `vkEnumeratePhysicalDevices` fails and the app will not open — even though the Intel GPU is present in PCI/DRM.
+
+Quick checks:
+
+```bash
+vulkaninfo --summary          # should list at least one GPU
+ls /usr/share/vulkan/icd.d/   # expect an ICD for each vendor you care about
+```
+
+Optional: force a specific ICD for one run, e.g. Intel only:
+
+```bash
+VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/build_hot_reload.sh run
+```
+
+---
+
 ## Target architecture (synced with codebase)
 
 

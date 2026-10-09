@@ -147,6 +147,10 @@ with_runtime_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
 
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
 	test_state: State
 	test_theme := present_test_theme()
 	saved_state := state
@@ -385,6 +389,10 @@ runtime_init_window_only_creates_and_sets_running :: proc(t: ^testing.T) {
 	clear_test_hooks()
 	defer clear_test_hooks()
 
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
 	test_state: State
 	saved_state := state
 	saved_theme := theme
@@ -483,6 +491,10 @@ runtime_init_runtime_init_failure_clears_running :: proc(t: ^testing.T) {
 	clear_test_hooks()
 	defer clear_test_hooks()
 
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
 	test_state: State
 	saved_state := state
 	saved_theme := theme
@@ -514,6 +526,10 @@ runtime_init_runtime_on_ready_failure_clears_running :: proc(t: ^testing.T) {
 	clear_test_hooks()
 	defer clear_test_hooks()
 
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
 	test_state: State
 	saved_state := state
 	saved_theme := theme
@@ -544,6 +560,10 @@ runtime_init_runtime_success_with_nil_ready :: proc(t: ^testing.T) {
 	defer sync.mutex_unlock(&test_global_state_guard)
 	clear_test_hooks()
 	defer clear_test_hooks()
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
 
 	test_state: State
 	saved_state := state
@@ -578,6 +598,10 @@ runtime_init_runtime_success_with_ok_ready :: proc(t: ^testing.T) {
 	defer sync.mutex_unlock(&test_global_state_guard)
 	clear_test_hooks()
 	defer clear_test_hooks()
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
 
 	test_state: State
 	saved_state := state

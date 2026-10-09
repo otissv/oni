@@ -63,8 +63,10 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	o.batch_current().vertex_capacity = 64 * 1024
 	o.batch_current().index_capacity = 64 * 1024 * 6
 
+	radio_shutdown()
 	o.ui_init()
 	defer {
+		radio_shutdown()
 		drain_style_stack()
 		o.ui_shutdown()
 		o.shortcut_shutdown()

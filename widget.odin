@@ -7,23 +7,15 @@ import "core:strings"
 AUTO_ELEMENT_ID_PREFIX :: "__auto_element__"
 
 /*
-Returns whether a widget identity string was allocated by the engine (auto id).
-
-User-facing config.id values are borrowed and must not be freed.
-*/
-@(private)
-widget_key_is_owned :: proc(key: string) -> bool {
-	return strings.has_prefix(key, AUTO_ELEMENT_ID_PREFIX)
-}
-
-/*
 Returns a key safe to store across frames.
 
-Auto-generated ids are cloned off the temp allocator; user ids are returned as-is.
+All ids are cloned so allocation ownership never depends on string contents or
+on whether a caller-provided id remains alive across hot reload.
 */
 @(private)
 widget_retain_key :: proc(key: string) -> string {
-	if key == "" || !widget_key_is_owned(key) do return key
+	if key == "" do return ""
+
 	return strings.clone(key)
 }
 
@@ -32,7 +24,7 @@ Frees a key previously retained for cross-frame storage.
 */
 @(private)
 widget_release_key :: proc(key: string) {
-	if widget_key_is_owned(key) {
+	if key != "" {
 		delete(key)
 	}
 }
@@ -51,7 +43,7 @@ widget_set_focused_id :: proc(id: Widget_ID) {
 		return
 	}
 	w_ctx.focused_id = widget_retain_key(id)
-	w_ctx.focused_id_owned = widget_key_is_owned(w_ctx.focused_id)
+	w_ctx.focused_id_owned = w_ctx.focused_id != ""
 }
 
 /*
@@ -68,7 +60,7 @@ widget_set_auto_focused_id :: proc(id: Widget_ID) {
 		return
 	}
 	w_ctx.auto_focused_id = widget_retain_key(id)
-	w_ctx.auto_focused_id_owned = widget_key_is_owned(w_ctx.auto_focused_id)
+	w_ctx.auto_focused_id_owned = w_ctx.auto_focused_id != ""
 }
 
 /*
@@ -323,19 +315,36 @@ widget_scroll_auto_reveal_set :: proc(key: string, show: bool) {
 	if w_ctx == nil || key == "" do return
 	if !show {
 		if w_ctx.scroll_auto_reveal != nil {
-			delete_key(&w_ctx.scroll_auto_reveal, key)
+			for retained_key in w_ctx.scroll_auto_reveal {
+				if retained_key == key {
+					delete_key(&w_ctx.scroll_auto_reveal, retained_key)
+					widget_release_key(retained_key)
+
+					break
+				}
+			}
 		}
 		return
 	}
 	if w_ctx.scroll_auto_reveal == nil {
 		w_ctx.scroll_auto_reveal = make(map[string]bool)
 	}
-	w_ctx.scroll_auto_reveal[key] = true
+	if _, exists := w_ctx.scroll_auto_reveal[key]; !exists {
+		w_ctx.scroll_auto_reveal[widget_retain_key(key)] = true
+	} else {
+		entry := &w_ctx.scroll_auto_reveal[key]
+		entry^ = true
+	}
 }
 
 @(private)
 widget_scroll_auto_reveal_clear :: proc() {
 	if w_ctx == nil || w_ctx.scroll_auto_reveal == nil do return
+
+	for key in w_ctx.scroll_auto_reveal {
+		widget_release_key(key)
+	}
+
 	delete(w_ctx.scroll_auto_reveal)
 	w_ctx.scroll_auto_reveal = nil
 }
@@ -390,6 +399,7 @@ widget_prune_element_maps :: proc() {
 		}
 		for key in remove_keys {
 			delete_key(&w_ctx.scroll_auto_reveal, key)
+			widget_release_key(key)
 		}
 	}
 
@@ -434,7 +444,7 @@ widget_ctx_shutdown :: proc() {
 	if w_ctx.auto_focused_id_owned {
 		widget_release_key(w_ctx.auto_focused_id)
 	}
-	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+	if w_ctx.tab_focus_previous_id_owned {
 		widget_release_key(w_ctx.tab_focus_previous_id)
 	}
 
@@ -488,12 +498,14 @@ widget_focus_tab :: proc(reverse: bool) -> bool {
 	if next_id == previous_id do return false
 
 	// Keep previous_id alive for same-frame lost-focus checks; release at begin_frame.
+	previous_id_owned := w_ctx.focused_id_owned
 	w_ctx.focused_id_owned = false
 	widget_set_focused_id(next_id)
-	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+	if w_ctx.tab_focus_previous_id_owned {
 		widget_release_key(w_ctx.tab_focus_previous_id)
 	}
 	w_ctx.tab_focus_previous_id = previous_id
+	w_ctx.tab_focus_previous_id_owned = previous_id_owned
 	w_ctx.tab_focus_changed = true
 	return true
 }
@@ -760,7 +772,10 @@ consume_hover_transition :: proc(element_id: string, hovered: bool) -> (entered,
 	if !exists {
 		w_ctx.element_was_hovered[widget_retain_key(element_id)] = hovered
 	} else {
-		w_ctx.element_was_hovered[element_id] = hovered
+		// Assign through the existing entry so a temp-allocated lookup key
+		// cannot replace the retained map key.
+		entry := &w_ctx.element_was_hovered[element_id]
+		entry^ = hovered
 	}
 
 	return
@@ -1525,7 +1540,9 @@ consume_pointer_click :: proc(
 		if _, exists := w_ctx.element_pointer_down[element_id]; !exists {
 			w_ctx.element_pointer_down[widget_retain_key(element_id)] = true
 		} else {
-			w_ctx.element_pointer_down[element_id] = true
+			// Preserve the retained map key when this frame's id is temporary.
+			entry := &w_ctx.element_pointer_down[element_id]
+			entry^ = true
 		}
 	}
 
@@ -1534,7 +1551,8 @@ consume_pointer_click :: proc(
 		if _, exists := w_ctx.element_pointer_down[element_id]; !exists {
 			w_ctx.element_pointer_down[widget_retain_key(element_id)] = false
 		} else {
-			w_ctx.element_pointer_down[element_id] = false
+			entry := &w_ctx.element_pointer_down[element_id]
+			entry^ = false
 		}
 	}
 

@@ -71,6 +71,7 @@ ui_shutdown :: proc() {
 		state.ui.label_crc = nil
 	}
 	scroll_shutdown()
+	slider_shutdown()
 	shortcut_shutdown()
 	widget_ctx_shutdown()
 	input_shutdown()
@@ -110,11 +111,19 @@ ui_begin_frame :: proc() {
 
 	w_ctx.mouse_moved = false
 	w_ctx.tab_focus_changed = false
-	if widget_key_is_owned(w_ctx.tab_focus_previous_id) {
+	if w_ctx.tab_focus_previous_id_owned {
 		widget_release_key(w_ctx.tab_focus_previous_id)
 	}
 	w_ctx.tab_focus_previous_id = {}
+	w_ctx.tab_focus_previous_id_owned = false
 	w_ctx.label_focus_id = {}
+	// Label activation may be set late in the prior draw pass (control before
+	// label). Keep it for one extra frame so the target can consume it.
+	if w_ctx.label_activate_id != "" &&
+	   w_ctx.label_activate_frame + 1 < state.ui.frame {
+		w_ctx.label_activate_id = {}
+		w_ctx.label_activate_frame = 0
+	}
 	w_ctx.pointer_hit_valid = false
 	w_ctx.pointer_hit_ui_id = {}
 	w_ctx.pointer_propagation_stopped = false
@@ -140,6 +149,7 @@ ui_end_layout_pass :: proc() {
 		state.ui.layout_ids_snapshot[id] = true
 	}
 
+	layout_resolve_anchors()
 	layout_finalize_stack_order()
 	layout_resolve_pointer_hit()
 

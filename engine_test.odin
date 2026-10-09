@@ -19,6 +19,7 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		widget_ctx_shutdown()
 		shortcut_shutdown()
 		settings_shutdown()
 		font_shutdown()
@@ -62,6 +63,7 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		widget_ctx_shutdown()
 		shortcut_shutdown()
 		settings_shutdown()
 		font_shutdown()
@@ -112,6 +114,7 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	saved_state := state
 	saved_theme := theme
 	defer {
+		widget_ctx_shutdown()
 		shortcut_shutdown()
 		settings_shutdown()
 		font_shutdown()
@@ -144,6 +147,10 @@ Full create_window → init → shutdown lifecycle when a display + GPU are avai
 with_engine_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
 
 	test_state: State
 	saved_state := state
@@ -667,6 +674,10 @@ engine_init_window_idempotent_and_lifecycle :: proc(t: ^testing.T) {
 engine_init_window_creates_when_missing :: proc(t: ^testing.T) {
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
 
 	test_state: State
 	saved_state := state
@@ -1688,6 +1699,10 @@ engine_init_font_init_failure_cleans_up_and_returns_false :: proc(t: ^testing.T)
 	defer sync.mutex_unlock(&test_global_state_guard)
 	clear_test_hooks()
 	defer clear_test_hooks()
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
 
 	test_state: State
 	saved := state

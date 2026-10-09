@@ -115,7 +115,7 @@ ui_end_frame_prunes_stale_widgets_and_element_maps :: proc(t: ^testing.T) {
 			}
 
 			w_ctx.element_was_hovered = make(map[string]bool)
-			w_ctx.element_was_hovered["stale"] = true
+			w_ctx.element_was_hovered[widget_retain_key("stale")] = true
 
 			ui_end_frame()
 			testing.expect(t, UI_Id(1) in state.ui.widgets)
@@ -456,9 +456,9 @@ ui_end_frame_keeps_current_frame_entries_only :: proc(t: ^testing.T) {
 			register_tabbable("alive")
 			w_ctx.element_was_hovered = make(map[string]bool)
 			w_ctx.element_pointer_down = make(map[string]bool)
-			w_ctx.element_was_hovered["alive"] = true
-			w_ctx.element_was_hovered["dead"] = true
-			w_ctx.element_pointer_down["dead"] = true
+			w_ctx.element_was_hovered[widget_retain_key("alive")] = true
+			w_ctx.element_was_hovered[widget_retain_key("dead")] = true
+			w_ctx.element_pointer_down[widget_retain_key("dead")] = true
 
 			ui_end_frame()
 			testing.expect(t, UI_Id(10) in state.ui.widgets)

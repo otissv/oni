@@ -510,9 +510,20 @@ table_side_is_straight :: proc(radius: Radius_px, side: u8) -> bool {
 	return true
 }
 
-table_draw_collapsed_cell :: proc(
+table_draw_collapsed_cell_background :: proc(
 	rect: Rect,
 	background: RGBA,
+	collapsed: Layout_Collapsed_Borders,
+	radius: Radius_px,
+) {
+	if !collapsed.active do return
+	if background.a <= 0 do return
+
+	draw_rect(rect, background, radius)
+}
+
+table_draw_collapsed_cell_border :: proc(
+	rect: Rect,
 	collapsed: Layout_Collapsed_Borders,
 	radius: Radius_px,
 	state_ptr: ^$S,
@@ -544,7 +555,7 @@ table_draw_collapsed_cell :: proc(
 				break
 			}
 		}
-		draw_rect(rect, background, radius, border, border_color)
+		draw_rect(rect, {}, radius, border, border_color)
 
 		// Straight internal edges (e.g. vertical line between headings) are also
 		// painted as strips so they stay visible when only an outer corner is rounded.
@@ -561,14 +572,22 @@ table_draw_collapsed_cell :: proc(
 		return
 	}
 
-	if background.a > 0 {
-		draw_rect(rect, background)
-	}
-
 	// Strips are already on Layout_Collapsed_Borders from layout; emit through the batch.
 	for side, i in sides {
 		color, color_ok := table_collapsed_border_color(side, state_ptr, event)
 		if !color_ok do continue
 		table_draw_border_strip(collapsed.strips[i], color)
 	}
+}
+
+table_draw_collapsed_cell :: proc(
+	rect: Rect,
+	background: RGBA,
+	collapsed: Layout_Collapsed_Borders,
+	radius: Radius_px,
+	state_ptr: ^$S,
+	event: Widget_Event(S),
+) {
+	table_draw_collapsed_cell_background(rect, background, collapsed, radius)
+	table_draw_collapsed_cell_border(rect, collapsed, radius, state_ptr, event)
 }

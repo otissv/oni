@@ -4,6 +4,37 @@ import o ".."
 import set "../set"
 import "core:testing"
 
+@(private)
+rectangle_box_paint_test_child :: proc(_: Rectangle_State) {
+	Rectangle(
+		{
+			config = {
+				id = "box-child",
+				width = set.Width(f32(40)),
+				height = set.Height(f32(20)),
+				background = set.Background(o.RGBA{0, 0, 255, 255}),
+			},
+		},
+	)
+}
+
+@(private)
+rectangle_box_paint_test_tree :: proc() {
+	Rectangle(
+		{
+			config = {
+				id = "box-parent",
+				width = set.Width(f32(80)),
+				height = set.Height(f32(40)),
+				background = set.Background(o.RGBA{255, 0, 0, 255}),
+				border = set.Border(f32(1)),
+				border_color = set.Border_color(o.RGBA{0, 0, 0, 255}),
+			},
+			child = rectangle_box_paint_test_child,
+		},
+	)
+}
+
 @(test)
 rectangle_theme_base_sets_kind_and_defaults :: proc(t: ^testing.T) {
 	frame := Rectangle_State{}
@@ -141,5 +172,26 @@ rectangle_config_override_preserves_kind :: proc(t: ^testing.T) {
 		config := widget_config(props, &frame, rect_theme_base)
 		testing.expect(t, config.kind == .RECT)
 		testing.expect_value(t, config.id, "rectangle-styled")
+	})
+}
+
+@(test)
+rectangle_paints_border_after_child_content :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+		rectangle_box_paint_test_tree()
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		rectangle_box_paint_test_tree()
+
+		vertices := o.batch_current().vertices
+		testing.expect_value(t, len(vertices), 12)
+		if len(vertices) != 12 do return
+
+		testing.expect_value(t, vertices[0].color, [4]f32{1, 0, 0, 1})
+		testing.expect_value(t, vertices[4].color, [4]f32{0, 0, 1, 1})
+		testing.expect_value(t, vertices[8].color, [4]f32{})
+		testing.expect_value(t, vertices[8].border_color, [4]f32{0, 0, 0, 1})
 	})
 }

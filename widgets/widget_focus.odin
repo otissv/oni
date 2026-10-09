@@ -125,3 +125,38 @@ widget_focus_for_id :: proc(for_id: string) -> bool {
 
 	return false
 }
+
+/*
+Queues a synthetic click for the widget identified by `for_id`.
+
+Matches HTML `<label for>` activation: the labeled control receives a click on
+the label's completed pointer click. The target consumes this via
+`widget_consume_label_activate` during `widget_dispatch_events`.
+*/
+widget_request_label_activate :: proc(for_id: string) {
+	if for_id == "" {
+
+		return
+	}
+
+	o.w_ctx.label_activate_id = for_id
+	o.w_ctx.label_activate_frame = o.state.ui.frame
+}
+
+/*
+Consumes a pending label activation for `element_id` when one is queued.
+
+Returns true once; clears the pending id so a control declared before its
+label can still activate on the following frame.
+*/
+widget_consume_label_activate :: proc(element_id: string) -> bool {
+	if element_id == "" || o.w_ctx.label_activate_id != element_id {
+
+		return false
+	}
+
+	o.w_ctx.label_activate_id = {}
+	o.w_ctx.label_activate_frame = 0
+
+	return true
+}

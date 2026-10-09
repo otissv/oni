@@ -153,6 +153,28 @@ widget_element_keys_survive_temp_allocator_wipe :: proc(t: ^testing.T) {
 }
 
 @(test)
+widget_map_updates_preserve_retained_auto_keys :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			first_frame_key := element_key("")
+			_, _ = consume_hover_transition(first_frame_key, true)
+			_ = consume_pointer_click(first_frame_key, true, true, false)
+
+			w_ctx.auto_element_index = 0
+			next_frame_key := element_key("")
+			_, _ = consume_hover_transition(next_frame_key, false)
+			_ = consume_pointer_click(next_frame_key, true, true, true)
+
+			free_all(context.temp_allocator)
+
+			testing.expect(t, !w_ctx.element_was_hovered["__auto_element__0"])
+			testing.expect(t, !w_ctx.element_pointer_down["__auto_element__0"])
+		},
+	)
+}
+
+@(test)
 widget_button_and_key_transients_clear :: proc(t: ^testing.T) {
 	button := Widget_Mouse_Button_State {
 		down     = true,
@@ -509,11 +531,11 @@ widget_prune_element_maps_removes_inactive_keys :: proc(t: ^testing.T) {
 			w_ctx.focused_id = "focused"
 			w_ctx.element_was_hovered = make(map[string]bool)
 			w_ctx.element_pointer_down = make(map[string]bool)
-			w_ctx.element_was_hovered["alive"] = true
-			w_ctx.element_was_hovered["stale"] = true
-			w_ctx.element_was_hovered["focused"] = true
-			w_ctx.element_pointer_down["stale"] = true
-			w_ctx.element_pointer_down["alive"] = true
+			w_ctx.element_was_hovered[widget_retain_key("alive")] = true
+			w_ctx.element_was_hovered[widget_retain_key("stale")] = true
+			w_ctx.element_was_hovered[widget_retain_key("focused")] = true
+			w_ctx.element_pointer_down[widget_retain_key("stale")] = true
+			w_ctx.element_pointer_down[widget_retain_key("alive")] = true
 
 			widget_prune_element_maps()
 			testing.expect(t, w_ctx.element_was_hovered["alive"])
@@ -1298,9 +1320,9 @@ widget_prune_keeps_static_id_mapped_keys :: proc(t: ^testing.T) {
 			key := element_key("named")
 			w_ctx.element_was_hovered = make(map[string]bool)
 			w_ctx.element_pointer_down = make(map[string]bool)
-			w_ctx.element_was_hovered[key] = true
-			w_ctx.element_pointer_down[key] = true
-			w_ctx.element_was_hovered["orphan"] = true
+			w_ctx.element_was_hovered[widget_retain_key(key)] = true
+			w_ctx.element_pointer_down[widget_retain_key(key)] = true
+			w_ctx.element_was_hovered[widget_retain_key("orphan")] = true
 
 			// Not in tab order or focus — kept only via static_ids mapping.
 			testing.expect(t, len(w_ctx.tab_order) == 0)

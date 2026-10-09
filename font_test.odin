@@ -34,6 +34,10 @@ with_font_gpu_fixtures :: proc(
 	sync.mutex_lock(&test_global_state_guard)
 	defer sync.mutex_unlock(&test_global_state_guard)
 
+	if !test_require_gpu_device_unlocked() {
+		return
+	}
+
 	if !sdl.Init({.VIDEO}) {
 		testing.expectf(t, false, "SDL_Init failed: %s", sdl.GetError())
 		return

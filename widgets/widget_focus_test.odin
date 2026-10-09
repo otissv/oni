@@ -294,3 +294,22 @@ widget_handle_pointer_focus_keeps_label_focus_target :: proc(t: ^testing.T) {
 		testing.expect_value(t, o.w_ctx.focused_id, "email")
 	})
 }
+
+@(test)
+widget_label_activate_request_and_consume :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_request_label_activate("")
+		testing.expect_value(t, o.w_ctx.label_activate_id, "")
+
+		widget_request_label_activate("checkbox")
+		testing.expect_value(t, o.w_ctx.label_activate_id, "checkbox")
+		testing.expect_value(t, o.w_ctx.label_activate_frame, o.state.ui.frame)
+
+		testing.expect(t, !widget_consume_label_activate("other"))
+		testing.expect_value(t, o.w_ctx.label_activate_id, "checkbox")
+
+		testing.expect(t, widget_consume_label_activate("checkbox"))
+		testing.expect_value(t, o.w_ctx.label_activate_id, "")
+		testing.expect(t, !widget_consume_label_activate("checkbox"))
+	})
+}

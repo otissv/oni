@@ -73,8 +73,11 @@ Widget_Context :: struct {
 	focused_id_owned:            bool,
 	tab_order:                   [dynamic]Widget_ID,
 	tab_focus_previous_id:       Widget_ID,
+	tab_focus_previous_id_owned: bool,
 	tab_focus_changed:           bool,
 	label_focus_id:              Widget_ID,
+	label_activate_id:           Widget_ID,
+	label_activate_frame:        u64,
 	auto_element_index:          u32,
 	static_ids:                  map[string]Widget_ID,
 	scroll_offsets:              map[string]Vec2,
@@ -213,6 +216,8 @@ Widget_Kind :: enum {
 	TEXT_INPUT,
 	RICH_TEXT_INPUT,
 	BUTTON,
+	CHECKBOX,
+	LINK,
 	TABLE,
 	TABLE_CAPTION,
 	TABLE_HEAD,
@@ -227,6 +232,9 @@ Widget_Kind :: enum {
 	SELECT_VALUE,
 	OPTION_GROUP,
 	OPTION,
+	RADIO_GROUP,
+	RADIO,
+	SLIDER,
 }
 
 /*
@@ -235,6 +243,14 @@ Axis for a scrollbar thumb (horizontal scrolls scroll_x, vertical scrolls scroll
 Scroll_Axis :: enum {
 	X,
 	Y,
+}
+
+/*
+Axis orientation for a slider track.
+*/
+Slider_Orientation :: enum {
+	HORIZONTAL,
+	VERTICAL,
 }
 
 Cfg_Tri :: enum {
