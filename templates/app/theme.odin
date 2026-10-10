@@ -37,6 +37,7 @@ build_theme :: proc() -> o.Theme {
 		border_color = .BLACK,
 		ring = .RING,
 		background = .BACKGROUND,
+		margin = 0,
 		padding = 0,
 		radius = 0,
 		border = 0,

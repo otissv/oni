@@ -532,6 +532,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		background            = theme.background,
 		border                = theme.border,
 		border_color          = theme.border_color,
+		margin                = theme.margin,
 		padding               = theme.padding,
 		radius                = theme.radius,
 		gap_x                 = gap_x,
@@ -603,6 +604,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	merge_cfg(Style_F32, &result.min_h, override.min_h)
 	merge_cfg(Style_F32, &result.min_w, override.min_w)
 	merge_cfg(Style_F32, &result.order, override.order)
+	merge_cfg(Margin, &result.margin, override.margin)
 	merge_cfg(Padding, &result.padding, override.padding)
 	merge_cfg(Pointer_Events, &result.pointer_events, override.pointer_events)
 	merge_cfg(Radius, &result.radius, override.radius)
@@ -654,7 +656,7 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 /*
 Evaluates proc-valued style fields on a resolved config in place.
 
-Resolves padding, radius, border, colors, text, overflow, and texture fields.
+Resolves margin, padding, radius, border, colors, text, overflow, and texture fields.
 */
 @(private)
 finalize_resolved_procs :: proc(
@@ -662,6 +664,9 @@ finalize_resolved_procs :: proc(
 	state: ^$S,
 	event: Widget_Event(S),
 ) {
+	if margin, margin_ok := resolve_margin(config.margin, state, event); margin_ok {
+		config.margin = margin_px_to_mg(margin)
+	}
 	if padding, padding_ok := resolve_padding(config.padding, state, event); padding_ok {
 		config.padding = padding_px_to_pd(padding)
 	}
@@ -1168,6 +1173,7 @@ resolve_widget_config :: proc(
 			state,
 			event,
 		),
+		margin                = resolve_cfg(Margin, decl.margin, parent.margin, theme.margin),
 		padding               = resolve_cfg(Padding, decl.padding, parent.padding, theme.padding),
 		pointer_events        = resolve_cfg(
 			Pointer_Events,

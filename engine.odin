@@ -352,12 +352,8 @@ poll_events :: proc() {
 			prev_y := state.input.mouse_y
 			input_set_mouse_position(event.motion.x, event.motion.y)
 
-			if state.input.mouse_middle ||
-			   (state.input.mouse_left && state.input.modifiers.alt) {
-				view_pan_by({
-					state.input.mouse_x - prev_x,
-					state.input.mouse_y - prev_y,
-				})
+			if state.input.mouse_middle || (state.input.mouse_left && state.input.modifiers.alt) {
+				view_pan_by({state.input.mouse_x - prev_x, state.input.mouse_y - prev_y})
 			}
 
 		case .MOUSE_BUTTON_DOWN:

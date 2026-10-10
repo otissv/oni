@@ -163,17 +163,18 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 	right := child.config.right
 	top := child.config.y
 	bottom := child.config.bottom
+	m := child.margin
 
-	width := length_resolve(child.config.width, cb.w)
-	height := length_resolve(child.config.height, cb.h)
+	width := length_resolve(child.config.width, max(0, cb.w - m.l - m.r))
+	height := length_resolve(child.config.height, max(0, cb.h - m.t - m.b))
 	if width <= 0 do width = child.desired.x
 	if height <= 0 do height = child.desired.y
 
 	if left_set && right_set {
-		width = max(0, cb.w - left - right)
+		width = max(0, cb.w - left - right - m.l - m.r)
 	}
 	if top_set && bottom_set {
-		height = max(0, cb.h - top - bottom)
+		height = max(0, cb.h - top - bottom - m.t - m.b)
 	}
 
 	width = layout_clamp_axis(width, child.config.min_w, child.config.max_w)
@@ -183,23 +184,23 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 	y: f32
 	switch {
 	case left_set && right_set:
-		x = cb.x + left
+		x = cb.x + left + m.l
 	case left_set:
-		x = cb.x + left
+		x = cb.x + left + m.l
 	case right_set:
-		x = cb.x + cb.w - right - width
+		x = cb.x + cb.w - right - m.r - width
 	case:
-		x = cb.x
+		x = cb.x + m.l
 	}
 	switch {
 	case top_set && bottom_set:
-		y = cb.y + top
+		y = cb.y + top + m.t
 	case top_set:
-		y = cb.y + top
+		y = cb.y + top + m.t
 	case bottom_set:
-		y = cb.y + cb.h - bottom - height
+		y = cb.y + cb.h - bottom - m.b - height
 	case:
-		y = cb.y
+		y = cb.y + m.t
 	}
 
 	child.rect = {x = x, y = y, w = width, h = height}

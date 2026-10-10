@@ -25,6 +25,7 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `left` | `x` | Inset / offset; with `position` absolute/fixed, pairs with `right` |
 | `letter-spacing` | `letter_spacing` | |
 | `line-height` | `line_height` | |
+| `margin` | `margin` | Per-side via `Margin` union; outside border box; not painted or hit-tested; no CSS margin collapse |
 | `max-height` | `max_h` | |
 | `max-width` | `max_w` | |
 | `min-height` | `min_h` | |
@@ -114,17 +115,9 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 
 ### Box model
 
-- `margin`
-- `margin-top`
-- `margin-right`
-- `margin-bottom`
-- `margin-left`
-- `margin-block`
-- `margin-block-end`
-- `margin-block-start`
-- `margin-inline`
-- `margin-inline-end`
-- `margin-inline-start`
+- `margin-top` / `margin-right` / `margin-bottom` / `margin-left` (use `margin` / `Pd` / `Pd_struct` sides)
+- `margin-block` / `margin-inline` and logical longhands
+- CSS margin collapse (Oni does not collapse adjacent margins; use `gap_*` for sibling spacing)
 - `box-sizing`
 - `width` keywords (`auto`, `fit-content`, `min-content`, `max-content`) — struct uses `f32` only
 - `height` keywords (`auto`, `fit-content`, `min-content`, `max-content`) — struct uses `f32` only

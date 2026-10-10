@@ -157,6 +157,7 @@ style_resolve_widget_config_overrides_and_theme_defaults :: proc(t: ^testing.T) 
 					gap_y = {mode = .Value, value = u16(4)},
 					direction = {mode = .Value, value = Direction_Layout.HORIZONTAL},
 					justify = {mode = .Value, value = Justify_Align.CENTER},
+					margin = {mode = .Value, value = f32(4)},
 					padding = {mode = .Value, value = f32(6)},
 					border = {mode = .Value, value = f32(2)},
 					radius = {mode = .Value, value = f32(3)},
@@ -197,6 +198,9 @@ style_resolve_widget_config_overrides_and_theme_defaults :: proc(t: ^testing.T) 
 			pad, pok := resolve_padding_value(resolved.padding)
 			testing.expect(t, pok)
 			expect_pd(t, pad, {6, 6, 6, 6})
+			margin, mok := resolve_margin_value(resolved.margin)
+			testing.expect(t, mok)
+			expect_mg(t, margin, {4, 4, 4, 4})
 			border, bok := resolve_border_value(resolved.border)
 			testing.expect(t, bok)
 			expect_bd(t, border, {2, 2, 2, 2})
@@ -214,6 +218,7 @@ style_resolve_widget_config_inherits_from_parent_stack :: proc(t: ^testing.T) {
 			parent := resolve_widget_config(
 				{},
 				{
+					margin = {mode = .Value, value = f32(8)},
 					padding = {mode = .Value, value = f32(10)},
 					gap_x = {mode = .Value, value = u16(5)},
 					color = {mode = .Value, value = RGBA{1, 0, 0, 1}},
@@ -228,6 +233,7 @@ style_resolve_widget_config_inherits_from_parent_stack :: proc(t: ^testing.T) {
 			child := resolve_widget_config(
 				{},
 				{
+					margin = {mode = .Value, value = Inherit.INHERIT},
 					padding = {mode = .Value, value = Inherit.INHERIT},
 					gap_x = {mode = .Value, value = Inherit.INHERIT},
 					color = {mode = .Value, value = Color.INHERIT},
@@ -241,9 +247,31 @@ style_resolve_widget_config_inherits_from_parent_stack :: proc(t: ^testing.T) {
 			pad, ok := resolve_padding_value(child.padding)
 			testing.expect(t, ok)
 			expect_pd(t, pad, {10, 10, 10, 10})
+			margin, mok := resolve_margin_value(child.margin)
+			testing.expect(t, mok)
+			expect_mg(t, margin, {8, 8, 8, 8})
 			testing.expect_value(t, child.gap_x, u16(5))
 			testing.expect(t, child.direction == .HORIZONTAL)
 			expect_close(t, child.flex, parent.flex)
+		},
+	)
+}
+
+@(test)
+style_child_context_ignores_margin_for_content_size :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			config := Resolved_Widget_Config {
+				style = {
+					margin = Mg{t = 20, b = 20, l = 20, r = 20},
+					padding = Pd{t = 10, b = 5, l = 2, r = 3},
+					border = Bd{t = 1, b = 1, l = 4, r = 6},
+				},
+			}
+			child := style_child_context(config)
+			expect_close(t, child.content_w, 800 - (2 + 3 + 4 + 6))
+			expect_close(t, child.content_h, 600 - (10 + 5 + 1 + 1))
 		},
 	)
 }

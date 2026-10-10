@@ -207,6 +207,14 @@ expect_pd :: proc(t: ^testing.T, got, want: Pd_px, loc := #caller_location) {
 }
 
 @(private)
+expect_mg :: proc(t: ^testing.T, got, want: Mg_px, loc := #caller_location) {
+	expect_close(t, got.t, want.t, loc = loc)
+	expect_close(t, got.b, want.b, loc = loc)
+	expect_close(t, got.l, want.l, loc = loc)
+	expect_close(t, got.r, want.r, loc = loc)
+}
+
+@(private)
 expect_bd :: proc(t: ^testing.T, got, want: Bd_px, loc := #caller_location) {
 	expect_close(t, got.t, want.t, loc = loc)
 	expect_close(t, got.b, want.b, loc = loc)

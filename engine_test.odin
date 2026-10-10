@@ -40,7 +40,13 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer clear_test_hooks()
 	state.running = true
 	state.can_render = true
-	state.dpi = {logical_w = 800, logical_h = 600, scale = 1, drawable_w = 800, drawable_h = 600}
+	state.dpi = {
+		logical_w  = 800,
+		logical_h  = 600,
+		scale      = 1,
+		drawable_w = 800,
+		drawable_h = 600,
+	}
 	state.view = view_default()
 	body(t)
 }
@@ -81,7 +87,13 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer clear_test_hooks()
 	state.running = true
 	state.can_render = true
-	state.dpi = {logical_w = 800, logical_h = 600, scale = 1, drawable_w = 800, drawable_h = 600}
+	state.dpi = {
+		logical_w  = 800,
+		logical_h  = 600,
+		scale      = 1,
+		drawable_w = 800,
+		drawable_h = 600,
+	}
 	state.view = view_default()
 	state.perf_frequency = sdl.GetPerformanceFrequency()
 	state.last_counter = sdl.GetPerformanceCounter()
@@ -103,7 +115,12 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	}
 	defer sdl.Quit()
 
-	window := sdl.CreateWindow("oni engine window test", 320, 240, sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY)
+	window := sdl.CreateWindow(
+		"oni engine window test",
+		320,
+		240,
+		sdl.WINDOW_RESIZABLE | sdl.WINDOW_HIGH_PIXEL_DENSITY,
+	)
 	if window == nil {
 		testing.expectf(t, false, "SDL_CreateWindow failed: %s", sdl.GetError())
 		return
@@ -168,13 +185,7 @@ with_engine_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	defer clear_test_hooks()
 
 	ok := create_window(
-		{
-			title = "oni engine test",
-			width = 320,
-			height = 240,
-			min_width = 64,
-			min_height = 64,
-		},
+		{title = "oni engine test", width = 320, height = 240, min_width = 64, min_height = 64},
 	)
 	if !ok {
 		testing.expectf(t, false, "create_window failed: %s", sdl.GetError())
@@ -210,35 +221,29 @@ engine_test_push :: proc(t: ^testing.T, event: sdl.Event, loc := #caller_locatio
 
 @(test)
 engine_dpi_sync_nil_window_is_noop :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			before := state.dpi
-			state.can_render = true
-			dpi_sync()
-			testing.expect_value(t, state.dpi.logical_w, before.logical_w)
-			testing.expect_value(t, state.dpi.logical_h, before.logical_h)
-			testing.expect(t, state.can_render)
-		},
-	)
+	with_engine_env(t, proc(t: ^testing.T) {
+		before := state.dpi
+		state.can_render = true
+		dpi_sync()
+		testing.expect_value(t, state.dpi.logical_w, before.logical_w)
+		testing.expect_value(t, state.dpi.logical_h, before.logical_h)
+		testing.expect(t, state.can_render)
+	})
 }
 
 @(test)
 engine_dpi_sync_updates_from_real_window :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.dpi = {}
-			state.can_render = false
-			dpi_sync()
-			testing.expect(t, state.dpi.logical_w > 0)
-			testing.expect(t, state.dpi.logical_h > 0)
-			testing.expect(t, state.dpi.drawable_w > 0)
-			testing.expect(t, state.dpi.drawable_h > 0)
-			testing.expect(t, state.dpi.scale > 0)
-			testing.expect(t, state.can_render)
-		},
-	)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.dpi = {}
+		state.can_render = false
+		dpi_sync()
+		testing.expect(t, state.dpi.logical_w > 0)
+		testing.expect(t, state.dpi.logical_h > 0)
+		testing.expect(t, state.dpi.drawable_w > 0)
+		testing.expect(t, state.dpi.drawable_h > 0)
+		testing.expect(t, state.dpi.scale > 0)
+		testing.expect(t, state.can_render)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -247,133 +252,116 @@ engine_dpi_sync_updates_from_real_window :: proc(t: ^testing.T) {
 
 @(test)
 engine_input_begin_frame_clears_wheel_and_text :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			state.input.mouse_wheel_x = 3
-			state.input.mouse_wheel_y = -2
-			append(&state.input.text_input, 'a', 'b')
-			state.input.mouse_left = true
-			state.input.keys_down[1] = true
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.input.mouse_wheel_x = 3
+		state.input.mouse_wheel_y = -2
+		append(&state.input.text_input, 'a', 'b')
+		state.input.mouse_left = true
+		state.input.keys_down[1] = true
 
-			input_begin_frame()
-			expect_close(t, state.input.mouse_wheel_x, 0)
-			expect_close(t, state.input.mouse_wheel_y, 0)
-			testing.expect_value(t, len(state.input.text_input), 0)
-			testing.expect(t, state.input.mouse_left)
-			testing.expect(t, state.input.keys_down[1])
-		},
-	)
+		input_begin_frame()
+		expect_close(t, state.input.mouse_wheel_x, 0)
+		expect_close(t, state.input.mouse_wheel_y, 0)
+		testing.expect_value(t, len(state.input.text_input), 0)
+		testing.expect(t, state.input.mouse_left)
+		testing.expect(t, state.input.keys_down[1])
+	})
 }
 
 @(test)
 engine_input_update_modifiers_all_flags :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			input_update_modifiers({})
-			testing.expect(t, !state.input.modifiers.shift)
-			testing.expect(t, !state.input.modifiers.ctrl)
-			testing.expect(t, !state.input.modifiers.alt)
-			testing.expect(t, !state.input.modifiers.super)
+	with_engine_env(t, proc(t: ^testing.T) {
+		input_update_modifiers({})
+		testing.expect(t, !state.input.modifiers.shift)
+		testing.expect(t, !state.input.modifiers.ctrl)
+		testing.expect(t, !state.input.modifiers.alt)
+		testing.expect(t, !state.input.modifiers.super)
 
-			input_update_modifiers(sdl.KMOD_SHIFT)
-			testing.expect(t, state.input.modifiers.shift)
-			testing.expect(t, !state.input.modifiers.ctrl)
+		input_update_modifiers(sdl.KMOD_SHIFT)
+		testing.expect(t, state.input.modifiers.shift)
+		testing.expect(t, !state.input.modifiers.ctrl)
 
-			input_update_modifiers(sdl.KMOD_CTRL | sdl.KMOD_ALT | sdl.KMOD_GUI)
-			testing.expect(t, !state.input.modifiers.shift)
-			testing.expect(t, state.input.modifiers.ctrl)
-			testing.expect(t, state.input.modifiers.alt)
-			testing.expect(t, state.input.modifiers.super)
+		input_update_modifiers(sdl.KMOD_CTRL | sdl.KMOD_ALT | sdl.KMOD_GUI)
+		testing.expect(t, !state.input.modifiers.shift)
+		testing.expect(t, state.input.modifiers.ctrl)
+		testing.expect(t, state.input.modifiers.alt)
+		testing.expect(t, state.input.modifiers.super)
 
-			input_update_modifiers(
-				sdl.KMOD_SHIFT | sdl.KMOD_CTRL | sdl.KMOD_ALT | sdl.KMOD_GUI,
-			)
-			testing.expect(t, state.input.modifiers.shift)
-			testing.expect(t, state.input.modifiers.ctrl)
-			testing.expect(t, state.input.modifiers.alt)
-			testing.expect(t, state.input.modifiers.super)
-		},
-	)
+		input_update_modifiers(sdl.KMOD_SHIFT | sdl.KMOD_CTRL | sdl.KMOD_ALT | sdl.KMOD_GUI)
+		testing.expect(t, state.input.modifiers.shift)
+		testing.expect(t, state.input.modifiers.ctrl)
+		testing.expect(t, state.input.modifiers.alt)
+		testing.expect(t, state.input.modifiers.super)
+	})
 }
 
 @(test)
 engine_input_clear_keyboard_mouse_preserves_wheel_gamepad :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			state.input.keys_down[10] = true
-			state.input.mouse_left = true
-			state.input.mouse_right = true
-			state.input.mouse_middle = true
-			state.input.modifiers = {shift = true, ctrl = true}
-			append(&state.input.text_input, 'x')
-			state.input.mouse_wheel_y = 4
-			state.input.gamepad.connected = true
-			state.input.gamepad.left_stick_x = 0.5
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.input.keys_down[10] = true
+		state.input.mouse_left = true
+		state.input.mouse_right = true
+		state.input.mouse_middle = true
+		state.input.modifiers = {
+			shift = true,
+			ctrl  = true,
+		}
+		append(&state.input.text_input, 'x')
+		state.input.mouse_wheel_y = 4
+		state.input.gamepad.connected = true
+		state.input.gamepad.left_stick_x = 0.5
 
-			input_clear_keyboard_mouse()
-			testing.expect(t, !state.input.keys_down[10])
-			testing.expect(t, !state.input.mouse_left)
-			testing.expect(t, !state.input.mouse_right)
-			testing.expect(t, !state.input.mouse_middle)
-			testing.expect(t, !state.input.modifiers.shift)
-			testing.expect(t, !state.input.modifiers.ctrl)
-			testing.expect_value(t, len(state.input.text_input), 0)
-			expect_close(t, state.input.mouse_wheel_y, 4)
-			testing.expect(t, state.input.gamepad.connected)
-			expect_close(t, state.input.gamepad.left_stick_x, 0.5)
-		},
-	)
+		input_clear_keyboard_mouse()
+		testing.expect(t, !state.input.keys_down[10])
+		testing.expect(t, !state.input.mouse_left)
+		testing.expect(t, !state.input.mouse_right)
+		testing.expect(t, !state.input.mouse_middle)
+		testing.expect(t, !state.input.modifiers.shift)
+		testing.expect(t, !state.input.modifiers.ctrl)
+		testing.expect_value(t, len(state.input.text_input), 0)
+		expect_close(t, state.input.mouse_wheel_y, 4)
+		testing.expect(t, state.input.gamepad.connected)
+		expect_close(t, state.input.gamepad.left_stick_x, 0.5)
+	})
 }
 
 @(test)
 engine_input_set_mouse_position_applies_dpi :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			state.dpi.scale = 2
-			input_set_mouse_position(200, 100)
-			expect_close(t, state.input.mouse_x, 100)
-			expect_close(t, state.input.mouse_y, 50)
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.dpi.scale = 2
+		input_set_mouse_position(200, 100)
+		expect_close(t, state.input.mouse_x, 100)
+		expect_close(t, state.input.mouse_y, 50)
 
-			state.dpi.scale = 0
-			input_set_mouse_position(40, 60)
-			expect_close(t, state.input.mouse_x, 40)
-			expect_close(t, state.input.mouse_y, 60)
+		state.dpi.scale = 0
+		input_set_mouse_position(40, 60)
+		expect_close(t, state.input.mouse_x, 40)
+		expect_close(t, state.input.mouse_y, 60)
 
-			state.dpi.scale = -1
-			input_set_mouse_position(10, 20)
-			expect_close(t, state.input.mouse_x, 10)
-			expect_close(t, state.input.mouse_y, 20)
-		},
-	)
+		state.dpi.scale = -1
+		input_set_mouse_position(10, 20)
+		expect_close(t, state.input.mouse_x, 10)
+		expect_close(t, state.input.mouse_y, 20)
+	})
 }
 
 @(test)
 engine_input_mouse_screen_nil_and_world :: proc(t: ^testing.T) {
-	with_nil_state(
-		t,
-		proc(t: ^testing.T) {
-			got := input_mouse_screen()
-			expect_vec2(t, got, {})
-		},
-	)
+	with_nil_state(t, proc(t: ^testing.T) {
+		got := input_mouse_screen()
+		expect_vec2(t, got, {})
+	})
 
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			state.input.mouse_x = 100
-			state.input.mouse_y = 50
-			state.view.zoom = 2
-			state.view.pan = {20, 10}
-			screen := input_mouse_screen()
-			expect_vec2(t, screen, {100, 50})
-			world := input_mouse_world()
-			expect_vec2(t, world, view_screen_to_world(screen))
-		},
-	)
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.input.mouse_x = 100
+		state.input.mouse_y = 50
+		state.view.zoom = 2
+		state.view.pan = {20, 10}
+		screen := input_mouse_screen()
+		expect_vec2(t, screen, {100, 50})
+		world := input_mouse_world()
+		expect_vec2(t, world, view_screen_to_world(screen))
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -382,16 +370,13 @@ engine_input_mouse_screen_nil_and_world :: proc(t: ^testing.T) {
 
 @(test)
 engine_set_fullscreen_nil_window_returns_false :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, state.window == nil)
-			testing.expect(t, !set_fullscreen(true))
-			testing.expect(t, !state.fullscreen)
-			toggle_fullscreen()
-			testing.expect(t, !state.fullscreen)
-		},
-	)
+	with_engine_env(t, proc(t: ^testing.T) {
+		testing.expect(t, state.window == nil)
+		testing.expect(t, !set_fullscreen(true))
+		testing.expect(t, !state.fullscreen)
+		toggle_fullscreen()
+		testing.expect(t, !state.fullscreen)
+	})
 }
 
 @(test)
@@ -460,7 +445,10 @@ engine_reset_input_state_clears_flags_preserves_gamepad_handles :: proc(t: ^test
 			state.input.keys_down[3] = true
 			state.force_reload = true
 			state.force_restart = true
-			state.reload_keys_prev = {f5 = true, f6 = true}
+			state.reload_keys_prev = {
+				f5 = true,
+				f6 = true,
+			}
 			state.running = false
 			state.gamepad_instance_id = 42
 			// Nil gamepad: preserve id, skip sync.
@@ -483,32 +471,26 @@ engine_reset_input_state_clears_flags_preserves_gamepad_handles :: proc(t: ^test
 
 @(test)
 engine_should_run_and_can_render :: proc(t: ^testing.T) {
-	with_nil_state(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, !should_run())
-			testing.expect(t, !can_render())
-		},
-	)
+	with_nil_state(t, proc(t: ^testing.T) {
+		testing.expect(t, !should_run())
+		testing.expect(t, !can_render())
+	})
 
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			state.running = true
-			state.can_render = true
-			testing.expect(t, should_run())
-			testing.expect(t, can_render())
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.running = true
+		state.can_render = true
+		testing.expect(t, should_run())
+		testing.expect(t, can_render())
 
-			state.running = false
-			testing.expect(t, !should_run())
-			testing.expect(t, can_render())
+		state.running = false
+		testing.expect(t, !should_run())
+		testing.expect(t, can_render())
 
-			state.running = true
-			state.can_render = false
-			testing.expect(t, should_run())
-			testing.expect(t, !can_render())
-		},
-	)
+		state.running = true
+		state.can_render = false
+		testing.expect(t, should_run())
+		testing.expect(t, !can_render())
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -517,52 +499,46 @@ engine_should_run_and_can_render :: proc(t: ^testing.T) {
 
 @(test)
 engine_force_reload_restart_peek_consume_take :: proc(t: ^testing.T) {
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, !peek_force_reload())
-			testing.expect(t, !peek_force_restart())
-			testing.expect(t, !take_force_reload())
-			testing.expect(t, !take_force_restart())
+	with_engine_env(t, proc(t: ^testing.T) {
+		testing.expect(t, !peek_force_reload())
+		testing.expect(t, !peek_force_restart())
+		testing.expect(t, !take_force_reload())
+		testing.expect(t, !take_force_restart())
 
-			state.force_reload = true
-			state.force_restart = true
-			testing.expect(t, peek_force_reload())
-			testing.expect(t, peek_force_restart())
-			testing.expect(t, state.force_reload)
-			testing.expect(t, state.force_restart)
+		state.force_reload = true
+		state.force_restart = true
+		testing.expect(t, peek_force_reload())
+		testing.expect(t, peek_force_restart())
+		testing.expect(t, state.force_reload)
+		testing.expect(t, state.force_restart)
 
-			consume_force_reload()
-			testing.expect(t, !state.force_reload)
-			testing.expect(t, state.force_restart)
-			consume_force_restart()
-			testing.expect(t, !state.force_restart)
+		consume_force_reload()
+		testing.expect(t, !state.force_reload)
+		testing.expect(t, state.force_restart)
+		consume_force_restart()
+		testing.expect(t, !state.force_restart)
 
-			state.force_reload = true
-			state.force_restart = true
-			testing.expect(t, take_force_reload())
-			testing.expect(t, !state.force_reload)
-			testing.expect(t, take_force_restart())
-			testing.expect(t, !state.force_restart)
-			testing.expect(t, !take_force_reload())
-			testing.expect(t, !take_force_restart())
-		},
-	)
+		state.force_reload = true
+		state.force_restart = true
+		testing.expect(t, take_force_reload())
+		testing.expect(t, !state.force_reload)
+		testing.expect(t, take_force_restart())
+		testing.expect(t, !state.force_restart)
+		testing.expect(t, !take_force_reload())
+		testing.expect(t, !take_force_restart())
+	})
 }
 
 @(test)
 engine_force_flags_nil_state_safe :: proc(t: ^testing.T) {
-	with_nil_state(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, !peek_force_reload())
-			testing.expect(t, !peek_force_restart())
-			testing.expect(t, !take_force_reload())
-			testing.expect(t, !take_force_restart())
-			consume_force_reload()
-			consume_force_restart()
-		},
-	)
+	with_nil_state(t, proc(t: ^testing.T) {
+		testing.expect(t, !peek_force_reload())
+		testing.expect(t, !peek_force_restart())
+		testing.expect(t, !take_force_reload())
+		testing.expect(t, !take_force_restart())
+		consume_force_reload()
+		consume_force_restart()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -580,8 +556,19 @@ engine_copy_state_fields_transfers_live_handles :: proc(t: ^testing.T) {
 	src.running = true
 	src.perf_frequency = 99
 	src.last_counter = 88
-	src.dpi = {scale = 2, logical_w = 10, logical_h = 20, drawable_w = 20, drawable_h = 40}
-	src.view = {zoom = 2, pan = {1, 2}, zoom_min = 0.5, zoom_max = 4}
+	src.dpi = {
+		scale      = 2,
+		logical_w  = 10,
+		logical_h  = 20,
+		drawable_w = 20,
+		drawable_h = 40,
+	}
+	src.view = {
+		zoom     = 2,
+		pan      = {1, 2},
+		zoom_min = 0.5,
+		zoom_max = 4,
+	}
 	src.gamepad_instance_id = 7
 	src.force_reload = true
 	append(&src.input.text_input, 'q')
@@ -621,53 +608,44 @@ engine_release_input_allocations_frees_text :: proc(t: ^testing.T) {
 
 @(test)
 engine_init_requires_state_and_window :: proc(t: ^testing.T) {
-	with_nil_state(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, !init())
-		},
-	)
+	with_nil_state(t, proc(t: ^testing.T) {
+		testing.expect(t, !init())
+	})
 
-	with_engine_env(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, state.window == nil)
-			testing.expect(t, !init())
-		},
-	)
+	with_engine_env(t, proc(t: ^testing.T) {
+		testing.expect(t, state.window == nil)
+		testing.expect(t, !init())
+	})
 }
 
 @(test)
 engine_init_window_idempotent_and_lifecycle :: proc(t: ^testing.T) {
-	with_engine_window_env(
-		t,
-		proc(t: ^testing.T) {
-			testing.expect(t, state.window != nil)
-			testing.expect(t, state.gpu != nil)
-			testing.expect(t, should_run())
-			testing.expect(t, can_render())
+	with_engine_window_env(t, proc(t: ^testing.T) {
+		testing.expect(t, state.window != nil)
+		testing.expect(t, state.gpu != nil)
+		testing.expect(t, should_run())
+		testing.expect(t, can_render())
 
-			cfg := Window_Config {
-				title = "ignored",
-				width = 100,
-				height = 100,
-				min_width = 10,
-				min_height = 10,
-			}
-			testing.expect(t, init_window(cfg))
+		cfg := Window_Config {
+			title      = "ignored",
+			width      = 100,
+			height     = 100,
+			min_width  = 10,
+			min_height = 10,
+		}
+		testing.expect(t, init_window(cfg))
 
-			state.view.zoom = 0
-			testing.expect(t, init())
-			expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
+		state.view.zoom = 0
+		testing.expect(t, init())
+		expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
 
-			begin_frame()
-			testing.expect(t, ui_pass() == .Layout)
-			end_frame()
+		begin_frame()
+		testing.expect(t, ui_pass() == .Layout)
+		end_frame()
 
-			on_hot_reload()
-			testing.expect(t, can_render())
-		},
-	)
+		on_hot_reload()
+		testing.expect(t, can_render())
+	})
 }
 
 @(test)
@@ -712,12 +690,9 @@ engine_init_window_creates_when_missing :: proc(t: ^testing.T) {
 
 @(test)
 engine_shutdown_nil_state_safe :: proc(t: ^testing.T) {
-	with_nil_state(
-		t,
-		proc(t: ^testing.T) {
-			shutdown()
-		},
-	)
+	with_nil_state(t, proc(t: ^testing.T) {
+		shutdown()
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -726,48 +701,42 @@ engine_shutdown_nil_state_safe :: proc(t: ^testing.T) {
 
 @(test)
 engine_poll_events_quit_and_close_request :: proc(t: ^testing.T) {
-	with_engine_sdl_env(
-		t,
-		proc(t: ^testing.T) {
-			state.running = true
-			engine_test_push(t, {type = .QUIT})
-			poll_events()
-			testing.expect(t, !state.running)
+	with_engine_sdl_env(t, proc(t: ^testing.T) {
+		state.running = true
+		engine_test_push(t, {type = .QUIT})
+		poll_events()
+		testing.expect(t, !state.running)
 
-			state.running = true
-			engine_test_push(t, {type = .WINDOW_CLOSE_REQUESTED})
-			poll_events()
-			testing.expect(t, !state.running)
-		},
-	)
+		state.running = true
+		engine_test_push(t, {type = .WINDOW_CLOSE_REQUESTED})
+		poll_events()
+		testing.expect(t, !state.running)
+	})
 }
 
 @(test)
 engine_poll_events_window_fullscreen_and_focus :: proc(t: ^testing.T) {
-	with_engine_sdl_env(
-		t,
-		proc(t: ^testing.T) {
-			state.input.keys_down[5] = true
-			state.input.mouse_left = true
-			state.input.modifiers.ctrl = true
-			append(&state.input.text_input, 'k')
-			state.input.mouse_wheel_y = 1
+	with_engine_sdl_env(t, proc(t: ^testing.T) {
+		state.input.keys_down[5] = true
+		state.input.mouse_left = true
+		state.input.modifiers.ctrl = true
+		append(&state.input.text_input, 'k')
+		state.input.mouse_wheel_y = 1
 
-			engine_test_push(t, {type = .WINDOW_ENTER_FULLSCREEN})
-			engine_test_push(t, {type = .WINDOW_FOCUS_LOST})
-			poll_events()
-			testing.expect(t, state.fullscreen)
-			testing.expect(t, !state.input.keys_down[5])
-			testing.expect(t, !state.input.mouse_left)
-			testing.expect(t, !state.input.modifiers.ctrl)
-			testing.expect_value(t, len(state.input.text_input), 0)
-			expect_close(t, state.input.mouse_wheel_y, 1)
+		engine_test_push(t, {type = .WINDOW_ENTER_FULLSCREEN})
+		engine_test_push(t, {type = .WINDOW_FOCUS_LOST})
+		poll_events()
+		testing.expect(t, state.fullscreen)
+		testing.expect(t, !state.input.keys_down[5])
+		testing.expect(t, !state.input.mouse_left)
+		testing.expect(t, !state.input.modifiers.ctrl)
+		testing.expect_value(t, len(state.input.text_input), 0)
+		expect_close(t, state.input.mouse_wheel_y, 1)
 
-			engine_test_push(t, {type = .WINDOW_LEAVE_FULLSCREEN})
-			poll_events()
-			testing.expect(t, !state.fullscreen)
-		},
-	)
+		engine_test_push(t, {type = .WINDOW_LEAVE_FULLSCREEN})
+		poll_events()
+		testing.expect(t, !state.fullscreen)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -796,10 +765,7 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			testing.expect(t, state.input.keys_down[a])
 			testing.expect(t, state.input.modifiers.shift)
 
-			engine_test_push(
-				t,
-				{key = {type = .KEY_UP, scancode = .A, key = sdl.K_A, mod = {}}},
-			)
+			engine_test_push(t, {key = {type = .KEY_UP, scancode = .A, key = sdl.K_A, mod = {}}})
 			poll_events()
 			testing.expect(t, !state.input.keys_down[a])
 			testing.expect(t, !state.input.modifiers.shift)
@@ -810,14 +776,7 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			state.input.keys_repeat[int(sdl.Scancode.F5)] = false
 			engine_test_push(
 				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .F5,
-						key = sdl.K_F5,
-						repeat = true,
-					},
-				},
+				{key = {type = .KEY_DOWN, scancode = .F5, key = sdl.K_F5, repeat = true}},
 			)
 			poll_events()
 			testing.expect(t, state.input.keys_down[int(sdl.Scancode.F5)])
@@ -843,10 +802,7 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			}
 			sync_widget_input()
 
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}})
 			poll_events()
 			// Escape is not bound by default; apps opt into app.quit.
 			engine_test_dispatch_shortcuts()
@@ -858,27 +814,18 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 				clear_key_transients(&key)
 			}
 			sync_widget_input()
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .ESCAPE, key = sdl.K_ESCAPE}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, !state.running)
 
 			state.running = true
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .F5, key = sdl.K_F5}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .F5, key = sdl.K_F5}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_reload)
 
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .F6, key = sdl.K_F6}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .F6, key = sdl.K_F6}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_restart)
@@ -888,18 +835,12 @@ engine_poll_events_key_down_up_and_shortcuts :: proc(t: ^testing.T) {
 			state.force_restart = false
 			state.input.keys_down[int(sdl.Scancode.F5)] = false
 			state.input.keys_down[int(sdl.Scancode.F6)] = false
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F5}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F5}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_reload)
 
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F6}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .UNKNOWN, key = sdl.K_F6}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.force_restart)
@@ -958,43 +899,19 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 
 			engine_test_push(
 				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .EQUALS,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
+				{key = {type = .KEY_DOWN, scancode = .EQUALS, mod = sdl.KMOD_CTRL}},
 			)
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom > before_zoom)
 
 			zoomed := state.view.zoom
-			engine_test_push(
-				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .MINUS,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .MINUS, mod = sdl.KMOD_CTRL}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom < zoomed)
 
-			engine_test_push(
-				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = ._0,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = ._0, mod = sdl.KMOD_CTRL}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
@@ -1002,10 +919,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 
 			// Without ctrl, zoom keys do nothing.
 			state.view.zoom = 2
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .EQUALS, mod = {}}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .EQUALS, mod = {}}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, 2)
@@ -1013,13 +927,7 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 			// Keypad variants
 			engine_test_push(
 				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .KP_PLUS,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
+				{key = {type = .KEY_DOWN, scancode = .KP_PLUS, mod = sdl.KMOD_CTRL}},
 			)
 			poll_events()
 			engine_test_dispatch_shortcuts()
@@ -1027,28 +935,13 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 
 			engine_test_push(
 				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .KP_MINUS,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
+				{key = {type = .KEY_DOWN, scancode = .KP_MINUS, mod = sdl.KMOD_CTRL}},
 			)
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			testing.expect(t, state.view.zoom < 2.5)
 
-			engine_test_push(
-				t,
-				{
-					key = {
-						type = .KEY_DOWN,
-						scancode = .KP_0,
-						mod = sdl.KMOD_CTRL,
-					},
-				},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .KP_0, mod = sdl.KMOD_CTRL}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			expect_close(t, state.view.zoom, VIEW_ZOOM_DEFAULT)
@@ -1058,19 +951,16 @@ engine_poll_events_ctrl_zoom_and_reset :: proc(t: ^testing.T) {
 
 @(test)
 engine_poll_events_text_input :: proc(t: ^testing.T) {
-	with_engine_sdl_env(
-		t,
-		proc(t: ^testing.T) {
-			cstr := strings.clone_to_cstring("hi", context.temp_allocator)
-			engine_test_push(t, {text = {type = .TEXT_INPUT, text = cstr}})
-			poll_events()
-			testing.expect_value(t, string(state.input.text_input[:]), "hi")
+	with_engine_sdl_env(t, proc(t: ^testing.T) {
+		cstr := strings.clone_to_cstring("hi", context.temp_allocator)
+		engine_test_push(t, {text = {type = .TEXT_INPUT, text = cstr}})
+		poll_events()
+		testing.expect_value(t, string(state.input.text_input[:]), "hi")
 
-			engine_test_push(t, {text = {type = .TEXT_INPUT, text = nil}})
-			poll_events()
-			testing.expect_value(t, string(state.input.text_input[:]), "hi")
-		},
-	)
+		engine_test_push(t, {text = {type = .TEXT_INPUT, text = nil}})
+		poll_events()
+		testing.expect_value(t, string(state.input.text_input[:]), "hi")
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1083,24 +973,14 @@ engine_poll_events_mouse_motion_buttons_wheel :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			state.dpi.scale = 2
-			engine_test_push(
-				t,
-				{motion = {type = .MOUSE_MOTION, x = 200, y = 100}},
-			)
+			engine_test_push(t, {motion = {type = .MOUSE_MOTION, x = 200, y = 100}})
 			poll_events()
 			expect_close(t, state.input.mouse_x, 100)
 			expect_close(t, state.input.mouse_y, 50)
 
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_DOWN,
-						button = sdl.BUTTON_LEFT,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_DOWN, button = sdl.BUTTON_LEFT, x = 40, y = 60}},
 			)
 			poll_events()
 			testing.expect(t, state.input.mouse_left)
@@ -1109,25 +989,11 @@ engine_poll_events_mouse_motion_buttons_wheel :: proc(t: ^testing.T) {
 
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_DOWN,
-						button = sdl.BUTTON_RIGHT,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_DOWN, button = sdl.BUTTON_RIGHT, x = 40, y = 60}},
 			)
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_DOWN,
-						button = sdl.BUTTON_MIDDLE,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_DOWN, button = sdl.BUTTON_MIDDLE, x = 40, y = 60}},
 			)
 			poll_events()
 			testing.expect(t, state.input.mouse_right)
@@ -1137,46 +1003,22 @@ engine_poll_events_mouse_motion_buttons_wheel :: proc(t: ^testing.T) {
 			state.view.pan = {}
 			state.input.mouse_x = 20
 			state.input.mouse_y = 30
-			engine_test_push(
-				t,
-				{motion = {type = .MOUSE_MOTION, x = 60, y = 100}},
-			)
+			engine_test_push(t, {motion = {type = .MOUSE_MOTION, x = 60, y = 100}})
 			poll_events()
 			expect_close(t, state.view.pan.x, 10) // (30-20)
 			expect_close(t, state.view.pan.y, 20) // (50-30)
 
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_UP,
-						button = sdl.BUTTON_LEFT,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_UP, button = sdl.BUTTON_LEFT, x = 40, y = 60}},
 			)
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_UP,
-						button = sdl.BUTTON_RIGHT,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_UP, button = sdl.BUTTON_RIGHT, x = 40, y = 60}},
 			)
 			engine_test_push(
 				t,
-				{
-					button = {
-						type = .MOUSE_BUTTON_UP,
-						button = sdl.BUTTON_MIDDLE,
-						x = 40,
-						y = 60,
-					},
-				},
+				{button = {type = .MOUSE_BUTTON_UP, button = sdl.BUTTON_MIDDLE, x = 40, y = 60}},
 			)
 			poll_events()
 			testing.expect(t, !state.input.mouse_left)
@@ -1189,25 +1031,14 @@ engine_poll_events_mouse_motion_buttons_wheel :: proc(t: ^testing.T) {
 			state.input.mouse_left = true
 			state.input.mouse_x = 10
 			state.input.mouse_y = 10
-			engine_test_push(
-				t,
-				{motion = {type = .MOUSE_MOTION, x = 40, y = 40}},
-			)
+			engine_test_push(t, {motion = {type = .MOUSE_MOTION, x = 40, y = 40}})
 			poll_events()
 			expect_close(t, state.view.pan.x, 10)
 			expect_close(t, state.view.pan.y, 10)
 
 			engine_test_push(
 				t,
-				{
-					wheel = {
-						type = .MOUSE_WHEEL,
-						x = 1.5,
-						y = -2.25,
-						mouse_x = 80,
-						mouse_y = 120,
-					},
-				},
+				{wheel = {type = .MOUSE_WHEEL, x = 1.5, y = -2.25, mouse_x = 80, mouse_y = 120}},
 			)
 			poll_events()
 			expect_close(t, state.input.mouse_wheel_x, 1.5)
@@ -1300,18 +1131,12 @@ engine_poll_events_gamepad_axis_button_and_remove :: proc(t: ^testing.T) {
 			testing.expect(t, !state.fullscreen)
 
 			// REMOVED with matching id closes when handle is set; with nil handle, no-op.
-			engine_test_push(
-				t,
-				{gdevice = {type = .GAMEPAD_REMOVED, which = 99}},
-			)
+			engine_test_push(t, {gdevice = {type = .GAMEPAD_REMOVED, which = 99}})
 			poll_events()
 			testing.expect(t, state.gamepad == nil)
 
 			// ADDED with bogus id fails OpenGamepad gracefully.
-			engine_test_push(
-				t,
-				{gdevice = {type = .GAMEPAD_ADDED, which = 123456}},
-			)
+			engine_test_push(t, {gdevice = {type = .GAMEPAD_ADDED, which = 123456}})
 			poll_events()
 			testing.expect(t, state.gamepad == nil)
 		},
@@ -1329,7 +1154,10 @@ engine_poll_reload_keys_updates_prev_without_false_trigger :: proc(t: ^testing.T
 		proc(t: ^testing.T) {
 			// Pretend F5 was held last frame; if hardware is not holding F5 now,
 			// edge detect must not fire and prev must clear.
-			state.reload_keys_prev = {f5 = true, f6 = true}
+			state.reload_keys_prev = {
+				f5 = true,
+				f6 = true,
+			}
 			state.force_reload = false
 			state.force_restart = false
 			poll_reload_keys()
@@ -1350,17 +1178,17 @@ engine_poll_reload_keys_updates_prev_without_false_trigger :: proc(t: ^testing.T
 
 @(test)
 engine_poll_events_calls_poll_reload_keys :: proc(t: ^testing.T) {
-	with_engine_sdl_env(
-		t,
-		proc(t: ^testing.T) {
-			state.reload_keys_prev = {f5 = true, f6 = true}
-			poll_events()
-			kb := sdl.GetKeyboardState(nil)
-			if kb != nil && !kb[int(sdl.Scancode.F5)] {
-				testing.expect(t, !state.reload_keys_prev.f5)
-			}
-		},
-	)
+	with_engine_sdl_env(t, proc(t: ^testing.T) {
+		state.reload_keys_prev = {
+			f5 = true,
+			f6 = true,
+		}
+		poll_events()
+		kb := sdl.GetKeyboardState(nil)
+		if kb != nil && !kb[int(sdl.Scancode.F5)] {
+			testing.expect(t, !state.reload_keys_prev.f5)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,27 +1197,24 @@ engine_poll_events_calls_poll_reload_keys :: proc(t: ^testing.T) {
 
 @(test)
 engine_poll_events_resize_triggers_dpi_sync :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.dpi.logical_w = 1
-			state.dpi.logical_h = 1
-			engine_test_push(t, {type = .WINDOW_RESIZED})
-			poll_events()
-			testing.expect(t, state.dpi.logical_w > 1)
-			testing.expect(t, state.can_render)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.dpi.logical_w = 1
+		state.dpi.logical_h = 1
+		engine_test_push(t, {type = .WINDOW_RESIZED})
+		poll_events()
+		testing.expect(t, state.dpi.logical_w > 1)
+		testing.expect(t, state.can_render)
 
-			state.dpi.logical_w = 1
-			engine_test_push(t, {type = .WINDOW_PIXEL_SIZE_CHANGED})
-			poll_events()
-			testing.expect(t, state.dpi.logical_w > 1)
+		state.dpi.logical_w = 1
+		engine_test_push(t, {type = .WINDOW_PIXEL_SIZE_CHANGED})
+		poll_events()
+		testing.expect(t, state.dpi.logical_w > 1)
 
-			state.dpi.logical_w = 1
-			engine_test_push(t, {type = .WINDOW_DISPLAY_SCALE_CHANGED})
-			poll_events()
-			testing.expect(t, state.dpi.logical_w > 1)
-		},
-	)
+		state.dpi.logical_w = 1
+		engine_test_push(t, {type = .WINDOW_DISPLAY_SCALE_CHANGED})
+		poll_events()
+		testing.expect(t, state.dpi.logical_w > 1)
+	})
 }
 
 @(test)
@@ -1398,18 +1223,12 @@ engine_poll_events_f11_toggles_fullscreen :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			was := state.fullscreen
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}})
 			poll_events()
 			engine_test_dispatch_shortcuts()
 			// May fail on some WMs; only assert when SDL accepted the change.
 			if state.fullscreen != was {
-				engine_test_push(
-					t,
-					{key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}},
-				)
+				engine_test_push(t, {key = {type = .KEY_DOWN, scancode = .F11, key = sdl.K_F11}})
 				poll_events()
 				engine_test_dispatch_shortcuts()
 				testing.expect_value(t, state.fullscreen, was)
@@ -1462,11 +1281,11 @@ engine_poll_events_gamepad_start_toggles_fullscreen_with_window :: proc(t: ^test
 @(test)
 engine_window_config_fields_accepted :: proc(t: ^testing.T) {
 	cfg := Window_Config {
-		title                 = "title",
-		width                 = 640,
-		height                = 480,
-		min_width             = 100,
-		min_height             = 80,
+		title      = "title",
+		width      = 640,
+		height     = 480,
+		min_width  = 100,
+		min_height = 80,
 	}
 	testing.expect_value(t, cfg.width, i32(640))
 	testing.expect_value(t, cfg.height, i32(480))
@@ -1481,28 +1300,22 @@ engine_window_config_fields_accepted :: proc(t: ^testing.T) {
 
 @(test)
 engine_dpi_sync_get_window_size_failure_disables_render :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.can_render = true
-			test_hook_dpi_sync_fail_get_size = true
-			dpi_sync()
-			testing.expect(t, !state.can_render)
-		},
-	)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.can_render = true
+		test_hook_dpi_sync_fail_get_size = true
+		dpi_sync()
+		testing.expect(t, !state.can_render)
+	})
 }
 
 @(test)
 engine_dpi_sync_get_window_size_in_pixels_failure_disables_render :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.can_render = true
-			test_hook_dpi_sync_fail_get_pixels = true
-			dpi_sync()
-			testing.expect(t, !state.can_render)
-		},
-	)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.can_render = true
+		test_hook_dpi_sync_fail_get_pixels = true
+		dpi_sync()
+		testing.expect(t, !state.can_render)
+	})
 }
 
 @(test)
@@ -1521,17 +1334,14 @@ engine_dpi_sync_zero_logical_width_uses_scale_one :: proc(t: ^testing.T) {
 
 @(test)
 engine_dpi_sync_zero_drawable_disables_render :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.can_render = true
-			test_hook_dpi_sync_force_drawable_zero = true
-			dpi_sync()
-			testing.expect_value(t, state.dpi.drawable_w, i32(0))
-			testing.expect_value(t, state.dpi.drawable_h, i32(0))
-			testing.expect(t, !state.can_render)
-		},
-	)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.can_render = true
+		test_hook_dpi_sync_force_drawable_zero = true
+		dpi_sync()
+		testing.expect_value(t, state.dpi.drawable_w, i32(0))
+		testing.expect_value(t, state.dpi.drawable_h, i32(0))
+		testing.expect(t, !state.can_render)
+	})
 }
 
 @(test)
@@ -1573,15 +1383,12 @@ engine_dpi_sync_destroyed_window_disables_render :: proc(t: ^testing.T) {
 
 @(test)
 engine_set_fullscreen_sdl_failure_leaves_flag_unchanged :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(
-		t,
-		proc(t: ^testing.T) {
-			state.fullscreen = false
-			test_hook_set_fullscreen_fail = true
-			testing.expect(t, !set_fullscreen(true))
-			testing.expect(t, !state.fullscreen)
-		},
-	)
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		state.fullscreen = false
+		test_hook_set_fullscreen_fail = true
+		testing.expect(t, !set_fullscreen(true))
+		testing.expect(t, !state.fullscreen)
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1835,18 +1642,12 @@ engine_poll_events_ignores_out_of_range_scancode :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			oob := sdl.Scancode(KEY_COUNT)
-			engine_test_push(
-				t,
-				{key = {type = .KEY_DOWN, scancode = oob, key = sdl.K_A}},
-			)
+			engine_test_push(t, {key = {type = .KEY_DOWN, scancode = oob, key = sdl.K_A}})
 			poll_events()
 			// Must not write past keys_down array; no crash and no in-range key set.
 			testing.expect(t, !state.input.keys_down[0])
 
-			engine_test_push(
-				t,
-				{key = {type = .KEY_UP, scancode = oob, key = sdl.K_A}},
-			)
+			engine_test_push(t, {key = {type = .KEY_UP, scancode = oob, key = sdl.K_A}})
 			poll_events()
 		},
 	)
@@ -1868,8 +1669,19 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	src.assets.paths["x"] = Asset_Id(9)
 	src.textures.atlas.width = 128
 	src.fonts.library = transmute(FT_Library)uintptr(4)
-	src.dpi = {scale = 1.5, logical_w = 10, logical_h = 20, drawable_w = 15, drawable_h = 30}
-	src.view = {zoom = 2, pan = {3, 4}, zoom_min = 0.5, zoom_max = 4}
+	src.dpi = {
+		scale      = 1.5,
+		logical_w  = 10,
+		logical_h  = 20,
+		drawable_w = 15,
+		drawable_h = 30,
+	}
+	src.view = {
+		zoom     = 2,
+		pan      = {3, 4},
+		zoom_min = 0.5,
+		zoom_max = 4,
+	}
 	src.can_render = true
 	src.fullscreen = true
 	src.perf_frequency = 11

@@ -155,6 +155,7 @@ layout_test_append_node :: proc(
 	node_config := config
 	node_config.justify = justify
 
+	margin, _ := resolve_margin_value(node_config.margin)
 	padding, _ := resolve_padding_value(node_config.padding)
 	border, _ := resolve_border_value(node_config.border)
 
@@ -168,6 +169,7 @@ layout_test_append_node :: proc(
 			config = node_config,
 			direction_info = layout_direction_info(layout_config_direction(node_config)),
 			desired = desired,
+			margin = margin,
 			padding = padding,
 			border = border,
 			parent = parent,
@@ -186,9 +188,11 @@ layout_test_set_insets :: proc(
 	index: int,
 	padding: Pd_px = {},
 	border: Bd_px = {},
+	margin: Mg_px = {},
 ) {
 	layout.nodes[index].padding = padding
 	layout.nodes[index].border = border
+	layout.nodes[index].margin = margin
 }
 
 @(private)
@@ -1611,6 +1615,82 @@ layout_padding_and_border_shrink_content_and_offset_children :: proc(t: ^testing
 		expect_rect(t, inner, {12, 6, 176, 88})
 		expect_rect(t, layout.nodes[a].rect, {12, 6, 40, 20})
 		expect_rect_inside(t, inner, layout.nodes[a].rect)
+	})
+}
+
+@(test)
+layout_margin_offsets_border_box_outside_neighbors :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 100},
+			{direction = .HORIZONTAL, gap_x = 10},
+		)
+		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
+		b := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
+		layout_test_set_insets(layout, a, margin = {t = 4, b = 6, l = 8, r = 12})
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+
+		expect_rect(t, layout.nodes[a].rect, {8, 4, 40, 20})
+		expect_rect(t, layout.nodes[b].rect, {70, 0, 40, 20})
+		margin_box := layout_margin_box(&layout.nodes[a])
+		expect_rect(t, margin_box, {0, 0, 60, 30})
+	})
+}
+
+@(test)
+layout_margin_included_in_parent_intrinsic_measure :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{},
+			{direction = .VERTICAL},
+		)
+		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
+		layout_test_set_insets(layout, a, margin = {t = 5, b = 7, l = 3, r = 9})
+
+		layout.nodes[root].desired = layout_measure(&layout.nodes[root])
+		expect_close(t, layout.nodes[root].desired.x, 52)
+		expect_close(t, layout.nodes[root].desired.y, 32)
+	})
+}
+
+@(test)
+layout_absolute_margin_insets_from_containing_block :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 100},
+			{direction = .HORIZONTAL},
+		)
+		child := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{40, 20},
+			{
+				position = .ABSOLUTE,
+				x = 10,
+				y = 8,
+				x_set = true,
+				y_set = true,
+			},
+		)
+		layout_test_set_insets(layout, child, margin = {t = 2, b = 0, l = 4, r = 0})
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_rect(t, layout.nodes[child].rect, {14, 10, 40, 20})
 	})
 }
 

@@ -224,6 +224,7 @@ layout_end_space
 | [`layout_clamp_axis`](oni/layout.odin#L530) | min/max clamp |
 | [`layout_content_rect`](oni/layout.odin#L540) | Outer − padding |
 | [`layout_inner_rect`](oni/layout.odin#L552) | Outer − border − padding (content box for children) |
+| [`layout_margin_box`](oni/layout.odin) | Border box expanded by margin (flow allocation; not paint/hit) |
 
 ## Out of flow, visibility, clipping
 

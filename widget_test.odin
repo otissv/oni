@@ -667,6 +667,63 @@ widget_resolve_padding_variants :: proc(t: ^testing.T) {
 }
 
 @(test)
+widget_resolve_margin_variants :: proc(t: ^testing.T) {
+	expect_mg(t, resolve_margin_xy(4, 0), {4, 4, 4, 4})
+	expect_mg(t, resolve_margin_xy(3, 5), {5, 5, 3, 3})
+
+	m, ok := resolve_margin_value(f32(0))
+	testing.expect(t, !ok)
+
+	m, ok = resolve_margin_value(f32(8))
+	testing.expect(t, ok)
+	expect_mg(t, m, {8, 8, 8, 8})
+
+	m, ok = resolve_margin_value(Inherit.INHERIT, {1, 2, 3, 4})
+	testing.expect(t, ok)
+	expect_mg(t, m, {1, 2, 3, 4})
+
+	m, ok = resolve_margin_value(struct{}{})
+	testing.expect(t, !ok)
+
+	m, ok = resolve_margin_value(Mg_pos{x = 6, y = 2})
+	testing.expect(t, ok)
+	expect_mg(t, m, {2, 2, 6, 6})
+
+	m, ok = resolve_margin_value(Mg{t = 1, b = 2, l = 3, r = 4})
+	testing.expect(t, ok)
+	expect_mg(t, m, {1, 2, 3, 4})
+
+	m, ok = resolve_margin_value(Mg_struct{sm = true})
+	testing.expect(t, ok)
+	expect_mg(t, m, {MARGIN_SM, MARGIN_SM, MARGIN_SM, MARGIN_SM})
+
+	m, ok = resolve_margin_value(Mg_struct{md = true})
+	testing.expect(t, ok)
+	expect_mg(t, m, {MARGIN_MD, MARGIN_MD, MARGIN_MD, MARGIN_MD})
+
+	m, ok = resolve_margin_value(Mg_struct{lg = true})
+	testing.expect(t, ok)
+	expect_mg(t, m, {MARGIN_LG, MARGIN_LG, MARGIN_LG, MARGIN_LG})
+
+	m, ok = resolve_margin_value(Mg_struct{xl = true})
+	testing.expect(t, ok)
+	expect_mg(t, m, {MARGIN_XL, MARGIN_XL, MARGIN_XL, MARGIN_XL})
+
+	m, ok = resolve_margin_value(Mg_struct{t = 9, r = 8})
+	testing.expect(t, ok)
+	expect_mg(t, m, {9, 0, 0, 8})
+
+	m, ok = resolve_margin_value(Mg_struct{x = 4, y = 7})
+	testing.expect(t, ok)
+	expect_mg(t, m, {7, 7, 4, 4})
+
+	parent := Mg_px{t = 10, b = 20, l = 30, r = 40}
+	m, ok = resolve_margin_value(Mg_struct{t = .INHERIT, l = .INHERIT}, parent)
+	testing.expect(t, ok)
+	expect_mg(t, m, {10, 0, 30, 0})
+}
+
+@(test)
 widget_resolve_radius_variants :: proc(t: ^testing.T) {
 	r, ok := resolve_radius_value(f32(0))
 	testing.expect(t, !ok)
@@ -1136,6 +1193,7 @@ widget_resolve_uses_style_stack_parent_insets :: proc(t: ^testing.T) {
 			parent := resolve_widget_config(
 				{},
 				{
+					margin = {mode = .Value, value = f32(6)},
 					padding = {mode = .Value, value = f32(12)},
 					radius = {mode = .Value, value = f32(8)},
 					border = {mode = .Value, value = f32(3)},
@@ -1149,6 +1207,10 @@ widget_resolve_uses_style_stack_parent_insets :: proc(t: ^testing.T) {
 			pad, pok := resolve_padding(Padding(Inherit.INHERIT), &frame, event)
 			testing.expect(t, pok)
 			expect_pd(t, pad, {12, 12, 12, 12})
+
+			margin, mok := resolve_margin(Margin(Inherit.INHERIT), &frame, event)
+			testing.expect(t, mok)
+			expect_mg(t, margin, {6, 6, 6, 6})
 
 			rad, rok := resolve_radius(Radius(Inherit.INHERIT), &frame, event)
 			testing.expect(t, rok)
@@ -1166,6 +1228,14 @@ widget_resolve_uses_style_stack_parent_insets :: proc(t: ^testing.T) {
 			)
 			testing.expect(t, pok2)
 			expect_pd(t, pad2, {12, 0, 4, 0})
+
+			margin2, mok2 := resolve_margin(
+				Margin(Mg_struct{t = .INHERIT, l = 4}),
+				&frame,
+				event,
+			)
+			testing.expect(t, mok2)
+			expect_mg(t, margin2, {6, 0, 4, 0})
 		},
 	)
 }

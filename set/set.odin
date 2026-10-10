@@ -119,6 +119,11 @@ Scroll_X :: proc(value: f32) -> oni.Scroll_Value {return value}
 Scroll_Y :: proc(value: f32) -> oni.Scroll_Value {return value}
 
 /*
+Sets a margin widget config field to an explicit value or `.INHERIT`.
+*/
+Margin :: proc(value: oni.Margin) -> oni.Cfg(oni.Margin) {return cfg_value(value)}
+
+/*
 Sets a padding widget config field to an explicit value or `.INHERIT`.
 */
 Padding :: proc(value: oni.Padding) -> oni.Cfg(oni.Padding) {return cfg_value(value)}

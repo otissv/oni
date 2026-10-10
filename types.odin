@@ -15,6 +15,11 @@ PADDING_MD :: f32(12)
 PADDING_LG :: f32(16)
 PADDING_XL :: f32(20)
 
+MARGIN_SM :: f32(8)
+MARGIN_MD :: f32(12)
+MARGIN_LG :: f32(16)
+MARGIN_XL :: f32(20)
+
 RADIUS_SM :: f32(4)
 RADIUS_MD :: f32(8)
 RADIUS_LG :: f32(12)
@@ -374,6 +379,7 @@ Widget_Config :: struct {
 	overflow_x:            Cfg(Overflow),
 	overflow_y:            Cfg(Overflow),
 	opacity:               Cfg(Style_F32),
+	margin:                Cfg(Margin),
 	padding:               Cfg(Padding),
 	pointer_events:        Cfg(Pointer_Events),
 	position:              Cfg(Position),
@@ -445,6 +451,7 @@ Resolved_Widget_Style :: struct {
 	max_w:                         f32,
 	min_h:                         f32,
 	min_w:                         f32,
+	margin:                        Margin,
 	padding:                       Padding,
 	radius:                        Radius,
 	space:                         Draw_Space,
@@ -601,10 +608,58 @@ Padding :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Padding,
 }
 
+
 /*
 Resolved per-side padding in pixels for layout and draw.
 */
 Pd_px :: struct {
+	t, b, l, r: f32,
+}
+
+/*
+Per-side margin values: top, bottom, left, and right.
+*/
+Mg :: struct {
+	t, b, l, r: F32_I,
+}
+
+/*
+Symmetric horizontal/vertical margin shorthand.
+*/
+Mg_pos :: struct {
+	x, y: F32_I,
+}
+
+/*
+Full margin specification with per-side, corner, axis, and preset flags.
+*/
+Mg_struct :: struct {
+	t, b, l, r:     F32_I,
+	tl, tr, bl, br: F32_I,
+	x, y:           F32_I,
+	sm, md, lg, xl: bool,
+}
+
+/*
+Author-time margin outside the border box.
+
+Same value shapes as `Padding`. Margin does not paint or expand hit-testing;
+it only reserves space between this widget and its neighbors in layout.
+*/
+Margin :: union {
+	Inherit,
+	struct{},
+	f32,
+	Mg,
+	Mg_pos,
+	Mg_struct,
+	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Margin,
+}
+
+/*
+Resolved per-side margin in pixels for layout.
+*/
+Mg_px :: struct {
 	t, b, l, r: f32,
 }
 
@@ -1174,6 +1229,7 @@ Theme :: struct {
 	font_body:    Font_Handle,
 	font_heading: Font_Handle,
 	height:       Height,
+	margin:       Margin,
 	padding:      Padding,
 	radius:       Radius,
 	width:        Width,

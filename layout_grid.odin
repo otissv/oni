@@ -334,8 +334,9 @@ layout_grid_item_content_mins :: proc(
 		gap_c := span_c > 1 ? gap_x * f32(span_c - 1) : 0
 		gap_r := span_r > 1 ? gap_y * f32(span_r - 1) : 0
 
-		min_w := max(0, child.desired.x - gap_c)
-		min_h := max(0, child.desired.y - gap_r)
+		outer := layout_size_with_margin(child.desired, child.margin)
+		min_w := max(0, outer.x - gap_c)
+		min_h := max(0, outer.y - gap_r)
 		per_col := min_w / f32(span_c)
 		per_row := min_h / f32(span_r)
 
@@ -427,18 +428,21 @@ layout_grid_place_item :: proc(
 	container_justify: Justify_Pos,
 ) {
 	child_justify := layout_merge_justify(container_justify, child.config.self)
+	m := child.margin
+	inner_w := max(0, cell.w - m.l - m.r)
+	inner_h := max(0, cell.h - m.t - m.b)
 
 	size := child.desired
 	if !length_is_definite(child.config.width) {
-		size.x = cell.w
+		size.x = inner_w
 	}
 	if !length_is_definite(child.config.height) {
-		size.y = cell.h
+		size.y = inner_h
 	}
-	layout_apply_definite_size(child, cell, &size)
+	layout_apply_definite_size(child, {cell.x + m.l, cell.y + m.t, inner_w, inner_h}, &size)
 
-	x := cell.x + justify_align_position_offset_x(cell.w, size.x, child_justify.x)
-	y := cell.y + justify_align_position_offset_y(cell.h, size.y, child_justify.y)
+	x := cell.x + m.l + justify_align_position_offset_x(inner_w, size.x, child_justify.x)
+	y := cell.y + m.t + justify_align_position_offset_y(inner_h, size.y, child_justify.y)
 	x += child.config.x
 	y += child.config.y
 

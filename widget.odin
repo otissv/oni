@@ -822,11 +822,7 @@ resolve_padding_struct :: proc(s: Pd_struct, parent: Pd_px = {}) -> (padding: Pd
 		return Pd_px{t = v, b = v, l = v, r = v}, true
 	}
 
-	any_side :=
-		f32_i_is_set(s.l) ||
-		f32_i_is_set(s.r) ||
-		f32_i_is_set(s.t) ||
-		f32_i_is_set(s.b)
+	any_side := f32_i_is_set(s.l) || f32_i_is_set(s.r) || f32_i_is_set(s.t) || f32_i_is_set(s.b)
 	if any_side {
 		return Pd_px {
 				t = resolve_side_f32_i(s.t, parent.t),
@@ -925,10 +921,7 @@ resolve_radius_struct :: proc(
 	}
 
 	any_corner :=
-		f32_i_is_set(s.tl) ||
-		f32_i_is_set(s.tr) ||
-		f32_i_is_set(s.bl) ||
-		f32_i_is_set(s.br)
+		f32_i_is_set(s.tl) || f32_i_is_set(s.tr) || f32_i_is_set(s.bl) || f32_i_is_set(s.br)
 	if any_corner {
 		return {
 				tl = resolve_side_f32_i(s.tl, parent.tl),
@@ -986,11 +979,7 @@ resolve_radius_corners :: proc(
 	radius: Radius_px,
 	ok: bool,
 ) {
-	any :=
-		f32_i_is_set(c.tl) ||
-		f32_i_is_set(c.tr) ||
-		f32_i_is_set(c.bl) ||
-		f32_i_is_set(c.br)
+	any := f32_i_is_set(c.tl) || f32_i_is_set(c.tr) || f32_i_is_set(c.bl) || f32_i_is_set(c.br)
 	if !any do return {}, false
 	return {
 			tl = resolve_side_f32_i(c.tl, parent.tl),
@@ -1099,8 +1088,7 @@ resolve_border_struct :: proc(s: Bd_struct, parent: Bd_px = {}) -> (width: Bd_px
 		return Bd_px{t = v, b = v, l = v, r = v}, true
 	}
 
-	any :=
-		f32_i_is_set(s.t) || f32_i_is_set(s.b) || f32_i_is_set(s.l) || f32_i_is_set(s.r)
+	any := f32_i_is_set(s.t) || f32_i_is_set(s.b) || f32_i_is_set(s.l) || f32_i_is_set(s.r)
 	if !any do return {}, false
 	return Bd_px {
 			t = resolve_side_f32_i(s.t, parent.t),
@@ -1193,6 +1181,127 @@ resolve_padding :: proc(
 }
 
 /*
+Builds uniform or axis-pair margin from x and optional y values.
+
+When y is zero, all sides use x.
+*/
+resolve_margin_xy :: proc(x, y: f32) -> Mg_px {
+	if y == 0 do return {t = x, b = x, l = x, r = x}
+
+	return {t = y, b = y, l = x, r = x}
+}
+
+/*
+Resolves a margin struct into concrete side values.
+
+Handles preset sizes and explicit per-side or axis shorthand.
+Per-field `.INHERIT` takes the matching parent side.
+*/
+resolve_margin_struct :: proc(s: Mg_struct, parent: Mg_px = {}) -> (margin: Mg_px, ok: bool) {
+	switch {
+	case s.sm:
+		v := MARGIN_SM
+		return Mg_px{t = v, b = v, l = v, r = v}, true
+	case s.md:
+		v := MARGIN_MD
+		return Mg_px{t = v, b = v, l = v, r = v}, true
+	case s.lg:
+		v := MARGIN_LG
+		return Mg_px{t = v, b = v, l = v, r = v}, true
+	case s.xl:
+		v := MARGIN_XL
+		return Mg_px{t = v, b = v, l = v, r = v}, true
+	}
+
+	any_side := f32_i_is_set(s.l) || f32_i_is_set(s.r) || f32_i_is_set(s.t) || f32_i_is_set(s.b)
+	if any_side {
+		return Mg_px {
+				t = resolve_side_f32_i(s.t, parent.t),
+				b = resolve_side_f32_i(s.b, parent.b),
+				l = resolve_side_f32_i(s.l, parent.l),
+				r = resolve_side_f32_i(s.r, parent.r),
+			},
+			true
+	}
+	if f32_i_is_set(s.x) || f32_i_is_set(s.y) {
+		return resolve_margin_xy(
+				resolve_side_f32_i(s.x, parent.l),
+				resolve_side_f32_i(s.y, parent.t),
+			),
+			true
+	}
+
+	return {}, false
+}
+
+/*
+Resolves a static Margin union value into concrete side insets.
+
+Does not evaluate proc-valued margin; use resolve_margin for that.
+*/
+resolve_margin_value :: proc(m: Margin, parent: Mg_px = {}) -> (margin: Mg_px, ok: bool) {
+	switch v in m {
+	case Inherit:
+		return parent, true
+	case struct{}:
+		return {}, false
+	case f32:
+		if v == 0 do return {}, false
+		return {v, v, v, v}, true
+	case Mg_pos:
+		if !f32_i_is_set(v.x) && !f32_i_is_set(v.y) do return {}, false
+		return resolve_margin_xy(
+				resolve_side_f32_i(v.x, parent.l),
+				resolve_side_f32_i(v.y, parent.t),
+			),
+			true
+	case Mg_struct:
+		return resolve_margin_struct(v, parent)
+	case Mg:
+		return Mg_px {
+				t = resolve_side_f32_i(v.t, parent.t),
+				b = resolve_side_f32_i(v.b, parent.b),
+				l = resolve_side_f32_i(v.l, parent.l),
+				r = resolve_side_f32_i(v.r, parent.r),
+			},
+			true
+	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Margin:
+		return {}, false
+	}
+
+	return {}, false
+}
+
+/*
+Returns concrete parent margin from the current style stack.
+*/
+@(private)
+margin_parent_px :: proc() -> Mg_px {
+	if len(state.ui.style_stack) == 0 do return {}
+	margin, ok := resolve_margin_value(ui_style_current().margin)
+	if ok do return margin
+	return {}
+}
+
+resolve_margin :: proc(
+	m: Margin,
+	state: ^$S,
+	event: Widget_Event(S),
+) -> (
+	margin: Mg_px,
+	ok: bool,
+) {
+	#partial switch v in m {
+	case proc(state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Margin:
+		ui_state := to_ui_state(state)
+		ui_event := to_ui_event(state)
+		return resolve_margin(v(ui_state, ui_event), state, event)
+	}
+
+	return resolve_margin_value(m, margin_parent_px())
+}
+
+/*
 Builds author Bd from resolved pixels (for style stack storage).
 */
 border_px_to_bd :: proc(b: Bd_px) -> Bd {
@@ -1204,6 +1313,13 @@ Builds author Pd from resolved pixels (for style stack storage).
 */
 padding_px_to_pd :: proc(p: Pd_px) -> Pd {
 	return {t = p.t, b = p.b, l = p.l, r = p.r}
+}
+
+/*
+Builds author Mg from resolved margin pixels (for style stack storage).
+*/
+margin_px_to_mg :: proc(m: Mg_px) -> Mg {
+	return {t = m.t, b = m.b, l = m.l, r = m.r}
 }
 
 /*
@@ -1630,12 +1746,7 @@ resolve_texture_pos_value :: proc(p: Style_Texture_Pos) -> (pos: Resolved_Textur
 		}
 		return pos, true
 	case Texture_Pos_X_Y:
-		return {
-				texture_pos_normalize(f32_i_px(v.x)),
-				texture_pos_normalize(f32_i_px(v.y)),
-				0,
-				0,
-			},
+		return {texture_pos_normalize(f32_i_px(v.x)), texture_pos_normalize(f32_i_px(v.y)), 0, 0},
 			true
 	case Resolved_Texture_Pos:
 		return v, true

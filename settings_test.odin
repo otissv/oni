@@ -276,8 +276,16 @@ settings_load_missing_file_installs_defaults :: proc(t: ^testing.T) {
 		testing.expect_value(t, state.settings.path, path)
 		testing.expect_value(t, state.settings.window_title, SETTINGS_DEFAULT_WINDOW_TITLE)
 		testing.expect_value(t, len(state.settings.font_faces), 2)
-		testing.expect_value(t, state.settings.font_faces[0].path, SETTINGS_DEFAULT_FONT_REGULAR_PATH)
-		testing.expect_value(t, state.settings.font_faces[1].path, SETTINGS_DEFAULT_FONT_ITALIC_PATH)
+		testing.expect_value(
+			t,
+			state.settings.font_faces[0].path,
+			SETTINGS_DEFAULT_FONT_REGULAR_PATH,
+		)
+		testing.expect_value(
+			t,
+			state.settings.font_faces[1].path,
+			SETTINGS_DEFAULT_FONT_ITALIC_PATH,
+		)
 		testing.expect(t, !shortcut_load_bindings(path))
 	})
 }
@@ -456,29 +464,32 @@ window { title "Good" }`))
 
 @(test)
 settings_apply_window_updates_sdl_window :: proc(t: ^testing.T) {
-	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
-		settings_ensure()
-		if state.settings.window_title != "" {
-			delete(state.settings.window_title)
-		}
+	with_engine_sdl_window_env(
+		t,
+		proc(t: ^testing.T) {
+			settings_ensure()
+			if state.settings.window_title != "" {
+				delete(state.settings.window_title)
+			}
 
-		state.settings.window_title = strings.clone("Settings Window")
-		state.settings.window_width = 400
-		state.settings.window_height = 300
-		state.settings.min_width = 120
-		state.settings.min_height = 90
-		settings_apply_window()
+			state.settings.window_title = strings.clone("Settings Window")
+			state.settings.window_width = 400
+			state.settings.window_height = 300
+			state.settings.min_width = 120
+			state.settings.min_height = 90
+			settings_apply_window()
 
-		title := sdl.GetWindowTitle(state.window)
-		testing.expect_value(t, string(title), "Settings Window")
-		min_w, min_h: i32
-		testing.expect(t, sdl.GetWindowMinimumSize(state.window, &min_w, &min_h))
-		testing.expect_value(t, min_w, i32(120))
-		testing.expect_value(t, min_h, i32(90))
-		// Size is a compositor request and may be ignored (e.g. Wayland).
-		testing.expect_value(t, state.settings.window_width, i32(400))
-		testing.expect_value(t, state.settings.window_height, i32(300))
-	})
+			title := sdl.GetWindowTitle(state.window)
+			testing.expect_value(t, string(title), "Settings Window")
+			min_w, min_h: i32
+			testing.expect(t, sdl.GetWindowMinimumSize(state.window, &min_w, &min_h))
+			testing.expect_value(t, min_w, i32(120))
+			testing.expect_value(t, min_h, i32(90))
+			// Size is a compositor request and may be ignored (e.g. Wayland).
+			testing.expect_value(t, state.settings.window_width, i32(400))
+			testing.expect_value(t, state.settings.window_height, i32(300))
+		},
+	)
 }
 
 @(test)
@@ -499,29 +510,31 @@ settings_dpi_override_applied_by_dpi_sync :: proc(t: ^testing.T) {
 
 @(test)
 settings_parse_path_with_comma_and_register_fonts :: proc(t: ^testing.T) {
-	with_engine_env(t, proc(t: ^testing.T) {
-		if !os.exists(PIXEL_FONT_FIXTURE) || !os.exists(INTER_FONT_FIXTURE) {
-			testing.expectf(t, false, "missing font fixtures")
-			return
-		}
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			if !os.exists(PIXEL_FONT_FIXTURE) || !os.exists(INTER_FONT_FIXTURE) {
+				testing.expectf(t, false, "missing font fixtures")
+				return
+			}
 
-		// Do not use fmt.tprintf with KDL braces — `{` is format syntax.
-		comma_doc := strings.concatenate(
-			{
-				"fonts {\n\tfamily CommaFont {\n\t\tface {\n\t\t\tpath \"",
-				INTER_FONT_FIXTURE,
-				"\"\n\t\t\tstyle italic\n\t\t\tweight bold\n\t\t}\n\t}\n}\n",
-			},
-			context.temp_allocator,
-		)
-		comma_parsed, comma_err := settings_parse_document(comma_doc)
-		defer settings_destroy_value(comma_parsed)
-		testing.expectf(t, comma_err.ok, "comma path parse failed")
-		testing.expect_value(t, comma_parsed.font_family, "CommaFont")
-		testing.expect_value(t, len(comma_parsed.font_faces), 1)
-		testing.expect_value(t, comma_parsed.font_faces[0].path, INTER_FONT_FIXTURE)
+			// Do not use fmt.tprintf with KDL braces — `{` is format syntax.
+			comma_doc := strings.concatenate(
+				{
+					"fonts {\n\tfamily CommaFont {\n\t\tface {\n\t\t\tpath \"",
+					INTER_FONT_FIXTURE,
+					"\"\n\t\t\tstyle italic\n\t\t\tweight bold\n\t\t}\n\t}\n}\n",
+				},
+				context.temp_allocator,
+			)
+			comma_parsed, comma_err := settings_parse_document(comma_doc)
+			defer settings_destroy_value(comma_parsed)
+			testing.expectf(t, comma_err.ok, "comma path parse failed")
+			testing.expect_value(t, comma_parsed.font_family, "CommaFont")
+			testing.expect_value(t, len(comma_parsed.font_faces), 1)
+			testing.expect_value(t, comma_parsed.font_faces[0].path, INTER_FONT_FIXTURE)
 
-		normal_doc := `
+			normal_doc := `
 fonts {
 	body-size 16
 	heading-size 22
@@ -534,41 +547,42 @@ fonts {
 	}
 }
 `
-		normal_parsed, normal_err := settings_parse_document(normal_doc)
-		defer settings_destroy_value(normal_parsed)
-		testing.expectf(t, normal_err.ok, "normal style/weight parse failed")
-		testing.expect_value(t, normal_parsed.font_family, "SettingsFont")
-		testing.expect_value(t, len(normal_parsed.font_faces), 1)
-		style, style_ok := normal_parsed.font_faces[0].style.(Font_Styles)
-		testing.expect(t, style_ok && style == .NORMAL)
-		weight, weight_ok := normal_parsed.font_faces[0].weight.(Font_Weights)
-		testing.expect(t, weight_ok && weight == .Normal)
-		expect_close(t, normal_parsed.font_heading_size, 22)
+			normal_parsed, normal_err := settings_parse_document(normal_doc)
+			defer settings_destroy_value(normal_parsed)
+			testing.expectf(t, normal_err.ok, "normal style/weight parse failed")
+			testing.expect_value(t, normal_parsed.font_family, "SettingsFont")
+			testing.expect_value(t, len(normal_parsed.font_faces), 1)
+			style, style_ok := normal_parsed.font_faces[0].style.(Font_Styles)
+			testing.expect(t, style_ok && style == .NORMAL)
+			weight, weight_ok := normal_parsed.font_faces[0].weight.(Font_Weights)
+			testing.expect(t, weight_ok && weight == .Normal)
+			expect_close(t, normal_parsed.font_heading_size, 22)
 
-		settings_assign(settings_defaults())
+			settings_assign(settings_defaults())
 
-		if state.settings.font_family != "" {
-			delete(state.settings.font_family)
-		}
+			if state.settings.font_family != "" {
+				delete(state.settings.font_family)
+			}
 
-		state.settings.font_family = strings.clone("SettingsFont")
-		settings_kdl_clear_faces(&state.settings)
-		append(
-			&state.settings.font_faces,
-			Font_Face_Desc {
-				path = strings.clone(PIXEL_FONT_FIXTURE),
-				style = .NORMAL,
-				weight = .Normal,
-			},
-		)
-		state.settings.font_body_size = 16
-		state.settings.font_heading_size = 22
+			state.settings.font_family = strings.clone("SettingsFont")
+			settings_kdl_clear_faces(&state.settings)
+			append(
+				&state.settings.font_faces,
+				Font_Face_Desc {
+					path = strings.clone(PIXEL_FONT_FIXTURE),
+					style = .NORMAL,
+					weight = .Normal,
+				},
+			)
+			state.settings.font_body_size = 16
+			state.settings.font_heading_size = 22
 
-		handle, ok := settings_register_fonts()
-		testing.expect(t, ok)
-		// First registered family uses id 0.
-		_ = handle
-	})
+			handle, ok := settings_register_fonts()
+			testing.expect(t, ok)
+			// First registered family uses id 0.
+			_ = handle
+		},
+	)
 }
 
 @(test)
