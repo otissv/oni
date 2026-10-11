@@ -435,10 +435,68 @@ table_merge_radius_corners :: proc(a, b: Radius_px) -> Radius_px {
 }
 
 /*
+Union of laid-out cell/heading rects for a table track set.
+
+Used as the visible collapsed frame when the table content box is wider or taller
+than the intrinsic column/row grid (e.g. stretched table, left-aligned cells).
+*/
+table_cell_grid_bounds :: proc(
+	layout: ^Layout_State,
+	tracks: ^Layout_Table_Tracks,
+) -> (
+	bounds: Rect,
+	ok: bool,
+) {
+	if layout == nil || tracks == nil || len(tracks.cell_positions) == 0 {
+		return {}, false
+	}
+
+	min_x := f32(0)
+	min_y := f32(0)
+	max_x := f32(0)
+	max_y := f32(0)
+	found := false
+
+	for cell_index in tracks.cell_positions {
+		if cell_index < 0 || cell_index >= len(layout.nodes) do continue
+
+		r := layout.nodes[cell_index].rect
+		if r.w <= 0 || r.h <= 0 do continue
+
+		left := r.x
+		top := r.y
+		right := r.x + r.w
+		bottom := r.y + r.h
+
+		if !found {
+			min_x = left
+			min_y = top
+			max_x = right
+			max_y = bottom
+			found = true
+			continue
+		}
+
+		if left < min_x do min_x = left
+		if top < min_y do min_y = top
+		if right > max_x do max_x = right
+		if bottom > max_y do max_y = bottom
+	}
+
+	if !found do return {}, false
+
+	return {min_x, min_y, max_x - min_x, max_y - min_y}, true
+}
+
+/*
 Returns table outer-corner radii for a descendant whose rect shares those corners.
 
 Matches CSS padding-edge radii: outer radius minus border/padding inset. Used so
 opaque cell/row fills do not square off a rounded table.
+
+Corner matching uses the laid-out cell grid bounds when available, not only the
+table content box, so stretched tables with intrinsic columns still round the
+visible right/bottom frame corners.
 */
 table_descendant_outer_radius :: proc(layout_id: UI_Id, child_rect: Rect) -> Radius_px {
 	node_index, ok := state.ui.layout.id_to_node[layout_id]
@@ -453,6 +511,13 @@ table_descendant_outer_radius :: proc(layout_id: UI_Id, child_rect: Rect) -> Rad
 	if outer.tl <= 0 && outer.tr <= 0 && outer.bl <= 0 && outer.br <= 0 do return {}
 
 	content := layout_inner_rect(table.rect, table.border, table.padding)
+	frame := content
+	if tracks, tracks_ok := &state.ui.layout.table_tracks[table_index]; tracks_ok {
+		if grid, grid_ok := table_cell_grid_bounds(&state.ui.layout, tracks); grid_ok {
+			frame = grid
+		}
+	}
+
 	inset_t := table.border.t + table.padding.t
 	inset_b := table.border.b + table.padding.b
 	inset_l := table.border.l + table.padding.l
@@ -466,30 +531,30 @@ table_descendant_outer_radius :: proc(layout_id: UI_Id, child_rect: Rect) -> Rad
 	}
 
 	result: Radius_px
-	if table_corners_touch(child_rect.x, child_rect.y, content.x, content.y) {
+	if table_corners_touch(child_rect.x, child_rect.y, frame.x, frame.y) {
 		result.tl = inner.tl
 	}
 	if table_corners_touch(
 		child_rect.x + child_rect.w,
 		child_rect.y,
-		content.x + content.w,
-		content.y,
+		frame.x + frame.w,
+		frame.y,
 	) {
 		result.tr = inner.tr
 	}
 	if table_corners_touch(
 		child_rect.x,
 		child_rect.y + child_rect.h,
-		content.x,
-		content.y + content.h,
+		frame.x,
+		frame.y + frame.h,
 	) {
 		result.bl = inner.bl
 	}
 	if table_corners_touch(
 		child_rect.x + child_rect.w,
 		child_rect.y + child_rect.h,
-		content.x + content.w,
-		content.y + content.h,
+		frame.x + frame.w,
+		frame.y + frame.h,
 	) {
 		result.br = inner.br
 	}

@@ -8,15 +8,19 @@ LAYOUT_CHILD_SORT_INSERTION_THRESHOLD :: 16
 
 /*
 Author text and optional wrap-width hint for leaf text measurement.
+
+`measured_wrap_w` is the soft-wrap width last used to compute `desired` height for
+BALANCE text (0 when height was not soft-wrap measured).
 */
 Layout_Measure :: struct {
-	text:            string,
-	edit_plain:      string,
-	edit_plain_set:  bool,
-	max_w:           f32,
-	runs:            []Layout_Text_Run,
-	rich:            bool,
-	tag_diagnostics: bool,
+	text:             string,
+	edit_plain:       string,
+	edit_plain_set:   bool,
+	max_w:            f32,
+	measured_wrap_w:  f32,
+	runs:             []Layout_Text_Run,
+	rich:             bool,
+	tag_diagnostics:  bool,
 }
 
 /*
@@ -109,22 +113,30 @@ Layout_Node :: struct {
 	parent:            int,
 	child_indices:     [dynamic]int,
 	wrap_lines:        []Layout_Wrap_Line,
-	measure:           Layout_Measure,
-	text:              Layout_Text,
-	image_input:       Layout_Image_Input,
-	image:             Layout_Image,
-	collapsed_borders: Layout_Collapsed_Borders,
-	stack_index:       u32,
-	paint_skip:        bool,
-	hit_skip:          bool,
-	in_flex_flow:      bool,
-	clip_rect:         Rect,
-	has_clip:          bool,
-	space:             Draw_Space,
-	content_size:      Vec2,
-	viewport_size:     Vec2,
-	scroll:            Vec2,
-	max_scroll:        Vec2,
+	measure:                       Layout_Measure,
+	text:                          Layout_Text,
+	image_input:                   Layout_Image_Input,
+	image:                         Layout_Image,
+	collapsed_borders:             Layout_Collapsed_Borders,
+	slider_input:                  Layout_Slider_Input,
+	slider:                        Layout_Slider,
+	scroll_bar_input:              Layout_Scroll_Bar_Input,
+	scroll_bar:                    Layout_Scroll_Bar,
+	color_picker_channels_input:   Layout_Color_Picker_Channels_Input,
+	color_picker_channels:         Layout_Color_Picker_Channels,
+	calendar_input:                Layout_Calendar_Input,
+	calendar:                      Layout_Calendar,
+	stack_index:                   u32,
+	paint_skip:                    bool,
+	hit_skip:                      bool,
+	in_flex_flow:                  bool,
+	clip_rect:                     Rect,
+	has_clip:                      bool,
+	space:                         Draw_Space,
+	content_size:                  Vec2,
+	viewport_size:                 Vec2,
+	scroll:                        Vec2,
+	max_scroll:                    Vec2,
 }
 
 /*
@@ -761,7 +773,8 @@ layout_text_resolve_wrap_w :: proc(node: ^Layout_Node, available_w: f32) -> f32 
 /*
 Returns whether the text node's wrap width is definite before layout solve.
 
-When true, wrap_w is the width used for soft-wrap (BALANCE) estimates.
+When true, wrap_w is used for soft-wrap (BALANCE) measure height in the same
+layout pass (with parent content width as the provisional fallback).
 */
 layout_text_wrap_width_known :: proc(node: ^Layout_Node) -> (wrap_w: f32, known: bool) {
 	inset_w := layout_text_horizontal_insets(node)
@@ -778,7 +791,7 @@ layout_text_wrap_width_known :: proc(node: ^Layout_Node) -> (wrap_w: f32, known:
 }
 
 /*
-Counts layout lines used for measure height estimates from author text.
+Counts hard line breaks used when soft-wrap width is not yet available.
 */
 @(private)
 layout_text_estimate_line_count :: proc(text: string, wrap: Text_Wrap_Kind) -> int {
@@ -792,11 +805,120 @@ layout_text_estimate_line_count :: proc(text: string, wrap: Text_Wrap_Kind) -> i
 	return count
 }
 
-/*
-Estimates text size for layout measure without HarfBuzz.
+LAYOUT_TEXT_WRAP_W_EPSILON :: f32(0.5)
 
-Uses the shape cache when populated, otherwise FreeType advance heuristics.
-Finalize owns authoritative shaping via layout_text_build.
+@(private)
+layout_text_wrap_w_equal :: proc(a, b: f32) -> bool {
+	return abs(a - b) <= LAYOUT_TEXT_WRAP_W_EPSILON
+}
+
+/*
+True when text height depends on soft-wrap width (BALANCE).
+*/
+layout_text_wraps_to_width :: proc(node: ^Layout_Node) -> bool {
+	if !layout_node_has_text(node) do return false
+
+	return text_wrap_kind(node.config.wrap) == .BALANCE
+}
+
+/*
+Measures BALANCE text at `wrap_w` without attaching paint geometry to the node.
+
+Shapes through the persistent cache (insert on miss). Releases any non-borrowed
+lines before return. Does not mutate `node.text`.
+*/
+layout_text_measure_at_wrap_w :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
+	if !layout_node_has_text(node) do return {}
+	if wrap_w <= 0 do return {}
+
+	config := node.config
+	resolved_font, layout_scale, ok := font_resolve(
+		config.font,
+		config.font_size,
+		config.space,
+		config.font_weight,
+		config.font_style,
+	)
+	if !ok do return {}
+
+	face := font_face_from_handle(resolved_font)
+	if face == nil do return {}
+
+	shape_max_w := wrap_w / layout_scale
+	letter_spacing := config.letter_spacing / layout_scale
+	word_spacing := config.word_spacing / layout_scale
+	wrap := text_wrap_kind(config.wrap)
+	direction := text_direction_kind(config.text_direction)
+
+	shaped := font_shape_line_build(
+		face,
+		resolved_font.id,
+		node.measure.text,
+		shape_max_w,
+		letter_spacing,
+		word_spacing,
+		config.tab_size,
+		wrap,
+		direction,
+	)
+	defer font_shape_lines_release(shaped)
+
+	if len(shaped.lines) == 0 do return {}
+
+	line_height := config.font_size * config.line_height
+
+	return font_measure_lines(face, shaped.lines, line_height, layout_scale)
+}
+
+/*
+Updates `desired` height from soft-wrap measurement at the assigned box width.
+
+No-op when height is definite, wrap width is unavailable, or height was already
+measured at an equal wrap width. Records `measure.measured_wrap_w`.
+*/
+layout_text_sync_height_for_assigned_width :: proc(node: ^Layout_Node, assigned_w: f32) {
+	if node == nil do return
+	if !layout_text_wraps_to_width(node) do return
+	if length_is_definite(node.config.height) do return
+
+	wrap_w := layout_text_resolve_wrap_w(node, assigned_w)
+	if wrap_w <= 0 do return
+
+	if node.measure.measured_wrap_w > 0 &&
+	   layout_text_wrap_w_equal(node.measure.measured_wrap_w, wrap_w) {
+		return
+	}
+
+	measured := layout_text_measure_at_wrap_w(node, wrap_w)
+	if measured.y <= 0 do return
+
+	inset_w := layout_text_horizontal_insets(node)
+	inset_h := layout_text_vertical_insets(node)
+
+	node.desired.y = layout_clamp_axis(
+		measured.y + inset_h,
+		node.config.min_h,
+		node.config.max_h,
+	)
+
+	if !length_is_definite(node.config.width) {
+		node.desired.x = layout_clamp_axis(
+			wrap_w + inset_w,
+			node.config.min_w,
+			node.config.max_w,
+		)
+	}
+
+	node.measure.measured_wrap_w = wrap_w
+}
+
+/*
+Measures text size for layout `desired` calculation.
+
+When BALANCE wrap width is known (fixed/`max_w`) or provisionally available
+(parent content width), soft-wrap shapes through the cache and returns that
+height so siblings and ancestors pack correctly in the same layout pass.
+Paint geometry stays empty until finalize (`layout_text_build`).
 */
 layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec2 {
 	if !layout_node_has_text(node) do return {}
@@ -824,6 +946,17 @@ layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec
 
 	wrap_w, wrap_known := layout_text_wrap_width_known(node)
 	effective_w := wrap_known ? wrap_w : provisional_w
+
+	if wrap == .BALANCE && effective_w > 0 {
+		measured := layout_text_measure_at_wrap_w(node, effective_w)
+		if measured.y > 0 {
+			node.measure.measured_wrap_w = effective_w
+
+			return {effective_w, measured.y}
+		}
+	}
+
+	node.measure.measured_wrap_w = 0
 
 	shape_max_w: f32
 	if wrap == .BALANCE && effective_w > 0 {
@@ -901,9 +1034,10 @@ layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec
 }
 
 /*
-Shapes text into the node and records measured size.
+Shapes text into the node and records measured size for paint.
 
-Destroys any previous shaped lines. Line origins are filled by layout_text_position_lines.
+Destroys any previous shaped lines. Reuses the shape cache when measure already
+soft-wrapped at the same width. Line origins are filled by layout_text_position_lines.
 */
 layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 	layout_text_release(node)
@@ -1738,13 +1872,15 @@ layout_rich_text_position_decorations :: proc(node: ^Layout_Node) {
 /*
 Builds layout-owned text for the node's allocated rect and precomputes paint geometry.
 
-Measure leaves node.text empty; finalize always shapes once using the allocated width
-when the author did not set an explicit wrap width.
+Measure owns soft-wrap height when wrap width is known; finalize attaches paint
+geometry (cache hit when measure already shaped at this width). Height is synced
+again if the solved width disagrees with the measure wrap width.
 */
 layout_finalize_text_node :: proc(node: ^Layout_Node) {
 	if !layout_node_needs_text_finalize(node) do return
 
 	wrap_w := layout_text_resolve_wrap_w(node, node.rect.w)
+	layout_text_sync_height_for_assigned_width(node, node.rect.w)
 	layout_text_build(node, wrap_w)
 
 	if !length_is_definite(node.config.height) && node.text.size.y > 0 {
@@ -1754,6 +1890,7 @@ layout_finalize_text_node :: proc(node: ^Layout_Node) {
 			node.config.min_h,
 			node.config.max_h,
 		)
+		node.desired.y = node.rect.h
 	}
 
 	layout_text_position_lines(node)
@@ -1820,6 +1957,7 @@ Finalizes all layout-owned paint geometry for a node after its rect is assigned.
 layout_finalize_node :: proc(node: ^Layout_Node) {
 	layout_finalize_text_node(node)
 	layout_finalize_image_node(node)
+	layout_finalize_chrome_node(node)
 }
 
 /*
@@ -2149,6 +2287,7 @@ layout_set_measure_text :: proc(node: ^Layout_Node, text: string, max_w: f32) {
 	node.measure.edit_plain = text
 	node.measure.edit_plain_set = false
 	node.measure.max_w = max_w
+	node.measure.measured_wrap_w = 0
 	node.measure.runs = nil
 	node.measure.rich = false
 	node.measure.tag_diagnostics = false
@@ -2179,6 +2318,7 @@ layout_set_measure_rich_text :: proc(
 	node.measure.edit_plain = text
 	node.measure.edit_plain_set = false
 	node.measure.max_w = max_w
+	node.measure.measured_wrap_w = 0
 	node.measure.runs = runs
 	node.measure.rich = len(runs) > 0
 	node.measure.tag_diagnostics = tag_diagnostics
@@ -2242,6 +2382,11 @@ layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2
 
 /*
 Computes a child's main-axis size including flex distribution.
+
+`flex` is grow+shrink from a zero basis: the item receives exactly
+`flex_unit * flex` of free space and does not expand to its intrinsic
+desired size (CSS `flex: 1` / `1 1 0%`). When no free space remains
+(`flex_unit == 0`), the item collapses to 0 on the main axis.
 */
 layout_child_main_size :: proc(
 	child: ^Layout_Node,
@@ -2253,9 +2398,12 @@ layout_child_main_size :: proc(
 	main_fixed := length_resolve(main_len, parent_main)
 	if main_fixed > 0 do return main_fixed
 
-	if child.config.flex > 0 && flex_unit > 0 {
-		desired_main := is_horizontal ? child.desired.x : child.desired.y
-		return max(desired_main, flex_unit * child.config.flex)
+	if child.config.flex > 0 {
+		if flex_unit > 0 {
+			return flex_unit * child.config.flex
+		}
+
+		return 0
 	}
 
 	return is_horizontal ? child.desired.x : child.desired.y
@@ -2903,9 +3051,104 @@ layout_position_out_of_flow_children :: proc(node: ^Layout_Node) {
 }
 
 /*
+Grows a content-sized parent so soft-wrap remasured children still fit in-flow.
+*/
+@(private)
+layout_grow_content_sized_parent_for_children :: proc(
+	node: ^Layout_Node,
+	content: ^Rect,
+	child_sizes: []Vec2,
+	is_horizontal: bool,
+	gap_main: f32,
+) {
+	if node == nil || content == nil do return
+
+	if is_horizontal {
+		if length_is_definite(node.config.height) do return
+
+		cross_max: f32
+		for child_index, i in node.child_indices {
+			child := &state.ui.layout.nodes[child_index]
+			if !layout_child_in_main_flow(child, true) do continue
+			outer := layout_size_with_margin(child_sizes[i], child.margin)
+			cross_max = max(cross_max, outer.y)
+		}
+
+		inset_h := node.padding.t + node.padding.b + node.border.t + node.border.b
+		needed := layout_clamp_axis(
+			cross_max + inset_h,
+			node.config.min_h,
+			node.config.max_h,
+		)
+		if needed > node.rect.h {
+			node.rect.h = needed
+			node.desired.y = needed
+			content.h = max(0, needed - inset_h)
+		}
+
+		return
+	}
+
+	if length_is_definite(node.config.height) do return
+
+	main_sum: f32
+	in_flow := 0
+	for child_index, i in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_child_in_main_flow(child, false) do continue
+		if in_flow > 0 do main_sum += gap_main
+		outer := layout_size_with_margin(child_sizes[i], child.margin)
+		main_sum += outer.y
+		in_flow += 1
+	}
+
+	inset_h := node.padding.t + node.padding.b + node.border.t + node.border.b
+	needed := layout_clamp_axis(main_sum + inset_h, node.config.min_h, node.config.max_h)
+	if needed > node.rect.h {
+		node.rect.h = needed
+		node.desired.y = needed
+		content.h = max(0, needed - inset_h)
+	}
+}
+
+/*
+Syncs BALANCE text heights from widths that are definite before flex distribution.
+*/
+@(private)
+layout_sync_soft_wrap_heights_before_flex :: proc(
+	node: ^Layout_Node,
+	is_horizontal: bool,
+	main_available: f32,
+	cross_available: f32,
+	justify: Justify_Pos,
+) {
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_position_in_flex_flow(child.config.position) do continue
+		if !layout_text_wraps_to_width(child) do continue
+		if length_is_definite(child.config.height) do continue
+
+		child_justify := layout_merge_justify(justify, child.config.self)
+
+		if is_horizontal {
+			if child.config.flex > 0 && !length_is_definite(child.config.width) {
+				continue
+			}
+
+			main := layout_child_main_size(child, true, 0, main_available)
+			layout_text_sync_height_for_assigned_width(child, main)
+		} else {
+			cross := layout_child_cross_size(child, false, cross_available, child_justify)
+			layout_text_sync_height_for_assigned_width(child, cross)
+		}
+	}
+}
+
+/*
 Positions children in a wrap flex container.
 */
-layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
+layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
+	content := content_in
 	info := node.direction_info
 	is_horizontal := info.is_horizontal
 	gap_main := layout_config_gap_main(node.config, is_horizontal)
@@ -2915,6 +3158,14 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
 	main_limit := main_available
+
+	layout_sync_soft_wrap_heights_before_flex(
+		node,
+		is_horizontal,
+		main_available,
+		cross_available,
+		justify,
+	)
 
 	child_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 	outer_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
@@ -2926,8 +3177,23 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
 		cross := layout_child_cross_size(child, is_horizontal, 0, child_justify)
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 		layout_apply_definite_size(child, content, &child_sizes[i])
+		layout_text_sync_height_for_assigned_width(child, child_sizes[i].x)
+		if !length_is_definite(child.config.height) && layout_text_wraps_to_width(child) {
+			child_sizes[i].y = child.desired.y
+		}
 		outer_sizes[i] = layout_size_with_margin(child_sizes[i], child.margin)
 	}
+
+	layout_grow_content_sized_parent_for_children(
+		node,
+		&content,
+		child_sizes[:],
+		is_horizontal,
+		gap_main,
+	)
+	main_available = is_horizontal ? content.w : content.h
+	cross_available = is_horizontal ? content.h : content.w
+	main_limit = main_available
 
 	lines: []Layout_Wrap_Line
 	if len(node.wrap_lines) > 0 {
@@ -3004,6 +3270,10 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content: Rect) {
 			)
 			child_sizes[size_index] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 			layout_apply_definite_size(child, content, &child_sizes[size_index])
+			layout_text_sync_height_for_assigned_width(child, child_sizes[size_index].x)
+			if !length_is_definite(child.config.height) && layout_text_wraps_to_width(child) {
+				child_sizes[size_index].y = child.desired.y
+			}
 			outer_sizes[size_index] = layout_size_with_margin(
 				child_sizes[size_index],
 				child.margin,
@@ -3202,7 +3472,8 @@ layout_wrap_apply_auto_cross_size :: proc(node: ^Layout_Node, is_horizontal: boo
 /*
 Positions children in a non-wrap flex container.
 */
-layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
+layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
+	content := content_in
 	if len(node.child_indices) == 0 do return
 
 	if node.kind == .GRID {
@@ -3229,11 +3500,37 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 	main_available := is_horizontal ? content.w : content.h
 	cross_available := is_horizontal ? content.h : content.w
 
+	layout_sync_soft_wrap_heights_before_flex(
+		node,
+		is_horizontal,
+		main_available,
+		cross_available,
+		justify,
+	)
+
+	child_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
+	for child_index, i in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		child_justify := layout_merge_justify(justify, child.config.self)
+		main := layout_child_main_size(child, is_horizontal, 0, main_available)
+		cross := layout_child_cross_size(child, is_horizontal, cross_available, child_justify)
+		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
+		layout_apply_definite_size(child, content, &child_sizes[i])
+	}
+
+	layout_grow_content_sized_parent_for_children(
+		node,
+		&content,
+		child_sizes[:],
+		is_horizontal,
+		gap_main,
+	)
+	main_available = is_horizontal ? content.w : content.h
+	cross_available = is_horizontal ? content.h : content.w
+
 	flex_total: f32
 	fixed_total: f32
 	in_flow_count := 0
-
-	child_sizes := make([dynamic]Vec2, len(node.child_indices), context.temp_allocator)
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
@@ -3291,7 +3588,21 @@ layout_position_children :: proc(node: ^Layout_Node, content: Rect) {
 		cross := layout_child_cross_size(child, is_horizontal, cross_available, child_justify)
 		child_sizes[i] = is_horizontal ? Vec2{main, cross} : Vec2{cross, main}
 		layout_apply_definite_size(child, content, &child_sizes[i])
+		layout_text_sync_height_for_assigned_width(child, child_sizes[i].x)
+		if !length_is_definite(child.config.height) && layout_text_wraps_to_width(child) {
+			child_sizes[i].y = child.desired.y
+		}
 	}
+
+	layout_grow_content_sized_parent_for_children(
+		node,
+		&content,
+		child_sizes[:],
+		is_horizontal,
+		gap_main,
+	)
+	main_available = is_horizontal ? content.w : content.h
+	cross_available = is_horizontal ? content.h : content.w
 
 	child_nodes := make([dynamic]^Layout_Node, len(node.child_indices), context.temp_allocator)
 	for child_index, i in node.child_indices {

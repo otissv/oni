@@ -127,6 +127,7 @@ ui_begin_frame :: proc() {
 	w_ctx.pointer_hit_valid = false
 	w_ctx.pointer_hit_ui_id = {}
 	w_ctx.pointer_propagation_stopped = false
+	w_ctx.pointer_focus_claimed = false
 
 	clear_button_transients(&w_ctx.left_mouse)
 	clear_button_transients(&w_ctx.right_mouse)

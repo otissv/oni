@@ -1414,6 +1414,7 @@ layout_child_main_size_prefers_fixed_then_flex_then_desired :: proc(t: ^testing.
 		desired = {30, 10},
 	}
 	expect_close(t, layout_child_main_size(&flexed, true, 40, 200), 80)
+	expect_close(t, layout_child_main_size(&flexed, true, 0, 200), 0)
 
 	desired_only := Layout_Node {
 		desired = {33, 10},
@@ -1890,7 +1891,7 @@ layout_flex_with_fixed_sibling_takes_leftover :: proc(t: ^testing.T) {
 }
 
 @(test)
-layout_flex_does_not_shrink_below_desired_when_unit_smaller :: proc(t: ^testing.T) {
+layout_flex_shrinks_to_unit_when_desired_larger :: proc(t: ^testing.T) {
 	with_layout_solve(
 		t,
 		proc(layout: ^Layout_State, t: ^testing.T) {
@@ -1906,9 +1907,9 @@ layout_flex_does_not_shrink_below_desired_when_unit_smaller :: proc(t: ^testing.
 			b := layout_test_append_node(layout, root, .RECT, {}, {80, 20}, {flex = 1})
 
 			layout_solve(&layout.nodes[root], {0, 0, 100, 50})
-			// flex_unit = 50, max(desired, unit) keeps 80
-			expect_close(t, layout.nodes[a].rect.w, 80)
-			expect_close(t, layout.nodes[b].rect.w, 80)
+			// flex_unit = 50; flex items shrink to their share, not intrinsic desired
+			expect_close(t, layout.nodes[a].rect.w, 50)
+			expect_close(t, layout.nodes[b].rect.w, 50)
 		},
 	)
 }
@@ -2311,7 +2312,7 @@ layout_begin_and_end_space_solves_roots_in_bounds :: proc(t: ^testing.T) {
 }
 
 @(test)
-layout_zero_remaining_flex_keeps_desired_main_size :: proc(t: ^testing.T) {
+layout_zero_remaining_flex_collapses_main_size :: proc(t: ^testing.T) {
 	with_layout_solve(
 		t,
 		proc(layout: ^Layout_State, t: ^testing.T) {
@@ -2335,8 +2336,8 @@ layout_zero_remaining_flex_keeps_desired_main_size :: proc(t: ^testing.T) {
 
 			layout_solve(&layout.nodes[root], {0, 0, 100, 50})
 			expect_rect(t, layout.nodes[fixed].rect, {0, 0, 100, 20})
-			// remaining = 0 => flex_unit = 0 => desired main size
-			expect_rect(t, layout.nodes[flexed].rect, {100, 0, 30, 50})
+			// remaining = 0 => flex_unit = 0 => flex item collapses
+			expect_rect(t, layout.nodes[flexed].rect, {100, 0, 0, 50})
 		},
 	)
 }
@@ -2909,5 +2910,266 @@ layout_text_estimate_uses_shape_cache_after_finalize :: proc(t: ^testing.T) {
 		testing.expect_value(t, test_hook_font_shape_call_count, 1)
 		expect_close(t, estimated.x, final_size.x)
 		expect_close(t, estimated.y, final_size.y)
+	})
+}
+
+@(test)
+layout_text_estimate_balance_soft_wraps_with_provisional_width :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		_ = layout
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
+
+		testing.expect(t, font_init())
+		defer font_shutdown()
+
+		inter, inter_ok := font_register_family(
+			"LayoutEstimateBalanceTest",
+			{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
+
+		text := "ui.Button lives in the app theme layer. The engine primitive is w.Button from oni/widgets."
+
+		node := Layout_Node {
+			measure = {text = text},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.55,
+				wrap = Text_Wrap_Kind.BALANCE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		}
+
+		clear_test_hooks()
+		defer clear_test_hooks()
+
+		narrow := layout_text_estimate_size(&node, 220)
+		testing.expect(t, test_hook_font_shape_call_count >= 1)
+		testing.expect(t, narrow.y > 16 * 1.55 + 1)
+		testing.expect(t, len(node.text.lines) == 0)
+		expect_close(t, node.measure.measured_wrap_w, 220)
+
+		shape_calls_after_first := test_hook_font_shape_call_count
+		again := layout_text_estimate_size(&node, 220)
+		testing.expect_value(t, test_hook_font_shape_call_count, shape_calls_after_first)
+		expect_close(t, again.y, narrow.y)
+
+		wide := layout_text_estimate_size(&node, 2000)
+		testing.expect(t, wide.y < narrow.y)
+		expect_close(t, node.measure.measured_wrap_w, 2000)
+	})
+}
+
+@(test)
+layout_column_packs_sibling_below_soft_wrapped_text :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
+
+		testing.expect(t, font_init())
+		defer font_shutdown()
+
+		inter, inter_ok := font_register_family(
+			"LayoutSoftWrapSiblingTest",
+			{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
+
+		text := "ui.Button lives in the app theme layer. The engine primitive is w.Button from oni/widgets."
+		probe := Layout_Node {
+			measure = {text = text},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.55,
+				wrap = Text_Wrap_Kind.BALANCE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		}
+		text_size := layout_text_estimate_size(&probe, 240)
+		testing.expect(t, text_size.y > 16 * 1.55 + 1)
+		expect_close(t, probe.measure.measured_wrap_w, 240)
+
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{x = .STRETCH, y = .START},
+			{},
+			{direction = .VERTICAL, gap_y = 12},
+		)
+		body := layout_test_append_node(
+			layout,
+			root,
+			.TEXT,
+			{},
+			text_size,
+			{
+				font = inter,
+				font_size = 16,
+				line_height = 1.55,
+				wrap = Text_Wrap_Kind.BALANCE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		)
+		layout.nodes[body].measure = {
+			text            = text,
+			measured_wrap_w = 240,
+		}
+		code := layout_test_append_node(layout, root, .RECT, {}, {240, 40})
+
+		layout.nodes[root].desired = layout_measure(&layout.nodes[root])
+		layout_solve(&layout.nodes[root], {0, 0, 240, 600})
+		defer layout_text_release(&layout.nodes[body])
+
+		testing.expect(
+			t,
+			layout.nodes[code].rect.y >=
+			layout.nodes[body].rect.y + layout.nodes[body].rect.h + 12 - 0.5,
+		)
+		testing.expect(t, layout.nodes[body].rect.h > 16 * 1.55 + 1)
+		testing.expect(t, len(layout.nodes[body].text.lines) > 1)
+	})
+}
+
+@(test)
+layout_soft_wrap_remeasures_when_solved_width_differs :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		state.dpi = {
+			logical_w = 800,
+			logical_h = 600,
+			scale     = 1,
+		}
+
+		testing.expect(t, font_init())
+		defer font_shutdown()
+
+		inter, inter_ok := font_register_family(
+			"LayoutSoftWrapRemeasureTest",
+			{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+		)
+		testing.expect(t, inter_ok)
+		inter = font_with_size(inter, 16)
+
+		text := "ui.Button lives in the app theme layer. The engine primitive is w.Button from oni/widgets."
+		probe := Layout_Node {
+			measure = {text = text},
+			config = {
+				font = inter,
+				font_size = 16,
+				line_height = 1.5,
+				wrap = Text_Wrap_Kind.BALANCE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		}
+		wide_size := layout_text_estimate_size(&probe, 800)
+		testing.expect(t, wide_size.y > 0)
+		expect_close(t, probe.measure.measured_wrap_w, 800)
+
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{x = .STRETCH, y = .START},
+			{},
+			{direction = .VERTICAL, gap_y = 8, width = layout_len_fixed(180)},
+		)
+		body := layout_test_append_node(
+			layout,
+			root,
+			.TEXT,
+			{},
+			wide_size,
+			{
+				font = inter,
+				font_size = 16,
+				line_height = 1.5,
+				wrap = Text_Wrap_Kind.BALANCE,
+				text_direction = Text_Direction_Kind.LTR,
+				align = Text_Align_Kind.LEFT,
+				space = .SCREEN,
+				text_decoration = Text_Decoration_Lines{},
+				text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+			},
+		)
+		layout.nodes[body].measure = {
+			text            = text,
+			measured_wrap_w = 800,
+		}
+		sibling := layout_test_append_node(layout, root, .RECT, {}, {180, 20})
+
+		layout.nodes[root].desired = layout_measure(&layout.nodes[root])
+		layout_solve(&layout.nodes[root], {0, 0, 180, 600})
+		defer layout_text_release(&layout.nodes[body])
+
+		testing.expect(t, layout.nodes[body].rect.w <= 180 + 0.5)
+		testing.expect(t, layout.nodes[body].rect.h > wide_size.y + 1)
+		testing.expect(
+			t,
+			layout.nodes[sibling].rect.y >=
+			layout.nodes[body].rect.y + layout.nodes[body].rect.h + 8 - 0.5,
+		)
 	})
 }

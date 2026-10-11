@@ -97,17 +97,15 @@ calendar_composable_registers_day_labels :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Calendar(
-			{
-				config = {id = "calendar-parts"},
-				mode = .SINGLE,
-				default_month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				child = proc(_: Calendar_State) {
-					Calendar_Month({config = {id = "calendar-parts/month"}, month_index = 0})
-				},
+		Calendar({
+			config = {id = "calendar-parts"},
+			mode = .SINGLE,
+			default_month = {2024, 6, 1},
+			today = calendar_test_fixed_today(),
+			child = proc(_: Calendar_State) {
+				Calendar_Month({config = {id = "calendar-parts/month"}, month_index = 0})
 			},
-		)
+		})
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "calendar-parts/day-0-2024-06-01")
@@ -259,22 +257,29 @@ calendar_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Calendar(
-			{
-				config = {id = "calendar-layout"},
-				mode = .SINGLE,
-				default_month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				child = proc(_: Calendar_State) {
-					Calendar_Month({config = {id = "calendar-layout/month"}, month_index = 0})
-				},
+		Calendar({
+			config = {id = "calendar-layout"},
+			mode = .SINGLE,
+			default_month = {2024, 6, 1},
+			today = calendar_test_fixed_today(),
+			child = proc(_: Calendar_State) {
+				Calendar_Month({config = {id = "calendar-layout/month"}, month_index = 0})
 			},
-		)
+		})
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "calendar-layout")
 		expect_layout_kind(t, "calendar-layout", .CALENDAR)
 		expect_in_tab_order(t, "calendar-layout", true)
+
+		chrome := o.layout_calendar_result(o.ui_id("calendar-layout"))
+		testing.expect(t, chrome != nil)
+
+		if chrome != nil {
+			testing.expect(t, chrome.active)
+			testing.expect(t, len(chrome.months) >= 1)
+			testing.expect(t, chrome.months[0].days[0].w > 0)
+		}
 	})
 }
 
@@ -489,6 +494,65 @@ calendar_pointer_selects_day :: proc(t: ^testing.T) {
 }
 
 @(test)
+calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			calendar_test_reset()
+			defer calendar_test_reset()
+
+			widget_test_begin_layout()
+			defer widget_test_end_frame()
+
+			props := Calendar_Props {
+				config = {id = "calendar-nav-click"},
+				mode = .SINGLE,
+				default_month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+				child = calendar_test_month_child,
+			}
+			Calendar(props)
+			widget_test_finish_layout()
+			widget_test_begin_draw()
+
+			Calendar(props)
+			chrome := o.layout_calendar_result(o.ui_id("calendar-nav-click"))
+			testing.expect(t, chrome != nil)
+			testing.expect(t, chrome != nil && len(chrome.months) >= 1)
+
+			if chrome == nil || len(chrome.months) < 1 {
+				return
+			}
+
+			next_r := chrome.months[0].next
+			o.w_ctx.mouse_x = next_r.x + next_r.w * 0.5
+			o.w_ctx.mouse_y = next_r.y + next_r.h * 0.5
+			o.w_ctx.pointer_hit_valid = false
+			o.widget_set_focused_id("calendar-nav-click")
+
+			o.w_ctx.left_mouse = {
+				pressed = true,
+				down    = true,
+			}
+			Calendar(props)
+
+			rt := calendar_runtime_ensure("calendar-nav-click")
+			testing.expect(t, rt != nil)
+			testing.expect(t, Calendar_Date_Equal(rt.month, {2024, 6, 1}))
+
+			o.w_ctx.left_mouse = {
+				pressed  = false,
+				down     = false,
+				released = true,
+			}
+			Calendar(props)
+
+			testing.expect(t, Calendar_Date_Equal(rt.month, {2024, 7, 1}))
+		},
+	)
+}
+
+@(test)
 calendar_disabled_matcher_blocks_select :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
@@ -567,10 +631,7 @@ calendar_formatters :: proc(t: ^testing.T) {
 	testing.expect(t, Calendar_Format_Month({2024, 6, 1}, context.temp_allocator) == "June 2024")
 	testing.expect(t, Calendar_Format_Weekday(.SUNDAY, context.temp_allocator) == "Su")
 	testing.expect(t, Calendar_Format_Day({2024, 6, 5}, context.temp_allocator) == "5")
-	testing.expect(
-		t,
-		Calendar_Format_Long({2024, 6, 5}, context.temp_allocator) == "June 5, 2024",
-	)
+	testing.expect(t, Calendar_Format_Long({2024, 6, 5}, context.temp_allocator) == "June 5, 2024")
 	testing.expect(
 		t,
 		Calendar_Format_Medium({2024, 6, 5}, context.temp_allocator) == "Jun 5, 2024",

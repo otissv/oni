@@ -99,6 +99,9 @@ Widget_Context :: struct {
 	pointer_hit_ui_id:           UI_Id,
 	pointer_hit_valid:           bool,
 	pointer_propagation_stopped: bool,
+	// Set when a hovered tabbable claims focus on this press so a later
+	// non-hovered widget (including a duplicate id) does not clear it.
+	pointer_focus_claimed:       bool,
 	text_edit_states:            map[string]Text_Edit_State,
 	text_edit_command:           Text_Edit_Command,
 	text_edit_nav:               Text_Edit_Nav,

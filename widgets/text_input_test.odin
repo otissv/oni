@@ -228,3 +228,88 @@ text_input_widget_draw_ctrl_a_selects_all :: proc(t: ^testing.T) {
 		testing.expect_value(t, edit.selection.head, len("hello"))
 	})
 }
+
+@(test)
+text_input_pointer_focus_survives_next_frame_prune :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		cfg := Text_Input_Config {
+			id = "ti-focus",
+			text = "hello",
+			width = set.Width(f32(200)),
+			height = set.Height(f32(40)),
+		}
+
+		widget_test_begin_layout()
+		Text_Input({config = cfg})
+		widget_test_finish_layout()
+
+		node, ok := widget_test_layout_node("ti-focus")
+		testing.expect(t, ok)
+		if !ok do return
+
+		o.w_ctx.mouse_x = node.rect.x + node.rect.w * 0.5
+		o.w_ctx.mouse_y = node.rect.y + node.rect.h * 0.5
+		widget_test_begin_draw()
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.left_mouse.down = true
+
+		Text_Input({config = cfg})
+		testing.expect_value(t, o.w_ctx.focused_id, "ti-focus")
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		Text_Input({config = cfg})
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+
+		testing.expect_value(t, o.w_ctx.focused_id, "ti-focus")
+		testing.expect(t, widget_is_focused("ti-focus"))
+
+		Text_Input({config = cfg})
+		testing.expect(t, widget_is_focused("ti-focus"))
+		widget_test_end_frame()
+	})
+}
+
+@(test)
+text_input_duplicate_id_later_instance_does_not_steal_focus :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		cfg_a := Text_Input_Config {
+			id = "shared",
+			text = "a",
+			width = set.Width(f32(100)),
+			height = set.Height(f32(40)),
+			x = set.F32(0),
+			y = set.F32(0),
+			position = set.Position(.ABSOLUTE),
+		}
+		cfg_b := Text_Input_Config {
+			id = "shared",
+			text = "b",
+			width = set.Width(f32(100)),
+			height = set.Height(f32(40)),
+			x = set.F32(0),
+			y = set.F32(80),
+			position = set.Position(.ABSOLUTE),
+		}
+
+		widget_test_begin_layout()
+		Text_Input({config = cfg_a})
+		Text_Input({config = cfg_b})
+		widget_test_finish_layout()
+
+		o.w_ctx.mouse_x = 20
+		o.w_ctx.mouse_y = 20
+		widget_test_begin_draw()
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.left_mouse.down = true
+
+		Text_Input({config = cfg_a})
+		testing.expect_value(t, o.w_ctx.focused_id, "shared")
+		testing.expect(t, o.w_ctx.pointer_focus_claimed)
+
+		Text_Input({config = cfg_b})
+		testing.expect_value(t, o.w_ctx.focused_id, "shared")
+		widget_test_end_frame()
+	})
+}

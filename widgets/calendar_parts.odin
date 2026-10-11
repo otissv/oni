@@ -61,7 +61,17 @@ calendar_part_month_origin :: proc(month_index: int) -> (origin: o.Vec2, ok: boo
 	}
 
 	ctx := calendar_ctx_top()
-	root := o.ui_layout_rect(ctx.layout_id)
+
+	if chrome := o.layout_calendar_result(ctx.layout_id); chrome != nil {
+		if month_index >= 0 && month_index < len(chrome.months) {
+			return chrome.months[month_index].origin, true
+		}
+
+		return {}, false
+	}
+
+	// Layout pass: root rect is not solved yet — place parts in parent-local space.
+	root := o.Rect{}
 	origin = calendar_month_origin(
 		root,
 		month_index,
@@ -72,6 +82,22 @@ calendar_part_month_origin :: proc(month_index: int) -> (origin: o.Vec2, ok: boo
 	)
 
 	return origin, true
+}
+
+@(private)
+calendar_part_month_chrome :: proc(month_index: int) -> (^o.Layout_Calendar_Month, bool) {
+	if !calendar_part_month_index_ok(month_index) {
+		return nil, false
+	}
+
+	ctx := calendar_ctx_top()
+	chrome := o.layout_calendar_result(ctx.layout_id)
+
+	if chrome == nil || month_index < 0 || month_index >= len(chrome.months) {
+		return nil, false
+	}
+
+	return &chrome.months[month_index], true
 }
 
 @(private)
@@ -140,8 +166,16 @@ Calendar_Navigation :: proc(props: Calendar_Navigation_Props) {
 		return
 	}
 
-	month_w := calendar_month_width(ctx.day_size, ctx.gap, ctx.show_week_numbers)
-	prev_r, _, next_r := calendar_nav_rects(origin, month_w)
+	prev_r, next_r: o.Rect
+
+	if month_chrome, has_chrome := calendar_part_month_chrome(0); has_chrome {
+		prev_r = month_chrome.prev
+		next_r = month_chrome.next
+	} else {
+		month_w := calendar_month_width(ctx.day_size, ctx.gap, ctx.show_week_numbers)
+		prev_r, _, next_r = calendar_nav_rects(origin, month_w)
+	}
+
 	_ = props.config
 
 	Button({
@@ -196,8 +230,15 @@ Calendar_Caption :: proc(props: Calendar_Caption_Props) {
 		return
 	}
 
-	month_w := calendar_month_width(ctx.day_size, ctx.gap, ctx.show_week_numbers)
-	_, label_r, _ := calendar_nav_rects(origin, month_w)
+	label_r: o.Rect
+
+	if month_chrome, has_chrome := calendar_part_month_chrome(props.month_index); has_chrome {
+		label_r = month_chrome.label
+	} else {
+		month_w := calendar_month_width(ctx.day_size, ctx.gap, ctx.show_week_numbers)
+		_, label_r, _ = calendar_nav_rects(origin, month_w)
+	}
+
 	month := Calendar_Date_Add_Months(ctx.month, props.month_index)
 	_ = props.config
 
@@ -235,16 +276,24 @@ Calendar_Weekdays :: proc(props: Calendar_Weekdays_Props) {
 	}
 
 	_ = props.config
+	month_chrome, has_chrome := calendar_part_month_chrome(props.month_index)
 
 	for col in 0 ..< CALENDAR_WEEK_DAYS {
 		weekday := Calendar_Weekday((int(ctx.week_starts_on) + col) % CALENDAR_WEEK_DAYS)
-		rect := calendar_weekday_rect(
-			origin,
-			col,
-			ctx.day_size,
-			ctx.gap,
-			ctx.show_week_numbers,
-		)
+		rect: o.Rect
+
+		if has_chrome {
+			rect = month_chrome.weekdays[col]
+		} else {
+			rect = calendar_weekday_rect(
+				origin,
+				col,
+				ctx.day_size,
+				ctx.gap,
+				ctx.show_week_numbers,
+			)
+		}
+
 		Text(
 			{
 				config = {
@@ -304,11 +353,20 @@ Calendar_Week_Numbers :: proc(props: Calendar_Week_Numbers_Props) {
 
 	_ = props.config
 
+	month_chrome, has_chrome := calendar_part_month_chrome(props.month_index)
+
 	for row in 0 ..< CALENDAR_WEEK_ROWS {
 		cell := cells[row * CALENDAR_WEEK_DAYS]
 		week, week_ok := Calendar_Week_Number(cell.date)
 		label := week_ok ? fmt.tprintf("%d", week) : ""
-		rect := calendar_week_num_rect(origin, row, ctx.day_size, ctx.gap)
+		rect: o.Rect
+
+		if has_chrome {
+			rect = month_chrome.week_nums[row]
+		} else {
+			rect = calendar_week_num_rect(origin, row, ctx.day_size, ctx.gap)
+		}
+
 		Text(
 			{
 				config = {
@@ -363,6 +421,8 @@ Calendar_Grid :: proc(props: Calendar_Grid_Props) {
 
 	_ = props.config
 
+	month_chrome, has_chrome := calendar_part_month_chrome(props.month_index)
+
 	for i in 0 ..< CALENDAR_GRID_DAYS {
 		cell := cells[i]
 
@@ -370,7 +430,14 @@ Calendar_Grid :: proc(props: Calendar_Grid_Props) {
 			continue
 		}
 
-		rect := calendar_day_rect(origin, i, ctx.day_size, ctx.gap, ctx.show_week_numbers)
+		rect: o.Rect
+
+		if has_chrome {
+			rect = month_chrome.days[i]
+		} else {
+			rect = calendar_day_rect(origin, i, ctx.day_size, ctx.gap, ctx.show_week_numbers)
+		}
+
 		color := o.Colors(o.Color.FOREGROUND)
 
 		if cell.disabled {

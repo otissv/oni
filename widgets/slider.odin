@@ -402,99 +402,41 @@ slider_on_key_released :: proc(event: Slider_Event) {
 }
 
 @(private)
-slider_track_rect :: proc(
-	root: o.Rect,
-	orientation: o.Slider_Orientation,
-	thickness: f32,
-) -> o.Rect {
-	thick := max(f32(1), thickness)
-
-	if orientation == .VERTICAL {
-		x := root.x + max(f32(0), (root.w - thick) * 0.5)
-
-		return {x = x, y = root.y, w = thick, h = root.h}
-	}
-
-	y := root.y + max(f32(0), (root.h - thick) * 0.5)
-
-	return {x = root.x, y = y, w = root.w, h = thick}
+slider_point_in_rect :: proc(p: o.Vec2, r: o.Rect) -> bool {
+	return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
 }
 
 @(private)
-slider_thumb_rect :: proc(
-	track: o.Rect,
-	orientation: o.Slider_Orientation,
-	value: f32,
-	min_v, max_v: f32,
-	inverted: bool,
-	thumb_size: f32,
-) -> o.Rect {
-	t := o.slider_t_from_value(value, min_v, max_v, inverted)
-
-	if orientation == .VERTICAL {
-		size := clamp(thumb_size, 0, track.h)
-		pos := o.slider_thumb_pos_from_t(track.h, size, t)
-		x := track.x + (track.w - size) * 0.5
-
-		return {x = x, y = track.y + pos, w = size, h = size}
-	}
-
-	size := clamp(thumb_size, 0, track.w)
-	pos := o.slider_thumb_pos_from_t(track.w, size, t)
-	y := track.y + (track.h - size) * 0.5
-
-	return {x = track.x + pos, y = y, w = size, h = size}
-}
-
-@(private)
-slider_range_rect :: proc(
-	track: o.Rect,
+slider_bind_layout_chrome :: proc(
+	layout_id: o.UI_Id,
 	orientation: o.Slider_Orientation,
 	values: [o.SLIDER_MAX_THUMBS]f32,
 	count: int,
 	min_v, max_v: f32,
 	inverted: bool,
 	thumb_size: f32,
-) -> o.Rect {
-	if count <= 0 {
-		return {}
+	track_thickness: f32,
+) {
+	node, ok := o.layout_node_by_id(layout_id)
+
+	if !ok {
+		return
 	}
 
-	start_t: f32
-	end_t: f32
-
-	if count == 1 {
-		start_t = 0
-		end_t = o.slider_t_from_value(values[0], min_v, max_v, inverted)
-	} else {
-		a := o.slider_t_from_value(values[0], min_v, max_v, inverted)
-		b := o.slider_t_from_value(values[1], min_v, max_v, inverted)
-		start_t = min(a, b)
-		end_t = max(a, b)
-	}
-
-	if orientation == .VERTICAL {
-		size := clamp(thumb_size, 0, track.h)
-		start := o.slider_thumb_pos_from_t(track.h, size, start_t) + size * 0.5
-		end := o.slider_thumb_pos_from_t(track.h, size, end_t) + size * 0.5
-		y0 := min(start, end)
-		y1 := max(start, end)
-
-		return {x = track.x, y = track.y + y0, w = track.w, h = max(f32(0), y1 - y0)}
-	}
-
-	size := clamp(thumb_size, 0, track.w)
-	start := o.slider_thumb_pos_from_t(track.w, size, start_t) + size * 0.5
-	end := o.slider_thumb_pos_from_t(track.w, size, end_t) + size * 0.5
-	x0 := min(start, end)
-	x1 := max(start, end)
-
-	return {x = track.x + x0, y = track.y, w = max(f32(0), x1 - x0), h = track.h}
-}
-
-@(private)
-slider_point_in_rect :: proc(p: o.Vec2, r: o.Rect) -> bool {
-	return p.x >= r.x && p.x < r.x + r.w && p.y >= r.y && p.y < r.y + r.h
+	o.layout_set_slider(
+		node,
+		{
+			orientation = orientation,
+			values = values,
+			count = count,
+			min = min_v,
+			max = max_v,
+			inverted = inverted,
+			thumb_size = thumb_size,
+			track_thickness = track_thickness,
+			active = true,
+		},
+	)
 }
 
 @(private)
@@ -844,7 +786,7 @@ slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
 		w = root_w,
 		h = root_h,
 	}
-	track := slider_track_rect(root, ctx.orientation, ctx.track_thickness)
+	track := o.layout_slider_track_rect(root, ctx.orientation, ctx.track_thickness)
 	previous_parent := slider_thumb_build_parent
 	previous_index := slider_thumb_build_index
 	slider_thumb_build_parent = frame_state
@@ -854,7 +796,7 @@ slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
 	}
 
 	for i in 0 ..< ctx.count {
-		thumb_rect := slider_thumb_rect(
+		thumb_rect := o.layout_slider_thumb_rect(
 			track,
 			ctx.orientation,
 			ctx.values[i],
@@ -1026,6 +968,17 @@ Slider :: proc(props: Slider_Props) {
 			props.scroll_bar,
 			frame_state.is_hovered,
 		)
+		slider_bind_layout_chrome(
+			layout_id,
+			props.orientation,
+			working,
+			count,
+			min_v,
+			max_v,
+			props.inverted,
+			thumb_size,
+			track_thickness,
+		)
 
 		return
 	}
@@ -1076,19 +1029,15 @@ Slider :: proc(props: Slider_Props) {
 		props.on_focus(event)
 	}
 
-	track := slider_track_rect(rect, props.orientation, track_thickness)
+	chrome := o.layout_slider_result(layout_id)
+	track: o.Rect
 	thumbs: [o.SLIDER_MAX_THUMBS]o.Rect
+	range_rect: o.Rect
 
-	for i in 0 ..< count {
-		thumbs[i] = slider_thumb_rect(
-			track,
-			props.orientation,
-			slider_action_context.values[i],
-			min_v,
-			max_v,
-			props.inverted,
-			thumb_size,
-		)
+	if chrome != nil {
+		track = chrome.track
+		thumbs = chrome.thumbs
+		range_rect = chrome.range
 	}
 
 	can_interact := widget_can_interact(handlers, &frame_state) && count > 0
@@ -1097,17 +1046,13 @@ Slider :: proc(props: Slider_Props) {
 		slider_handle_keyboard(&frame_state)
 		slider_action_context.values = frame_state.values
 		slider_action_context.count = frame_state.value_count
+		o.layout_slider_sync_values(layout_id, frame_state.values[:frame_state.value_count])
+		chrome = o.layout_slider_result(layout_id)
 
-		for i in 0 ..< frame_state.value_count {
-			thumbs[i] = slider_thumb_rect(
-				track,
-				props.orientation,
-				slider_action_context.values[i],
-				min_v,
-				max_v,
-				props.inverted,
-				thumb_size,
-			)
+		if chrome != nil {
+			track = chrome.track
+			thumbs = chrome.thumbs
+			range_rect = chrome.range
 		}
 	}
 
@@ -1121,29 +1066,14 @@ Slider :: proc(props: Slider_Props) {
 		frame_state.is_hovered,
 		can_interact,
 	)
+	o.layout_slider_sync_values(layout_id, slider_action_context.values[:slider_action_context.count])
+	chrome = o.layout_slider_result(layout_id)
 
-	for i in 0 ..< frame_state.value_count {
-		thumbs[i] = slider_thumb_rect(
-			track,
-			props.orientation,
-			slider_action_context.values[i],
-			min_v,
-			max_v,
-			props.inverted,
-			thumb_size,
-		)
+	if chrome != nil {
+		track = chrome.track
+		thumbs = chrome.thumbs
+		range_rect = chrome.range
 	}
-
-	range_rect := slider_range_rect(
-		track,
-		props.orientation,
-		slider_action_context.values,
-		frame_state.value_count,
-		min_v,
-		max_v,
-		props.inverted,
-		thumb_size,
-	)
 
 	radius: o.Radius_px
 

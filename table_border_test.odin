@@ -807,6 +807,71 @@ table_side_is_straight_all_sides_and_corners_eps :: proc(t: ^testing.T) {
 }
 
 @(test)
+table_descendant_outer_radius_uses_cell_grid_when_table_is_wider :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			layout_test_prepare(&state.ui.layout)
+			defer layout_test_end(&state.ui.layout)
+
+			table := layout_test_append_node(&state.ui.layout, -1, .TABLE)
+			body := layout_test_append_node(&state.ui.layout, table, .TABLE_BODY)
+			row0 := layout_test_append_node(
+				&state.ui.layout,
+				body,
+				.TABLE_ROW,
+				{x = .TABLE_CELL, y = .TABLE_CELL},
+			)
+			row1 := layout_test_append_node(
+				&state.ui.layout,
+				body,
+				.TABLE_ROW,
+				{x = .TABLE_CELL, y = .TABLE_CELL},
+			)
+			tl := layout_test_append_node(&state.ui.layout, row0, .TABLE_CELL, {}, {40, 20})
+			tr := layout_test_append_node(&state.ui.layout, row0, .TABLE_CELL, {}, {40, 20})
+			bl := layout_test_append_node(&state.ui.layout, row1, .TABLE_CELL, {}, {40, 20})
+			br := layout_test_append_node(&state.ui.layout, row1, .TABLE_CELL, {}, {40, 20})
+
+			// Stretched table wider than the intrinsic 80px cell grid.
+			state.ui.layout.nodes[table].rect = {0, 0, 200, 40}
+			state.ui.layout.nodes[table].config.radius = f32(8)
+			state.ui.layout.nodes[table].ui_id = UI_Id(1)
+
+			state.ui.layout.nodes[tl].rect = {0, 0, 40, 20}
+			state.ui.layout.nodes[tr].rect = {40, 0, 40, 20}
+			state.ui.layout.nodes[bl].rect = {0, 20, 40, 20}
+			state.ui.layout.nodes[br].rect = {40, 20, 40, 20}
+
+			state.ui.layout.nodes[tr].ui_id = UI_Id(11)
+			state.ui.layout.nodes[br].ui_id = UI_Id(12)
+			state.ui.layout.id_to_node[UI_Id(11)] = tr
+			state.ui.layout.id_to_node[UI_Id(12)] = br
+
+			layout_table_prepare_in(&state.ui.layout, table)
+			layout_table_finalize_in(&state.ui.layout, table)
+
+			grid, grid_ok := table_cell_grid_bounds(
+				&state.ui.layout,
+				&state.ui.layout.table_tracks[table],
+			)
+			testing.expect(t, grid_ok)
+			expect_rect(t, grid, {0, 0, 80, 40})
+
+			got_tr := table_descendant_outer_radius(UI_Id(11), state.ui.layout.nodes[tr].rect)
+			expect_close(t, got_tr.tr, 8)
+			expect_close(t, got_tr.tl, 0)
+			expect_close(t, got_tr.br, 0)
+
+			got_br := table_descendant_outer_radius(UI_Id(12), state.ui.layout.nodes[br].rect)
+			expect_close(t, got_br.br, 8)
+			expect_close(t, got_br.tr, 0)
+			expect_close(t, got_br.bl, 0)
+		},
+	)
+}
+
+@(test)
 table_descendant_outer_radius_tr_bl_zero_and_asymmetric :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,

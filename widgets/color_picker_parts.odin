@@ -98,13 +98,6 @@ color_picker_swatch_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o
 }
 
 @(private)
-color_picker_channels_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config {
-	h := COLOR_PICKER_CHANNEL_ROW_H * 6
-
-	return color_picker_surface_theme(frame_state, f32(120), h)
-}
-
-@(private)
 color_picker_field_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
 	ctx := color_picker_ctx_top()
 
@@ -219,30 +212,31 @@ color_picker_swatch_pointer_active :: proc(
 }
 
 @(private)
-color_picker_channels_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
+color_picker_channels_emit_labels :: proc(layout_id: o.UI_Id, panel_w: f32) {
 	ctx := color_picker_ctx_top()
 
 	if !ctx.active {
 		return
 	}
 
-	color_picker_draw_channels(layout_id, rect, ctx.channel)
-	hits := color_picker_channel_hit_rects(rect)
+	row_h := COLOR_PICKER_CHANNEL_ROW_H
 
-	for i in 0 ..< 6 {
+	for i in 0 ..< o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT {
 		ch := color_picker_comp_channel(i)
 		active := ch == ctx.channel
 		label := color_picker_channel_label(ch)
+		// Parent-local coordinates for ABSOLUTE children (layout pass before solve).
+		y := f32(i) * row_h
 		Text(
 			{
 				config = {
 					id = fmt.tprintf("%s/ch-%d", ctx.key, i),
 					text = label,
 					position = set.Position(.ABSOLUTE),
-					x = set.F32(hits[i].x + 4),
-					y = set.F32(hits[i].y + 3),
-					width = set.Width(max(f32(0), hits[i].w - 6)),
-					height = set.Height(hits[i].h),
+					x = set.F32(4),
+					y = set.F32(y + 3),
+					width = set.Width(max(f32(0), panel_w - 6)),
+					height = set.Height(row_h),
 					font_size = set.F32(12),
 					color = set.Colors(active ? o.Color.FOREGROUND : o.Color.MUTED_FOREGROUND),
 					tabbable = set.Tabbable(false),
@@ -250,38 +244,8 @@ color_picker_channels_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
 			},
 		)
 	}
-}
 
-@(private)
-color_picker_channels_pointer :: proc(
-	layout_id: o.UI_Id,
-	rect: o.Rect,
-	hovered: bool,
-	interactive: bool,
-	disabled: bool,
-) {
-	if !interactive || disabled {
-		return
-	}
-
-	ctx := color_picker_ctx_top()
-
-	if !ctx.active {
-		return
-	}
-
-	mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
-
-	hits := color_picker_channel_hit_rects(rect)
-
-	for i in 0 ..< 6 {
-		if o.w_ctx.left_mouse.pressed && color_picker_point_in_rect(mouse, hits[i]) {
-			color_picker_set_channel(ctx, color_picker_comp_channel(i))
-			o.Stop_Propagation()
-
-			return
-		}
-	}
+	_ = layout_id
 }
 
 /*
@@ -363,19 +327,29 @@ H / S / V / R / G / B channel selector rows.
 */
 @(private)
 color_picker_channels_overlay :: proc(rs: Rectangle_State) {
-	if o.ui_pass() != .Draw {
-		return
-	}
-
-	layout_id := o.ui_id(rs.config.id)
-	rect := o.ui_layout_rect(layout_id)
 	ctx := color_picker_ctx_top()
 
-	if !ctx.active || rect.w <= 0 || rect.h <= 0 {
+	if !ctx.active {
 		return
 	}
 
-	color_picker_channels_draw(layout_id, rect)
+	layout_label := rs.config.id != "" ? rs.config.id : o.element_key(rs.config.id)
+	layout_id := o.ui_id(layout_label)
+	panel_w: f32 = 120
+
+	if o.length_is_definite(rs.config.width) {
+		panel_w = o.length_resolve(rs.config.width, 0)
+	}
+
+	if o.ui_pass() == .Layout {
+		color_picker_bind_channel_chrome(layout_id)
+		color_picker_channels_emit_labels(layout_id, panel_w)
+
+		return
+	}
+
+	color_picker_draw_channels(layout_id, ctx.channel)
+	color_picker_channels_emit_labels(layout_id, panel_w)
 }
 
 @(private)
@@ -387,11 +361,15 @@ color_picker_channels_on_pressed :: proc(event: Rectangle_Event) {
 	}
 
 	layout_id := o.ui_id(event.frame_state.config.id)
-	rect := o.ui_layout_rect(layout_id)
-	mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
-	hits := color_picker_channel_hit_rects(rect)
+	hits, ok := color_picker_channel_hits(layout_id)
 
-	for i in 0 ..< 6 {
+	if !ok {
+		return
+	}
+
+	mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
+
+	for i in 0 ..< o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT {
 		if color_picker_point_in_rect(mouse, hits[i]) {
 			color_picker_set_channel(ctx, color_picker_comp_channel(i))
 			o.Stop_Propagation()
@@ -407,6 +385,11 @@ Color_Picker_Channels :: proc(props: Color_Picker_Channels_Props) {
 	}
 
 	cfg := props.config
+	ctx := color_picker_ctx_top()
+
+	if cfg.id == "" {
+		cfg.id = fmt.tprintf("%s/channels", ctx.key)
+	}
 
 	if _, is_auto := cfg.width.(struct{}); is_auto {
 		cfg.width = set.Width(f32(120))

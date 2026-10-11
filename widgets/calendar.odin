@@ -551,7 +551,11 @@ calendar_select_day :: proc(ctx: ^Calendar_Ctx, date: Calendar_Date) {
 }
 
 @(private)
-calendar_measure :: proc(number_of_months: int, day_size, gap: f32, show_week_numbers: bool) -> (
+calendar_measure :: proc(
+	number_of_months: int,
+	day_size, gap: f32,
+	show_week_numbers: bool,
+) -> (
 	w, h: f32,
 ) {
 	months := f32(max(1, number_of_months))
@@ -672,36 +676,61 @@ calendar_point_in_rect :: proc(p: o.Vec2, r: o.Rect) -> bool {
 }
 
 @(private)
+calendar_bind_layout_chrome :: proc(layout_id: o.UI_Id, ctx: ^Calendar_Ctx) {
+	if ctx == nil || !ctx.active {
+		return
+	}
+
+	node, ok := o.layout_node_by_id(layout_id)
+
+	if !ok {
+		return
+	}
+
+	o.layout_set_calendar(
+		node,
+		{
+			number_of_months = ctx.number_of_months,
+			day_size = ctx.day_size,
+			gap = ctx.gap,
+			pad = CALENDAR_PAD,
+			month_gap = ctx.gap * 3,
+			show_week_numbers = ctx.show_week_numbers,
+			nav_height = CALENDAR_NAV_HEIGHT,
+			weekday_height = CALENDAR_WEEKDAY_HEIGHT,
+			week_num_width = CALENDAR_WEEK_NUM_WIDTH,
+			active = true,
+		},
+	)
+}
+
+@(private)
 calendar_hit_test :: proc(
 	ctx: ^Calendar_Ctx,
-	root: o.Rect,
 	mouse: o.Vec2,
 ) -> (
 	date: Calendar_Date,
 	nav: int,
-	ok: bool,// -1 prev, +1 next, 0 none
+	ok: bool, // -1 prev, +1 next, 0 none
 ) {
 	if ctx == nil {
 		return {}, 0, false
 	}
 
-	for mi in 0 ..< ctx.number_of_months {
-		origin := calendar_month_origin(
-			root,
-			mi,
-			ctx.number_of_months,
-			ctx.day_size,
-			ctx.gap,
-			ctx.show_week_numbers,
-		)
-		month_w := calendar_month_width(ctx.day_size, ctx.gap, ctx.show_week_numbers)
-		prev, _, next := calendar_nav_rects(origin, month_w)
+	chrome := o.layout_calendar_result(ctx.layout_id)
 
-		if mi == 0 && calendar_point_in_rect(mouse, prev) {
+	if chrome == nil {
+		return {}, 0, false
+	}
+
+	for mi in 0 ..< len(chrome.months) {
+		month_chrome := chrome.months[mi]
+
+		if mi == 0 && calendar_point_in_rect(mouse, month_chrome.prev) {
 			return {}, -1, true
 		}
 
-		if mi == 0 && calendar_point_in_rect(mouse, next) {
+		if mi == 0 && calendar_point_in_rect(mouse, month_chrome.next) {
 			return {}, 1, true
 		}
 
@@ -731,9 +760,7 @@ calendar_hit_test :: proc(
 				continue
 			}
 
-			rect := calendar_day_rect(origin, i, ctx.day_size, ctx.gap, ctx.show_week_numbers)
-
-			if calendar_point_in_rect(mouse, rect) {
+			if calendar_point_in_rect(mouse, month_chrome.days[i]) {
 				return cell.date, 0, true
 			}
 		}
@@ -743,12 +770,7 @@ calendar_hit_test :: proc(
 }
 
 @(private)
-calendar_handle_pointer :: proc(
-	frame_state: ^Calendar_State,
-	root: o.Rect,
-	hovered: bool,
-	interactive: bool,
-) {
+calendar_handle_pointer :: proc(frame_state: ^Calendar_State, hovered: bool, interactive: bool) {
 	ctx := calendar_ctx_top()
 
 	if !ctx.active || frame_state == nil || !interactive || frame_state.is_disabled {
@@ -756,7 +778,7 @@ calendar_handle_pointer :: proc(
 	}
 
 	mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
-	date, nav, hit := calendar_hit_test(ctx, root, mouse)
+	date, nav, hit := calendar_hit_test(ctx, mouse)
 
 	if hit && nav == 0 && Calendar_Date_Valid(date) {
 		ctx.hover_day = date
@@ -773,15 +795,10 @@ calendar_handle_pointer :: proc(
 		return
 	}
 
+	// Prev/next are real Buttons (`Calendar_Navigation` on_click). Navigating here
+	// on press double-advances on release and mutates the month mid-draw against
+	// stale layout chrome (partial day clear).
 	if nav != 0 {
-		if nav < 0 && Calendar_Can_Navigate(ctx.month, -1, ctx.start_month, ctx.end_month) {
-			calendar_set_month(ctx, Calendar_Date_Add_Months(ctx.month, -1))
-		} else if nav > 0 && Calendar_Can_Navigate(ctx.month, 1, ctx.start_month, ctx.end_month) {
-			calendar_set_month(ctx, Calendar_Date_Add_Months(ctx.month, 1))
-		}
-
-		o.Stop_Propagation()
-
 		return
 	}
 
@@ -1187,7 +1204,6 @@ calendar_draw_day_cell :: proc(
 @(private)
 calendar_draw_chrome :: proc(
 	layout_id: o.UI_Id,
-	root: o.Rect,
 	frame_state: ^Calendar_State,
 	event: Calendar_Event,
 	style: Calendar_Style,
@@ -1198,15 +1214,14 @@ calendar_draw_chrome :: proc(
 		return
 	}
 
-	for mi in 0 ..< ctx.number_of_months {
-		origin := calendar_month_origin(
-			root,
-			mi,
-			ctx.number_of_months,
-			ctx.day_size,
-			ctx.gap,
-			ctx.show_week_numbers,
-		)
+	chrome := o.layout_calendar_result(layout_id)
+
+	if chrome == nil {
+		return
+	}
+
+	for mi in 0 ..< len(chrome.months) {
+		month_chrome := chrome.months[mi]
 		month := Calendar_Date_Add_Months(ctx.month, mi)
 		cells, ok := Calendar_Build_Month_Grid(
 			month,
@@ -1228,7 +1243,7 @@ calendar_draw_chrome :: proc(
 
 		for i in 0 ..< CALENDAR_GRID_DAYS {
 			cell := cells[i]
-			rect := calendar_day_rect(origin, i, ctx.day_size, ctx.gap, ctx.show_week_numbers)
+			rect := month_chrome.days[i]
 			hovered :=
 				ctx.has_hover_day &&
 				Calendar_Date_Equal(ctx.hover_day, cell.date) &&
@@ -1303,7 +1318,7 @@ Renders the calendar root. Compose month chrome with `Calendar_Month` or finer
 parts inside `child`.
 
 One tab stop owns keyboard navigation (arrows, Page Up/Down, Home/End, Space /
-Enter). Pointer hits navigate months and select days according to `mode`.
+Enter). Month buttons own pointer navigation; day cells select according to `mode`.
 */
 Calendar :: proc(props: Calendar_Props) {
 	cfg := props.config
@@ -1375,7 +1390,12 @@ Calendar :: proc(props: Calendar_Props) {
 		rt.focus_set = true
 	}
 
-	content_w, content_h := calendar_measure(number_of_months, day_size, gap, props.show_week_numbers)
+	content_w, content_h := calendar_measure(
+		number_of_months,
+		day_size,
+		gap,
+		props.show_week_numbers,
+	)
 
 	frame_state := Calendar_State {
 		is_disabled       = disabled,
@@ -1492,19 +1512,18 @@ Calendar :: proc(props: Calendar_Props) {
 
 		widget_register_tab_order(key, config.tabbable, can_interact)
 
-		if child_proc != nil {
-			widget_children(
-				child_proc,
-				layout_id,
-				config,
-				frame_state,
-				key,
-				cfg,
-				props.on_scroll,
-				props.scroll_bar,
-				frame_state.is_hovered,
-			)
-		}
+		widget_children(
+			child_proc,
+			layout_id,
+			config,
+			frame_state,
+			key,
+			cfg,
+			props.on_scroll,
+			props.scroll_bar,
+			frame_state.is_hovered,
+		)
+		calendar_bind_layout_chrome(layout_id, calendar_ctx_top())
 
 		return
 	}
@@ -1539,7 +1558,7 @@ Calendar :: proc(props: Calendar_Props) {
 	}
 
 	interactive := widget_can_interact(handlers, &frame_state)
-	calendar_handle_pointer(&frame_state, rect, frame_state.is_hovered, interactive)
+	calendar_handle_pointer(&frame_state, frame_state.is_hovered, interactive)
 
 	if pushed {
 		ctx := calendar_ctx_top()
@@ -1604,7 +1623,7 @@ Calendar :: proc(props: Calendar_Props) {
 	defer o.Draw_Pop_Opacity()
 
 	widget_draw_box_background(layout_id, rect, background, radius)
-	calendar_draw_chrome(layout_id, rect, &frame_state, event, props.style)
+	calendar_draw_chrome(layout_id, &frame_state, event, props.style)
 
 	if child_proc != nil {
 		widget_children(

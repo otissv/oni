@@ -61,6 +61,7 @@ widget_handle_pointer_focus :: proc(
 
 	if is_hovered {
 		o.widget_set_focused_id(element_id)
+		o.w_ctx.pointer_focus_claimed = true
 		is_focused^ = true
 
 		if !was_focused {
@@ -69,6 +70,14 @@ widget_handle_pointer_focus :: proc(
 	} else if was_focused {
 		if o.w_ctx.label_focus_id == element_id {
 			is_focused^ = true
+
+			return
+		}
+
+		// A hovered tabbable already claimed this press (deeper child or an
+		// earlier duplicate id). Keep that claim instead of clearing.
+		if o.w_ctx.pointer_focus_claimed {
+			is_focused^ = o.w_ctx.focused_id == element_id
 
 			return
 		}

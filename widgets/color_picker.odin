@@ -889,20 +889,38 @@ color_picker_point_in_rect :: proc(p: o.Vec2, r: o.Rect) -> bool {
 }
 
 @(private)
-color_picker_channel_hit_rects :: proc(panel: o.Rect) -> [6]o.Rect {
-	row_h := COLOR_PICKER_CHANNEL_ROW_H
-	out: [6]o.Rect
+color_picker_bind_channel_chrome :: proc(layout_id: o.UI_Id) {
+	node, ok := o.layout_node_by_id(layout_id)
 
-	for i in 0 ..< 6 {
-		out[i] = {
-			x = panel.x,
-			y = panel.y + f32(i) * row_h,
-			w = panel.w,
-			h = row_h,
-		}
+	if !ok {
+		node, ok = o.layout_current_node()
 	}
 
-	return out
+	if !ok {
+		return
+	}
+
+	o.layout_set_color_picker_channels(
+		node,
+		{
+			row_h = COLOR_PICKER_CHANNEL_ROW_H,
+			active = true,
+		},
+	)
+}
+
+@(private)
+color_picker_channel_hits :: proc(layout_id: o.UI_Id) -> (
+	hits: [o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT]o.Rect,
+	ok: bool,
+) {
+	chrome := o.layout_color_picker_channels_result(layout_id)
+
+	if chrome == nil {
+		return {}, false
+	}
+
+	return chrome.hits, true
 }
 
 @(private)
@@ -1289,16 +1307,19 @@ color_picker_draw_swatch :: proc(layout_id: o.UI_Id, rect: o.Rect, color: o.RGBA
 @(private)
 color_picker_draw_channels :: proc(
 	layout_id: o.UI_Id,
-	panel: o.Rect,
 	channel: o.Color_Picker_Channel,
 ) {
 	if o.ui_layout_paint_skip(layout_id) {
 		return
 	}
 
-	hits := color_picker_channel_hit_rects(panel)
+	hits, ok := color_picker_channel_hits(layout_id)
 
-	for i in 0 ..< 6 {
+	if !ok {
+		return
+	}
+
+	for i in 0 ..< o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT {
 		ch := color_picker_comp_channel(i)
 		active := ch == channel
 

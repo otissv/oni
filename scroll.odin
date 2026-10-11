@@ -68,6 +68,8 @@ layout_offset_paint_geometry :: proc(node: ^Layout_Node, dx, dy: f32) {
 		node.image.dst.y += dy
 	}
 
+	layout_offset_chrome_geometry(node, dx, dy)
+
 	if node.collapsed_borders.active {
 		for &strip in node.collapsed_borders.strips {
 			strip.x += dx

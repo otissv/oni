@@ -144,6 +144,39 @@ rectangle_scrollport_persists_scroll_without_on_scroll :: proc(t: ^testing.T) {
 }
 
 @(test)
+scroll_bar_layout_owns_thumb_geometry :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		scroll_x: f32
+		scroll_y: f32
+
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Scroll_Bar({
+			config = {
+				id = "bar-chrome",
+				width = set.Width(f32(12)),
+				height = set.Height(f32(100)),
+			},
+			axis = .Y,
+			parent_scroll_x = &scroll_x,
+			parent_scroll_y = &scroll_y,
+			viewport = 50,
+			content = 200,
+		})
+		widget_test_finish_layout()
+
+		chrome := o.layout_scroll_bar_result(o.ui_id("bar-chrome"))
+		testing.expect(t, chrome != nil)
+
+		if chrome != nil {
+			testing.expect(t, chrome.active)
+			testing.expect(t, chrome.thumb.h >= o.SCROLL_BAR_MIN_THUMB || chrome.thumb.h > 0)
+		}
+	})
+}
+
+@(test)
 scroll_bar_writes_parent_scroll_y_on_track_press :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,

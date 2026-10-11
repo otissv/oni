@@ -56,6 +56,8 @@ widget_handle_pointer_focus_gains_and_loses_on_press :: proc(t: ^testing.T) {
 		testing.expect(t, focused)
 		testing.expect_value(t, o.w_ctx.focused_id, "btn")
 
+		// Fresh press away from the widget (claimed resets each frame).
+		o.w_ctx.pointer_focus_claimed = false
 		got, lost = widget_handle_pointer_focus("btn", true, true, false, &focused)
 		testing.expect(t, !got && lost)
 		testing.expect(t, !focused)
@@ -63,6 +65,25 @@ widget_handle_pointer_focus_gains_and_loses_on_press :: proc(t: ^testing.T) {
 
 		got, lost = widget_handle_pointer_focus("btn", false, false, true, &focused)
 		testing.expect(t, !got && !lost)
+	})
+}
+
+@(test)
+widget_handle_pointer_focus_keeps_claim_against_later_non_hovered :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		first := false
+		second := false
+		o.w_ctx.left_mouse.pressed = true
+
+		got, lost := widget_handle_pointer_focus("shared", true, false, true, &first)
+		testing.expect(t, got && !lost)
+		testing.expect(t, o.w_ctx.pointer_focus_claimed)
+
+		// Same focus key, later instance, not hovered — must not clear.
+		got, lost = widget_handle_pointer_focus("shared", true, true, false, &second)
+		testing.expect(t, !got && !lost)
+		testing.expect_value(t, o.w_ctx.focused_id, "shared")
+		testing.expect(t, second)
 	})
 }
 

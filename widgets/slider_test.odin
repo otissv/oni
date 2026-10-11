@@ -112,6 +112,15 @@ slider_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		expect_registered_id(t, "slider-layout")
 		expect_layout_kind(t, "slider-layout", .SLIDER)
 		expect_in_tab_order(t, "slider-layout", true)
+
+		chrome := o.layout_slider_result(o.ui_id("slider-layout"))
+		testing.expect(t, chrome != nil)
+
+		if chrome != nil {
+			testing.expect(t, chrome.active)
+			testing.expect(t, chrome.count == 1)
+			testing.expect(t, chrome.track.w > 0)
+		}
 	})
 }
 
