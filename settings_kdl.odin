@@ -884,6 +884,14 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .COLOR_PICKER, true
 	case "calendar":
 		return .CALENDAR, true
+	case "date-picker":
+		return .DATE_PICKER, true
+	case "date-picker-trigger":
+		return .DATE_PICKER_TRIGGER, true
+	case "date-picker-value":
+		return .DATE_PICKER_VALUE, true
+	case "date-picker-input":
+		return .DATE_PICKER_INPUT, true
 	}
 	return .RECT, false
 }

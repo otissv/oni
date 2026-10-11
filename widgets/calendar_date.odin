@@ -4,6 +4,7 @@ import dt "core:time/datetime"
 import "core:time"
 import "core:fmt"
 import "core:slice"
+import "core:strconv"
 
 /*
 Civil calendar date (year/month/day). Zero value means unset.
@@ -85,6 +86,22 @@ CALENDAR_MONTH_NAMES := [12]string {
 
 @(private)
 CALENDAR_WEEKDAY_SHORT := [7]string{"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"}
+
+@(private)
+CALENDAR_MONTH_SHORT := [12]string {
+	"Jan",
+	"Feb",
+	"Mar",
+	"Apr",
+	"May",
+	"Jun",
+	"Jul",
+	"Aug",
+	"Sep",
+	"Oct",
+	"Nov",
+	"Dec",
+}
 
 /*
 Returns whether `date` has a non-zero year/month/day and is a valid Gregorian date.
@@ -445,6 +462,83 @@ Calendar_Format_Day :: proc(date: Calendar_Date, allocator := context.temp_alloc
 	}
 
 	return fmt.aprintf("%d", int(date.day), allocator = allocator)
+}
+
+/*
+Long English date: `Month D, YYYY` (e.g. `January 20, 2026`).
+*/
+Calendar_Format_Long :: proc(date: Calendar_Date, allocator := context.temp_allocator) -> string {
+	if !Calendar_Date_Valid(date) {
+		return ""
+	}
+
+	return fmt.aprintf(
+		"%s %d, %d",
+		CALENDAR_MONTH_NAMES[date.month - 1],
+		int(date.day),
+		date.year,
+		allocator = allocator,
+	)
+}
+
+/*
+Medium English date: `Mon D, YYYY` (e.g. `Jan 20, 2026`).
+*/
+Calendar_Format_Medium :: proc(date: Calendar_Date, allocator := context.temp_allocator) -> string {
+	if !Calendar_Date_Valid(date) {
+		return ""
+	}
+
+	return fmt.aprintf(
+		"%s %d, %d",
+		CALENDAR_MONTH_SHORT[date.month - 1],
+		int(date.day),
+		date.year,
+		allocator = allocator,
+	)
+}
+
+/*
+Parses a strict `YYYY-MM-DD` civil date. Returns ok=false when invalid.
+*/
+Calendar_Parse_ISO :: proc(s: string) -> (date: Calendar_Date, ok: bool) {
+	if len(s) != 10 {
+		return {}, false
+	}
+
+	if s[4] != '-' || s[7] != '-' {
+		return {}, false
+	}
+
+	year, y_ok := strconv.parse_i64(s[0:4])
+
+	if !y_ok {
+		return {}, false
+	}
+
+	month, m_ok := strconv.parse_int(s[5:7])
+
+	if !m_ok {
+		return {}, false
+	}
+
+	day, d_ok := strconv.parse_int(s[8:10])
+
+	if !d_ok {
+		return {}, false
+	}
+
+	date = {
+		year  = year,
+		month = i8(month),
+		day   = i8(day),
+	}
+
+	if !Calendar_Date_Valid(date) {
+		return {}, false
+	}
+
+	return date, true
 }
 
 /*

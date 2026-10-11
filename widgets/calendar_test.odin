@@ -567,6 +567,24 @@ calendar_formatters :: proc(t: ^testing.T) {
 	testing.expect(t, Calendar_Format_Month({2024, 6, 1}, context.temp_allocator) == "June 2024")
 	testing.expect(t, Calendar_Format_Weekday(.SUNDAY, context.temp_allocator) == "Su")
 	testing.expect(t, Calendar_Format_Day({2024, 6, 5}, context.temp_allocator) == "5")
+	testing.expect(
+		t,
+		Calendar_Format_Long({2024, 6, 5}, context.temp_allocator) == "June 5, 2024",
+	)
+	testing.expect(
+		t,
+		Calendar_Format_Medium({2024, 6, 5}, context.temp_allocator) == "Jun 5, 2024",
+	)
+
+	parsed, ok := Calendar_Parse_ISO("2024-06-05")
+	testing.expect(t, ok)
+	testing.expect(t, Calendar_Date_Equal(parsed, {2024, 6, 5}))
+
+	_, bad := Calendar_Parse_ISO("2024-13-01")
+	testing.expect(t, !bad)
+
+	_, short := Calendar_Parse_ISO("2024-6-5")
+	testing.expect(t, !short)
 }
 
 @(test)

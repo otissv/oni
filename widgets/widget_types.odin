@@ -166,6 +166,7 @@ Shutdown :: proc() {
 	radio_shutdown()
 	color_picker_shutdown()
 	calendar_shutdown()
+	date_picker_shutdown()
 	o.widget_ctx_shutdown()
 }
 
