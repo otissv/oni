@@ -417,21 +417,21 @@ window { title "One" }`))
 		testing.expect(t, settings_test_write(path, `dpi scale=2
 window { title "Two" }`))
 		state.settings.watch_mtime_nsec = 0
-		state.settings.watch_cooldown = 0
+		state.settings.watch_cooldown_until_ns = 0
 		settings_poll()
 		testing.expect_value(t, state.settings.window_title, "Two")
 		expect_close(t, state.settings.dpi_scale, 2)
 		testing.expect_value(t, settings_test_hook_count, 1)
-		testing.expect(t, state.settings.watch_cooldown == SETTINGS_WATCH_COOLDOWN_FRAMES)
+		testing.expect(t, state.settings.watch_cooldown_until_ns > 0)
 
 		testing.expect(t, settings_test_write(path, `dpi scale=3
 window { title "Three" }`))
 		state.settings.watch_mtime_nsec = 0
 		settings_poll()
 		testing.expect_value(t, state.settings.window_title, "Two")
-		testing.expect(t, state.settings.watch_cooldown == SETTINGS_WATCH_COOLDOWN_FRAMES - 1)
+		testing.expect(t, state.settings.watch_cooldown_until_ns > 0)
 
-		state.settings.watch_cooldown = 0
+		state.settings.watch_cooldown_until_ns = 0
 		state.settings.watch_mtime_nsec = 0
 		settings_poll()
 		testing.expect_value(t, state.settings.window_title, "Three")
@@ -453,7 +453,7 @@ window { title "Good" }`))
 
 		testing.expect(t, settings_test_write(path, "NOT_A_VALID_BINDING\n"))
 		state.settings.watch_mtime_nsec = 0
-		state.settings.watch_cooldown = 0
+		state.settings.watch_cooldown_until_ns = 0
 		settings_poll()
 		testing.expect_value(t, state.settings.window_title, "Good")
 		expect_close(t, state.settings.dpi_scale, 2)

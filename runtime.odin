@@ -14,14 +14,17 @@ run_init_once :: proc(prc: proc()) {
 }
 
 /*
-Runs one full frame: timing, input, tick, UI end, and present.
+Runs one full frame: pacing wait, timing, input, tick, UI end, and present.
 
+Under on-demand effective pacing, waits for input/wake/timeout when idle.
 Pass app-specific tick and draw callbacks; returns early if state is nil
-or the window cannot render.
+or the window cannot render. Housekeeping-only idle timeouts may skip
+layout/draw/present when nothing is dirty.
 */
 run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 	if state == nil do return
 
+	frame_wait_if_idle()
 
 	dt := frame_time()
 	input_begin_frame()
@@ -31,11 +34,21 @@ run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 
 	if !can_render() do return
 
+	pacing := frame_pacing_effective()
+	if pacing == .On_Demand && !frame_work_pending() {
+		return
+	}
+
+	// Clear one-shot dirty before tick/draw so Request_Frame during the frame
+	// still wakes the next on-demand iteration.
+	frame_consume_dirty()
+
 	ui_begin_frame()
 	if tick != nil do tick(f32(dt))
 
 	run_init_once(init)
 	present_frame(draw)
+	frame_after_present()
 
 	end_frame()
 }

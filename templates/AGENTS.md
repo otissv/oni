@@ -68,6 +68,8 @@ Tests live as `*_test.odin` next to the package under test. Prefer `./oni/script
 
 **Hot reload:** App state lives in heap `Persistent` (`app/exports.odin`). Host keeps the pointer across DLL swaps. GPU/font/atlas live in engine state and are rebound on reload. Do not put long-lived UI state in package globals outside `Persistent` / engine state. Host CWD is the consumer project root (exe dir), so `build/hot_reload/app.so` and `assets/` resolve there.
 
+**Product config:** Set required `APP_TYPE` and `FRAME_MODE` in `app/globlas/global.odin` (`APP_TYPE` → shortcut pack; `FRAME_MODE` → pacing). Omitting `FRAME_MODE` is a compile error. Do not edit `exports.odin` for those values; do not put them in `settings.kdl` (user prefs only: window, DPI, fonts, shortcuts). See `docs/FRAME_MODES.md`.
+
 **Coordinates:** Layout and widgets use logical design pixels; DPI scale is handled by the engine.
 
 **App → engine:** Prefer `oni/api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_Texture`, …). Import engine as `o`, widgets as `w`, set helpers as `set`.

@@ -36,7 +36,7 @@ Effective pacing each loop iteration is whichever of the three modes is selected
    - a **frame request** / wake deadline is pending,
    - the wait **timeout** fires (settings watch, hot-reload host, and similar engine housekeeping).
 3. Run a normal frame: poll → tick → layout → draw → present.
-4. Clear one-shot dirty flags after present; keep waking if a wake deadline is still active.
+4. Consume one-shot dirty **before** tick/draw so `Request_Frame` during the frame still schedules the next iteration; keep waking if a wake deadline is still active.
 5. Optionally skip present when nothing is dirty (secondary optimization; wait is the main idle path).
 
 Timeouts matter: on-demand must not block forever, or settings mtime checks and hot reload stall. They are **not** a substitute for app wake calls—ongoing app work must push wake explicitly.
@@ -52,11 +52,16 @@ Timeouts matter: on-demand must not block forever, or settings mtime checks and 
 
 | Source | Role |
 |--------|------|
-| **`App_Type` default** | Hint: e.g. `Application` → focused or on-demand, `Game` → continuous. |
-| **Settings override** | Optional `settings.kdl` (or equivalent) force continuous / on-demand / focused for demos and debugging. |
-| **Runtime API** | App may change mode when entering a live preview, simulation, etc. |
+| **`APP_TYPE` (required)** | Product class in `app/globlas/global.odin`. Chooses shortcut pack only (Application → tool, Game → game). Does **not** set frame mode. |
+| **`FRAME_MODE` (required)** | Same file. Explicit engine pacing (`Continuous` / `On_Demand` / `Focused`). Applied via `Set_Frame_Mode`. Omitting it is a **compile error**. |
+| **`App_Type` installer** | Host↔app bridge: installs shortcut packs for the type. Frame mode is applied separately from `FRAME_MODE`. |
+| **Runtime API** | App may call `Set_Frame_Mode` later (live preview, simulation, etc.). |
 
-Products differ by **default mode + how often they request frames**, not by forked engines.
+`settings.kdl` is user preference (window, DPI, fonts, shortcuts). It does **not** control app type or frame pacing.
+
+No App_Type → frame-mode mapping and no `FRAME_MODE_SET` flag: product config states pacing explicitly so Application/Game are not silently coupled to Focused/Continuous.
+
+Products differ by **chosen mode + how often they request frames**, not by forked engines.
 
 ## Wake / demand API (engine contract)
 
@@ -87,9 +92,10 @@ Only needed while effective pacing is on-demand. After stepping vendor work in t
 Engine-owned wake sources (no vendor involved; same on-demand rule):
 
 - SDL input and window events
+- Widget `on_click` (follow-up frame so draw-pass tree mutations re-layout)
 - Resize / DPI / focus changes
 - Hot-reload / force reload
-- Settings apply / file-watch cooldown (prefer **time-based** cooldown under on-demand; today settings watch is frame-counted)
+- Settings apply / file-watch cooldown (time-based under on-demand)
 - Text caret blink, IME, hover transitions as needed by widgets
 
 ## When to use which
@@ -110,14 +116,17 @@ Engine-owned wake sources (no vendor involved; same on-demand rule):
 - **App-only busy-loop hacks** without engine wait/dirty — games and tools need one shared contract.
 - **Vendor knowledge in Oni** — no imports, adapters, or special cases for app-layer libs; only the generic push-wake contract.
 - **App poll hooks for frame demand** — redundant with push wake and delayed by the idle timeout; do not add a second demand path.
+- **Frame mode / app type in `settings.kdl`** — product config belongs in app source (`globlas`).
 
-## Relation to the current loop
+## Relation to the host loop
 
-Today the host loops on `should_run` → `reloader` → `app_update` → `Run_Frame`, which always polls non-blocking and presents when possible (VSync-capped). Frame modes extend that path: continuous preserves current behavior; on-demand adds wait + dirty/wake; focused selects continuous or on-demand from window focus before the same tick/layout/draw/present pipeline.
+The host still loops on `should_run` → `reloader` → `app_update` → `Run_Frame`. Continuous pacing preserves a full tick/layout/draw/present each iteration (VSync-capped). On-demand idle waits on `SDL_WaitEventTimeout` (plus dirty/wake); focused selects continuous or on-demand from window focus before the same pipeline. Settings watch and host reload debounce are time-based so they progress under on-demand idle timeouts.
 
-## Rollout sketch
+## API surface
 
-1. Engine: mode enum (`continuous` / `on_demand` / `focused`), focus tracking, dirty/wake flags, `Request_Frame` / `Wake_For`.
-2. `run_frame`: resolve effective pacing from mode + focus; on-demand idle → wait with timeout; then existing frame path.
-3. Defaults from `App_Type` + optional settings override.
-4. App requests frames only when effective pacing is on-demand and work is still active; convert frame-counted watches (e.g. settings cooldown) to time-based where needed.
+| API | Role |
+|-----|------|
+| `Set_Frame_Mode` / `Frame_Mode_Get` | Product / runtime mode selection |
+| `Frame_Pacing_Effective` / `Frame_Pacing_Is_On_Demand` | Resolved continuous vs on-demand |
+| `Request_Frame` | One-shot wake |
+| `Wake_For` / `Wake_Until` / `Wake_Deadline` | Deadline wake (seconds / SDL ticks ns) |

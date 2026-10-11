@@ -20,8 +20,8 @@ SETTINGS_DEFAULT_FONTS_DIR :: #directory + "assets/fonts/"
 SETTINGS_DEFAULT_FONT_REGULAR_PATH :: SETTINGS_DEFAULT_FONTS_DIR + "Inter-VariableFont_opsz,wght.ttf"
 SETTINGS_DEFAULT_FONT_ITALIC_PATH :: SETTINGS_DEFAULT_FONTS_DIR + "Inter-Italic-VariableFont_opsz,wght.ttf"
 
-// Frames to wait after a settings.kdl write before applying (editors often write twice).
-SETTINGS_WATCH_COOLDOWN_FRAMES :: 10
+// Time to wait after a settings.kdl write before applying (editors often write twice).
+SETTINGS_WATCH_COOLDOWN_NS :: u64(150_000_000)
 
 Settings_Apply_Hook :: proc()
 
@@ -51,7 +51,7 @@ Settings :: struct {
 	shortcut_rows:     [dynamic]Shortcut_Parsed_Binding,
 	// Disk watch: unix-nsec mtime of `path`; cooldown absorbs multi-write editors.
 	watch_mtime_nsec:  i64,
-	watch_cooldown:    int,
+	watch_cooldown_until_ns: u64,
 }
 
 /*
@@ -308,13 +308,14 @@ settings_apply_runtime :: proc() -> bool {
 		// lazily FT_Init from settings apply (tests / early boot).
 		_, _ = settings_register_fonts()
 	}
+	request_frame()
 	return true
 }
 
 /*
 Polls settings.kdl for changes and applies them (dev and production).
 
-Call once per frame. Debounces multi-write editors via SETTINGS_WATCH_COOLDOWN_FRAMES.
+Call once per frame. Debounces multi-write editors via SETTINGS_WATCH_COOLDOWN_NS.
 */
 settings_poll :: proc() {
 	if state == nil || !state.settings.ready do return
@@ -322,8 +323,8 @@ settings_poll :: proc() {
 	path := state.settings.path
 	if path == "" do return
 
-	if state.settings.watch_cooldown > 0 {
-		state.settings.watch_cooldown -= 1
+	now := sdl.GetTicksNS()
+	if state.settings.watch_cooldown_until_ns > now {
 		return
 	}
 
@@ -337,7 +338,7 @@ settings_poll :: proc() {
 		return
 	}
 
-	state.settings.watch_cooldown = SETTINGS_WATCH_COOLDOWN_FRAMES
+	state.settings.watch_cooldown_until_ns = now + SETTINGS_WATCH_COOLDOWN_NS
 	_ = settings_apply_runtime()
 }
 

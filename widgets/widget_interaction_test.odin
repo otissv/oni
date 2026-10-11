@@ -58,8 +58,10 @@ widget_dispatch_events_fires_click_on_pointer_release :: proc(t: ^testing.T) {
 
 		o.w_ctx.left_mouse.pressed = false
 		o.w_ctx.left_mouse.released = true
+		o.state.frame_dirty = false
 		widget_dispatch_events(props, &frame, handlers, event, "rect", false)
 		testing.expect_value(t, interaction_clicked, 1)
+		testing.expect(t, o.state.frame_dirty)
 	})
 }
 

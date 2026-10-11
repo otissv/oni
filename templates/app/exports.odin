@@ -1,8 +1,8 @@
 package app
 
 import o "../oni"
-import g "./globlas"
 import w "../oni/widgets"
+import g "./globlas"
 import "core:fmt"
 import "core:mem"
 
@@ -20,6 +20,31 @@ persistent: ^Persistent
 
 // Optional once-per-run hook; wire from app.odin when needed (see templates/app.odin).
 init: proc()
+
+/*
+Installs engine shortcut packs for the active App_Type.
+
+Product values live in `globlas` (`APP_TYPE`, required `FRAME_MODE`); this proc
+is the host↔app bridge and should not be edited for product config.
+*/
+install_app_type_defaults :: proc(type: o.App_Type_Id) {
+	switch g.App_Type(int(type)) {
+	case .Application:
+		o.Shortcut_Install_Tool_Defaults()
+	case .Game:
+		o.Shortcut_Install_Game_Defaults()
+	}
+}
+
+/*
+Applies required `g.FRAME_MODE` from product config.
+
+Safe before shortcut defaults are installed so pacing is correct from first frame.
+Omitting `FRAME_MODE` in `globlas` is a compile error.
+*/
+apply_product_frame_mode :: proc() {
+	o.Set_Frame_Mode(g.FRAME_MODE)
+}
 
 /*
 Re-binds o engine, theme, and globals.app to the current persistent state.
@@ -44,7 +69,8 @@ ensure_persistent :: proc() {
 	}
 	bind()
 	o.Register_App_Type_Defaults(install_app_type_defaults)
-	o.Set_App_Type_From(App_Type, App_Type.Application)
+	o.Set_App_Type_From(g.App_Type, g.APP_TYPE)
+	apply_product_frame_mode()
 }
 
 /*

@@ -723,10 +723,12 @@ engine_poll_events_window_fullscreen_and_focus :: proc(t: ^testing.T) {
 		append(&state.input.text_input, 'k')
 		state.input.mouse_wheel_y = 1
 
+		state.window_focused = true
 		engine_test_push(t, {type = .WINDOW_ENTER_FULLSCREEN})
 		engine_test_push(t, {type = .WINDOW_FOCUS_LOST})
 		poll_events()
 		testing.expect(t, state.fullscreen)
+		testing.expect(t, !state.window_focused)
 		testing.expect(t, !state.input.keys_down[5])
 		testing.expect(t, !state.input.mouse_left)
 		testing.expect(t, !state.input.modifiers.ctrl)
@@ -734,8 +736,10 @@ engine_poll_events_window_fullscreen_and_focus :: proc(t: ^testing.T) {
 		expect_close(t, state.input.mouse_wheel_y, 1)
 
 		engine_test_push(t, {type = .WINDOW_LEAVE_FULLSCREEN})
+		engine_test_push(t, {type = .WINDOW_FOCUS_GAINED})
 		poll_events()
 		testing.expect(t, !state.fullscreen)
+		testing.expect(t, state.window_focused)
 	})
 }
 
@@ -1687,6 +1691,10 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	src.perf_frequency = 11
 	src.last_counter = 22
 	src.running = true
+	src.frame_mode = .On_Demand
+	src.window_focused = true
+	src.frame_dirty = true
+	src.wake_until_ns = 42
 	src.ui.frame = 7
 	src.gamepad = transmute(^sdl.Gamepad)uintptr(5)
 	src.gamepad_instance_id = 99
@@ -1711,6 +1719,10 @@ engine_copy_state_fields_copies_all_live_subsystems :: proc(t: ^testing.T) {
 	testing.expect_value(t, dst.perf_frequency, u64(11))
 	testing.expect_value(t, dst.last_counter, u64(22))
 	testing.expect(t, dst.running)
+	testing.expect_value(t, dst.frame_mode, Frame_Mode.On_Demand)
+	testing.expect(t, dst.window_focused)
+	testing.expect(t, dst.frame_dirty)
+	testing.expect_value(t, dst.wake_until_ns, u64(42))
 	testing.expect_value(t, dst.ui.frame, u64(7))
 	testing.expect(t, dst.gamepad == src.gamepad)
 	testing.expect_value(t, dst.gamepad_instance_id, sdl.JoystickID(99))

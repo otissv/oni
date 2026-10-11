@@ -286,6 +286,8 @@ poll_events :: proc() {
 	event: sdl.Event
 
 	for sdl.PollEvent(&event) {
+		request_frame()
+
 		#partial switch event.type {
 		case .QUIT:
 			state.running = false
@@ -423,6 +425,14 @@ poll_events :: proc() {
 
 		case .WINDOW_FOCUS_LOST:
 			input_clear_keyboard_mouse()
+			if state.window_focused {
+				state.window_focused = false
+			}
+
+		case .WINDOW_FOCUS_GAINED:
+			if !state.window_focused {
+				state.window_focused = true
+			}
 		}
 	}
 
@@ -556,6 +566,8 @@ create_window :: proc(config: Window_Config) -> bool {
 	state.perf_frequency = sdl.GetPerformanceFrequency()
 	state.last_counter = sdl.GetPerformanceCounter()
 	state.fullscreen = config.mode == .Fullscreen
+	state.window_focused = true
+	state.frame_dirty = true
 	state.view = view_default()
 
 	sdl.SetWindowMinimumSize(state.window, config.min_width, config.min_height)
@@ -771,6 +783,10 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.perf_frequency = src.perf_frequency
 	dst.last_counter = src.last_counter
 	dst.running = src.running
+	dst.frame_mode = src.frame_mode
+	dst.window_focused = src.window_focused
+	dst.frame_dirty = src.frame_dirty
+	dst.wake_until_ns = src.wake_until_ns
 	dst.ui = src.ui
 	dst.shortcuts = src.shortcuts
 	dst.settings = src.settings

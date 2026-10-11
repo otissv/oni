@@ -76,6 +76,8 @@ test_hook_present_fail_cancel: bool
 test_hook_present_fail_render_pass: bool
 @(private)
 test_hook_present_fail_submit: bool
+@(private)
+test_hook_skip_frame_wait: bool
 
 /*
 When true, gamepad open/enumerate/sync/close use stubbed SDL I/O instead of real devices.
@@ -130,6 +132,7 @@ clear_test_hooks :: proc() {
 	test_hook_present_fail_cancel = false
 	test_hook_present_fail_render_pass = false
 	test_hook_present_fail_submit = false
+	test_hook_skip_frame_wait = false
 	test_hook_gamepad_override = false
 	test_hook_gamepad_ids_nil = false
 	test_hook_gamepad_ids_count = 0

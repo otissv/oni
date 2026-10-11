@@ -33,6 +33,12 @@ route_fade_step :: proc(fade: ^Route_Fade, mounting: o.Mount) -> o.Mount {
 		},
 	)
 	fade.opacity = result.value
+
+	if !result.done {
+		// Keep frames flowing under on-demand / unfocused pacing while the fade runs.
+		o.Request_Frame()
+	}
+
 	return result.done ? .COMPLETED : .RUNNING
 }
 

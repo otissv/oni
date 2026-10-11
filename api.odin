@@ -12,6 +12,15 @@ Migrate_State :: migrate_state
 After_Realloc :: after_realloc
 Realloc_Failed :: realloc_failed
 
+Frame_Mode_Get :: frame_mode
+Set_Frame_Mode :: frame_mode_set
+Frame_Pacing_Effective :: frame_pacing_effective
+Frame_Pacing_Is_On_Demand :: frame_pacing_is_on_demand
+Request_Frame :: request_frame
+Wake_For :: wake_for
+Wake_Until :: wake_until_ns
+Wake_Deadline :: wake_deadline_ns
+
 Init_Window :: init_window
 Init :: init
 Can_Render :: can_render

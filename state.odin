@@ -82,6 +82,11 @@ State :: struct {
 	last_counter:        u64,
 	fullscreen:          bool,
 	can_render:          bool,
+	// Frame pacing: mode, focus, one-shot dirty, and wake deadline (SDL ticks ns).
+	frame_mode:          Frame_Mode,
+	window_focused:      bool,
+	frame_dirty:         bool,
+	wake_until_ns:       u64,
 	ui:                  UI_State,
 	widget:              Widget_Context,
 	gamepad:             ^sdl.Gamepad,

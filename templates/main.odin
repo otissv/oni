@@ -23,10 +23,10 @@ main :: proc() {
 		return
 	}
 
-	reload_cooldown: int
+	reload_cooldown_until_ns: u64
 
 	for app_api.should_run() {
-		oni.reloader(&app_api, &api_version, &reload_cooldown, &old_apis, &tracking)
+		oni.reloader(&app_api, &api_version, &reload_cooldown_until_ns, &old_apis, &tracking)
 		free_all(context.temp_allocator)
 	}
 

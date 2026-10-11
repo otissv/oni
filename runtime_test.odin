@@ -14,11 +14,17 @@ runtime_test_init_calls: int
 runtime_test_last_dt: f32
 @(private)
 runtime_test_ready_ok: bool
+@(private)
+runtime_test_tick_request_frame: bool
 
 @(private)
 runtime_test_tick :: proc(dt: f32) {
 	runtime_test_tick_calls += 1
 	runtime_test_last_dt = dt
+
+	if runtime_test_tick_request_frame {
+		request_frame()
+	}
 }
 
 @(private)
@@ -42,6 +48,7 @@ runtime_test_reset_counters :: proc() {
 	runtime_test_draw_calls = 0
 	runtime_test_init_calls = 0
 	runtime_test_last_dt = -1
+	runtime_test_tick_request_frame = false
 }
 
 @(private)

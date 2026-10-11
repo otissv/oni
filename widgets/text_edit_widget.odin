@@ -488,6 +488,10 @@ text_edit_widget_draw_caret :: proc(
 
 	if focused && opts.caret {
 		edit.blink_phase = o.text_edit_update_blink(edit.blink_phase, f32(o.Frame_Time()), true)
+		// Caret blink must keep waking under on-demand pacing.
+		o.Request_Frame()
+	} else if focused && o.Input_Ime_Active() {
+		o.Request_Frame()
 	}
 
 	geo_caret := text_edit_widget_display_caret_offset(opts, plain, edit.caret)

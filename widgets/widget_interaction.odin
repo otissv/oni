@@ -257,6 +257,9 @@ widget_dispatch_events :: proc(
 		keyboard_click := click_event.key != o.Scancode(0)
 		if propagate || keyboard_click || label_activated {
 			props.on_click(click_event)
+			// Clicks run in the draw pass after layout. App handlers often mutate
+			// the tree (routes, open state); wake so the next frame re-layouts.
+			o.Request_Frame()
 		}
 	}
 

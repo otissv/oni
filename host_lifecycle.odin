@@ -83,23 +83,29 @@ App_API :: struct {
 	api_version:           int,
 }
 
+// Debounce after a successful hot reload so mtime chatter does not loop.
+HOST_RELOAD_COOLDOWN_NS :: u64(50_000_000)
+
 /*
 Per-frame hot reload driver: updates app, watches F5/F6 and .so mtime.
 
-Panics on tracking-allocator bad frees after shutting down loaded libraries.
+`reload_cooldown_until_ns` is an SDL tick deadline (0 = none). Panics on
+tracking-allocator bad frees after shutting down loaded libraries.
 */
 reloader :: proc(
 	app_api: ^App_API,
 	api_version: ^int,
-	reload_cooldown: ^int,
+	reload_cooldown_until_ns: ^u64,
 	old_apis: ^[dynamic]App_API,
 	tracking: ^mem.Tracking_Allocator,
 ) {
 	use_host_context()
 	app_api.update()
 
-	if reload_cooldown^ > 0 {
-		reload_cooldown^ -= 1
+	now_ns := sdl.GetTicksNS()
+	in_cooldown := reload_cooldown_until_ns^ != 0 && now_ns < reload_cooldown_until_ns^
+	if !in_cooldown {
+		reload_cooldown_until_ns^ = 0
 	}
 
 	use_host_context()
@@ -114,7 +120,7 @@ reloader :: proc(
 		reason = "F5"
 	}
 
-	if reload_cooldown^ == 0 {
+	if !in_cooldown {
 		mod_nsec, mod_ok := load_app_lib_mtime()
 		if mod_ok && app_api.loaded_mod_nsec != mod_nsec {
 			reload = true
@@ -130,7 +136,7 @@ reloader :: proc(
 			app_api.consume_force_restart()
 			perform_reload(app_api, new_api, want_restart, reason, old_apis)
 			api_version^ += 1
-			reload_cooldown^ = 2
+			reload_cooldown_until_ns^ = sdl.GetTicksNS() + HOST_RELOAD_COOLDOWN_NS
 		} else {
 			fmt.println("Reload failed, will retry next frame")
 		}
