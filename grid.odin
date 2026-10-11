@@ -446,12 +446,19 @@ grid_parse_template_areas :: proc(
 ) {
 	names = make(map[string]Grid_Area_Lines, allocator)
 	lines := strings.split_lines(areas, allocator)
-	grid_rows: [dynamic]string
-	defer delete(grid_rows)
+	grid_rows := make([dynamic]string, allocator)
+
+	defer {
+		if allocator != context.temp_allocator {
+			delete(grid_rows)
+		}
+	}
 
 	for line in lines {
 		trimmed := strings.trim_space(line)
+
 		if len(trimmed) == 0 do continue
+
 		append(&grid_rows, trimmed)
 	}
 

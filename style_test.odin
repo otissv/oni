@@ -8,10 +8,28 @@ style_length_resolve_and_definite :: proc(t: ^testing.T) {
 	expect_close(t, length_resolve({kind = .PERCENT, value = 50}, 200), 100)
 	expect_close(t, length_resolve({kind = .INHERIT}, 77), 77)
 	expect_close(t, length_resolve({kind = .AUTO}, 100), 0)
+	expect_close(t, length_resolve({kind = .FIT}, 100), 0)
+	expect_close(t, length_resolve({kind = .GROW}, 100), 0)
+	expect_close(t, length_resolve({kind = .MIN_CONTENT}, 100), 0)
+	expect_close(t, length_resolve({kind = .MAX_CONTENT}, 100), 0)
 
 	testing.expect(t, length_is_definite({kind = .FIXED, value = 1}))
 	testing.expect(t, length_is_definite({kind = .PERCENT, value = 10}))
 	testing.expect(t, !length_is_definite({kind = .AUTO}))
+	testing.expect(t, !length_is_definite({kind = .FIT}))
+	testing.expect(t, !length_is_definite({kind = .GROW}))
+	testing.expect(t, !length_is_definite({kind = .MIN_CONTENT}))
+	testing.expect(t, !length_is_definite({kind = .MAX_CONTENT}))
+	testing.expect(t, length_is_fit({kind = .FIT}))
+	testing.expect(t, length_is_grow({kind = .GROW}))
+	testing.expect(t, length_is_min_content({kind = .MIN_CONTENT}))
+	testing.expect(t, length_is_max_content({kind = .MAX_CONTENT}))
+	testing.expect(t, length_is_intrinsic({kind = .FIT}))
+	testing.expect(t, length_is_intrinsic({kind = .MIN_CONTENT}))
+	testing.expect(t, length_is_intrinsic({kind = .MAX_CONTENT}))
+	testing.expect(t, !length_is_intrinsic({kind = .AUTO}))
+	testing.expect(t, !length_is_fit({kind = .AUTO}))
+	testing.expect(t, !length_is_grow({kind = .AUTO}))
 }
 
 @(test)
@@ -277,6 +295,29 @@ style_child_context_ignores_margin_for_content_size :: proc(t: ^testing.T) {
 }
 
 @(test)
+style_child_context_definite_size_limits_descendant_measure :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_push_style(Style_Context{content_w = 800, content_h = 600})
+			defer ui_pop_style()
+
+			sidebar := Resolved_Widget_Config {
+				style = {
+					width = {kind = .FIXED, value = 300},
+					height = {kind = .PERCENT, value = 100},
+					padding = Pd{t = 8, b = 8, l = 12, r = 12},
+					border = Bd{r = 1},
+				},
+			}
+			child := style_child_context(sidebar)
+			expect_close(t, child.content_w, 300 - (12 + 12 + 1))
+			expect_close(t, child.content_h, 600 - (8 + 8))
+		},
+	)
+}
+
+@(test)
 style_resolve_length_from_width_height_modes :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,
@@ -285,6 +326,18 @@ style_resolve_length_from_width_height_modes :: proc(t: ^testing.T) {
 
 			w_auto := resolve_length_from_width(Width_Mode.AUTO, 100, &frame, event)
 			testing.expect(t, w_auto.kind == .AUTO)
+
+			w_fit := resolve_length_from_width(Width_Mode.FIT, 100, &frame, event)
+			testing.expect(t, w_fit.kind == .FIT)
+
+			w_grow := resolve_length_from_width(Width_Mode.GROW, 100, &frame, event)
+			testing.expect(t, w_grow.kind == .GROW)
+
+			w_min_c := resolve_length_from_width(Width_Mode.MIN_CONTENT, 100, &frame, event)
+			testing.expect(t, w_min_c.kind == .MIN_CONTENT)
+
+			w_max_c := resolve_length_from_width(Width_Mode.MAX_CONTENT, 100, &frame, event)
+			testing.expect(t, w_max_c.kind == .MAX_CONTENT)
 
 			w_inh := resolve_length_from_width(Width_Mode.INHERIT, 100, &frame, event)
 			testing.expect(t, w_inh.kind == .INHERIT)
@@ -399,7 +452,8 @@ style_children_scopes_layout_and_style :: proc(t: ^testing.T) {
 			Children(style_children_builder, parent_id, config, frame)
 			testing.expect(t, style_children_called)
 			testing.expect_value(t, style_children_scope_len, 1)
-			expect_close(t, style_children_content_w, 800 - 20)
+			// Definite width 200 minus uniform padding 10 on each side.
+			expect_close(t, style_children_content_w, 200 - 20)
 			testing.expect_value(t, len(state.ui.scope_stack), 0)
 			testing.expect(t, ui_has_layout_node(parent_id))
 		},
@@ -477,7 +531,7 @@ style_resolve_private_text_and_overflow_helpers :: proc(t: ^testing.T) {
 style_length_inherit_is_definite_and_unknown_kind_zero :: proc(t: ^testing.T) {
 	testing.expect(t, length_is_definite({kind = .INHERIT}))
 	testing.expect(t, length_is_definite({kind = .FIXED}))
-	// Exhaustive switch covers all kinds; zero-value Length is FIXED with 0.
+	// Exhaustive switch covers all kinds; zero-value Length is AUTO.
 	expect_close(t, length_resolve({}, 50), 0)
 }
 
@@ -490,6 +544,18 @@ style_resolve_length_from_height_modes_and_empty_dim :: proc(t: ^testing.T) {
 
 			h_auto := resolve_length_from_height(Height_Mode.AUTO, 80, &frame, event)
 			testing.expect(t, h_auto.kind == .AUTO)
+
+			h_fit := resolve_length_from_height(Height_Mode.FIT, 80, &frame, event)
+			testing.expect(t, h_fit.kind == .FIT)
+
+			h_grow := resolve_length_from_height(Height_Mode.GROW, 80, &frame, event)
+			testing.expect(t, h_grow.kind == .GROW)
+
+			h_min_c := resolve_length_from_height(Height_Mode.MIN_CONTENT, 80, &frame, event)
+			testing.expect(t, h_min_c.kind == .MIN_CONTENT)
+
+			h_max_c := resolve_length_from_height(Height_Mode.MAX_CONTENT, 80, &frame, event)
+			testing.expect(t, h_max_c.kind == .MAX_CONTENT)
 
 			h_inh := resolve_length_from_height(Height_Mode.INHERIT, 80, &frame, event)
 			testing.expect(t, h_inh.kind == .INHERIT)
@@ -1044,6 +1110,10 @@ style_resolve_gap_direction_justify_from_parent_and_explicit :: proc(t: ^testing
 			ui_push_style(style_child_context(parent))
 			defer ui_pop_style()
 
+			unset := resolve_widget_config({}, {}, &frame, event)
+			testing.expect_value(t, unset.gap_x, u16(0))
+			testing.expect_value(t, unset.gap_y, u16(0))
+
 			inherited := resolve_widget_config(
 				{},
 				{
@@ -1287,3 +1357,92 @@ draw_opacity_stack_multiplies_like_css :: proc(t: ^testing.T) {
 	)
 }
 
+
+@(test)
+style_merge_preserves_width_fit_over_auto_default :: proc(t: ^testing.T) {
+	base := Widget_Config {
+		width = Width_Mode.AUTO,
+	}
+	override := Widget_Config {
+		width = Width_Mode.FIT,
+	}
+	merged := merge_widget_config(base, override)
+	#partial switch v in merged.width {
+	case Width_Mode:
+		testing.expect(t, v == .FIT)
+	case:
+		testing.expectf(t, false, "expected Width_Mode, got %v", merged.width)
+	}
+
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			frame, event := ui_test_frame_event()
+			cfg := Widget_Config {
+				width = Width_Mode.FIT,
+			}
+			resolved := resolve_widget_config(Widget_Config{width = Width_Mode.AUTO}, cfg, &frame, event)
+			testing.expect(t, resolved.width.kind == .FIT)
+		},
+	)
+}
+
+@(test)
+style_wrap_unset_inherits_parent_not_theme :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			frame, event := ui_test_frame_event()
+			ui_push_style(
+				Style_Context {
+					style = {wrap = Text_Wrap_Kind.NONE},
+					content_w = 400,
+					content_h = 200,
+				},
+			)
+			defer ui_pop_style()
+
+			resolved := resolve_widget_config(Widget_Config{}, Widget_Config{}, &frame, event)
+			testing.expect(t, resolved.wrap == Text_Wrap_Kind.NONE)
+		},
+	)
+}
+
+@(test)
+style_child_context_fit_axis_is_indefinite_for_descendants :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_push_style(Style_Context{content_w = 800, content_h = 600})
+			defer ui_pop_style()
+
+			auto_parent := Resolved_Widget_Config {
+				style = {width = {kind = .AUTO}, height = {kind = .AUTO}},
+			}
+			auto_child := style_child_context(auto_parent)
+			expect_close(t, auto_child.content_w, 800)
+			expect_close(t, auto_child.content_h, 600)
+
+			fit_parent := Resolved_Widget_Config {
+				style = {width = {kind = .FIT}, height = {kind = .FIT}},
+			}
+			fit_child := style_child_context(fit_parent)
+			expect_close(t, fit_child.content_w, 0)
+			expect_close(t, fit_child.content_h, 0)
+
+			min_parent := Resolved_Widget_Config {
+				style = {width = {kind = .MIN_CONTENT}, height = {kind = .MIN_CONTENT}},
+			}
+			min_child := style_child_context(min_parent)
+			expect_close(t, min_child.content_w, 0)
+			expect_close(t, min_child.content_h, 0)
+
+			max_parent := Resolved_Widget_Config {
+				style = {width = {kind = .MAX_CONTENT}, height = {kind = .MAX_CONTENT}},
+			}
+			max_child := style_child_context(max_parent)
+			expect_close(t, max_child.content_w, 0)
+			expect_close(t, max_child.content_h, 0)
+		},
+	)
+}

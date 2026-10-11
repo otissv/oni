@@ -58,3 +58,27 @@ grid_resolve_template_columns_int_and_string :: proc(t: ^testing.T) {
 	from_s := grid_resolve_template_columns(Grid_Template_Columns("100px 1fr"))
 	testing.expect_value(t, from_s.count, 2)
 }
+
+@(test)
+grid_parse_template_areas_uses_caller_allocator :: proc(t: ^testing.T) {
+	areas := "header header\nnav main\nfooter footer"
+	cols, rows, names, ok := grid_parse_template_areas(areas, context.temp_allocator)
+	testing.expect(t, ok)
+	testing.expect_value(t, cols, 2)
+	testing.expect_value(t, rows, 3)
+	testing.expect_value(t, len(names), 4)
+
+	header, header_ok := names["header"]
+	testing.expect(t, header_ok)
+	testing.expect_value(t, header.col_start, 1)
+	testing.expect_value(t, header.col_end, 3)
+	testing.expect_value(t, header.row_start, 1)
+	testing.expect_value(t, header.row_end, 2)
+
+	nav, nav_ok := names["nav"]
+	testing.expect(t, nav_ok)
+	testing.expect_value(t, nav.col_start, 1)
+	testing.expect_value(t, nav.col_end, 2)
+	testing.expect_value(t, nav.row_start, 2)
+	testing.expect_value(t, nav.row_end, 3)
+}

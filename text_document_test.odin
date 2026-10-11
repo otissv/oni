@@ -60,6 +60,27 @@ text_document_heap_edit_and_free_is_clean :: proc(t: ^testing.T) {
 }
 
 @(test)
+text_document_temp_edit_to_tagged_heap_owns_result :: proc(t: ^testing.T) {
+	alloc := context.temp_allocator
+	doc := text_document_from_tagged("{b}hi{/b}", alloc)
+	defer text_document_free_runs(&doc, alloc)
+
+	testing.expect(t, text_document_insert_plain(&doc, 2, "!", alloc))
+	testing.expect_value(t, doc.plain, "hi!")
+
+	tagged := text_document_to_tagged(&doc, context.allocator)
+	defer delete(tagged)
+
+	testing.expect(t, strings.contains(tagged, "{b}"))
+	testing.expect(t, strings.contains(tagged, "hi"))
+	testing.expect(t, strings.contains(tagged, "!"))
+
+	round_trip := text_document_from_tagged(tagged, alloc)
+	defer text_document_free_runs(&round_trip, alloc)
+	testing.expect_value(t, round_trip.plain, "hi!")
+}
+
+@(test)
 text_runs_to_tagged_serializes_bold :: proc(t: ^testing.T) {
 	runs := []Text_Run{{text = "x", style = {fields = {.font_weight}, font_weight = .Bold}}}
 	out := text_runs_to_tagged(runs)

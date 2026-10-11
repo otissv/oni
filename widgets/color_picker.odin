@@ -311,16 +311,17 @@ color_picker_replace_string :: proc(dst: ^string, value: string) {
 		return
 	}
 
+	if dst^ == value {
+		return
+	}
+
+	replacement := value != "" ? strings.clone(value) : ""
+
 	if dst^ != "" {
 		delete(dst^)
 	}
 
-	if value == "" {
-		dst^ = ""
-		return
-	}
-
-	dst^ = strings.clone(value)
+	dst^ = replacement
 }
 
 /*
@@ -760,11 +761,10 @@ color_picker_sync_runtime_texts :: proc(rt: ^Color_Picker_Runtime, hsva: o.HSVA,
 	}
 
 	if !rt.hex_editing {
-		if rt.hex != "" {
-			delete(rt.hex)
-		}
-
-		rt.hex = o.hex_format(rgba, false, context.allocator)
+		color_picker_replace_string(
+			&rt.hex,
+			o.hex_format(rgba, false, context.temp_allocator),
+		)
 	}
 
 	color_picker_sync_type_drafts(rt, hsva, rgba)

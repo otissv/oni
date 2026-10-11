@@ -383,3 +383,40 @@ color_picker_style_defaults_from_unset :: proc(t: ^testing.T) {
 		o.COLOR_PICKER_DEFAULT_FIELD_SIZE,
 	)
 }
+
+@(test)
+color_picker_replace_string_skips_equal_value :: proc(t: ^testing.T) {
+	owned := strings.clone("#ff0000")
+	defer {
+		if owned != "" {
+			delete(owned)
+		}
+	}
+
+	before := raw_data(owned)
+	color_picker_replace_string(&owned, "#ff0000")
+	testing.expect_value(t, owned, "#ff0000")
+	testing.expect(t, raw_data(owned) == before)
+
+	color_picker_replace_string(&owned, "#00ff00")
+	testing.expect_value(t, owned, "#00ff00")
+	testing.expect(t, raw_data(owned) != before)
+}
+
+@(test)
+color_picker_sync_runtime_texts_keeps_stable_hex :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		rt := color_picker_runtime_ensure("color-picker-sync-hex")
+		testing.expect(t, rt != nil)
+
+		rgba := o.RGBA{255, 0, 0, 255}
+		hsva := o.rgba_to_hsva(rgba)
+		color_picker_sync_runtime_texts(rt, hsva, rgba)
+		testing.expect_value(t, rt.hex, "#ff0000")
+
+		before := raw_data(rt.hex)
+		color_picker_sync_runtime_texts(rt, hsva, rgba)
+		testing.expect_value(t, rt.hex, "#ff0000")
+		testing.expect(t, raw_data(rt.hex) == before)
+	})
+}

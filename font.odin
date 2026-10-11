@@ -701,6 +701,44 @@ font_text_max_line_advance_estimate :: proc(
 }
 
 /*
+Estimates CSS min-content inline size: widest unbreakable run.
+
+Break opportunities match soft-wrap (`font_is_break_cluster`): space, tab, and
+hard newlines. Does not call HarfBuzz.
+*/
+font_text_min_content_advance_estimate :: proc(
+	face: ^Font_Face,
+	text: string,
+	letter_spacing: f32,
+) -> f32 {
+	if face == nil || len(text) == 0 do return 0
+
+	max_width: f32
+	run_start := 0
+
+	for i in 0 ..= len(text) {
+		at_end := i >= len(text)
+		is_break := !at_end && (text[i] == ' ' || text[i] == '\t' || text[i] == '\n')
+
+		if !at_end && !is_break do continue
+
+		if i > run_start {
+			run_width := font_text_segment_advance_estimate(
+				face,
+				text[run_start:i],
+				letter_spacing,
+				0,
+			)
+			max_width = max(max_width, run_width)
+		}
+
+		run_start = i + 1
+	}
+
+	return max_width
+}
+
+/*
 Computes the bounding size of shaped lines using the widest line and line count.
 
 Applies layout_scale to line widths and uses font_text_line_height for height.

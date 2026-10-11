@@ -6,7 +6,9 @@ import "core:mem"
 /*
 Resolves a Length value against a parent axis size.
 
-Handles fixed, percent, inherit, and auto kinds.
+Fixed / percent / inherit resolve to pixels. Auto, fit-content, grow, and
+min/max-content are indefinite at this stage and return 0; layout applies
+content / free-space / intrinsic rules.
 */
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
 	switch length.kind {
@@ -16,17 +18,67 @@ length_resolve :: proc(length: Length, parent: f32) -> f32 {
 		return parent * length.value * 0.01
 	case .INHERIT:
 		return parent
-	case .AUTO:
+	case .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
 		return 0
 	}
 	return 0
 }
 
 /*
-Returns whether a length has a definite (non-auto) kind.
+Returns whether a length has a definite (non-content / non-grow) kind.
 */
 length_is_definite :: proc(length: Length) -> bool {
-	return length.kind != .AUTO
+	switch length.kind {
+	case .FIXED, .PERCENT, .INHERIT:
+		return true
+	case .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
+		return false
+	}
+	return false
+}
+
+/*
+Returns whether a length is CSS fit-content (`.FIT`).
+*/
+length_is_fit :: proc(length: Length) -> bool {
+	return length.kind == .FIT
+}
+
+/*
+Returns whether a length grows into free space (`.GROW`).
+*/
+length_is_grow :: proc(length: Length) -> bool {
+	return length.kind == .GROW
+}
+
+/*
+Returns whether a length is CSS `min-content`.
+*/
+length_is_min_content :: proc(length: Length) -> bool {
+	return length.kind == .MIN_CONTENT
+}
+
+/*
+Returns whether a length is CSS `max-content`.
+*/
+length_is_max_content :: proc(length: Length) -> bool {
+	return length.kind == .MAX_CONTENT
+}
+
+/*
+Returns whether a length uses intrinsic content sizing (fit / min / max-content).
+
+These axes stay indefinite for descendants during measure so soft-wrap text
+does not stretch to a provisional parent width.
+*/
+length_is_intrinsic :: proc(length: Length) -> bool {
+	switch length.kind {
+	case .FIT, .MIN_CONTENT, .MAX_CONTENT:
+		return true
+	case .AUTO, .FIXED, .PERCENT, .INHERIT, .GROW:
+		return false
+	}
+	return false
 }
 
 /*
@@ -106,6 +158,27 @@ resolve_cfg :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T
 	switch field.mode {
 	case .UNSET:
 		return theme_default
+	case .Value:
+		#partial switch _ in field.value {
+		case Inherit:
+			return parent
+		}
+		return field.value
+	}
+	return theme_default
+}
+
+/*
+Like resolve_cfg, but UNSET inherits from the parent style (CSS-like).
+
+Used for properties such as `wrap` where a container setting (e.g. button
+`wrap = NONE`) must reach label text. Theme is the root fallback via the
+style stack, not an UNSET override of an explicit parent value.
+*/
+resolve_cfg_inherited :: proc($T: typeid, field: Cfg(T), parent: T, theme_default: T) -> T {
+	switch field.mode {
+	case .UNSET:
+		return parent
 	case .Value:
 		#partial switch _ in field.value {
 		case Inherit:
@@ -250,6 +323,14 @@ resolve_length_from_width :: proc(
 			return {kind = .INHERIT}
 		case .AUTO:
 			return {kind = .AUTO}
+		case .FIT:
+			return {kind = .FIT}
+		case .GROW:
+			return {kind = .GROW}
+		case .MIN_CONTENT:
+			return {kind = .MIN_CONTENT}
+		case .MAX_CONTENT:
+			return {kind = .MAX_CONTENT}
 		}
 	case f32:
 		return {kind = .FIXED, value = v}
@@ -289,6 +370,14 @@ resolve_length_from_height :: proc(
 			return {kind = .INHERIT}
 		case .AUTO:
 			return {kind = .AUTO}
+		case .FIT:
+			return {kind = .FIT}
+		case .GROW:
+			return {kind = .GROW}
+		case .MIN_CONTENT:
+			return {kind = .MIN_CONTENT}
+		case .MAX_CONTENT:
+			return {kind = .MAX_CONTENT}
 		}
 	case f32:
 		return {kind = .FIXED, value = v}
@@ -307,7 +396,10 @@ resolve_length_from_height :: proc(
 }
 
 /*
-Resolves a Cfg(Gap_X) field from theme, parent, or explicit value.
+Resolves a Cfg(Gap_X) field.
+
+UNSET uses the theme gap when set, otherwise 0. Gap does not inherit from the
+parent unless the value is explicitly `.INHERIT`.
 */
 @(private)
 resolve_cfg_gap_x :: proc(
@@ -319,7 +411,8 @@ resolve_cfg_gap_x :: proc(
 	switch gap.mode {
 	case .UNSET:
 		if resolved, ok := resolve_gap_x_value(theme.gap_x); ok do return resolved
-		return parent
+
+		return 0
 	case .Value:
 		#partial switch v in gap.value {
 		case Inherit:
@@ -328,11 +421,15 @@ resolve_cfg_gap_x :: proc(
 		if resolved, ok := resolve_child_gap_x(gap.value, state, event); ok do return resolved
 		if resolved, ok := resolve_gap_x_value(gap.value); ok do return resolved
 	}
-	return parent
+
+	return 0
 }
 
 /*
-Resolves a Cfg(Gap_Y) field from theme, parent, or explicit value.
+Resolves a Cfg(Gap_Y) field.
+
+UNSET uses the theme gap when set, otherwise 0. Gap does not inherit from the
+parent unless the value is explicitly `.INHERIT`.
 */
 @(private)
 resolve_cfg_gap_y :: proc(
@@ -344,7 +441,8 @@ resolve_cfg_gap_y :: proc(
 	switch gap.mode {
 	case .UNSET:
 		if resolved, ok := resolve_gap_y_value(theme.gap_y); ok do return resolved
-		return parent
+
+		return 0
 	case .Value:
 		#partial switch v in gap.value {
 		case Inherit:
@@ -353,7 +451,8 @@ resolve_cfg_gap_y :: proc(
 		if resolved, ok := resolve_child_gap_y(gap.value, state, event); ok do return resolved
 		if resolved, ok := resolve_gap_y_value(gap.value); ok do return resolved
 	}
-	return parent
+
+	return 0
 }
 
 /*
@@ -1213,7 +1312,12 @@ resolve_widget_config :: proc(
 			state,
 			event,
 		),
-		wrap                  = resolve_cfg(Text_Wrap, decl.wrap, parent.wrap, theme.wrap),
+		wrap                  = resolve_cfg_inherited(
+			Text_Wrap,
+			decl.wrap,
+			parent.wrap,
+			theme.wrap,
+		),
 		tab_size              = resolve_cfg_f32(
 			decl.tab_size,
 			parent.tab_size,
@@ -1392,6 +1496,17 @@ style_root :: proc(space: Draw_Space, bounds: Rect) -> Style_Context {
 
 /*
 Builds a child style context with content size reduced by padding and border.
+
+When this node has a definite width/height, descendants measure against that
+resolved box (minus insets) — not the parent's provisional content size. That
+keeps `width = 300` sidebars from advertising the full row width to nested
+`.GROW` / `.AUTO` children during bottom-up measure.
+
+Intrinsic axes (`.FIT` / `.MIN_CONTENT` / `.MAX_CONTENT`) are indefinite for
+descendants: children measure intrinsic content instead of stretching to the
+parent's provisional content size. That keeps theme `wrap = .BALANCE` text from
+inflating a fit/min/max-content button to the full row width during bottom-up
+measure.
 */
 style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	parent := ui_style_current()
@@ -1402,11 +1517,34 @@ style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	inset_w := padding.l + padding.r + border.l + border.r
 	inset_h := padding.t + padding.b + border.t + border.b
 
-	return Style_Context {
-		style = config.style,
-		content_w = max(0, parent.content_w - inset_w),
-		content_h = max(0, parent.content_h - inset_h),
+	content_w := max(0, parent.content_w - inset_w)
+	content_h := max(0, parent.content_h - inset_h)
+
+	if length_is_definite(config.width) {
+		resolved_w := length_resolve(config.width, parent.content_w)
+
+		if resolved_w > 0 {
+			content_w = max(0, resolved_w - inset_w)
+		}
 	}
+
+	if length_is_definite(config.height) {
+		resolved_h := length_resolve(config.height, parent.content_h)
+
+		if resolved_h > 0 {
+			content_h = max(0, resolved_h - inset_h)
+		}
+	}
+
+	if length_is_intrinsic(config.width) {
+		content_w = 0
+	}
+
+	if length_is_intrinsic(config.height) {
+		content_h = 0
+	}
+
+	return Style_Context{style = config.style, content_w = content_w, content_h = content_h}
 }
 
 /*

@@ -413,12 +413,11 @@ texture_uploads_flush :: proc(gpu: ^sdl.GPUDevice) -> bool {
 
 	if gpu == nil do return false
 
-	transfers := make([dynamic]^sdl.GPUTransferBuffer, 0, len(uploads))
+	transfers := make([dynamic]^sdl.GPUTransferBuffer, 0, len(uploads), context.temp_allocator)
 	defer {
 		for t in transfers {
 			if t != nil do sdl.ReleaseGPUTransferBuffer(gpu, t)
 		}
-		delete(transfers)
 	}
 
 	for upload in uploads {

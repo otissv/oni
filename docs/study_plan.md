@@ -680,7 +680,8 @@ Resolved into `Resolved_Widget_Style`; layout/draw consumption:
 - [ * ] `z_index` / `order` — layout paint lists + `stack_index`; draw tags stack only
 - [ * ] `pointer_events` — NONE skips hit, still paints
 - [ * ] `popover` (`Draw_Space.POPOVER`) — paint/hit above screen and artboard
-- [   ] `Dim` extras ignored by resolvers — `grow`, breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
+- [x] Width/Height `.FIT` (fit-content) and `.GROW` (axis free-space; replaces `Dim_struct.grow`)
+- [   ] `Dim` extras ignored by resolvers — breakpoint flags (`sm`/`md`/`lg`/`xl`) on width/height (and similar padding/border/radius flags)
 - [   ] `aspect_ratio` — listed in `attributes.md`, **absent** from `Widget_Style`
 - [   ] Flex beyond grow — shrink / basis (full flexbox not required; document or implement)
 - [   ] Polish styles not in the model — transform, box-shadow

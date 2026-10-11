@@ -48,4 +48,8 @@ platform_os_clipboard_round_trip :: proc(t: ^testing.T) {
 
 	testing.expect(t, got_ok)
 	testing.expect_value(t, got, sample)
+
+	temp_got, temp_ok := clipboard_get_text(context.temp_allocator)
+	testing.expect(t, temp_ok)
+	testing.expect_value(t, temp_got, sample)
 }

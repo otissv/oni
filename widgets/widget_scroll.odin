@@ -51,9 +51,9 @@ widget_scroll_top :: proc() -> ^Widget_Scroll_Ctx {
 /*
 Returns whether a scrollport axis should emit a scrollbar.
 
-.SCROLL always emits (when style allows). .AUTO emits only when content
-overflows and the sticky hover-reveal flag is set (scrollport or bar hover,
-or an active bar drag — updated during draw for the next frame).
+.SCROLL and .AUTO emit only when content overflows and the sticky hover-reveal
+flag is set (scrollport or bar hover, or an active bar drag — updated during
+draw for the next frame). Matches Chrome overlay scrollbar auto-hide.
 */
 widget_scroll_overflow_shows_bar :: proc(
 	overflow: o.Overflow,
@@ -62,8 +62,10 @@ widget_scroll_overflow_shows_bar :: proc(
 ) -> bool {
 	scroll: o.Overflow = .SCROLL
 	auto: o.Overflow = .AUTO
-	if overflow == scroll do return true
-	if overflow == auto do return max_scroll > 0 && auto_reveal
+	if overflow == scroll || overflow == auto {
+		return max_scroll > 0 && auto_reveal
+	}
+
 	return false
 }
 
@@ -214,11 +216,10 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 	}
 
 	if o.ui_pass() == .Draw {
-		ov_auto: o.Overflow = .AUTO
-		needs_auto :=
-			(ctx.overflow_y == ov_auto && metrics.max_scroll.y > 0) ||
-			(ctx.overflow_x == ov_auto && metrics.max_scroll.x > 0)
-		if needs_auto {
+		needs_reveal :=
+			(o.layout_node_scrolls_axis(ctx.overflow_y) && metrics.max_scroll.y > 0) ||
+			(o.layout_node_scrolls_axis(ctx.overflow_x) && metrics.max_scroll.x > 0)
+		if needs_reveal {
 			bar_hot :=
 				widget_scroll_bar_hot_or_dragging(bar_y_id) ||
 				widget_scroll_bar_hot_or_dragging(bar_x_id)
@@ -278,7 +279,7 @@ Scroll position lives in widget context (keyed by element id). Optional
 scrollbar updates write context automatically; `on_scroll` is notification only.
 
 `scroll_bar` customizes auto-emitted scrollbar chrome for this scrollport.
-`hovered` drives AUTO overflow bar reveal (sticky into the next frame).
+`hovered` drives overlay bar reveal for .SCROLL/.AUTO (sticky into the next frame).
 */
 widget_children :: proc(
 	child: proc(frame_state: $S),

@@ -342,10 +342,15 @@ Length_Kind :: enum {
 	FIXED,
 	PERCENT,
 	INHERIT,
+	FIT,
+	GROW,
+	MIN_CONTENT,
+	MAX_CONTENT,
 }
 
 /*
-Resolved axis length as fixed pixels, percent of parent, inherit, or auto.
+Resolved axis length: fixed, percent, inherit, auto, fit-content, grow,
+min-content, or max-content.
 */
 Length :: struct {
 	kind:  Length_Kind,
@@ -774,18 +779,34 @@ Table_Grid_Pos :: struct {
 }
 
 /*
-Width/height dimension with min/max, percent, grow, and preset flags.
+Width/height dimension with min/max, percent, and preset flags.
+
+Axis keywords use `Width_Mode` / `Height_Mode` (`.GROW` / `.FIT` /
+`.MIN_CONTENT` / `.MAX_CONTENT`).
 */
 Dim_struct :: struct {
 	min, max:       F32_I,
 	percent:        F32_I,
 	sm, md, lg, xl: bool,
-	grow:           bool,
 }
 
+/*
+Author-time width keyword.
+
+`.AUTO` — content size; may stretch to bounds when content is empty.
+`.FIT` — CSS `fit-content`: content size clamped to available space.
+`.GROW` — take free space on this axis (flex weight 1 when `flex` unset).
+`.MIN_CONTENT` — CSS `min-content`: smallest size without avoidable overflow.
+`.MAX_CONTENT` — CSS `max-content`: size that fits content without soft-wrap.
+`.INHERIT` — match parent axis size.
+*/
 Width_Mode :: enum {
 	INHERIT,
 	AUTO,
+	FIT,
+	GROW,
+	MIN_CONTENT,
+	MAX_CONTENT,
 }
 
 Width :: union {
@@ -796,9 +817,16 @@ Width :: union {
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Width,
 }
 
+/*
+Author-time height keyword. Same semantics as `Width_Mode` on the vertical axis.
+*/
 Height_Mode :: enum {
 	INHERIT,
 	AUTO,
+	FIT,
+	GROW,
+	MIN_CONTENT,
+	MAX_CONTENT,
 }
 
 Height :: union {
@@ -1012,65 +1040,6 @@ Style_Texture_Pos :: union {
 	Texture_Pos_X_Y,
 	Resolved_Texture_Pos,
 	proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Texture_Pos,
-}
-
-SizingType :: enum {
-	FIT,
-	GROW,
-	PERCENT,
-	FIXED,
-}
-
-/*
-Optional min and max size bounds for a sizing axis.
-*/
-SizingConstraintsMinMax :: struct {
-	min: f32,
-	max: f32,
-}
-
-/*
-Sizing constraint payload: either min/max bounds or a parent percentage.
-*/
-SizingConstraints :: struct #raw_union {
-	sizeMinMax:  SizingConstraintsMinMax,
-	sizePercent: f32,
-}
-
-/*
-One axis sizing rule with type (fit, grow, percent, fixed) and constraints.
-*/
-SizingAxis :: struct {
-	constraints: SizingConstraints,
-	type:        SizingType,
-}
-
-/*
-Builds a SizingAxis that sizes to content within optional min/max bounds.
-*/
-SizingFit :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
-	return SizingAxis{type = SizingType.FIT, constraints = {sizeMinMax = sizeMinMax}}
-}
-
-/*
-Builds a SizingAxis that expands to fill available space with optional min/max.
-*/
-SizingGrow :: proc(sizeMinMax: SizingConstraintsMinMax = {}) -> SizingAxis {
-	return SizingAxis{type = SizingType.GROW, constraints = {sizeMinMax = sizeMinMax}}
-}
-
-/*
-Builds a SizingAxis with an exact fixed pixel size.
-*/
-SizingFixed :: proc(size: f32) -> SizingAxis {
-	return SizingAxis{type = SizingType.FIXED, constraints = {sizeMinMax = {size, size}}}
-}
-
-/*
-Builds a SizingAxis sized as a fraction of the parent axis.
-*/
-SizingPercent :: proc(sizePercent: f32) -> SizingAxis {
-	return SizingAxis{type = SizingType.PERCENT, constraints = {sizePercent = sizePercent}}
 }
 
 /*

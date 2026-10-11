@@ -298,7 +298,7 @@ widget_scroll_apply :: proc(key: string, author: Widget_Config, config: ^Resolve
 }
 
 /*
-Returns whether AUTO overflow scrollbars should emit for this scrollport.
+Returns whether overlay scrollbars should emit for this scrollport.
 
 Sticky across the layout+draw pair: set during draw from hover/drag, read next frame.
 Keys must be stable element ids (borrowed; not temp-allocated).
@@ -309,7 +309,7 @@ widget_scroll_auto_reveal_get :: proc(key: string) -> bool {
 }
 
 /*
-Records whether AUTO overflow scrollbars should show on the next frame.
+Records whether overlay scrollbars should show on the next frame.
 */
 widget_scroll_auto_reveal_set :: proc(key: string, show: bool) {
 	if w_ctx == nil || key == "" do return

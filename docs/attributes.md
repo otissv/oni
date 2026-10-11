@@ -14,13 +14,13 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `color` | `color` | |
 | `direction` (bidi) | `text_direction` | `Text_Direction` enum |
 | `flex-direction` | `direction` | Row/column only (`.Horizontal` / `.Vertical`) |
-| `flex-grow` | `flex` | Number only; not full `flex` shorthand |
+| `flex-grow` | `flex` | Number only; not full `flex` shorthand. Axis `.GROW` is weight 1 when `flex` unset |
 | `font-family` | `font` | `Font_Handle` (registered family), not a CSS string |
 | `font-size` | `font_size` | |
 | `font-style` | `font_style` | `NORMAL` / `ITALIC`; missing italic faces use synthetic oblique |
 | `font-weight` | `font_weight` | `Font_Weight` 100–900; VF `wght` or closest static face + fake bold |
 | `gap` | `gap` | Single value; no separate row/column gap |
-| `height` | `height` | `f32` px; `Height` union exists but not on struct |
+| `height` | `height` | `Height` / `Length`: `f32`, `%` via `Dim_struct`, `.AUTO` / `.FIT` / `.GROW` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT` |
 | `justify-content` + `align-items` | `justify` | Combined in `Justify_Pos` |
 | `left` | `x` | Inset / offset; with `position` absolute/fixed, pairs with `right` |
 | `letter-spacing` | `letter_spacing` | |
@@ -33,7 +33,7 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `order` | `order` | Flex item order; optional `Cfg(Style_F32)`, default `0` |
 | `opacity` | `opacity` | `0`–`1` via `Cfg(Style_F32)`; default `1`; not inherited; nested values multiply like CSS group opacity |
 | `overflow` | `overflow` | `Auto`, `Scroll`, `Hidden` |
-| `overflow-x` | `overflow_x` | Clip when `Hidden`/`Scroll`; hit-test intersects clip |
+| `overflow-x` | `overflow_x` | Clip when `Hidden`/`Scroll`/`Auto`; hit-test intersects clip. `Scroll`/`Auto` are scrollports; overlay bars show on hover (or bar drag) when content overflows |
 | `overflow-y` | `overflow_y` | Same as `overflow_x` |
 | `padding` | `padding` | Per-side via `Padding` union |
 | `pointer-events` | `pointer_events` | `AUTO` (default) or `NONE` (paint, skip hit) |
@@ -46,8 +46,8 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `text-decoration-color` | `text_decoration_color` | Unset uses text `color` (currentColor) |
 | `top` | `y` | Inset / offset; with absolute/fixed pairs with `bottom` |
 | `visibility` | `visibility` | `VISIBLE` (default), `HIDDEN` (layout hole, no paint/hit), `NONE` (removed from tree) |
-| `width` | `width` | `f32` px; `Width` union exists but not on struct |
-| `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Preserve`, `Balance` — not full `white-space` |
+| `width` | `width` | `Width` / `Length`: `f32`, `%` via `Dim_struct`, `.AUTO` / `.FIT` / `.GROW` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT` |
+| `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Preserve`, `Balance` — not full `white-space`; unset inherits parent (theme at root) |
 | `tab-size` | `tab_size` | Preserve text tab stops in space columns; default `4` |
 | `word-spacing` | `word_spacing` | Extra advance on space clusters; default `0` |
 | `z-index` | `z_index` | Local stacking context; layout builds paint/hit `stack_index` (default `0`) |
@@ -119,8 +119,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `margin-block` / `margin-inline` and logical longhands
 - CSS margin collapse (Oni does not collapse adjacent margins; use `gap_*` for sibling spacing)
 - `box-sizing`
-- `width` keywords (`auto`, `fit-content`, `min-content`, `max-content`) — struct uses `f32` only
-- `height` keywords (`auto`, `fit-content`, `min-content`, `max-content`) — struct uses `f32` only
+- `width` / `height` keywords beyond `.AUTO` / `.FIT` / fit-content / `.GROW` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`
 - `block-size`
 - `inline-size`
 - `min-block-size`

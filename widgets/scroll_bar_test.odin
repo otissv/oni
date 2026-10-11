@@ -246,6 +246,14 @@ rectangle_scroll_bar_style_sets_size_and_track_background :: proc(t: ^testing.T)
 		proc(t: ^testing.T) {
 			ov_scroll: o.Overflow = .SCROLL
 
+			// Seed previous-frame metrics so overlay emit can size the bar.
+			widget_test_begin_layout()
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
+			widget_test_finish_layout()
+			widget_test_end_frame()
+
+			o.widget_scroll_auto_reveal_set("vp", true)
+
 			widget_test_begin_layout()
 			Rectangle({
 				config = {
@@ -260,37 +268,22 @@ rectangle_scroll_bar_style_sets_size_and_track_background :: proc(t: ^testing.T)
 					background = set.Colors(o.Color.ACCENT),
 					radius = set.Radius(f32(8)),
 				},
-				child = proc(_: Rectangle_State) {
-					Rectangle({
-						config = {
-							id = "tall",
-							width = set.Width(f32(100)),
-							height = set.Height(f32(240)),
-						},
-					})
-				},
+				child = scroll_bar_test_tall_child,
 			})
 			widget_test_finish_layout()
 
-			vp, ok := widget_test_layout_node("vp")
-			testing.expect(t, ok)
-			bar: ^o.Layout_Node
-			for child_index in vp.child_indices {
-				child := &o.state.ui.layout.nodes[child_index]
-				if child.kind == .SCROLL_BAR {
-					bar = child
-					break
-				}
-			}
+			bar := scroll_bar_test_find_bar("vp")
 			testing.expect(t, bar != nil)
-			expect_close(t, bar.rect.w, 20)
-			#partial switch v in bar.config.background {
-			case o.Color:
-				testing.expect_value(t, v, o.Color.ACCENT)
-			case o.RGBA:
-				testing.expect_value(t, v, o.RGBA{64, 64, 64, 255})
-			case:
-				testing.expectf(t, false, "expected ACCENT background, got %v", bar.config.background)
+			if bar != nil {
+				expect_close(t, bar.rect.w, 20)
+				#partial switch v in bar.config.background {
+				case o.Color:
+					testing.expect_value(t, v, o.Color.ACCENT)
+				case o.RGBA:
+					testing.expect_value(t, v, o.RGBA{64, 64, 64, 255})
+				case:
+					testing.expectf(t, false, "expected ACCENT background, got %v", bar.config.background)
+				}
 			}
 			widget_test_end_frame()
 		},
@@ -302,9 +295,16 @@ rectangle_scroll_bar_style_visible_false_skips_bars :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
 		proc(t: ^testing.T) {
-			ov_scroll: o.Overflow = .SCROLL
+			// Seed metrics, then force reveal so visible=false is the only suppressant.
+			widget_test_begin_layout()
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
+			widget_test_finish_layout()
+			widget_test_end_frame()
+
+			o.widget_scroll_auto_reveal_set("vp", true)
 
 			widget_test_begin_layout()
+			ov_scroll: o.Overflow = .SCROLL
 			Rectangle({
 				config = {
 					id = "vp",
@@ -316,15 +316,7 @@ rectangle_scroll_bar_style_visible_false_skips_bars :: proc(t: ^testing.T) {
 				scroll_bar = {
 					visible = set.Bool(false),
 				},
-				child = proc(_: Rectangle_State) {
-					Rectangle({
-						config = {
-							id = "tall",
-							width = set.Width(f32(100)),
-							height = set.Height(f32(240)),
-						},
-					})
-				},
+				child = scroll_bar_test_tall_child,
 			})
 			widget_test_finish_layout()
 
@@ -357,18 +349,29 @@ scroll_bar_test_find_bar :: proc(parent_id: string) -> ^o.Layout_Node {
 }
 
 @(private)
-scroll_bar_test_auto_port :: proc(child: proc(_: Rectangle_State)) {
-	ov_auto: o.Overflow = .AUTO
+scroll_bar_test_port :: proc(overflow: o.Overflow, child: proc(_: Rectangle_State)) {
 	Rectangle({
 		config = {
 			id = "vp",
 			width = set.Width(f32(120)),
 			height = set.Height(f32(100)),
-			overflow_y = set.Overflow_Y(ov_auto),
+			overflow_y = set.Overflow_Y(overflow),
 			direction = set.Direction(.VERTICAL),
 		},
 		child = child,
 	})
+}
+
+@(private)
+scroll_bar_test_auto_port :: proc(child: proc(_: Rectangle_State)) {
+	ov_auto: o.Overflow = .AUTO
+	scroll_bar_test_port(ov_auto, child)
+}
+
+@(private)
+scroll_bar_test_scroll_port :: proc(child: proc(_: Rectangle_State)) {
+	ov_scroll: o.Overflow = .SCROLL
+	scroll_bar_test_port(ov_scroll, child)
 }
 
 @(private)
@@ -388,8 +391,9 @@ widget_scroll_overflow_shows_bar_rules :: proc(t: ^testing.T) {
 	ov_auto: o.Overflow = .AUTO
 	ov_hidden: o.Overflow = .HIDDEN
 
-	testing.expect(t, widget_scroll_overflow_shows_bar(ov_scroll, 0, false))
-	testing.expect(t, widget_scroll_overflow_shows_bar(ov_scroll, 10, false))
+	testing.expect(t, !widget_scroll_overflow_shows_bar(ov_scroll, 0, true))
+	testing.expect(t, !widget_scroll_overflow_shows_bar(ov_scroll, 10, false))
+	testing.expect(t, widget_scroll_overflow_shows_bar(ov_scroll, 10, true))
 	testing.expect(t, !widget_scroll_overflow_shows_bar(ov_auto, 10, false))
 	testing.expect(t, widget_scroll_overflow_shows_bar(ov_auto, 10, true))
 	testing.expect(t, !widget_scroll_overflow_shows_bar(ov_auto, 0, true))
@@ -465,25 +469,44 @@ rectangle_overflow_auto_reveal_on_port_hover :: proc(t: ^testing.T) {
 }
 
 @(test)
-rectangle_overflow_scroll_always_shows_bar :: proc(t: ^testing.T) {
+rectangle_overflow_scroll_hides_bar_without_reveal :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
 		proc(t: ^testing.T) {
-			ov_scroll: o.Overflow = .SCROLL
-
 			widget_test_begin_layout()
-			Rectangle({
-				config = {
-					id = "vp",
-					width = set.Width(f32(120)),
-					height = set.Height(f32(100)),
-					overflow_y = set.Overflow_Y(ov_scroll),
-					direction = set.Direction(.VERTICAL),
-				},
-				child = scroll_bar_test_tall_child,
-			})
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
 			widget_test_finish_layout()
 
+			testing.expect(t, scroll_bar_test_find_bar("vp") == nil)
+			testing.expect(t, !o.widget_scroll_auto_reveal_get("vp"))
+			widget_test_end_frame()
+		},
+	)
+}
+
+@(test)
+rectangle_overflow_scroll_shows_bar_on_port_hover :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			widget_test_begin_layout()
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
+			widget_test_finish_layout()
+			testing.expect(t, scroll_bar_test_find_bar("vp") == nil)
+
+			widget_test_begin_draw()
+			vp_rect := o.ui_layout_rect(o.ui_id("vp"))
+			o.w_ctx.mouse_x = vp_rect.x + vp_rect.w * 0.5
+			o.w_ctx.mouse_y = vp_rect.y + vp_rect.h * 0.5
+			o.layout_resolve_pointer_hit()
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
+			widget_test_end_frame()
+
+			testing.expect(t, o.widget_scroll_auto_reveal_get("vp"))
+
+			widget_test_begin_layout()
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
+			widget_test_finish_layout()
 			testing.expect(t, scroll_bar_test_find_bar("vp") != nil)
 			widget_test_end_frame()
 		},

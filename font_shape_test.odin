@@ -660,6 +660,23 @@ font_text_segment_advance_estimate_matches_shaped_none_width :: proc(t: ^testing
 }
 
 @(test)
+font_text_min_content_advance_is_longest_unbreakable_run :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		short := font_text_segment_advance_estimate(face, "hi", 0, 0)
+		long := font_text_segment_advance_estimate(face, "longest", 0, 0)
+		min_w := font_text_min_content_advance_estimate(face, "hi longest", 0)
+
+		testing.expect(t, short > 0)
+		testing.expect(t, long > short)
+		expect_close(t, min_w, long)
+	})
+}
+
+@(test)
 font_shape_line_build_cache_hit_is_borrowed :: proc(t: ^testing.T) {
 	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
 		_ = pixel

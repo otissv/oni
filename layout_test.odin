@@ -65,6 +65,26 @@ layout_len_percent :: proc(v: f32) -> Length {
 }
 
 @(private)
+layout_len_fit :: proc() -> Length {
+	return {kind = .FIT}
+}
+
+@(private)
+layout_len_grow :: proc() -> Length {
+	return {kind = .GROW}
+}
+
+@(private)
+layout_len_min_content :: proc() -> Length {
+	return {kind = .MIN_CONTENT}
+}
+
+@(private)
+layout_len_max_content :: proc() -> Length {
+	return {kind = .MAX_CONTENT}
+}
+
+@(private)
 test_global_state_guard: sync.Mutex
 
 @(private)
@@ -169,6 +189,7 @@ layout_test_append_node :: proc(
 			config = node_config,
 			direction_info = layout_direction_info(layout_config_direction(node_config)),
 			desired = desired,
+			intrinsic_min = desired,
 			margin = margin,
 			padding = padding,
 			border = border,
@@ -1416,10 +1437,111 @@ layout_child_main_size_prefers_fixed_then_flex_then_desired :: proc(t: ^testing.
 	expect_close(t, layout_child_main_size(&flexed, true, 40, 200), 80)
 	expect_close(t, layout_child_main_size(&flexed, true, 0, 200), 0)
 
+	grown := Layout_Node {
+		config = {width = layout_len_grow()},
+		desired = {30, 10},
+	}
+	expect_close(t, layout_child_main_size(&grown, true, 40, 200), 40)
+	expect_close(t, layout_child_main_size(&grown, true, 0, 200), 0)
+	expect_close(t, layout_child_main_grow_weight(&grown, true), 1)
+
+	fit := Layout_Node {
+		config = {width = layout_len_fit()},
+		desired = {80, 10},
+	}
+	expect_close(t, layout_child_main_size(&fit, true, 0, 50), 50)
+	expect_close(t, layout_child_main_size(&fit, true, 0, 0), 80)
+
 	desired_only := Layout_Node {
 		desired = {33, 10},
 	}
 	expect_close(t, layout_child_main_size(&desired_only, true, 40, 200), 33)
+}
+
+@(test)
+layout_resolve_axis_size_fit_grow_auto :: proc(t: ^testing.T) {
+	expect_close(t, layout_resolve_axis_size({kind = .FIT}, 80, 50, 0, 0), 50)
+	expect_close(t, layout_resolve_axis_size({kind = .FIT}, 30, 50, 0, 0), 30)
+	expect_close(t, layout_resolve_axis_size({kind = .FIT}, 30, 0, 0, 0), 30)
+
+	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 100, 0, 0), 100)
+	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 0, 0, 0), 20)
+
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 100, 0, 0), 40)
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 0, 100, 0, 0), 100)
+
+	expect_close(t, layout_resolve_axis_size({kind = .MAX_CONTENT}, 80, 50, 0, 0), 80)
+	expect_close(t, layout_resolve_axis_size({kind = .MAX_CONTENT}, 0, 100, 0, 0), 0)
+	expect_close(t, layout_resolve_axis_size({kind = .MIN_CONTENT}, 40, 100, 0, 0), 40)
+	expect_close(t, layout_resolve_axis_size({kind = .MIN_CONTENT}, 0, 100, 0, 0), 0)
+}
+
+@(test)
+layout_resolve_node_size_uses_intrinsic_min_for_min_content :: proc(t: ^testing.T) {
+	node := Layout_Node {
+		config = {width = layout_len_min_content(), height = layout_len_max_content()},
+		desired = {120, 40},
+		intrinsic_min = {50, 40},
+	}
+	size := layout_resolve_node_size(&node, {0, 0, 200, 100})
+	expect_close(t, size.x, 50)
+	expect_close(t, size.y, 40)
+}
+
+@(test)
+layout_max_content_width_does_not_clamp_to_available :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{80, 30},
+			{width = layout_len_max_content(), height = layout_len_fixed(30)},
+		)
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_close(t, layout.nodes[root].rect.w, 80)
+		expect_close(t, layout.nodes[root].rect.h, 30)
+	})
+}
+
+@(test)
+layout_min_content_width_uses_intrinsic_min_not_desired :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{120, 30},
+			{width = layout_len_min_content(), height = layout_len_fixed(30)},
+		)
+		layout.nodes[root].intrinsic_min = {45, 30}
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_close(t, layout.nodes[root].rect.w, 45)
+	})
+}
+
+@(test)
+layout_measure_intrinsic_min_sums_row_children :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{},
+			{direction = .HORIZONTAL, gap_x = 10},
+		)
+		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
+		b := layout_test_append_node(layout, root, .RECT, {}, {60, 30})
+		layout.nodes[a].intrinsic_min = {20, 20}
+		layout.nodes[b].intrinsic_min = {25, 30}
+
+		min_size := layout_measure_intrinsic_min(&layout.nodes[root])
+		expect_close(t, min_size.x, 55) // 20 + 10 + 25
+		expect_close(t, min_size.y, 30)
+	})
 }
 
 @(test)
@@ -1860,6 +1982,110 @@ layout_flex_shares_remaining_main_space_by_weight :: proc(t: ^testing.T) {
 		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
 		expect_rect(t, layout.nodes[a].rect, {0, 0, 50, 100})
 		expect_rect(t, layout.nodes[b].rect, {50, 0, 150, 100})
+	})
+}
+
+@(test)
+layout_width_grow_shares_remaining_like_flex_one :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 100},
+			{direction = .HORIZONTAL, gap_x = 10},
+		)
+		fixed := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{40, 20},
+			{width = layout_len_fixed(50)},
+		)
+		grown := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{10, 20},
+			{width = layout_len_grow()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_rect(t, layout.nodes[fixed].rect, {0, 0, 50, 20})
+		expect_rect(t, layout.nodes[grown].rect, {60, 0, 140, 20})
+	})
+}
+
+@(test)
+layout_width_fit_clamps_to_available_space :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		fit := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{80, 20},
+			{width = layout_len_fit()},
+		)
+
+		layout_solve(&layout.nodes[fit], {0, 0, 50, 50})
+		expect_close(t, layout.nodes[fit].rect.w, 50)
+
+		layout_solve(&layout.nodes[fit], {0, 0, 200, 50})
+		expect_close(t, layout.nodes[fit].rect.w, 80)
+	})
+}
+
+@(test)
+layout_width_fit_child_clamps_inside_fixed_parent :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{50, 50},
+			{direction = .HORIZONTAL, width = layout_len_fixed(50)},
+		)
+		fit := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{80, 20},
+			{width = layout_len_fit()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 50, 50})
+		expect_close(t, layout.nodes[fit].rect.w, 50)
+	})
+}
+
+@(test)
+layout_height_grow_fills_cross_axis :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 100},
+			{direction = .HORIZONTAL},
+		)
+		grown := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{40, 20},
+			{width = layout_len_fixed(40), height = layout_len_grow()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_rect(t, layout.nodes[grown].rect, {0, 0, 40, 100})
 	})
 }
 
@@ -3171,5 +3397,49 @@ layout_soft_wrap_remeasures_when_solved_width_differs :: proc(t: ^testing.T) {
 			layout.nodes[sibling].rect.y >=
 			layout.nodes[body].rect.y + layout.nodes[body].rect.h + 8 - 0.5,
 		)
+	})
+}
+
+
+@(test)
+layout_column_grow_respects_parent_padding_and_border :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{x = .STRETCH},
+			{300, 400},
+			{direction = .VERTICAL, width = layout_len_fixed(300), height = layout_len_fixed(400)},
+		)
+		layout_test_set_insets(layout, root, {l = 12, r = 12}, {r = 1})
+		mid := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{x = .STRETCH},
+			{40, 20},
+			{direction = .VERTICAL, width = layout_len_grow()},
+		)
+		grown := layout_test_append_node(
+			layout,
+			mid,
+			.RECT,
+			{},
+			{40, 20},
+			{width = layout_len_grow()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 300, 400})
+
+		inner := layout_inner_rect(
+			layout.nodes[root].rect,
+			layout.nodes[root].border,
+			layout.nodes[root].padding,
+		)
+		expect_rect(t, inner, {12, 0, 275, 400})
+		expect_rect_inside(t, inner, layout.nodes[grown].rect)
+		expect_close(t, layout.nodes[grown].rect.w, inner.w)
+		expect_close(t, layout.nodes[grown].rect.x, inner.x)
 	})
 }

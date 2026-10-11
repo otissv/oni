@@ -16,7 +16,7 @@ Sidebar :: proc(id: string, children: proc(state: w.Rectangle_State)) {
 				border_color = set.Border_color(.GRAY_500),
 				direction = set.Direction(.VERTICAL),
 				justify = set.Justify(o.Justify_Pos{x = .STRETCH, y = .STRETCH}),
-				padding = set.Padding(o.Pd_struct{r = 5}),
+				padding = set.Padding(o.Pd_struct{x = 12, y = 8}),
 			},
 			child = children,
 		},

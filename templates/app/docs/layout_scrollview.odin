@@ -5,8 +5,8 @@ import set "../../oni/set"
 import w "../../oni/widgets"
 
 Layout_Scrollview :: proc() {
-	// overflow_y = AUTO: scrollport clips overflow; bars appear on hover of the
-	// port or scrollbar. SCROLL always shows bars. Offset lives in widget ctx.
+	// overflow_y = SCROLL/AUTO: scrollport clips overflow; bars appear on hover
+	// of the port or scrollbar (Chrome-like overlay auto-hide). Offset in widget ctx.
 	w.Rectangle({
 		config = {
 			id = "layout_scrollview",

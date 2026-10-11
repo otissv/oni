@@ -165,20 +165,37 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 	bottom := child.config.bottom
 	m := child.margin
 
-	width := length_resolve(child.config.width, max(0, cb.w - m.l - m.r))
-	height := length_resolve(child.config.height, max(0, cb.h - m.t - m.b))
-	if width <= 0 do width = child.desired.x
-	if height <= 0 do height = child.desired.y
+	avail_w := max(0, cb.w - m.l - m.r)
+	avail_h := max(0, cb.h - m.t - m.b)
+	width := layout_resolve_axis_size(
+		child.config.width,
+		child.desired.x,
+		avail_w,
+		child.config.min_w,
+		child.config.max_w,
+	)
+	height := layout_resolve_axis_size(
+		child.config.height,
+		child.desired.y,
+		avail_h,
+		child.config.min_h,
+		child.config.max_h,
+	)
 
 	if left_set && right_set {
-		width = max(0, cb.w - left - right - m.l - m.r)
+		width = layout_clamp_axis(
+			max(0, cb.w - left - right - m.l - m.r),
+			child.config.min_w,
+			child.config.max_w,
+		)
 	}
 	if top_set && bottom_set {
-		height = max(0, cb.h - top - bottom - m.t - m.b)
+		height = layout_clamp_axis(
+			max(0, cb.h - top - bottom - m.t - m.b),
+			child.config.min_h,
+			child.config.max_h,
+		)
 	}
-
-	width = layout_clamp_axis(width, child.config.min_w, child.config.max_w)
-	height = layout_clamp_axis(height, child.config.min_h, child.config.max_h)
 
 	x: f32
 	y: f32

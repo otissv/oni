@@ -624,8 +624,7 @@ text_edit_widget_consume_commands :: proc(
 		}
 	case .PASTE:
 		if opts.editable {
-			if paste, ok := o.clipboard_get_text(); ok {
-				defer delete(paste)
+			if paste, ok := o.clipboard_get_text(context.temp_allocator); ok {
 				normalized := o.text_edit_normalize_paste(paste, opts.multiline)
 				new_plain, changed = text_edit_widget_insert_text(edit, plain, normalized, opts)
 			}
@@ -1142,9 +1141,9 @@ text_edit_widget_apply_document_edits :: proc(
 	ime_active := o.input_ime_active()
 	frame := o.state.ui.frame
 
-	doc := o.text_document_from_tagged(tagged)
-	defer o.text_document_free_runs(&doc)
-	doc_alloc := context.allocator
+	doc_alloc := context.temp_allocator
+	doc := o.text_document_from_tagged(tagged, doc_alloc)
+	defer o.text_document_free_runs(&doc, doc_alloc)
 
 	plain := doc.plain
 	doc_changed := false
@@ -1259,8 +1258,7 @@ text_edit_widget_apply_document_edits :: proc(
 		}
 	case .PASTE:
 		if opts.editable {
-			if paste, ok := o.clipboard_get_text(); ok {
-				defer delete(paste)
+			if paste, ok := o.clipboard_get_text(context.temp_allocator); ok {
 				normalized := o.text_edit_normalize_paste(paste, opts.multiline)
 
 				if text_edit_widget_document_insert(
