@@ -84,12 +84,30 @@ Font_Face :: struct {
 }
 
 /*
-Atlas placement and bearing for one cached glyph raster.
+Residency flags for a cached glyph (eviction / prefetch / oversize; Group C+F).
+*/
+Font_Glyph_Residency_Flag :: enum u8 {
+	Pinned,
+	Prefetched,
+	// Packed outside the shelf atlas (padded size above effective max).
+	Standalone,
+}
+
+Font_Glyph_Residency_Flags :: bit_set[Font_Glyph_Residency_Flag; u8]
+
+/*
+Atlas placement, bearing, and residency for one cached glyph raster.
+
+`generation` must match the owning atlas sheet generation while the entry is valid.
+`last_used_frame` is stamped from `state.ui.frame` on successful ensure/draw.
 */
 Font_Glyph_Entry :: struct {
-	region:    Atlas_Region,
-	bearing_x: f32,
-	bearing_y: f32,
+	region:          Atlas_Region,
+	bearing_x:       f32,
+	bearing_y:       f32,
+	last_used_frame: u64,
+	flags:           Font_Glyph_Residency_Flags,
+	generation:      u32,
 }
 
 /*
@@ -130,6 +148,8 @@ Font_State :: struct {
 	glyph_cache:       map[Font_Glyph_Key]Font_Glyph_Entry,
 	shape_cache:       map[Font_Shape_Cache_Key]Font_Shape_Cache_Entry,
 	shape_cache_dpi:   f32,
+	// Heap pool for FreeType raster workers (Group G); nil until first parallel burst.
+	raster_pool:       ^Font_Raster_Pool,
 }
 
 /*
@@ -201,6 +221,19 @@ Shuts down all font resources: faces, families, FreeType, and glyph cache.
 Safe to call during engine teardown after drawing has stopped.
 */
 font_shutdown :: proc() {
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
+	if state.textures.raster_workers != 0 {
+		log_errorf(
+			"font_shutdown: %d raster workers still marked active",
+			state.textures.raster_workers,
+		)
+		state.textures.raster_workers = 0
+	}
+
+	font_raster_pool_shutdown()
+
 	font_destroy_faces()
 	font_destroy_families()
 	font_shape_cache_destroy()
@@ -210,11 +243,11 @@ font_shutdown :: proc() {
 		state.fonts.library = nil
 	}
 
-	for key, _ in state.fonts.glyph_cache {
-		delete_key(&state.fonts.glyph_cache, key)
+	// `font_destroy_faces` already retires standalone textures and clears the map.
+	if state.fonts.glyph_cache != nil {
+		delete(state.fonts.glyph_cache)
+		state.fonts.glyph_cache = nil
 	}
-	delete(state.fonts.glyph_cache)
-	state.fonts.glyph_cache = nil
 
 	delete(state.fonts.faces)
 	state.fonts.faces = nil
@@ -665,8 +698,10 @@ font_destroy_faces :: proc() {
 	}
 	clear(&state.fonts.faces)
 
-	for key, _ in state.fonts.glyph_cache {
-		delete_key(&state.fonts.glyph_cache, key)
+	for _, entry in state.fonts.glyph_cache {
+		if .Standalone in entry.flags {
+			texture_retire_record(entry.region.texture_id)
+		}
 	}
 	clear(&state.fonts.glyph_cache)
 	font_shape_cache_clear()
@@ -972,15 +1007,25 @@ font_metrics_from_face :: proc(ft_face: FT_Face) -> (ascent, descent, line_heigh
 Shapes a UTF-8 string into positioned glyphs using HarfBuzz.
 
 Returns a newly allocated glyph slice, or nil on failure.
+
+Default `allocator` is `layout_frame_allocator()` (frame-owned layout text).
+Pass `context.temp_allocator` (or another scratch) for call-scoped shapes that
+must not outlive the call / must not consume the layout arena (e.g. prefetch).
 */
 font_shape :: proc(
 	face: ^Font_Face,
 	text: string,
 	direction: Text_Direction_Kind,
+	allocator: mem.Allocator = {},
 ) -> []Shaped_Glyph {
 	test_hook_font_shape_call_count += 1
 
 	if face == nil || len(text) == 0 do return nil
+
+	alloc := allocator
+	if alloc.procedure == nil {
+		alloc = layout_frame_allocator()
+	}
 
 	buffer := buffer_create()
 	if buffer == nil do return nil
@@ -1014,9 +1059,9 @@ font_shape :: proc(
 	n := int(min(glyph_len, pos_len))
 	if n <= 0 do return nil
 
-	glyphs := make([]Shaped_Glyph, n, layout_frame_allocator())
+	glyphs := make([]Shaped_Glyph, n, alloc)
 	if len(glyphs) != n {
-		log_error("font_shape: layout frame allocator exhausted")
+		log_error("font_shape: allocator exhausted")
 		return nil
 	}
 

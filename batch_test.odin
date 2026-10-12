@@ -1749,3 +1749,119 @@ batch_destroy_with_nil_gpu_clears_cpu_arrays :: proc(t: ^testing.T) {
 		},
 	)
 }
+
+@(private)
+batch_test_seed_mixed_atlas_text :: proc(mode: Atlas_Draw_Mode) -> Layout_Text {
+	texture_init()
+	append(
+		&state.textures.records,
+		Texture_Record{w = 16, h = 16},
+		Texture_Record{w = 16, h = 16},
+	)
+	state.textures.atlas = {
+		texture_id = Asset_Id(1),
+		width      = 16,
+		height     = 16,
+		generation = 3,
+	}
+	append(
+		&state.textures.overflow,
+		Atlas_State {
+			texture_id = Asset_Id(2),
+			width      = 16,
+			height     = 16,
+			generation = 7,
+		},
+	)
+	state.textures.atlas_draw_mode = mode
+	state.fonts.glyph_cache = make(map[Font_Glyph_Key]Font_Glyph_Entry)
+	state.fonts.glyph_cache[{face_id = 1, glyph_id = 10, render_mode = .Gray}] = {
+		region = {texture_id = 1, x = 0, y = 0, w = 4, h = 4},
+		generation = 3,
+	}
+	state.fonts.glyph_cache[{face_id = 1, glyph_id = 11, render_mode = .Gray}] = {
+		region = {texture_id = 2, x = 4, y = 4, w = 4, h = 4},
+		generation = 7,
+	}
+
+	lines := make([]Shaped_Line, 1)
+	glyphs := make([]Layout_Glyph_Paint, 2)
+	glyphs[0] = {face_id = 1, glyph_id = 10, dst = {0, 0, 4, 4}}
+	glyphs[1] = {face_id = 1, glyph_id = 11, dst = {4, 0, 4, 4}}
+
+	return Layout_Text{lines = lines, glyphs = glyphs}
+}
+
+@(private)
+batch_test_clear_mixed_atlas_text :: proc(laid: ^Layout_Text) {
+	if laid != nil {
+		delete(laid.lines)
+		delete(laid.glyphs)
+		laid.lines = nil
+		laid.glyphs = nil
+	}
+
+	delete(state.fonts.glyph_cache)
+	state.fonts.glyph_cache = nil
+	texture_shutdown()
+}
+
+@(test)
+batch_mixed_atlas_text_uses_one_multi_texture_segment :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			laid := batch_test_seed_mixed_atlas_text(.Multi_Texture)
+			defer batch_test_clear_mixed_atlas_text(&laid)
+			testing.expect_value(t, len(laid.glyphs), 2)
+			testing.expect_value(t, len(state.fonts.glyph_cache), 2)
+			expect_close(t, laid.glyphs[1].dst.w, 4)
+			slot, slot_ok := texture_atlas_slot_for_id(Asset_Id(2))
+			testing.expect(t, slot_ok)
+			testing.expect_value(t, slot, u32(1))
+			second_key := Font_Glyph_Key{face_id = 1, glyph_id = 11, render_mode = .Gray}
+			second, second_ok := state.fonts.glyph_cache[second_key]
+			testing.expect(t, second_ok)
+			testing.expect_value(t, second.generation, u32(7))
+
+			_ = font_draw_layout_text(&laid, {255, 255, 255, 255})
+			batch_finalize_segments()
+
+			testing.expect_value(t, len(batch_current().segments), 1)
+			testing.expect(t, batch_current().segments[0].key.multi_atlas)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(12))
+			testing.expect_value(t, len(batch_current().vertices), 8)
+			expect_close(t, batch_current().vertices[0].params[2], 0)
+			if len(batch_current().vertices) >= 8 {
+				expect_close(t, batch_current().vertices[4].params[2], 1)
+			}
+			testing.expect(t, batch_current().segments[0].key.nearest)
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+		},
+	)
+}
+
+@(test)
+batch_mixed_atlas_text_fallback_splits_by_texture :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			laid := batch_test_seed_mixed_atlas_text(.Fallback_Split)
+			defer batch_test_clear_mixed_atlas_text(&laid)
+
+			_ = font_draw_layout_text(&laid, {255, 255, 255, 255})
+			batch_finalize_segments()
+
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect(t, !batch_current().segments[0].key.multi_atlas)
+			testing.expect(t, !batch_current().segments[1].key.multi_atlas)
+			testing.expect_value(t, batch_current().segments[0].key.texture_id, Asset_Id(1))
+			testing.expect_value(t, batch_current().segments[1].key.texture_id, Asset_Id(2))
+			testing.expect_value(t, len(batch_current().vertices), 8)
+			expect_close(t, batch_current().vertices[0].params[2], 0)
+			if len(batch_current().vertices) >= 8 {
+				expect_close(t, batch_current().vertices[4].params[2], 0)
+			}
+		},
+	)
+}

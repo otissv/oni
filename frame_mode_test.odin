@@ -100,6 +100,45 @@ frame_after_present_preserves_mid_frame_request :: proc(t: ^testing.T) {
 }
 
 @(test)
+frame_should_present_continuous_always :: proc(t: ^testing.T) {
+	with_engine_env(t, proc(t: ^testing.T) {
+		frame_mode_set(.Continuous)
+		state.frame_dirty = false
+		testing.expect(t, frame_should_present(false))
+		testing.expect(t, frame_should_present(true))
+	})
+}
+
+@(test)
+frame_should_present_on_demand_requires_dirty :: proc(t: ^testing.T) {
+	with_engine_env(t, proc(t: ^testing.T) {
+		frame_mode_set(.On_Demand)
+		state.window_focused = true
+		state.frame_dirty = false
+		testing.expect(t, !frame_should_present(false))
+
+		testing.expect(t, frame_should_present(true))
+
+		state.frame_dirty = true
+		testing.expect(t, frame_should_present(false))
+	})
+}
+
+@(test)
+frame_should_present_focused_unfocused_matches_on_demand :: proc(t: ^testing.T) {
+	with_engine_env(t, proc(t: ^testing.T) {
+		frame_mode_set(.Focused)
+		state.window_focused = false
+		state.frame_dirty = false
+		testing.expect(t, !frame_should_present(false))
+		testing.expect(t, frame_should_present(true))
+
+		state.window_focused = true
+		testing.expect(t, frame_should_present(false))
+	})
+}
+
+@(test)
 run_frame_on_demand_skips_when_idle :: proc(t: ^testing.T) {
 	with_runtime_sdl_env(t, proc(t: ^testing.T) {
 		test_hook_skip_frame_wait = true
@@ -137,6 +176,54 @@ run_frame_on_demand_skips_when_idle :: proc(t: ^testing.T) {
 		run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
 		testing.expect_value(t, runtime_test_tick_calls, 1)
 		testing.expect(t, !state.frame_dirty)
+	})
+}
+
+@(test)
+run_frame_on_demand_wake_only_skips_present :: proc(t: ^testing.T) {
+	with_runtime_window_env(t, proc(t: ^testing.T) {
+		test_hook_skip_frame_wait = true
+		frame_mode_set(.On_Demand)
+		state.frame_dirty = false
+		state.wake_until_ns = 0
+		runtime_test_reset_counters()
+
+		wake_for(1.0)
+		run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
+		testing.expect_value(t, runtime_test_tick_calls, 1)
+		testing.expect_value(t, runtime_test_draw_calls, 1)
+		testing.expect(t, !state.frame_dirty)
+		testing.expect(t, state.wake_until_ns != 0)
+
+		// Wake deadline alone keeps tick alive but skips GPU present.
+		runtime_test_reset_counters()
+		run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
+		testing.expect_value(t, runtime_test_tick_calls, 1)
+		testing.expect_value(t, runtime_test_draw_calls, 0)
+		testing.expect(t, !state.frame_dirty)
+
+		// Tick Request_Frame marks oneshot dirty → present this frame.
+		runtime_test_reset_counters()
+		runtime_test_tick_request_frame = true
+		run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
+		testing.expect_value(t, runtime_test_tick_calls, 1)
+		testing.expect_value(t, runtime_test_draw_calls, 1)
+		testing.expect(t, state.frame_dirty)
+	})
+}
+
+@(test)
+run_frame_continuous_presents_without_dirty :: proc(t: ^testing.T) {
+	with_runtime_window_env(t, proc(t: ^testing.T) {
+		test_hook_skip_frame_wait = true
+		frame_mode_set(.Continuous)
+		state.frame_dirty = false
+		state.wake_until_ns = 0
+		runtime_test_reset_counters()
+
+		run_frame(runtime_test_tick, runtime_test_draw, runtime_test_init)
+		testing.expect_value(t, runtime_test_tick_calls, 1)
+		testing.expect_value(t, runtime_test_draw_calls, 1)
 	})
 }
 

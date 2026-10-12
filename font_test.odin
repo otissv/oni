@@ -1,10 +1,12 @@
 package oni
 
 import "core:c"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:testing"
+import "core:thread"
 import sdl "vendor:sdl3"
 
 PIXEL_BOLD_FONT_FIXTURE :: "fixtures/fonts/PixelOperator8-Bold.ttf"
@@ -88,6 +90,7 @@ with_font_gpu_fixtures :: proc(
 
 	texture_init()
 	defer texture_shutdown()
+	defer error_shutdown()
 	defer {
 		delete(batch_current().vertices)
 		delete(batch_current().indices)
@@ -709,6 +712,493 @@ font_atlas_reset_clears_pixels_and_shelves :: proc(t: ^testing.T) {
 			testing.expect_value(t, pixels[1], u8(0))
 			// Atlas identity preserved for reuse.
 			testing.expect_value(t, state.textures.atlas.texture_id, region.texture_id)
+		},
+	)
+}
+
+@(test)
+font_atlas_reset_clears_glyph_cache :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "Ag", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+			testing.expect(t, len(state.fonts.glyph_cache) >= 1)
+
+			atlas_id := state.textures.atlas.texture_id
+			gen_before := state.textures.atlas.generation
+			testing.expect(t, atlas_id != INVALID_ASSET_ID)
+			testing.expect(t, len(state.textures.atlas.shelves) >= 1)
+			testing.expect(t, state.textures.atlas.slot_count >= 1)
+
+			font_atlas_reset()
+
+			testing.expect_value(t, len(state.textures.atlas.shelves), 0)
+			testing.expect_value(t, len(state.fonts.glyph_cache), 0)
+			testing.expect_value(t, state.textures.atlas.texture_id, atlas_id)
+			testing.expect_value(t, state.textures.atlas.slot_count, u32(0))
+			testing.expect_value(t, state.textures.atlas.bytes_used, u64(0))
+			testing.expect_value(t, state.textures.atlas.generation, gen_before + 1)
+
+			// Re-ensure after reset must repack; cache is empty then populated again.
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+			testing.expect(t, len(state.fonts.glyph_cache) >= 1)
+			testing.expect(t, len(state.textures.atlas.shelves) >= 1)
+
+			for key, entry in state.fonts.glyph_cache {
+				_ = key
+				testing.expect_value(t, entry.generation, state.textures.atlas.generation)
+			}
+		},
+	)
+}
+
+@(test)
+font_glyph_residency_stamp_and_generation_on_ensure :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+
+			state.ui.frame = 11
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+			key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = shaped[0].glyph_id,
+			}
+			entry, found := state.fonts.glyph_cache[key]
+			testing.expect(t, found)
+			testing.expect_value(t, entry.last_used_frame, u64(11))
+			testing.expect_value(t, entry.generation, state.textures.atlas.generation)
+			testing.expect_value(t, entry.flags, Font_Glyph_Residency_Flags{})
+
+			stats := atlas_stats()
+			testing.expect(t, stats.slot_count >= 1)
+			testing.expect(t, stats.cache_count >= 1)
+			testing.expect_value(t, stats.generation, state.textures.atlas.generation)
+			testing.expect_value(t, stats.frame, u64(11))
+
+			state.ui.frame = 22
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+			entry2, found2 := state.fonts.glyph_cache[key]
+			testing.expect(t, found2)
+			testing.expect_value(t, entry2.last_used_frame, u64(22))
+			testing.expect_value(t, entry2.generation, entry.generation)
+		},
+	)
+}
+
+@(test)
+font_atlas_evict_cold_skips_hot_and_pinned :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "ABC", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 3)
+
+			state.ui.frame = 10
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+			hot_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = shaped[0].glyph_id,
+			}
+			cold_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = shaped[1].glyph_id,
+			}
+			pinned_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = shaped[2].glyph_id,
+			}
+
+			{
+				e := &state.fonts.glyph_cache[hot_key]
+				e.last_used_frame = 10
+			}
+			{
+				e := &state.fonts.glyph_cache[cold_key]
+				e.last_used_frame = 1
+			}
+			{
+				// Age-cold ( < frame-3 ) but pin still active ( >= frame-5 ).
+				e := &state.fonts.glyph_cache[pinned_key]
+				e.last_used_frame = 5
+				e.flags = {.Pinned, .Prefetched}
+			}
+
+			state.ui.frame = 10
+			evicted := font_atlas_evict_cold()
+			testing.expect_value(t, evicted, 1)
+			testing.expect(t, hot_key in state.fonts.glyph_cache)
+			testing.expect(t, cold_key not_in state.fonts.glyph_cache)
+			testing.expect(t, pinned_key in state.fonts.glyph_cache)
+			testing.expect(t, state.textures.atlas.needs_repack)
+		},
+	)
+}
+
+@(test)
+font_atlas_prefetch_pin_expires_then_evicts :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+			key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = shaped[0].glyph_id,
+			}
+			{
+				e := &state.fonts.glyph_cache[key]
+				e.last_used_frame = 1
+				e.flags = {.Pinned, .Prefetched}
+			}
+
+			state.ui.frame = u64(ATLAS_PREFETCH_PIN_FRAMES) + 2
+			evicted := font_atlas_evict_cold()
+			testing.expect(t, evicted >= 1)
+			testing.expect(t, key not_in state.fonts.glyph_cache)
+		},
+	)
+}
+
+@(test)
+font_atlas_compact_rewrites_survivor_regions_and_generation :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "Ag", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 2)
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+			gen_before := state.textures.atlas.generation
+			before_regions := make(map[Font_Glyph_Key]Atlas_Region, context.temp_allocator)
+			for key, entry in state.fonts.glyph_cache {
+				before_regions[key] = entry.region
+			}
+
+			// Fragment shelves: evict one cold glyph so compact can reclaim.
+			state.ui.frame = 20
+			marked_cold := false
+			for _, &entry in state.fonts.glyph_cache {
+				if !marked_cold {
+					entry.last_used_frame = 0
+					marked_cold = true
+				} else {
+					entry.last_used_frame = 20
+				}
+			}
+
+			_ = font_atlas_evict_cold()
+			used_before := atlas_stats().used_percent
+
+			testing.expect(t, Atlas_Compact())
+			testing.expect_value(t, state.textures.atlas.generation, gen_before + 1)
+			testing.expect(t, !state.textures.atlas.needs_repack)
+			testing.expect(t, len(state.fonts.glyph_cache) <= len(before_regions))
+			testing.expect(t, atlas_stats().used_percent <= used_before + 0.01)
+
+			for key, entry in state.fonts.glyph_cache {
+				testing.expect_value(t, entry.generation, state.textures.atlas.generation)
+				testing.expect(t, entry.region.w > 0 || entry.region.h > 0)
+				testing.expect_value(t, entry.region.texture_id, state.textures.atlas.texture_id)
+				testing.expect(t, texture_get_gpu(entry.region.texture_id) != nil)
+				_ = before_regions[key]
+			}
+		},
+	)
+}
+
+@(test)
+font_atlas_fill_evict_repack_packs_new_keeps_hot :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			// Small atlas + modest size so we can fill with distinct glyphs.
+			testing.expect(t, texture_atlas_init(64))
+			// Hold growth so this test exercises evict+repack, not Group D grow.
+			state.textures.max_2d_texture_size = 64
+			face, handle, ok := font_test_face(inter, 18)
+			testing.expect(t, ok)
+
+			fill := font_shape(
+				face,
+				"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+				.LTR,
+			)
+			defer delete(fill)
+			testing.expect(t, len(fill) >= 8)
+
+			state.ui.frame = 10
+			packed := 0
+			for g in fill {
+				entry, rok := font_rasterize_glyph(face, g.glyph_id, .Gray)
+				if !rok {
+					break
+				}
+
+				key := Font_Glyph_Key {
+					face_id  = handle.id,
+					glyph_id = g.glyph_id,
+				}
+				state.fonts.glyph_cache[key] = entry
+				packed += 1
+				if !texture_atlas_can_fit(8, 8) {
+					break
+				}
+			}
+
+			testing.expect(t, packed >= 2)
+			testing.expect(t, len(state.fonts.glyph_cache) >= 2)
+
+			// Age every cached glyph to cold, then restamp one as hot.
+			for key, &entry in state.fonts.glyph_cache {
+				_ = key
+				entry.last_used_frame = 1
+			}
+
+			hot_glyph := fill[0]
+			hot_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = hot_glyph.glyph_id,
+			}
+			testing.expect(t, hot_key in state.fonts.glyph_cache)
+			{
+				e := &state.fonts.glyph_cache[hot_key]
+				e.last_used_frame = 10
+			}
+
+			// Find a glyph not yet cached.
+			new_glyph: Shaped_Glyph
+			found_new := false
+			for g in fill {
+				key := Font_Glyph_Key {
+					face_id  = handle.id,
+					glyph_id = g.glyph_id,
+				}
+				if key not_in state.fonts.glyph_cache {
+					new_glyph = g
+					found_new = true
+					break
+				}
+			}
+
+			if !found_new {
+				// Atlas held the whole fill set; force pressure with a second face size.
+				face2, handle2, ok2 := font_test_face(inter, 20)
+				testing.expect(t, ok2)
+				extra := font_shape(face2, "W", .LTR)
+				defer delete(extra)
+				testing.expect(t, len(extra) >= 1)
+				new_glyph = extra[0]
+				handle = handle2
+				face = face2
+				found_new = true
+			}
+
+			testing.expect(t, found_new)
+			state.ui.frame = 10
+			gen_before := state.textures.atlas.generation
+			testing.expect(t, font_ensure_glyphs(face, handle.id, {new_glyph}))
+
+			new_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = new_glyph.glyph_id,
+			}
+			testing.expect(t, new_key in state.fonts.glyph_cache)
+			testing.expect(t, hot_key in state.fonts.glyph_cache)
+			testing.expect(t, state.textures.atlas.generation >= gen_before)
+
+			hot_entry := state.fonts.glyph_cache[hot_key]
+			testing.expect_value(t, hot_entry.generation, state.textures.atlas.generation)
+			testing.expect(t, hot_entry.region.w > 0 || hot_entry.region.h > 0)
+			testing.expect_value(t, hot_entry.region.texture_id, state.textures.atlas.texture_id)
+		},
+	)
+}
+
+@(test)
+font_atlas_recover_fails_when_hot_fill_at_effective_max :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			testing.expect(t, texture_atlas_init(32))
+			// Cap growth at current size so Group D refuses (overflow is Group E).
+			state.textures.max_2d_texture_size = 32
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			fill := font_shape(face, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", .LTR)
+			defer delete(fill)
+
+			state.ui.frame = 50
+			for g in fill {
+				entry, rok := font_rasterize_glyph(face, g.glyph_id, .Gray)
+				if !rok {
+					break
+				}
+
+				state.fonts.glyph_cache[Font_Glyph_Key {
+						face_id  = handle.id,
+						glyph_id = g.glyph_id,
+					}] = entry
+				if !texture_atlas_can_fit(4, 4) {
+					break
+				}
+			}
+
+			testing.expect(t, len(state.fonts.glyph_cache) >= 1)
+			// All entries are current-frame hot — eviction must not remove them.
+			for key, &entry in state.fonts.glyph_cache {
+				_ = key
+				entry.last_used_frame = 50
+			}
+
+			testing.expect(t, !font_atlas_recover_space(16, 16))
+			testing.expect_value(t, state.textures.atlas.width, i32(32))
+			testing.expect(t, len(state.fonts.glyph_cache) >= 1)
+		},
+	)
+}
+
+@(test)
+font_atlas_grows_when_hot_glyphs_fill_tiny_atlas :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			testing.expect(t, texture_atlas_init(64))
+			// Hold growth during fill so pressure lands on a true 64×64 atlas.
+			state.textures.max_2d_texture_size = 64
+			face, handle, ok := font_test_face(inter, 18)
+			testing.expect(t, ok)
+
+			fill := font_shape(
+				face,
+				"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+				.LTR,
+			)
+			defer delete(fill)
+			testing.expect(t, len(fill) >= 8)
+
+			state.ui.frame = 40
+			for g in fill {
+				entry, rok := font_rasterize_glyph(face, g.glyph_id, .Gray)
+				if !rok {
+					break
+				}
+
+				state.fonts.glyph_cache[Font_Glyph_Key {
+						face_id  = handle.id,
+						glyph_id = g.glyph_id,
+					}] = entry
+				if !texture_atlas_can_fit(8, 8) {
+					break
+				}
+			}
+
+			testing.expect(t, len(state.fonts.glyph_cache) >= 2)
+			for key, &entry in state.fonts.glyph_cache {
+				_ = key
+				entry.last_used_frame = 40
+			}
+
+			new_glyph: Shaped_Glyph
+			found_new := false
+			for g in fill {
+				key := Font_Glyph_Key {
+					face_id  = handle.id,
+					glyph_id = g.glyph_id,
+				}
+				if key not_in state.fonts.glyph_cache {
+					new_glyph = g
+					found_new = true
+					break
+				}
+			}
+
+			if !found_new {
+				face2, handle2, ok2 := font_test_face(inter, 22)
+				testing.expect(t, ok2)
+				extra := font_shape(face2, "W", .LTR)
+				defer delete(extra)
+				testing.expect(t, len(extra) >= 1)
+				new_glyph = extra[0]
+				handle = handle2
+				face = face2
+				found_new = true
+			}
+
+			testing.expect(t, found_new)
+			width_before := state.textures.atlas.width
+			testing.expect_value(t, width_before, i32(64))
+
+			state.textures.max_2d_texture_size = 256
+			testing.expect(t, font_ensure_glyphs(face, handle.id, {new_glyph}))
+			testing.expect(t, state.textures.atlas.width >= width_before * 2)
+			testing.expect(t, state.textures.atlas.width <= i32(256))
+
+			new_key := Font_Glyph_Key {
+				face_id  = handle.id,
+				glyph_id = new_glyph.glyph_id,
+			}
+			testing.expect(t, new_key in state.fonts.glyph_cache)
+			entry := state.fonts.glyph_cache[new_key]
+			testing.expect_value(t, entry.generation, state.textures.atlas.generation)
+			testing.expect_value(t, entry.region.texture_id, state.textures.atlas.texture_id)
+		},
+	)
+}
+
+@(test)
+font_atlas_try_grow_refuses_past_hard_or_device_max :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = inter
+			_ = pixel
+			testing.expect(t, texture_atlas_init(128))
+			state.textures.max_2d_texture_size = 128
+			testing.expect_value(t, texture_atlas_effective_max(), i32(128))
+			testing.expect(t, !font_atlas_try_grow(8, 8))
+			testing.expect_value(t, state.textures.atlas.width, i32(128))
+
+			// HARD_MAX also clamps even if device reports higher.
+			state.textures.max_2d_texture_size = ATLAS_HARD_MAX * 2
+			testing.expect_value(t, texture_atlas_effective_max(), i32(ATLAS_HARD_MAX))
 		},
 	)
 }
@@ -1727,26 +2217,37 @@ font_rasterize_glyph_fails_when_atlas_is_full :: proc(t: ^testing.T) {
 		t,
 		proc(inter, pixel: Font_Handle, t: ^testing.T) {
 			_ = pixel
-			face, _, ok := font_test_face(inter, 24)
+			// Small face so the glyph fits the effective max (not oversize standalone).
+			face, _, ok := font_test_face(inter, 12)
 			testing.expect(t, ok)
 
-			// Tiny atlas: pack one region then exhaust remaining space.
+			// Tiny atlas: exhaust primary + overflow so Group E cannot rescue.
 			testing.expect(t, texture_atlas_init(16))
-			pad := i32(ATLAS_PADDING)
+			// Cap growth so Group D cannot rescue an intentionally full atlas.
+			state.textures.max_2d_texture_size = 16
 			for {
 				_, aok := texture_atlas_alloc(1, 1)
 				if !aok do break
 			}
-			// Confirm atlas is full.
-			_, full := texture_atlas_alloc(1, 1)
-			testing.expect(t, !full)
-			_ = pad
 
-			shaped := font_shape(face, "W", .LTR)
+			for len(state.textures.overflow) < ATLAS_OVERFLOW_CAP {
+				atlas, ook := texture_atlas_ensure_overflow()
+				testing.expect(t, ook)
+				testing.expect(t, atlas != nil)
+				for {
+					_, aok := texture_atlas_alloc_in(atlas, 1, 1)
+					if !aok do break
+				}
+			}
+
+			testing.expect(t, !texture_atlas_can_fit_any(1, 1))
+
+			shaped := font_shape(face, "i", .LTR)
 			defer delete(shaped)
 			testing.expect(t, len(shaped) >= 1)
 			_, rok := font_rasterize_glyph(face, shaped[0].glyph_id)
 			testing.expect(t, !rok)
+			testing.expect_value(t, state.textures.last_pack_fail, Atlas_Pack_Fail.Exhausted)
 		},
 	)
 }
@@ -1758,10 +2259,28 @@ font_rasterize_empty_glyph_fails_when_placeholder_cannot_alloc :: proc(t: ^testi
 		face, _, ok := font_test_face(inter, 16)
 		testing.expect(t, ok)
 		testing.expect(t, texture_atlas_init(8))
+		state.textures.max_2d_texture_size = 8
+
+		// Exhaust primary and every overflow sheet so recover cannot place the
+		// 1x1 empty-glyph placeholder (Group E soft-fail at overflow cap).
 		for {
 			_, aok := texture_atlas_alloc(1, 1)
 			if !aok do break
 		}
+
+		for len(state.textures.overflow) < ATLAS_OVERFLOW_CAP {
+			atlas, ook := texture_atlas_ensure_overflow()
+			testing.expect(t, ook)
+			testing.expect(t, atlas != nil)
+			for {
+				_, aok := texture_atlas_alloc_in(atlas, 1, 1)
+				if !aok do break
+			}
+		}
+
+		_, more := texture_atlas_ensure_overflow()
+		testing.expect(t, !more)
+		testing.expect(t, !texture_atlas_can_fit_any(1, 1))
 
 		shaped := font_shape(face, " ", .LTR)
 		defer delete(shaped)
@@ -1921,5 +2440,472 @@ font_ensure_glyphs_returns_false_when_rasterize_fails :: proc(t: ^testing.T) {
 		testing.expect(t, ok)
 		glyphs := []Shaped_Glyph{{glyph_id = 0x7FFFFFFF}}
 		testing.expect(t, !font_ensure_glyphs(face, handle.id, glyphs))
+	})
+}
+
+@(test)
+font_prefetch_text_marks_prefetched_and_cache_hits :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		testing.expect(t, font_prefetch_text(face, handle.id, "AB", .LTR))
+		testing.expect(t, len(FONT_PREFETCH_ASCII_UI) > 0)
+
+		shaped := font_shape(face, "AB", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= 2)
+
+		for g in shaped {
+			key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = g.glyph_id,
+				render_mode = .Gray,
+			}
+			entry, cok := state.fonts.glyph_cache[key]
+			testing.expect(t, cok)
+			testing.expect(t, .Prefetched in entry.flags)
+			testing.expect(t, .Pinned in entry.flags)
+			testing.expect(t, font_glyph_entry_is_live(entry))
+		}
+
+		before := len(state.fonts.glyph_cache)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+		testing.expect_value(t, len(state.fonts.glyph_cache), before)
+	})
+}
+
+@(test)
+font_pack_oversize_bypasses_atlas_as_standalone :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		state.textures.max_2d_texture_size = 32
+		testing.expect(t, texture_atlas_init(32))
+		shelves_before := len(state.textures.atlas.shelves)
+
+		surface := sdl.CreateSurface(32, 32, .RGBA8888)
+		testing.expect(t, surface != nil)
+		defer sdl.DestroySurface(surface)
+		testing.expect(t, texture_atlas_padded_exceeds_effective_max(surface.w, surface.h))
+
+		entry, ok := font_pack_glyph_bitmap(surface, 1, 2, 4242)
+		testing.expect(t, ok)
+		testing.expect(t, .Standalone in entry.flags)
+		testing.expect(t, texture_atlas_by_id(entry.region.texture_id) == nil)
+		testing.expect(t, texture_get_gpu(entry.region.texture_id) != nil)
+		testing.expect_value(t, len(state.textures.atlas.shelves), shelves_before)
+		testing.expect_value(t, state.textures.last_pack_fail, Atlas_Pack_Fail.Oversize)
+		testing.expect_value(t, entry.bearing_x, f32(1))
+		testing.expect_value(t, entry.bearing_y, f32(2))
+
+		key := Font_Glyph_Key {
+			face_id     = Asset_Id(1),
+			glyph_id    = 4242,
+			render_mode = .Gray,
+		}
+		state.fonts.glyph_cache[key] = entry
+		testing.expect(t, font_glyph_entry_is_live(state.fonts.glyph_cache[key]))
+
+		font_atlas_reset()
+		testing.expect(t, texture_get_gpu(entry.region.texture_id) == nil)
+		_, still := state.fonts.glyph_cache[key]
+		testing.expect(t, !still)
+	})
+}
+
+@(test)
+font_atlas_pack_funnel_exhausts_with_structured_error :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		testing.expect(t, texture_atlas_init(8))
+		state.textures.max_2d_texture_size = 8
+
+		for {
+			_, aok := texture_atlas_alloc(1, 1)
+			if !aok do break
+		}
+
+		for len(state.textures.overflow) < ATLAS_OVERFLOW_CAP {
+			atlas, ook := texture_atlas_ensure_overflow()
+			testing.expect(t, ook)
+			for {
+				_, aok := texture_atlas_alloc_in(atlas, 1, 1)
+				if !aok do break
+			}
+		}
+
+		surface := sdl.CreateSurface(1, 1, .RGBA8888)
+		testing.expect(t, surface != nil)
+		defer sdl.DestroySurface(surface)
+
+		error_dismiss_all()
+		_, fail := font_atlas_pack_funnel(surface)
+		testing.expect_value(t, fail, Atlas_Pack_Fail.Exhausted)
+		testing.expect_value(t, state.textures.last_pack_fail, Atlas_Pack_Fail.Exhausted)
+		testing.expect(t, error_active_count() >= 1)
+	})
+}
+
+@(test)
+font_atlas_pack_funnel_recovers_via_overflow :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		testing.expect(t, texture_atlas_init(16))
+		state.textures.max_2d_texture_size = 16
+
+		for {
+			_, aok := texture_atlas_alloc(1, 1)
+			if !aok do break
+		}
+
+		testing.expect(t, !texture_atlas_can_fit(1, 1))
+		testing.expect_value(t, len(state.textures.overflow), 0)
+
+		surface := sdl.CreateSurface(1, 1, .RGBA8888)
+		testing.expect(t, surface != nil)
+		defer sdl.DestroySurface(surface)
+
+		region, fail := font_atlas_pack_funnel(surface)
+		testing.expect_value(t, fail, Atlas_Pack_Fail.None)
+		testing.expect(t, region.texture_id != state.textures.atlas.texture_id)
+		testing.expect(t, len(state.textures.overflow) >= 1)
+		testing.expect(t, texture_atlas_by_id(region.texture_id) != nil)
+	})
+}
+
+@(test)
+font_prefetch_and_multi_size_stress_keeps_cache_coherent :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		sizes := []f32{12, 16, 20, 24}
+		for size in sizes {
+			face, handle, ok := font_test_face(inter, size)
+			testing.expect(t, ok)
+			testing.expect(t, font_prefetch_text(face, handle.id, "AbcXY012", .LTR))
+
+			shaped := font_shape(face, "AbcXY012", .LTR)
+			defer delete(shaped)
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+			for g in shaped {
+				key := Font_Glyph_Key {
+					face_id     = handle.id,
+					glyph_id    = g.glyph_id,
+					render_mode = .Gray,
+				}
+				entry, cok := state.fonts.glyph_cache[key]
+				testing.expect(t, cok)
+				testing.expect(t, font_glyph_entry_is_live(entry))
+			}
+		}
+
+		stats := atlas_stats()
+		testing.expect(t, stats.cache_count > 0)
+		testing.expect(t, stats.slot_count > 0)
+		testing.expect(t, len(state.textures.atlas.shelves) > 0)
+		for shelf in state.textures.atlas.shelves {
+			testing.expect(t, shelf.cursor_x >= 0)
+			testing.expect(t, shelf.cursor_x <= state.textures.atlas.width)
+		}
+	})
+}
+
+@(test)
+font_atlas_owner_lock_is_recursive_for_funnel_nesting :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		testing.expect(t, atlas_owner_try_lock())
+		testing.expect_value(t, state.textures.owner_depth, 1)
+		// Same thread may nest (ensure → funnel → alloc).
+		testing.expect(t, atlas_owner_try_lock())
+		testing.expect_value(t, state.textures.owner_depth, 2)
+		atlas_owner_unlock()
+		testing.expect_value(t, state.textures.owner_depth, 1)
+		atlas_owner_unlock()
+		testing.expect_value(t, state.textures.owner_depth, 0)
+	})
+}
+
+@(test)
+font_atlas_owner_lock_blocks_concurrent_thread :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+
+		Barrier :: struct {
+			mu:     sync.Mutex,
+			ready:  bool,
+			denied: bool,
+			done:   bool,
+		}
+		barrier := new(Barrier)
+		defer free(barrier)
+
+		worker :: proc(b: ^Barrier) {
+			for {
+				sync.mutex_lock(&b.mu)
+				ready := b.ready
+				sync.mutex_unlock(&b.mu)
+				if ready {
+					break
+				}
+
+				thread.yield()
+			}
+
+			ok := atlas_owner_try_lock()
+			sync.mutex_lock(&b.mu)
+			b.denied = !ok
+			b.done = true
+			sync.mutex_unlock(&b.mu)
+			if ok {
+				atlas_owner_unlock()
+			}
+		}
+
+		testing.expect(t, atlas_owner_try_lock())
+		th := thread.create_and_start_with_poly_data(barrier, worker)
+		testing.expect(t, th != nil)
+		defer {
+			thread.join(th)
+			thread.destroy(th)
+		}
+
+		sync.mutex_lock(&barrier.mu)
+		barrier.ready = true
+		sync.mutex_unlock(&barrier.mu)
+
+		for {
+			sync.mutex_lock(&barrier.mu)
+			done := barrier.done
+			sync.mutex_unlock(&barrier.mu)
+			if done {
+				break
+			}
+
+			thread.yield()
+		}
+
+		testing.expect(t, barrier.denied)
+		atlas_owner_unlock()
+	})
+}
+
+@(test)
+font_parallel_raster_then_serial_pack_stress :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 14)
+		testing.expect(t, ok)
+
+		text := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+		shaped := font_shape(face, text, .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= FONT_GLYPH_PARALLEL_THRESHOLD)
+
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+		testing.expect_value(t, state.textures.raster_workers, 0)
+		testing.expect_value(t, state.textures.owner_depth, 0)
+
+		for g in shaped {
+			key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = g.glyph_id,
+				render_mode = .Gray,
+			}
+			entry, cok := state.fonts.glyph_cache[key]
+			testing.expect(t, cok)
+			testing.expect(t, font_glyph_entry_is_live(entry))
+		}
+
+		// Prefetch under the same owner contract must stay coherent.
+		testing.expect(t, font_prefetch_text(face, handle.id, text, .LTR))
+		testing.expect_value(t, state.textures.owner_depth, 0)
+	})
+}
+
+@(test)
+font_atlas_repack_parallel_raster_keeps_survivors :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		shaped := font_shape(face, "Abcdefghij", .LTR)
+		defer delete(shaped)
+		testing.expect(t, len(shaped) >= FONT_GLYPH_PARALLEL_THRESHOLD)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+
+		before_gen := state.textures.atlas.generation
+		before_count := len(state.fonts.glyph_cache)
+		testing.expect(t, atlas_compact())
+		testing.expect(t, state.textures.atlas.generation > before_gen)
+		testing.expect_value(t, state.textures.raster_workers, 0)
+
+		alive := 0
+		for g in shaped {
+			key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = g.glyph_id,
+				render_mode = .Gray,
+			}
+			entry, cok := state.fonts.glyph_cache[key]
+			if cok && font_glyph_entry_is_live(entry) {
+				alive += 1
+				testing.expect_value(t, entry.generation, state.textures.atlas.generation)
+			}
+		}
+
+		testing.expect(t, alive >= FONT_GLYPH_PARALLEL_THRESHOLD)
+		testing.expect(t, len(state.fonts.glyph_cache) >= alive)
+		_ = before_count
+	})
+}
+
+@(test)
+font_ensure_and_prefetch_share_owner_sequencing :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		testing.expect(t, font_prefetch_text(face, handle.id, "Hi", .LTR))
+		shaped := font_shape(face, "Hi", .LTR)
+		defer delete(shaped)
+		before := len(state.fonts.glyph_cache)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+		testing.expect_value(t, len(state.fonts.glyph_cache), before)
+
+		for g in shaped {
+			key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = g.glyph_id,
+				render_mode = .Gray,
+			}
+			entry := state.fonts.glyph_cache[key]
+			testing.expect(t, .Prefetched in entry.flags)
+			testing.expect(t, .Pinned in entry.flags)
+		}
+	})
+}
+
+@(test)
+font_open_temp_raster_face_uses_op_arena :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		shaped := font_shape(face, "A", .LTR, context.temp_allocator)
+		testing.expect(t, len(shaped) > 0)
+
+		backing := make([]u8, FONT_RASTER_WORKER_SCRATCH)
+		defer delete(backing)
+		arena: mem.Arena
+		mem.arena_init(&arena, backing)
+		alloc := mem.arena_allocator(&arena)
+
+		library, ft_face, opened := font_open_temp_raster_face(face, alloc)
+		testing.expect(t, opened)
+		defer {
+			if ft_face != nil {
+				Done_Face(ft_face)
+			}
+
+			if library != nil {
+				Done_FreeType(library)
+			}
+		}
+
+		surface, _, _, rok := font_rasterize_glyph_bitmap(
+			ft_face,
+			face.fake_bold,
+			shaped[0].glyph_id,
+			face.pixel_size,
+			.Gray,
+		)
+		testing.expect(t, rok)
+		testing.expect(t, surface != nil)
+		if surface != nil {
+			sdl.DestroySurface(surface)
+		}
+
+		// Simulate worker face-switch: close, reclaim scratch, reopen.
+		Done_Face(ft_face)
+		Done_FreeType(library)
+		ft_face = nil
+		library = nil
+		mem.arena_free_all(&arena)
+
+		library2, ft_face2, opened2 := font_open_temp_raster_face(face, alloc)
+		testing.expect(t, opened2)
+		if ft_face2 != nil {
+			Done_Face(ft_face2)
+		}
+
+		if library2 != nil {
+			Done_FreeType(library2)
+		}
+	})
+}
+
+@(test)
+font_prefetch_text_shapes_on_temp_allocator :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		before := len(state.fonts.glyph_cache)
+		testing.expect(t, font_prefetch_text(face, handle.id, "Hello", .LTR))
+		testing.expect(t, len(state.fonts.glyph_cache) > before)
+
+		shaped := font_shape(face, "Hello", .LTR, context.temp_allocator)
+		testing.expect(t, len(shaped) > 0)
+		for g in shaped {
+			key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = g.glyph_id,
+				render_mode = .Gray,
+			}
+			entry, cok := state.fonts.glyph_cache[key]
+			testing.expect(t, cok)
+			testing.expect(t, .Prefetched in entry.flags)
+			testing.expect(t, .Pinned in entry.flags)
+		}
+	})
+}
+
+@(test)
+font_parallel_raster_frees_worker_scratch :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 14)
+		testing.expect(t, ok)
+
+		text := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+		shaped := font_shape(face, text, .LTR, context.temp_allocator)
+		testing.expect(t, len(shaped) >= FONT_GLYPH_PARALLEL_THRESHOLD)
+		testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
+		testing.expect_value(t, state.textures.raster_workers, 0)
+		testing.expect_value(t, state.textures.owner_depth, 0)
+
+		pool := state.fonts.raster_pool
+		testing.expect(t, pool != nil)
+		testing.expect_value(t, pool.started_count, FONT_GLYPH_MAX_WORKERS)
+
+		// Second miss burst reuses the same pool + scratch arenas.
+		face2, handle2, ok2 := font_test_face(inter, 18)
+		testing.expect(t, ok2)
+		shaped2 := font_shape(face2, text, .LTR, context.temp_allocator)
+		testing.expect(t, font_ensure_glyphs(face2, handle2.id, shaped2))
+		testing.expect_value(t, state.textures.raster_workers, 0)
+		testing.expect(t, state.fonts.raster_pool == pool)
+		_ = handle
 	})
 }

@@ -3,36 +3,67 @@ package oni
 import "core:c"
 import "core:math"
 import "core:mem"
+import "core:slice"
 import "core:strings"
+import "core:sync"
 import "core:thread"
 import "core:unicode/utf8"
 import sdl "vendor:sdl3"
 
 FONT_GLYPH_PARALLEL_THRESHOLD :: 4
 FONT_GLYPH_MAX_WORKERS :: 4
+// Per-worker op arena for temp-face path/coords (never the engine frame temp_allocator).
+FONT_RASTER_WORKER_SCRATCH :: 64 * 1024
 
 /*
-Owned FreeType render result before serial atlas packing.
+One FreeType raster job before serial atlas packing (Group G).
+
+Workers fill `surface` / bearings via a temporary FT library+face. The owner
+thread packs only after all workers join (`atlas_owner_assert_no_raster_workers`).
 */
-Font_Glyph_Bitmap_Result :: struct {
-	glyph_id:  u32,
-	surface:   ^sdl.Surface,
-	bearing_x: f32,
-	bearing_y: f32,
-	ok:        bool,
+Font_Raster_Job :: struct {
+	face:        ^Font_Face,
+	glyph_id:    u32,
+	render_mode: Font_Glyph_Render_Mode,
+	surface:     ^sdl.Surface,
+	bearing_x:   f32,
+	bearing_y:   f32,
+	ok:          bool,
 }
 
 /*
-Per-worker glyph subset for parallel FreeType rasterization.
+Per-worker chunk of raster jobs plus a private scratch arena.
 
-Each worker opens a temporary FT_Face (and FT_Library) so FreeType work never
-touches the engine face concurrently.
+May mix faces; worker opens temp faces through `scratch` so path/coords never
+race the owner `context.temp_allocator` frame wipe (Group I).
 */
-Font_Glyph_Worker_Args :: struct {
-	face:         ^Font_Face,
-	glyph_ids:    []u32,
-	results:      []Font_Glyph_Bitmap_Result,
-	render_mode:  Font_Glyph_Render_Mode,
+Font_Raster_Worker_Chunk :: struct {
+	jobs:            []Font_Raster_Job,
+	scratch:         mem.Arena,
+	scratch_backing: []u8,
+}
+
+/*
+One persistent FreeType raster worker slot (bounded pool, Group G).
+*/
+Font_Raster_Pool_Slot :: struct {
+	pool:      ^Font_Raster_Pool,
+	thread:    ^thread.Thread,
+	chunk:     Font_Raster_Worker_Chunk,
+	work_sema: sync.Sema,
+}
+
+/*
+Bounded FreeType raster worker pool reused across miss/repack bursts.
+
+Workers sleep on `work_sema`; the owner posts work, then waits on `done_sema`
+once per assigned worker. Shutdown posts quit and joins every thread.
+*/
+Font_Raster_Pool :: struct {
+	slots:          [FONT_GLYPH_MAX_WORKERS]Font_Raster_Pool_Slot,
+	done_sema:      sync.Sema,
+	quit:           bool,
+	started_count:  int,
 }
 
 /*
@@ -194,26 +225,579 @@ font_glyph_metrics :: proc(face: ^Font_Face, glyph_id: u32) -> (w, h, bearing_x,
 }
 
 /*
-Clears the font atlas CPU surface and resets shelf allocation state.
+Clears the font atlas CPU surface, resets shelf allocation, and invalidates the
+glyph cache.
 
-Used before reloading faces so glyph packing starts from a clean atlas.
+Cache entries hold `Atlas_Region` UVs into this atlas; clearing shelves/pixels
+without dropping those entries would leave stale draws. Bumps atlas `generation`
+and clears occupancy so residency bookkeeping stays consistent. Used before
+reloading faces or after DPI changes so packing starts from a clean atlas.
+Retires standalone (oversize-bypass) texture records before dropping the cache.
 */
 font_atlas_reset :: proc() {
-	if state.textures.atlas.texture_id == INVALID_ASSET_ID do return
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
 
-	index := int(state.textures.atlas.texture_id)
-	if index > 0 && index < len(state.textures.records) {
-		entry := &state.textures.records[index]
-		if entry.surface != nil {
-			pixels := cast([^]u8)entry.surface.pixels
-			size := int(entry.surface.pitch) * int(entry.surface.h)
-			for i in 0 ..< size {
-				pixels[i] = 0
+	atlas_owner_assert_no_raster_workers()
+
+	if state.textures.atlas.texture_id == INVALID_ASSET_ID {
+		return
+	}
+
+	count := texture_atlas_count()
+	for slot in 0 ..< count {
+		atlas := slot == 0 ? &state.textures.atlas : &state.textures.overflow[slot - 1]
+		index := int(atlas.texture_id)
+		if index > 0 && index < len(state.textures.records) {
+			entry := &state.textures.records[index]
+			if entry.surface != nil {
+				pixels := cast([^]u8)entry.surface.pixels
+				size := int(entry.surface.pitch) * int(entry.surface.h)
+				for i in 0 ..< size {
+					pixels[i] = 0
+				}
+			}
+		}
+
+		clear(&atlas.shelves)
+		texture_atlas_occupancy_clear(atlas)
+		atlas.generation += 1
+		atlas.needs_repack = false
+		atlas.repacking = false
+	}
+
+	// Regions in the cache point at this atlas and are invalid after reset.
+	if state.fonts.glyph_cache != nil {
+		for _, entry in state.fonts.glyph_cache {
+			if .Standalone in entry.flags {
+				texture_retire_record(entry.region.texture_id)
+			}
+		}
+
+		clear(&state.fonts.glyph_cache)
+	}
+}
+
+/*
+Stamps `last_used_frame` from the engine frame index for residency tracking.
+*/
+font_glyph_entry_touch :: proc(entry: ^Font_Glyph_Entry) {
+	if entry == nil {
+		return
+	}
+
+	entry.last_used_frame = atlas_current_frame()
+}
+
+/*
+True when a cache entry still points at a live atlas generation or standalone GPU texture.
+*/
+font_glyph_entry_is_live :: proc(entry: Font_Glyph_Entry) -> bool {
+	if .Standalone in entry.flags {
+		return texture_get_gpu(entry.region.texture_id) != nil
+	}
+
+	atlas := texture_atlas_by_id(entry.region.texture_id)
+
+	return atlas != nil && entry.generation == atlas.generation
+}
+
+/*
+Drops a glyph cache key and retires standalone texture resources.
+*/
+font_glyph_cache_drop :: proc(key: Font_Glyph_Key) {
+	if state == nil || state.fonts.glyph_cache == nil {
+		return
+	}
+
+	entry, ok := state.fonts.glyph_cache[key]
+	if !ok {
+		return
+	}
+
+	if .Standalone in entry.flags {
+		texture_retire_record(entry.region.texture_id)
+	}
+
+	delete_key(&state.fonts.glyph_cache, key)
+}
+
+/*
+Clears Prefetched|Pinned after ATLAS_PREFETCH_PIN_FRAMES unused frames.
+
+Prefetch must not be immortal; after pin expiry glyphs become normal cold-evict
+candidates.
+*/
+font_atlas_expire_prefetch_pins :: proc() {
+	if state == nil || state.fonts.glyph_cache == nil {
+		return
+	}
+
+	frame := atlas_current_frame()
+	if frame < u64(ATLAS_PREFETCH_PIN_FRAMES) {
+		return
+	}
+
+	cutoff := frame - u64(ATLAS_PREFETCH_PIN_FRAMES)
+
+	for key, &entry in state.fonts.glyph_cache {
+		_ = key
+		if .Prefetched not_in entry.flags && .Pinned not_in entry.flags {
+			continue
+		}
+
+		if entry.last_used_frame < cutoff {
+			entry.flags -= {.Pinned, .Prefetched}
+		}
+	}
+}
+
+/*
+Deletes cold glyph cache entries and marks each owning atlas for compaction.
+
+Cold: `last_used_frame < frame - ATLAS_EVICT_COLD_FRAMES`, and neither Pinned nor
+Prefetched. Does not punch shelf holes — caller must `atlas_compact` when
+`needs_repack` is set. Returns how many keys were removed.
+*/
+font_atlas_evict_cold :: proc() -> int {
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
+	atlas_owner_assert_no_raster_workers()
+
+	if state == nil || state.fonts.glyph_cache == nil {
+		return 0
+	}
+
+	font_atlas_expire_prefetch_pins()
+
+	frame := atlas_current_frame()
+	if frame < u64(ATLAS_EVICT_COLD_FRAMES) {
+		return 0
+	}
+
+	cutoff := frame - u64(ATLAS_EVICT_COLD_FRAMES)
+	to_delete := make([dynamic]Font_Glyph_Key, context.temp_allocator)
+
+	for key, entry in state.fonts.glyph_cache {
+		if .Pinned in entry.flags || .Prefetched in entry.flags || .Standalone in entry.flags {
+			continue
+		}
+
+		if entry.last_used_frame >= cutoff {
+			continue
+		}
+
+		append(&to_delete, key)
+	}
+
+	for key in to_delete {
+		entry := state.fonts.glyph_cache[key]
+		if atlas := texture_atlas_by_id(entry.region.texture_id); atlas != nil {
+			atlas.needs_repack = true
+			texture_atlas_occupancy_sub(atlas, i32(entry.region.w), i32(entry.region.h))
+		}
+
+		font_glyph_cache_drop(key)
+	}
+
+	if len(to_delete) > 0 {
+		texture_atlas_prune_empty_overflow()
+	}
+
+	return len(to_delete)
+}
+
+/*
+Survivor metadata preserved across atlas compaction.
+*/
+Font_Atlas_Repack_Survivor :: struct {
+	key:             Font_Glyph_Key,
+	flags:           Font_Glyph_Residency_Flags,
+	last_used_frame: u64,
+	surface:         ^sdl.Surface,
+	bearing_x:       f32,
+	bearing_y:       f32,
+	ok:              bool,
+}
+
+/*
+Re-rasterizes glyph-cache survivors into a fresh atlas surface.
+
+When `new_size > 0`, repacks into that square edge (Group D grow). `new_size == 0`
+keeps the current size (pure compact). Flushes pending uploads, clears shelves,
+packs survivors (height-desc), rewrites regions + generation, rebuilds the GPU
+texture, and flushes. Only glyph_cache entries are survivors.
+*/
+font_atlas_repack_in :: proc(target: ^Atlas_State, new_size: i32 = 0) -> bool {
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
+	atlas_owner_assert_no_raster_workers()
+
+	if state == nil || target == nil || target.texture_id == INVALID_ASSET_ID {
+		return false
+	}
+
+	if target.repacking {
+		log_error("font_atlas_repack: nested repack is not allowed")
+
+		return false
+	}
+
+	target.repacking = true
+	defer {
+		target.repacking = false
+	}
+
+	survivors := make([dynamic]Font_Atlas_Repack_Survivor, 0, len(state.fonts.glyph_cache), context.temp_allocator)
+
+	target_id := target.texture_id
+	for key, entry in state.fonts.glyph_cache {
+		if entry.region.texture_id != target_id {
+			continue
+		}
+
+		if .Standalone in entry.flags {
+			continue
+		}
+
+		append(
+			&survivors,
+			Font_Atlas_Repack_Survivor {
+				key = key,
+				flags = entry.flags,
+				last_used_frame = entry.last_used_frame,
+			},
+		)
+	}
+
+	jobs := make([]Font_Raster_Job, len(survivors), context.temp_allocator)
+	for &s, i in survivors {
+		face := font_face_from_handle(Font_Face_Handle{id = s.key.face_id})
+		if face == nil || face.ft_face == nil {
+			log_errorf(
+				"font_atlas_repack: missing face %d for glyph %d — dropping",
+				s.key.face_id,
+				s.key.glyph_id,
+			)
+			s.ok = false
+			continue
+		}
+
+		jobs[i] = Font_Raster_Job {
+			face        = face,
+			glyph_id    = s.key.glyph_id,
+			render_mode = s.key.render_mode,
+		}
+	}
+
+	if len(jobs) > 0 {
+		font_rasterize_jobs(jobs)
+		for &s, i in survivors {
+			s.surface = jobs[i].surface
+			s.bearing_x = jobs[i].bearing_x
+			s.bearing_y = jobs[i].bearing_y
+			s.ok = jobs[i].ok
+			jobs[i].surface = nil
+		}
+	}
+
+	defer {
+		for &s in survivors {
+			if s.surface != nil {
+				sdl.DestroySurface(s.surface)
+				s.surface = nil
+			}
+		}
+		for &job in jobs {
+			if job.surface != nil {
+				sdl.DestroySurface(job.surface)
+				job.surface = nil
 			}
 		}
 	}
 
-	clear(&state.textures.atlas.shelves)
+	slice.sort_by(
+		survivors[:],
+		proc(a, b: Font_Atlas_Repack_Survivor) -> bool {
+			ah := a.ok && a.surface != nil ? a.surface.h : 0
+			bh := b.ok && b.surface != nil ? b.surface.h : 0
+
+			return ah > bh
+		},
+	)
+
+	if !texture_atlas_begin_repack_in(target, new_size) {
+		return false
+	}
+
+	target.generation += 1
+	new_gen := target.generation
+
+	primary_keys := make([dynamic]Font_Glyph_Key, context.temp_allocator)
+	for key, entry in state.fonts.glyph_cache {
+		if entry.region.texture_id == target_id {
+			append(&primary_keys, key)
+		}
+	}
+
+	for key in primary_keys {
+		delete_key(&state.fonts.glyph_cache, key)
+	}
+
+	for &s in survivors {
+		if !s.ok || s.surface == nil {
+			continue
+		}
+
+		region, pok := texture_atlas_pack_into(target, s.surface)
+		if !pok {
+			log_errorf(
+				"font_atlas_repack: survivor glyph %d failed to pack — dropping",
+				s.key.glyph_id,
+			)
+			continue
+		}
+
+		state.fonts.glyph_cache[s.key] = Font_Glyph_Entry {
+			region          = region,
+			bearing_x       = s.bearing_x,
+			bearing_y       = s.bearing_y,
+			last_used_frame = s.last_used_frame,
+			flags           = s.flags,
+			generation      = new_gen,
+		}
+
+		sdl.DestroySurface(s.surface)
+		s.surface = nil
+	}
+
+	index := int(target.texture_id)
+	if index <= 0 || index >= len(state.textures.records) {
+		return false
+	}
+
+	entry := &state.textures.records[index]
+	if !texture_upload_record(entry, true) {
+		log_error("font_atlas_repack: deferred GPU rebuild failed")
+
+		return false
+	}
+
+	if !texture_uploads_flush(state.gpu) {
+		log_error("font_atlas_repack: GPU flush failed")
+
+		return false
+	}
+
+	target.needs_repack = false
+
+	return true
+}
+
+font_atlas_repack :: proc(new_size: i32 = 0) -> bool {
+	return font_atlas_repack_in(&state.textures.atlas, new_size)
+}
+
+/*
+Internal compaction entry point for tools/tests (same-size survivor repack).
+*/
+atlas_compact :: proc() -> bool {
+	return font_atlas_repack(0)
+}
+
+/*
+Doubles atlas size (capped) and repacks survivors so a padded w×h pack can fit.
+
+`new_size = min(old * 2, effective_max)`. Returns false when already at the
+effective max (Group E overflow) or the requested glyph still exceeds the new
+edge. At most one growth step per call.
+*/
+font_atlas_try_grow :: proc(w, h: i32) -> bool {
+	if state == nil || state.textures.atlas.texture_id == INVALID_ASSET_ID {
+		return false
+	}
+
+	if state.textures.atlas.repacking {
+		return false
+	}
+
+	old_size := state.textures.atlas.width
+	if old_size <= 0 {
+		return false
+	}
+
+	effective := texture_atlas_effective_max()
+	new_size := min(old_size * 2, effective)
+	if new_size <= old_size {
+		return false
+	}
+
+	pad := i32(ATLAS_PADDING)
+	if w + pad > new_size || h + pad > new_size {
+		return false
+	}
+
+	if !font_atlas_repack(new_size) {
+		return false
+	}
+
+	log_warnf("Atlas grew %dx%d → %dx%d", old_size, old_size, new_size, new_size)
+
+	return texture_atlas_can_fit_in(&state.textures.atlas, w, h)
+}
+
+/*
+Evicts cold glyphs, compacts, grows, then opens overflow so a padded w×h pack can succeed.
+
+Group F funnel step (after a failed low-level pack):
+flush → expire pins → evict cold → same-size repack → capped grow → ensure overflow.
+Returns false when still full at the overflow cap / effective max, or a step fails.
+Sets `state.textures.last_pack_fail` on nested-repack / flush failure.
+*/
+font_atlas_recover_space :: proc(w, h: i32) -> bool {
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+	atlas_owner_assert_no_raster_workers()
+
+	if texture_atlas_can_fit_any(w, h) {
+		return true
+	}
+
+	if state.textures.atlas.repacking {
+		state.textures.last_pack_fail = .Nested_Repack
+
+		return false
+	}
+
+	if !texture_uploads_flush(state.gpu) {
+		log_error("font_atlas_recover_space: pending upload flush failed")
+		state.textures.last_pack_fail = .Flush_Failed
+
+		return false
+	}
+
+	evicted := font_atlas_evict_cold()
+	if evicted > 0 && state.textures.atlas.needs_repack {
+		if !font_atlas_repack(0) {
+			// Still attempt grow; same-size compact failure must not skip D.
+		}
+	}
+
+	if evicted > 0 {
+		for i := 0; i < len(state.textures.overflow); i += 1 {
+			if state.textures.overflow[i].needs_repack {
+				_ = font_atlas_repack_in(&state.textures.overflow[i], 0)
+			}
+		}
+
+		texture_atlas_prune_empty_overflow()
+	}
+
+	if texture_atlas_can_fit_any(w, h) {
+		return true
+	}
+
+	if font_atlas_try_grow(w, h) {
+		return true
+	}
+
+	overflow_size := min(state.textures.atlas.width, texture_atlas_effective_max())
+	if w + ATLAS_PADDING > overflow_size || h + ATLAS_PADDING > overflow_size {
+		return false
+	}
+
+	atlas, ok := texture_atlas_ensure_overflow()
+	if !ok {
+		return false
+	}
+
+	return texture_atlas_can_fit_in(atlas, w, h)
+}
+
+/*
+Single pack-failure funnel (Group F): try pack → recover C→D→E → retry.
+
+Oversize vs effective max is reported without mutating shelves (caller may
+standalone-bypass). Upload failures do not run recovery. Final exhaustion uses
+`error_report`.
+*/
+font_atlas_pack_funnel :: proc(surface: ^sdl.Surface) -> (Atlas_Region, Atlas_Pack_Fail) {
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
+	atlas_owner_assert_no_raster_workers()
+	state.textures.last_pack_fail = .None
+
+	if surface == nil {
+		state.textures.last_pack_fail = .Nil_Surface
+
+		return {}, .Nil_Surface
+	}
+
+	if texture_atlas_padded_exceeds_effective_max(surface.w, surface.h) {
+		state.textures.last_pack_fail = .Oversize
+
+		return {}, .Oversize
+	}
+
+	if !texture_atlas_init() {
+		state.textures.last_pack_fail = .Init_Failed
+
+		return {}, .Init_Failed
+	}
+
+	region, ok := texture_atlas_pack(surface)
+	if ok {
+		return region, .None
+	}
+
+	if texture_atlas_can_fit_any(surface.w, surface.h) {
+		state.textures.last_pack_fail = .Upload_Failed
+
+		return {}, .Upload_Failed
+	}
+
+	if !font_atlas_recover_space(surface.w, surface.h) {
+		fail := state.textures.last_pack_fail
+		if fail == .None {
+			fail = .Exhausted
+			state.textures.last_pack_fail = .Exhausted
+		}
+
+		if fail == .Exhausted {
+			error_reportf(
+				"Atlas pack exhausted for %dx%d after evict/repack/grow/overflow",
+				surface.w,
+				surface.h,
+			)
+		}
+
+		return {}, fail
+	}
+
+	region, ok = texture_atlas_pack(surface)
+	if ok {
+		state.textures.last_pack_fail = .None
+
+		return region, .None
+	}
+
+	if texture_atlas_can_fit_any(surface.w, surface.h) {
+		state.textures.last_pack_fail = .Upload_Failed
+
+		return {}, .Upload_Failed
+	}
+
+	state.textures.last_pack_fail = .Exhausted
+	error_reportf(
+		"Atlas pack exhausted for %dx%d after evict/repack/grow/overflow",
+		surface.w,
+		surface.h,
+	)
+
+	return {}, .Exhausted
 }
 
 /*
@@ -231,6 +815,9 @@ font_ensure_glyphs :: proc(
 ) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
 
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
 	missing := make([dynamic]u32, 0, len(glyphs), context.temp_allocator)
 	seen := make(map[u32]struct{}, context.temp_allocator)
 
@@ -240,24 +827,58 @@ font_ensure_glyphs :: proc(
 			glyph_id    = glyph.glyph_id,
 			render_mode = render_mode,
 		}
-		if key in state.fonts.glyph_cache do continue
-		if glyph.glyph_id in seen do continue
+		if entry, ok := &state.fonts.glyph_cache[key]; ok {
+			if font_glyph_entry_is_live(entry^) {
+				font_glyph_entry_touch(entry)
+				continue
+			}
+
+			font_glyph_cache_drop(key)
+		}
+
+		if glyph.glyph_id in seen {
+			continue
+		}
+
 		seen[glyph.glyph_id] = {}
 		append(&missing, glyph.glyph_id)
 	}
-	if len(missing) == 0 do return true
-	if !texture_atlas_init() do return false
+
+	if len(missing) == 0 {
+		return true
+	}
+
+	if !texture_atlas_init() {
+		return false
+	}
+
 	return font_rasterize_and_cache_missing(face, face_id, missing[:], render_mode)
 }
 
 /*
 Opens a temporary FreeType library + face matching `face` for worker rasterization.
 
+`allocator` owns path/coords scratch for this open (default: `context.temp_allocator`
+on the owner thread). Workers must pass a private op-arena allocator — never the
+engine frame temp allocator (Group I).
+
 Caller must Done_Face then Done_FreeType. Does not use the engine FT_Library so
 New_Face/Load_Glyph stay off the shared face/library on other threads.
 */
-font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft_face: FT_Face, ok: bool) {
+font_open_temp_raster_face :: proc(
+	face: ^Font_Face,
+	allocator: mem.Allocator = {},
+) -> (
+	library: FT_Library,
+	ft_face: FT_Face,
+	ok: bool,
+) {
 	if face == nil || len(face.path) == 0 do return {}, nil, false
+
+	alloc := allocator
+	if alloc.procedure == nil {
+		alloc = context.temp_allocator
+	}
 
 	if !ft_ok(Init_FreeType(&library)) {
 		log_error("FT_Init_FreeType failed for worker face")
@@ -269,7 +890,7 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 		return {}, nil, false
 	}
 
-	cpath := strings.clone_to_cstring(face.path, context.temp_allocator)
+	cpath := strings.clone_to_cstring(face.path, alloc)
 	if cpath == nil {
 		Done_FreeType(library)
 		return {}, nil, false
@@ -293,7 +914,7 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 	mm: ^FT_MM_Var
 	if ft_ok(Get_MM_Var(ft_face, &mm)) && mm != nil && mm.num_axis > 0 {
 		defer Done_MM_Var(library, mm)
-		coords := make([]FT_Fixed, int(mm.num_axis), context.temp_allocator)
+		coords := make([]FT_Fixed, int(mm.num_axis), alloc)
 		for i in 0 ..< int(mm.num_axis) {
 			coords[i] = mm.axis[i].def
 			tag := u32(mm.axis[i].tag)
@@ -412,7 +1033,81 @@ font_rasterize_glyph_bitmap :: proc(
 }
 
 /*
+Packs an oversize glyph as a standalone texture (never opens an atlas shelf).
+
+Duplicates `surface` because the caller retains ownership. Marks the entry
+`.Standalone` so ensure/draw skip atlas generation checks and eviction skips it.
+*/
+font_pack_glyph_standalone :: proc(
+	surface: ^sdl.Surface,
+	bearing_x: f32,
+	bearing_y: f32,
+	glyph_id: u32,
+) -> (
+	Font_Glyph_Entry,
+	bool,
+) {
+	if surface == nil {
+		return {}, false
+	}
+
+	dup := sdl.DuplicateSurface(surface)
+	if dup == nil {
+		error_reportf(
+			"Atlas oversize glyph %d (%dx%d): duplicate failed; skipped",
+			glyph_id,
+			surface.w,
+			surface.h,
+		)
+		state.textures.last_pack_fail = .Oversize
+
+		return {}, false
+	}
+
+	id, handle, ok := texture_register_surface(dup, "")
+	if !ok {
+		error_reportf(
+			"Atlas oversize glyph %d (%dx%d): standalone register failed; skipped",
+			glyph_id,
+			surface.w,
+			surface.h,
+		)
+		state.textures.last_pack_fail = .Oversize
+
+		return {}, false
+	}
+
+	log_warnf(
+		"Atlas oversize glyph %d (%dx%d): packed as standalone texture %d",
+		glyph_id,
+		surface.w,
+		surface.h,
+		id,
+	)
+
+	return Font_Glyph_Entry {
+			region = Atlas_Region {
+				texture_id = id,
+				x = 0,
+				y = 0,
+				w = handle.w,
+				h = handle.h,
+			},
+			bearing_x = bearing_x,
+			bearing_y = bearing_y,
+			last_used_frame = atlas_current_frame(),
+			flags = {.Standalone},
+			generation = 0,
+		},
+		true
+}
+
+/*
 Packs a rasterized glyph surface into the atlas and returns the cache entry.
+
+Stamps residency (`last_used_frame`, `generation`) for the current atlas state.
+Uses the Group F pack funnel (evict → repack → grow → overflow). Oversize glyphs
+bypass the atlas as standalone textures.
 */
 font_pack_glyph_bitmap :: proc(
 	surface: ^sdl.Surface,
@@ -423,50 +1118,386 @@ font_pack_glyph_bitmap :: proc(
 	Font_Glyph_Entry,
 	bool,
 ) {
-	if surface == nil do return {}, false
-	region, ok := texture_atlas_pack(surface)
-	if !ok {
-		log_errorf("texture_atlas_pack failed for glyph %d", glyph_id)
+	if surface == nil {
 		return {}, false
 	}
-	return Font_Glyph_Entry{region = region, bearing_x = bearing_x, bearing_y = bearing_y}, true
+
+	region, fail := font_atlas_pack_funnel(surface)
+	if fail == .Oversize {
+		return font_pack_glyph_standalone(surface, bearing_x, bearing_y, glyph_id)
+	}
+
+	if fail != .None {
+		log_errorf("atlas pack funnel failed for glyph %d (%v)", glyph_id, fail)
+
+		return {}, false
+	}
+
+	atlas := texture_atlas_by_id(region.texture_id)
+	if atlas == nil {
+		return {}, false
+	}
+
+	return Font_Glyph_Entry {
+			region = region,
+			bearing_x = bearing_x,
+			bearing_y = bearing_y,
+			last_used_frame = atlas_current_frame(),
+			generation = atlas.generation,
+		},
+		true
+}
+
+/*
+ASCII printable + common UI punctuation for face-load prefetch call sites.
+*/
+FONT_PREFETCH_ASCII_UI :: " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"
+
+/*
+Ensures glyph ids are rasterized into the atlas and marks them Prefetched|Pinned.
+
+Call at face load (`FONT_PREFETCH_ASCII_UI`), locale switch, or before HUD strings
+so the first visible frame avoids raster hitch. Pins expire after
+`ATLAS_PREFETCH_PIN_FRAMES` unused frames (Group C).
+*/
+font_prefetch_glyphs :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	glyph_ids: []u32,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> bool {
+	if face == nil || len(glyph_ids) == 0 {
+		return true
+	}
+
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
+	shaped := make([]Shaped_Glyph, len(glyph_ids), context.temp_allocator)
+	for id, i in glyph_ids {
+		shaped[i] = Shaped_Glyph {
+			glyph_id = id,
+		}
+	}
+
+	if !font_ensure_glyphs(face, face_id, shaped, render_mode) {
+		return false
+	}
+
+	for id in glyph_ids {
+		key := Font_Glyph_Key {
+			face_id     = face_id,
+			glyph_id    = id,
+			render_mode = render_mode,
+		}
+		entry, ok := &state.fonts.glyph_cache[key]
+		if !ok {
+			continue
+		}
+
+		if !font_glyph_entry_is_live(entry^) {
+			continue
+		}
+
+		entry.flags += {.Prefetched, .Pinned}
+		font_glyph_entry_touch(entry)
+	}
+
+	return true
+}
+
+/*
+Shapes `text`, ensures glyphs, and marks them Prefetched|Pinned.
+
+Prefer for locale/HUD strings. For face-load ASCII/UI charset, pass
+`FONT_PREFETCH_ASCII_UI` (or a locale subset).
+
+Shaping uses `context.temp_allocator` (call-scoped scratch), not the layout
+frame arena — only glyph ids are retained into the long-lived cache (Group I).
+*/
+font_prefetch_text :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	text: string,
+	direction: Text_Direction_Kind = .LTR,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> bool {
+	if face == nil || len(text) == 0 {
+		return true
+	}
+
+	shaped := font_shape(face, text, direction, context.temp_allocator)
+	if len(shaped) == 0 {
+		return true
+	}
+
+	ids := make([]u32, len(shaped), context.temp_allocator)
+	for g, i in shaped {
+		ids[i] = g.glyph_id
+	}
+
+	return font_prefetch_glyphs(face, face_id, ids, render_mode)
 }
 
 @(private)
-font_glyph_worker :: proc(args: ^Font_Glyph_Worker_Args) {
-	if args == nil || args.face == nil do return
+font_raster_temp_face_close :: proc(library: ^FT_Library, ft_face: ^FT_Face) {
+	if ft_face != nil && ft_face^ != nil {
+		Done_Face(ft_face^)
+		ft_face^ = nil
+	}
 
-	library, ft_face, ok := font_open_temp_raster_face(args.face)
-	if !ok {
-		for i in 0 ..< len(args.glyph_ids) {
-			args.results[i] = Font_Glyph_Bitmap_Result {
-				glyph_id = args.glyph_ids[i],
-				ok       = false,
-			}
+	if library != nil && library^ != nil {
+		Done_FreeType(library^)
+		library^ = nil
+	}
+}
+
+/*
+Ensures the bounded FreeType raster pool is running with persistent scratch arenas.
+
+Returns false if threads or scratch cannot be allocated (caller falls back to serial).
+*/
+font_raster_pool_ensure :: proc() -> bool {
+	if state == nil {
+		return false
+	}
+
+	if state.fonts.raster_pool != nil && state.fonts.raster_pool.started_count == FONT_GLYPH_MAX_WORKERS {
+		return true
+	}
+
+	if state.fonts.raster_pool != nil {
+		font_raster_pool_shutdown()
+	}
+
+	pool := new(Font_Raster_Pool)
+	if pool == nil {
+		return false
+	}
+
+	pool.quit = false
+	state.fonts.raster_pool = pool
+
+	for i in 0 ..< FONT_GLYPH_MAX_WORKERS {
+		slot := &pool.slots[i]
+		slot.pool = pool
+		backing := make([]u8, FONT_RASTER_WORKER_SCRATCH)
+		if len(backing) != FONT_RASTER_WORKER_SCRATCH {
+			font_raster_pool_shutdown()
+
+			return false
 		}
+
+		mem.arena_init(&slot.chunk.scratch, backing)
+		slot.chunk.scratch_backing = backing
+		slot.thread = thread.create_and_start_with_poly_data(slot, font_raster_pool_worker)
+		if slot.thread == nil {
+			delete(slot.chunk.scratch_backing)
+			slot.chunk.scratch_backing = nil
+			slot.chunk.scratch = {}
+			slot.pool = nil
+			font_raster_pool_shutdown()
+
+			return false
+		}
+
+		pool.started_count += 1
+	}
+
+	return true
+}
+
+/*
+Signals quit, joins workers, and frees pool scratch + heap (owner lock held).
+*/
+font_raster_pool_shutdown :: proc() {
+	if state == nil || state.fonts.raster_pool == nil {
 		return
 	}
-	defer {
-		Done_Face(ft_face)
-		Done_FreeType(library)
+
+	pool := state.fonts.raster_pool
+	pool.quit = true
+
+	for i in 0 ..< pool.started_count {
+		sync.sema_post(&pool.slots[i].work_sema)
 	}
 
-	for i in 0 ..< len(args.glyph_ids) {
-		gid := args.glyph_ids[i]
+	for i in 0 ..< pool.started_count {
+		slot := &pool.slots[i]
+		if slot.thread != nil {
+			thread.join(slot.thread)
+			thread.destroy(slot.thread)
+			slot.thread = nil
+		}
+
+		if slot.chunk.scratch_backing != nil {
+			delete(slot.chunk.scratch_backing)
+			slot.chunk.scratch_backing = nil
+			slot.chunk.scratch = {}
+		}
+
+		slot.chunk.jobs = nil
+		slot.pool = nil
+	}
+
+	free(pool)
+	state.fonts.raster_pool = nil
+}
+
+/*
+Persistent pool worker: wait for work, rasterize chunk, signal done, or quit.
+*/
+@(private)
+font_raster_pool_worker :: proc(slot: ^Font_Raster_Pool_Slot) {
+	if slot == nil || slot.pool == nil {
+		return
+	}
+
+	for {
+		sync.sema_wait(&slot.work_sema)
+		if slot.pool.quit {
+			return
+		}
+
+		font_raster_worker_chunk(&slot.chunk)
+		sync.sema_post(&slot.pool.done_sema)
+	}
+}
+
+/*
+Worker entry: rasterizes a chunk with temporary FreeType faces only.
+
+Never mutates shelves, glyph_cache, or pending_uploads (Group G).
+Scratch path/coords use the chunk's private arena (Group I).
+*/
+@(private)
+font_raster_worker_chunk :: proc(args: ^Font_Raster_Worker_Chunk) {
+	if args == nil || len(args.jobs) == 0 {
+		return
+	}
+
+	scratch_alloc := mem.arena_allocator(&args.scratch)
+	context.allocator = scratch_alloc
+	context.temp_allocator = scratch_alloc
+
+	current_face: ^Font_Face
+	library: FT_Library
+	ft_face: FT_Face
+	defer font_raster_temp_face_close(&library, &ft_face)
+
+	for &job in args.jobs {
+		if job.face == nil {
+			job.ok = false
+			continue
+		}
+
+		if job.face != current_face {
+			font_raster_temp_face_close(&library, &ft_face)
+			mem.arena_free_all(&args.scratch)
+			current_face = job.face
+			ok: bool
+			library, ft_face, ok = font_open_temp_raster_face(job.face, scratch_alloc)
+			if !ok {
+				job.ok = false
+				current_face = nil
+				library = nil
+				ft_face = nil
+				continue
+			}
+		}
+
 		surface, bx, by, rok := font_rasterize_glyph_bitmap(
 			ft_face,
-			args.face.fake_bold,
-			gid,
-			args.face.pixel_size,
-			args.render_mode,
+			job.face.fake_bold,
+			job.glyph_id,
+			job.face.pixel_size,
+			job.render_mode,
 		)
-		args.results[i] = Font_Glyph_Bitmap_Result {
-			glyph_id  = gid,
-			surface   = surface,
-			bearing_x = bx,
-			bearing_y = by,
-			ok        = rok,
+		job.surface = surface
+		job.bearing_x = bx
+		job.bearing_y = by
+		job.ok = rok
+	}
+}
+
+/*
+Rasterizes jobs on the owner thread using each job's engine face (no workers).
+*/
+@(private)
+font_rasterize_jobs_serial :: proc(jobs: []Font_Raster_Job) {
+	atlas_owner_assert_held()
+	atlas_owner_assert_no_raster_workers()
+
+	for &job in jobs {
+		if job.face == nil || job.face.ft_face == nil {
+			job.ok = false
+			continue
 		}
+
+		surface, bx, by, rok := font_rasterize_glyph_bitmap(
+			job.face.ft_face,
+			job.face.fake_bold,
+			job.glyph_id,
+			job.face.pixel_size,
+			job.render_mode,
+		)
+		job.surface = surface
+		job.bearing_x = bx
+		job.bearing_y = by
+		job.ok = rok
+	}
+}
+
+/*
+Parallel FreeType raster for a job list via the bounded worker pool.
+
+Owner lock must be held. Shelf/cache mutation is forbidden until this returns
+(`raster_workers` tracks the burst). Falls back to serial if the pool cannot start.
+*/
+font_rasterize_jobs :: proc(jobs: []Font_Raster_Job) {
+	atlas_owner_assert_held()
+	atlas_owner_assert_no_raster_workers()
+
+	if len(jobs) == 0 {
+		return
+	}
+
+	if len(jobs) < FONT_GLYPH_PARALLEL_THRESHOLD {
+		font_rasterize_jobs_serial(jobs)
+
+		return
+	}
+
+	if !font_raster_pool_ensure() {
+		font_rasterize_jobs_serial(jobs)
+
+		return
+	}
+
+	pool := state.fonts.raster_pool
+	n_workers := min(FONT_GLYPH_MAX_WORKERS, len(jobs))
+
+	base := 0
+	for w in 0 ..< n_workers {
+		remaining := len(jobs) - base
+		chunks_left := n_workers - w
+		count := remaining / chunks_left
+		slot := &pool.slots[w]
+		mem.arena_free_all(&slot.chunk.scratch)
+		slot.chunk.jobs = jobs[base:][:count]
+		base += count
+	}
+
+	atlas_owner_begin_raster_workers(n_workers)
+	defer atlas_owner_end_raster_workers()
+
+	for w in 0 ..< n_workers {
+		sync.sema_post(&pool.slots[w].work_sema)
+	}
+
+	for w in 0 ..< n_workers {
+		_ = w
+		sync.sema_wait(&pool.done_sema)
 	}
 }
 
@@ -475,6 +1506,7 @@ Rasterizes missing glyph ids and inserts them into the glyph cache.
 
 Uses the serial FreeType path for small miss counts; larger sets fan out to
 temporary faces on worker threads, then pack into the atlas on this thread.
+Owner lock must already be held (ensure/prefetch).
 */
 font_rasterize_and_cache_missing :: proc(
 	face: ^Font_Face,
@@ -482,89 +1514,51 @@ font_rasterize_and_cache_missing :: proc(
 	missing: []u32,
 	render_mode: Font_Glyph_Render_Mode = .Gray,
 ) -> bool {
-	if len(missing) == 0 do return true
+	atlas_owner_assert_held()
+
+	if len(missing) == 0 {
+		return true
+	}
 
 	cache_key :: proc(face_id: Asset_Id, gid: u32, mode: Font_Glyph_Render_Mode) -> Font_Glyph_Key {
 		return Font_Glyph_Key{face_id = face_id, glyph_id = gid, render_mode = mode}
 	}
 
-	if len(missing) < FONT_GLYPH_PARALLEL_THRESHOLD {
-		for gid in missing {
-			entry, ok := font_rasterize_glyph(face, gid, render_mode)
-			if !ok do return false
-			state.fonts.glyph_cache[cache_key(face_id, gid, render_mode)] = entry
+	jobs := make([]Font_Raster_Job, len(missing), context.temp_allocator)
+	for gid, i in missing {
+		jobs[i] = Font_Raster_Job {
+			face        = face,
+			glyph_id    = gid,
+			render_mode = render_mode,
 		}
-		return true
 	}
 
-	results := make([]Font_Glyph_Bitmap_Result, len(missing), context.temp_allocator)
 	defer {
-		for &r in results {
-			if r.surface != nil {
-				sdl.DestroySurface(r.surface)
-				r.surface = nil
+		for &job in jobs {
+			if job.surface != nil {
+				sdl.DestroySurface(job.surface)
+				job.surface = nil
 			}
 		}
 	}
 
-	n_workers := min(FONT_GLYPH_MAX_WORKERS, len(missing))
-	worker_args := make([]Font_Glyph_Worker_Args, n_workers, context.temp_allocator)
+	font_rasterize_jobs(jobs)
 
-	base := 0
-	for w in 0 ..< n_workers {
-		remaining := len(missing) - base
-		chunks_left := n_workers - w
-		count := remaining / chunks_left
-		worker_args[w] = Font_Glyph_Worker_Args {
-			face         = face,
-			glyph_ids    = missing[base:][:count],
-			results      = results[base:][:count],
-			render_mode  = render_mode,
+	for &job in jobs {
+		if !job.ok || job.surface == nil {
+			return false
 		}
-		base += count
-	}
 
-	threads := make([]^thread.Thread, n_workers, context.temp_allocator)
-	defer {
-		for t in threads {
-			if t != nil do thread.destroy(t)
+		entry, ok := font_pack_glyph_bitmap(job.surface, job.bearing_x, job.bearing_y, job.glyph_id)
+		if !ok {
+			return false
 		}
+
+		state.fonts.glyph_cache[cache_key(face_id, job.glyph_id, render_mode)] = entry
+		sdl.DestroySurface(job.surface)
+		job.surface = nil
 	}
 
-	for w in 0 ..< n_workers {
-		threads[w] = thread.create_and_start_with_poly_data(&worker_args[w], font_glyph_worker)
-		if threads[w] == nil {
-			// Finish any started workers, then fall back to serial for the whole set.
-			for j in 0 ..< w {
-				thread.join(threads[j])
-			}
-			for &r in results {
-				if r.surface != nil {
-					sdl.DestroySurface(r.surface)
-					r.surface = nil
-				}
-			}
-			for gid in missing {
-				entry, ok := font_rasterize_glyph(face, gid, render_mode)
-				if !ok do return false
-				state.fonts.glyph_cache[cache_key(face_id, gid, render_mode)] = entry
-			}
-			return true
-		}
-	}
-
-	for w in 0 ..< n_workers {
-		thread.join(threads[w])
-	}
-
-	for &r in results {
-		if !r.ok || r.surface == nil do return false
-		entry, ok := font_pack_glyph_bitmap(r.surface, r.bearing_x, r.bearing_y, r.glyph_id)
-		if !ok do return false
-		state.fonts.glyph_cache[cache_key(face_id, r.glyph_id, render_mode)] = entry
-		sdl.DestroySurface(r.surface)
-		r.surface = nil
-	}
 	return true
 }
 
@@ -921,9 +1915,6 @@ font_draw_layout_text :: proc(
 		}
 	}
 
-	atlas := texture_handle(state.textures.atlas.texture_id)
-	use_atlas_batch := atlas.id != INVALID_ASSET_ID && atlas.w > 0 && atlas.h > 0
-
 	glyph_color :: proc(
 		paint: Layout_Glyph_Paint,
 		default_color: RGBA,
@@ -940,31 +1931,6 @@ font_draw_layout_text :: proc(
 
 	nearest := font_text_uses_nearest_filter()
 
-	flush_batch :: proc(
-		atlas: Texture_Handle,
-		use_atlas_batch: bool,
-		dsts: ^[dynamic]Rect,
-		srcs: ^[dynamic]Rect,
-		batch_color: RGBA,
-		nearest: bool,
-		lcd: bool,
-	) {
-		if len(dsts) == 0 do return
-
-		if use_atlas_batch {
-			batch_push_atlas_quads(atlas, dsts[:], srcs[:], batch_color, nearest, lcd)
-		}
-
-		clear(dsts)
-		clear(srcs)
-	}
-
-	dsts := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
-	srcs := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
-	current_color := color
-	current_lcd := false
-	have_batch := false
-
 	for paint in laid.glyphs {
 		tint := glyph_color(paint, color, run_colors)
 		mode := font_glyph_render_mode_for_draw(
@@ -977,48 +1943,56 @@ font_draw_layout_text :: proc(
 			glyph_id    = paint.glyph_id,
 			render_mode = mode,
 		}
-		entry, ok := state.fonts.glyph_cache[key]
-		if !ok do continue
-
-		if use_atlas_batch && entry.region.texture_id == atlas.id {
-			if have_batch && (tint != current_color || lcd != current_lcd) {
-				flush_batch(
-					atlas,
-					use_atlas_batch,
-					&dsts,
-					&srcs,
-					current_color,
-					nearest,
-					current_lcd,
-				)
-			}
-
-			current_color = tint
-			current_lcd = lcd
-			have_batch = true
-			append(&dsts, paint.dst)
-			append(
-				&srcs,
-				Rect{entry.region.x, entry.region.y, entry.region.w, entry.region.h},
-			)
-		} else {
-			flush_batch(
-				atlas,
-				use_atlas_batch,
-				&dsts,
-				&srcs,
-				current_color,
-				nearest,
-				current_lcd,
-			)
-			have_batch = false
-			current_color = tint
-			current_lcd = lcd
-			draw_glyph_atlas_region(entry.region, paint.dst, tint, lcd)
+		entry_ptr, ok := &state.fonts.glyph_cache[key]
+		if !ok {
+			continue
 		}
-	}
 
-	flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color, nearest, current_lcd)
+		if !font_glyph_entry_is_live(entry_ptr^) {
+			continue
+		}
+
+		font_glyph_entry_touch(entry_ptr)
+		entry := entry_ptr^
+
+		// Standalone oversize glyphs are not in the multi-atlas sampler set.
+		if .Standalone in entry.flags || state.textures.atlas_draw_mode != .Multi_Texture {
+			draw_glyph_atlas_region(entry.region, paint.dst, tint, lcd)
+			continue
+		}
+
+		slot, slot_ok := texture_atlas_slot_for_id(entry.region.texture_id)
+		texture := texture_handle(entry.region.texture_id)
+		if !slot_ok || texture.w <= 0 || texture.h <= 0 {
+			continue
+		}
+
+		uv := Rect {
+			entry.region.x / texture.w,
+			entry.region.y / texture.h,
+			entry.region.w / texture.w,
+			entry.region.h / texture.h,
+		}
+		batch_current().dpi = state.dpi
+		batch_check_key(
+			state.textures.atlas.texture_id,
+			nearest,
+			lcd,
+			true,
+		)
+		batch_push_axis_quad(
+			paint.dst,
+			uv,
+			tint,
+			{},
+			{paint.dst.w, paint.dst.h},
+			{},
+			{},
+			.Textured_Text,
+			true,
+			f32(slot),
+		)
+	}
 
 	if decoration_color.a > 0 || len(laid.decoration_strokes) > 0 {
 		for stroke in laid.decoration_strokes {
@@ -1045,6 +2019,9 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 	effective_opacity: f32,
 ) -> bool {
 	if len(glyphs) == 0 do return true
+
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
 
 	if !texture_atlas_init() do return false
 
@@ -1073,14 +2050,21 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 			render_mode = mode,
 		}
 
-		if key in state.fonts.glyph_cache do continue
+		if entry, ok := &state.fonts.glyph_cache[key]; ok {
+			if font_glyph_entry_is_live(entry^) {
+				font_glyph_entry_touch(entry)
+				continue
+			}
+
+			font_glyph_cache_drop(key)
+		}
 
 		fm := Face_Mode {
 			face_id     = paint.face_id,
 			render_mode = mode,
 		}
-		list, ok := &face_missing[fm]
-		if !ok {
+		list, list_ok := &face_missing[fm]
+		if !list_ok {
 			face_missing[fm] = make([dynamic]u32, context.temp_allocator)
 			list = &face_missing[fm]
 		}
@@ -1092,7 +2076,10 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 				break
 			}
 		}
-		if seen do continue
+
+		if seen {
+			continue
+		}
 
 		append(list, paint.glyph_id)
 	}
@@ -1120,6 +2107,9 @@ font_ensure_glyphs_from_paint :: proc(
 ) -> bool {
 	if len(glyphs) == 0 do return true
 
+	atlas_owner_lock()
+	defer atlas_owner_unlock()
+
 	if !texture_atlas_init() do return false
 
 	face_missing := make(map[Asset_Id][dynamic]u32, context.temp_allocator)
@@ -1131,10 +2121,17 @@ font_ensure_glyphs_from_paint :: proc(
 			render_mode = render_mode,
 		}
 
-		if key in state.fonts.glyph_cache do continue
+		if entry, ok := &state.fonts.glyph_cache[key]; ok {
+			if font_glyph_entry_is_live(entry^) {
+				font_glyph_entry_touch(entry)
+				continue
+			}
 
-		list, ok := &face_missing[paint.face_id]
-		if !ok {
+			font_glyph_cache_drop(key)
+		}
+
+		list, list_ok := &face_missing[paint.face_id]
+		if !list_ok {
 			face_missing[paint.face_id] = make([dynamic]u32, context.temp_allocator)
 			list = &face_missing[paint.face_id]
 		}
@@ -1148,7 +2145,9 @@ font_ensure_glyphs_from_paint :: proc(
 			}
 		}
 
-		if seen do continue
+		if seen {
+			continue
+		}
 
 		append(list, paint.glyph_id)
 	}

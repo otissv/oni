@@ -87,6 +87,7 @@ with_texture_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	texture_init()
 	defer texture_shutdown()
+	defer error_shutdown()
 
 	body(t)
 }
@@ -598,12 +599,16 @@ texture_atlas_alloc_rejects_region_larger_than_atlas :: proc(t: ^testing.T) {
 			testing.expect(t, !ok)
 			testing.expect_value(t, len(state.textures.atlas.shelves), 0)
 
-			// Width-only overflow on a fresh shelf is currently accepted by the
-			// packer (it does not clamp new shelves to atlas.width).
-			r, wide_ok := texture_atlas_alloc(20, 4)
-			testing.expect(t, wide_ok)
-			expect_close(t, r.w, 20)
-			testing.expect_value(t, state.textures.atlas.shelves[0].cursor_x, 20 + ATLAS_PADDING)
+			// Width-only overflow must fail before opening a shelf.
+			_, wide_ok := texture_atlas_alloc(20, 4)
+			testing.expect(t, !wide_ok)
+			testing.expect_value(t, len(state.textures.atlas.shelves), 0)
+
+			// Fitting region still packs cleanly after oversize rejects.
+			r, fit_ok := texture_atlas_alloc(8, 4)
+			testing.expect(t, fit_ok)
+			expect_atlas_region(t, r, state.textures.atlas.texture_id, 0, 0, 8, 4)
+			testing.expect_value(t, state.textures.atlas.shelves[0].cursor_x, 8 + ATLAS_PADDING)
 		},
 	)
 }
@@ -715,7 +720,7 @@ texture_atlas_pack_rejects_nil_and_rolls_back_new_shelf_on_upload_fail :: proc(t
 }
 
 @(test)
-texture_atlas_pack_does_not_rewind_existing_shelf_cursor_on_upload_fail :: proc(t: ^testing.T) {
+texture_atlas_pack_rewinds_existing_shelf_cursor_on_upload_fail :: proc(t: ^testing.T) {
 	with_texture_env(
 		t,
 		proc(t: ^testing.T) {
@@ -733,15 +738,13 @@ texture_atlas_pack_does_not_rewind_existing_shelf_cursor_on_upload_fail :: proc(
 			_, ok2 := texture_atlas_pack(surface)
 			testing.expect(t, !ok2)
 			testing.expect_value(t, len(state.textures.atlas.shelves), shelf_count)
-			// Alloc advanced the cursor; pack only resizes shelf count on failure.
-			leaked_cursor := state.textures.atlas.shelves[0].cursor_x
-			testing.expect_value(t, leaked_cursor, 2 * (8 + ATLAS_PADDING))
-			testing.expect(t, leaked_cursor > cursor_after_first)
+			// Existing shelf cursor must rewind to the pre-fail position.
+			testing.expect_value(t, state.textures.atlas.shelves[0].cursor_x, cursor_after_first)
 
-			// Next successful alloc starts at the leaked cursor, not the pre-fail one.
+			// Next successful alloc resumes at the restored cursor.
 			r2, ok3 := texture_atlas_alloc(4, 4)
 			testing.expect(t, ok3)
-			expect_atlas_region(t, r2, atlas_id, f32(leaked_cursor), 0, 4, 4)
+			expect_atlas_region(t, r2, atlas_id, f32(cursor_after_first), 0, 4, 4)
 			_ = r1
 		},
 	)
@@ -785,23 +788,11 @@ texture_atlas_pack_cursor_rewind_new_shelf_vs_existing_shelf_contract :: proc(t:
 			_, ok_fail2 := texture_atlas_pack(tall_fail)
 			testing.expect(t, !ok_fail2)
 			testing.expect_value(t, len(state.textures.atlas.shelves), 2)
-			testing.expect_value(
-				t,
-				state.textures.atlas.shelves[1].cursor_x,
-				cursor_before + 6 + pad,
-			)
+			testing.expect_value(t, state.textures.atlas.shelves[1].cursor_x, cursor_before)
 
 			r3, ok3 := texture_atlas_alloc(3, 12)
 			testing.expect(t, ok3)
-			expect_atlas_region(
-				t,
-				r3,
-				atlas_id,
-				f32(cursor_before + 6 + pad),
-				f32(10 + pad),
-				3,
-				12,
-			)
+			expect_atlas_region(t, r3, atlas_id, f32(cursor_before), f32(10 + pad), 3, 12)
 			_ = r1
 		},
 	)
@@ -1567,7 +1558,7 @@ texture_atlas_pack_index8_rolls_back_new_shelf_with_gpu :: proc(t: ^testing.T) {
 }
 
 @(test)
-texture_atlas_pack_index8_leaks_cursor_on_existing_shelf_with_gpu :: proc(t: ^testing.T) {
+texture_atlas_pack_index8_rewinds_cursor_on_existing_shelf_with_gpu :: proc(t: ^testing.T) {
 	with_texture_gpu_env(
 		t,
 		proc(t: ^testing.T) {
@@ -1586,14 +1577,14 @@ texture_atlas_pack_index8_leaks_cursor_on_existing_shelf_with_gpu :: proc(t: ^te
 			_, ok2 := texture_atlas_pack(index8)
 			testing.expect(t, !ok2)
 			testing.expect_value(t, len(state.textures.atlas.shelves), 1)
-			testing.expect_value(t, state.textures.atlas.shelves[0].cursor_x, 2 * (8 + ATLAS_PADDING))
+			testing.expect_value(t, state.textures.atlas.shelves[0].cursor_x, cursor)
 
 			rgba2 := texture_test_make_surface(4, 4)
 			testing.expect(t, rgba2 != nil)
 			defer sdl.DestroySurface(rgba2)
 			r2, ok3 := texture_atlas_pack(rgba2)
 			testing.expect(t, ok3)
-			expect_close(t, r2.x, f32(2 * (8 + ATLAS_PADDING)))
+			expect_close(t, r2.x, f32(cursor))
 			expect_close(t, r2.y, 0)
 			_ = r1
 		},
@@ -1628,6 +1619,359 @@ texture_atlas_rebuild_logs_and_survives_upload_failure :: proc(t: ^testing.T) {
 texture_constants_and_default_atlas_size :: proc(t: ^testing.T) {
 	testing.expect_value(t, ATLAS_PADDING, 1)
 	testing.expect_value(t, ATLAS_DEFAULT_SIZE, 2048)
+	testing.expect_value(t, ATLAS_HARD_MAX, 8192)
+	testing.expect_value(t, ATLAS_OVERFLOW_CAP, 2)
+	testing.expect_value(t, ATLAS_SAMPLER_SLOTS, 4)
+	testing.expect(t, ATLAS_SAMPLER_SLOTS >= 1 + ATLAS_OVERFLOW_CAP)
+	testing.expect(t, ATLAS_HARD_MAX >= ATLAS_DEFAULT_SIZE)
 	testing.expect_value(t, TEXTURE_WHITE_ID, Asset_Id(0))
 	testing.expect_value(t, INVALID_ASSET_ID, Asset_Id(-1))
+}
+
+@(test)
+texture_atlas_occupancy_and_stats_after_n_allocs :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			texture_test_seed_atlas(64, 64)
+			state.ui.frame = 7
+
+			n :: 5
+			w, h: i32 = 8, 8
+			per := texture_atlas_padded_bytes(w, h)
+
+			for _ in 0 ..< n {
+				_, ok := texture_atlas_alloc(w, h)
+				testing.expect(t, ok)
+			}
+
+			testing.expect_value(t, state.textures.atlas.slot_count, u32(n))
+			testing.expect_value(t, state.textures.atlas.bytes_used, per * u64(n))
+			testing.expect_value(t, state.textures.atlas.generation, u32(0))
+
+			stats := atlas_stats()
+			testing.expect_value(t, stats.width, i32(64))
+			testing.expect_value(t, stats.height, i32(64))
+			testing.expect_value(t, stats.slot_count, u32(n))
+			testing.expect_value(t, stats.bytes_used, per * u64(n))
+			testing.expect_value(t, stats.bytes_total, u64(64 * 64 * 4))
+			testing.expect_value(t, stats.generation, u32(0))
+			testing.expect_value(t, stats.overflow_count, 0)
+			testing.expect_value(t, stats.draw_mode, Atlas_Draw_Mode.Unset)
+			testing.expect_value(t, stats.frame, u64(7))
+			testing.expect(t, stats.used_percent > 0)
+			testing.expect(t, stats.used_percent <= 100)
+		},
+	)
+}
+
+@(test)
+texture_atlas_pack_failure_does_not_keep_occupancy :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			texture_test_seed_atlas()
+			_, ok1 := texture_atlas_alloc(8, 8)
+			testing.expect(t, ok1)
+			used := state.textures.atlas.bytes_used
+			slots := state.textures.atlas.slot_count
+
+			surface := texture_test_make_surface(8, 8)
+			testing.expect(t, surface != nil)
+			defer sdl.DestroySurface(surface)
+
+			_, ok2 := texture_atlas_pack(surface)
+			testing.expect(t, !ok2)
+			testing.expect_value(t, state.textures.atlas.bytes_used, used)
+			testing.expect_value(t, state.textures.atlas.slot_count, slots)
+		},
+	)
+}
+
+@(test)
+texture_atlas_can_fit_matches_alloc_room :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			texture_test_seed_atlas(16, 16)
+			testing.expect(t, texture_atlas_can_fit(8, 8))
+			testing.expect(t, !texture_atlas_can_fit(16, 16))
+
+			_, ok := texture_atlas_alloc(14, 14)
+			testing.expect(t, ok)
+			// Padded 15×15 shelf leaves no room for another padded 1×1 (needs 2×2).
+			testing.expect(t, !texture_atlas_can_fit(8, 8))
+			testing.expect(t, !texture_atlas_can_fit(1, 1))
+		},
+	)
+}
+
+@(test)
+texture_atlas_overflow_is_capped_and_soft_fails_cleanly :: proc(t: ^testing.T) {
+	with_texture_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			size: i32 = 8
+			state.textures.max_2d_texture_size = size
+			testing.expect(t, texture_atlas_init(size))
+
+			full := texture_test_make_surface(size - ATLAS_PADDING, size - ATLAS_PADDING)
+			testing.expect(t, full != nil)
+			defer sdl.DestroySurface(full)
+
+			primary_region, primary_ok := texture_atlas_pack(full)
+			testing.expect(t, primary_ok)
+			testing.expect_value(t, primary_region.texture_id, state.textures.atlas.texture_id)
+
+			for overflow_index in 0 ..< ATLAS_OVERFLOW_CAP {
+				entry, ok := font_pack_glyph_bitmap(full, 0, 0, u32(100 + overflow_index))
+				testing.expect(t, ok)
+				testing.expect(t, entry.region.texture_id != state.textures.atlas.texture_id)
+				testing.expect_value(t, len(state.textures.overflow), overflow_index + 1)
+				testing.expect_value(
+					t,
+					entry.region.texture_id,
+					state.textures.overflow[overflow_index].texture_id,
+				)
+			}
+
+			record_count := len(state.textures.records)
+			shelf_counts: [ATLAS_OVERFLOW_CAP]int
+			for atlas, index in state.textures.overflow {
+				shelf_counts[index] = len(atlas.shelves)
+			}
+
+			_, final_ok := font_pack_glyph_bitmap(full, 0, 0, 999)
+			testing.expect(t, !final_ok)
+			testing.expect_value(t, state.textures.last_pack_fail, Atlas_Pack_Fail.Exhausted)
+			testing.expect_value(t, len(state.textures.overflow), ATLAS_OVERFLOW_CAP)
+			testing.expect_value(t, len(state.textures.records), record_count)
+			for atlas, index in state.textures.overflow {
+				testing.expect_value(t, len(atlas.shelves), shelf_counts[index])
+			}
+
+			stats := atlas_stats()
+			testing.expect_value(t, stats.overflow_count, ATLAS_OVERFLOW_CAP)
+			testing.expect_value(t, stats.slot_count, u32(1 + ATLAS_OVERFLOW_CAP))
+		},
+	)
+}
+
+@(test)
+texture_atlas_slot_lookup_covers_primary_and_overflow :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			primary := texture_test_seed_atlas(16, 16)
+			append(
+				&state.textures.overflow,
+				Atlas_State{texture_id = Asset_Id(2), width = 16, height = 16},
+				Atlas_State{texture_id = Asset_Id(3), width = 16, height = 16},
+			)
+
+			slot, ok := texture_atlas_slot_for_id(primary)
+			testing.expect(t, ok)
+			testing.expect_value(t, slot, u32(0))
+			slot, ok = texture_atlas_slot_for_id(Asset_Id(2))
+			testing.expect(t, ok)
+			testing.expect_value(t, slot, u32(1))
+			slot, ok = texture_atlas_slot_for_id(Asset_Id(3))
+			testing.expect(t, ok)
+			testing.expect_value(t, slot, u32(2))
+			_, ok = texture_atlas_slot_for_id(Asset_Id(99))
+			testing.expect(t, !ok)
+			testing.expect_value(t, texture_atlas_count(), 3)
+		},
+	)
+}
+
+@(test)
+texture_atlas_draw_mode_probe_and_forced_fallback_are_stable :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			clear_test_hooks()
+			defer clear_test_hooks()
+
+			texture_atlas_select_draw_mode(true)
+			testing.expect_value(
+				t,
+				state.textures.atlas_draw_mode,
+				Atlas_Draw_Mode.Multi_Texture,
+			)
+			testing.expect(t, !state.textures.atlas_fallback_logged)
+
+			test_hook_atlas_force_fallback_split = true
+			texture_atlas_select_draw_mode(true)
+			testing.expect_value(
+				t,
+				state.textures.atlas_draw_mode,
+				Atlas_Draw_Mode.Fallback_Split,
+			)
+			testing.expect(t, state.textures.atlas_fallback_logged)
+			testing.expect_value(t, test_hook_atlas_fallback_log_count, 1)
+
+			// Re-selecting fallback does not reset the once-only log guard.
+			texture_atlas_select_draw_mode(false)
+			testing.expect(t, state.textures.atlas_fallback_logged)
+			testing.expect_value(t, test_hook_atlas_fallback_log_count, 1)
+		},
+	)
+}
+
+@(test)
+texture_overflow_repack_clears_only_its_own_occupancy :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			texture_test_seed_atlas(16, 16)
+			state.textures.atlas.bytes_used = 100
+			state.textures.atlas.slot_count = 2
+
+			overflow_surface := texture_test_make_surface(16, 16)
+			testing.expect(t, overflow_surface != nil)
+			append(
+				&state.textures.records,
+				Texture_Record{surface = overflow_surface, w = 16, h = 16},
+			)
+			append(
+				&state.textures.overflow,
+				Atlas_State {
+					texture_id = Asset_Id(2),
+					width      = 16,
+					height     = 16,
+					bytes_used = 200,
+					slot_count = 3,
+				},
+			)
+
+			testing.expect(t, texture_atlas_begin_repack_in(&state.textures.overflow[0]))
+			testing.expect_value(t, state.textures.atlas.bytes_used, u64(100))
+			testing.expect_value(t, state.textures.atlas.slot_count, u32(2))
+			testing.expect_value(t, state.textures.overflow[0].bytes_used, u64(0))
+			testing.expect_value(t, state.textures.overflow[0].slot_count, u32(0))
+		},
+	)
+}
+
+@(test)
+texture_reload_gpu_rebuilds_primary_and_overflow_atlases :: proc(t: ^testing.T) {
+	with_texture_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			size: i32 = 32
+			state.textures.max_2d_texture_size = size
+			testing.expect(t, texture_atlas_init(size))
+
+			full := texture_test_make_surface(size - ATLAS_PADDING, size - ATLAS_PADDING)
+			testing.expect(t, full != nil)
+			defer sdl.DestroySurface(full)
+
+			_, primary_ok := texture_atlas_pack(full)
+			testing.expect(t, primary_ok)
+
+			entry, overflow_ok := font_pack_glyph_bitmap(full, 0, 0, 77)
+			testing.expect(t, overflow_ok)
+			testing.expect(t, len(state.textures.overflow) >= 1)
+			testing.expect(t, entry.region.texture_id != state.textures.atlas.texture_id)
+
+			primary_id := state.textures.atlas.texture_id
+			overflow_id := state.textures.overflow[0].texture_id
+			primary_gpu_before := texture_get_gpu(primary_id)
+			overflow_gpu_before := texture_get_gpu(overflow_id)
+			testing.expect(t, primary_gpu_before != nil)
+			testing.expect(t, overflow_gpu_before != nil)
+
+			texture_release_gpu()
+			testing.expect(t, texture_get_gpu(primary_id) == nil)
+			testing.expect(t, texture_get_gpu(overflow_id) == nil)
+
+			texture_reload_gpu()
+			primary_gpu := texture_get_gpu(primary_id)
+			overflow_gpu := texture_get_gpu(overflow_id)
+			testing.expect(t, primary_gpu != nil)
+			testing.expect(t, overflow_gpu != nil)
+			testing.expect_value(t, texture_atlas_count(), 1 + len(state.textures.overflow))
+
+			slot, slot_ok := texture_atlas_slot_for_id(overflow_id)
+			testing.expect(t, slot_ok)
+			testing.expect(t, slot >= 1)
+
+			stats := Get_Atlas_Stats()
+			testing.expect(t, stats.overflow_count >= 1)
+			testing.expect(t, stats.width == size)
+		},
+	)
+}
+
+@(test)
+texture_atlas_shutdown_resets_owner_bookkeeping :: proc(t: ^testing.T) {
+	with_texture_env(
+		t,
+		proc(t: ^testing.T) {
+			_ = texture_test_seed_atlas()
+			state.textures.last_pack_fail = .Exhausted
+			state.textures.atlas_draw_mode = .Multi_Texture
+			state.textures.raster_workers = 0
+
+			texture_atlas_shutdown()
+			testing.expect_value(t, state.textures.last_pack_fail, Atlas_Pack_Fail.None)
+			testing.expect_value(t, state.textures.atlas_draw_mode, Atlas_Draw_Mode.Unset)
+			testing.expect_value(t, state.textures.raster_workers, 0)
+			testing.expect_value(t, len(state.textures.overflow), 0)
+		},
+	)
+}
+
+@(test)
+texture_atlas_prune_empty_overflow_destroys_unreferenced_sheets :: proc(t: ^testing.T) {
+	with_texture_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, texture_atlas_init(32))
+			overflow, ok := texture_atlas_ensure_overflow()
+			testing.expect(t, ok)
+			testing.expect(t, overflow != nil)
+			id := overflow.texture_id
+			testing.expect_value(t, len(state.textures.overflow), 1)
+			testing.expect(t, texture_get_gpu(id) != nil)
+
+			// Empty + unreferenced → destroy.
+			atlas_owner_lock()
+			texture_atlas_prune_empty_overflow()
+			atlas_owner_unlock()
+
+			testing.expect_value(t, len(state.textures.overflow), 0)
+			testing.expect(t, texture_atlas_by_id(id) == nil)
+			testing.expect(t, texture_get_gpu(id) == nil)
+
+			// Referenced sheet must survive prune.
+			overflow2, ok2 := texture_atlas_ensure_overflow()
+			testing.expect(t, ok2)
+			id2 := overflow2.texture_id
+			state.fonts.glyph_cache = make(map[Font_Glyph_Key]Font_Glyph_Entry)
+			defer {
+				delete(state.fonts.glyph_cache)
+				state.fonts.glyph_cache = nil
+			}
+
+			state.fonts.glyph_cache[Font_Glyph_Key {
+					face_id     = 1,
+					glyph_id    = 1,
+					render_mode = .Gray,
+				}] = Font_Glyph_Entry {
+				region     = {texture_id = id2, x = 0, y = 0, w = 1, h = 1},
+				generation = overflow2.generation,
+			}
+			overflow2.slot_count = 1
+			overflow2.bytes_used = 4
+
+			atlas_owner_lock()
+			texture_atlas_prune_empty_overflow()
+			atlas_owner_unlock()
+
+			testing.expect_value(t, len(state.textures.overflow), 1)
+			testing.expect(t, texture_atlas_by_id(id2) != nil)
+		},
+	)
 }

@@ -229,7 +229,24 @@ frame_consume_dirty :: proc() {
 }
 
 /*
-Expires an elapsed wake deadline after a presented frame.
+Returns whether this on-demand/continuous frame should call `present_frame`.
+
+Continuous always presents. On-demand presents when oneshot dirty was set at
+frame entry (input, `request_frame`, wake start) or when tick/draw marked dirty
+again. Wake-deadline-only iterations skip present so apps can step work and call
+`request_frame` only when pixels change.
+*/
+@(private)
+frame_should_present :: proc(entered_dirty: bool) -> bool {
+	if state == nil do return false
+
+	if frame_pacing_effective() == .Continuous do return true
+
+	return entered_dirty || state.frame_dirty
+}
+
+/*
+Expires an elapsed wake deadline after a frame body (present or skip).
 
 Does not clear `frame_dirty` — that is consumed at frame start so mid-frame
 `request_frame` calls survive to the next iteration.

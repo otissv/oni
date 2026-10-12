@@ -6,10 +6,15 @@ layout(location = 2) in vec2 v_uv;
 layout(location = 3) in vec2 v_local_uv;
 layout(location = 4) in vec2 v_rect_size;
 layout(location = 5) in vec4 v_radii;
-layout(location = 6) in vec2 v_params;
+layout(location = 6) in vec4 v_params;
 layout(location = 7) in vec4 v_border;
 
-layout(set = 2, binding = 0) uniform sampler2D tex;
+// SDL_GPU binds num_samplers as consecutive bindings with descriptorCount=1
+// each — not one array binding. Keep separate samplers (not sampler2D tex[4]).
+layout(set = 2, binding = 0) uniform sampler2D tex0;
+layout(set = 2, binding = 1) uniform sampler2D tex1;
+layout(set = 2, binding = 2) uniform sampler2D tex2;
+layout(set = 2, binding = 3) uniform sampler2D tex3;
 
 layout(location = 0) out vec4 out_color;
 
@@ -77,12 +82,27 @@ float text_coverage_alpha(float coverage, vec3 tint_rgb, float tint_a) {
     return pow(max(coverage, 0.0), exponent) * tint_a;
 }
 
+vec4 sample_texture(vec2 coord, float slot_value) {
+    int slot = clamp(int(slot_value + 0.5), 0, 3);
+    if (slot == 1) {
+        return texture(tex1, coord);
+    }
+    if (slot == 2) {
+        return texture(tex2, coord);
+    }
+    if (slot == 3) {
+        return texture(tex3, coord);
+    }
+    return texture(tex0, coord);
+}
+
 void main() {
     vec4 tint = v_color;
     float mode = v_params.y;
+    vec4 texel = sample_texture(v_uv, v_params.z);
 
     if (mode >= 3.5) {
-        float coverage = texture(tex, v_uv).a;
+        float coverage = texel.a;
         out_color = vec4(tint.rgb, text_coverage_alpha(coverage, tint.rgb, tint.a));
         return;
     }
@@ -98,7 +118,7 @@ void main() {
                 discard;
             }
         }
-        vec4 tex_color = texture(tex, v_uv) * tint;
+        vec4 tex_color = texel * tint;
         out_color = rounded_shape(tex_color, v_local_uv, v_rect_size, v_radii, vec4(0.0));
         return;
     }
@@ -111,7 +131,7 @@ void main() {
     }
 
     if (mode >= 0.5) {
-        out_color = texture(tex, v_uv) * tint;
+        out_color = texel * tint;
         return;
     }
 

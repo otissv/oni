@@ -35,9 +35,9 @@ Effective pacing each loop iteration is whichever of the three modes is selected
    - an SDL event arrives (input, resize, focus, quit, …),
    - a **frame request** / wake deadline is pending,
    - the wait **timeout** fires (settings watch, hot-reload host, and similar engine housekeeping).
-3. Run a normal frame: poll → tick → layout → draw → present.
-4. Consume one-shot dirty **before** tick/draw so `Request_Frame` during the frame still schedules the next iteration; keep waking if a wake deadline is still active.
-5. Optionally skip present when nothing is dirty (secondary optimization; wait is the main idle path).
+3. Run a normal frame: poll → tick → (present when dirty).
+4. Consume one-shot dirty **before** tick so `Request_Frame` during the frame still schedules the next iteration; keep waking if a wake deadline is still active.
+5. **Skip present** when the iteration is wake-deadline-only and nothing marked oneshot dirty at entry or during tick (`Request_Frame`). Continuous effective pacing always presents. Idle wait remains the main CPU save; present skip avoids swapchain work while a wake window stays open for app-driven updates.
 
 Timeouts matter: on-demand must not block forever, or settings mtime checks and hot reload stall. They are **not** a substitute for app wake calls—ongoing app work must push wake explicitly.
 

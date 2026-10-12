@@ -7,7 +7,7 @@ layout(location = 3) in vec4 color;
 layout(location = 4) in vec4 border_color;
 layout(location = 5) in vec2 rect_size;
 layout(location = 6) in vec4 radii;
-layout(location = 7) in vec2 params;
+layout(location = 7) in vec4 params;
 layout(location = 8) in vec4 border;
 
 layout(set = 1, binding = 0) uniform UBO {
@@ -20,7 +20,7 @@ layout(location = 2) out vec2 v_uv;
 layout(location = 3) out vec2 v_local_uv;
 layout(location = 4) out vec2 v_rect_size;
 layout(location = 5) out vec4 v_radii;
-layout(location = 6) out vec2 v_params;
+layout(location = 6) out vec4 v_params;
 layout(location = 7) out vec4 v_border;
 
 void main() {

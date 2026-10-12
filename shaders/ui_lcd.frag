@@ -9,10 +9,15 @@ layout(location = 2) in vec2 v_uv;
 layout(location = 3) in vec2 v_local_uv;
 layout(location = 4) in vec2 v_rect_size;
 layout(location = 5) in vec4 v_radii;
-layout(location = 6) in vec2 v_params;
+layout(location = 6) in vec4 v_params;
 layout(location = 7) in vec4 v_border;
 
-layout(set = 2, binding = 0) uniform sampler2D tex;
+// SDL_GPU binds num_samplers as consecutive bindings with descriptorCount=1
+// each — not one array binding. Keep separate samplers (not sampler2D tex[4]).
+layout(set = 2, binding = 0) uniform sampler2D tex0;
+layout(set = 2, binding = 1) uniform sampler2D tex1;
+layout(set = 2, binding = 2) uniform sampler2D tex2;
+layout(set = 2, binding = 3) uniform sampler2D tex3;
 
 // Display subpixel order: bgr > 0.5 swaps FreeType RGB coverage to BGR.
 layout(set = 3, binding = 0) uniform LcdUBO {
@@ -29,9 +34,23 @@ vec3 text_coverage_rgb(vec3 coverage, vec3 tint_rgb) {
 	return pow(max(coverage, vec3(0.0)), vec3(exponent));
 }
 
+vec4 sample_texture(vec2 coord, float slot_value) {
+	int slot = clamp(int(slot_value + 0.5), 0, 3);
+	if (slot == 1) {
+		return texture(tex1, coord);
+	}
+	if (slot == 2) {
+		return texture(tex2, coord);
+	}
+	if (slot == 3) {
+		return texture(tex3, coord);
+	}
+	return texture(tex0, coord);
+}
+
 void main() {
 	vec3 tint = v_color.rgb;
-	vec3 sample_rgb = texture(tex, v_uv).rgb;
+	vec3 sample_rgb = sample_texture(v_uv, v_params.z).rgb;
 	if (bgr > 0.5) {
 		sample_rgb = sample_rgb.bgr;
 	}

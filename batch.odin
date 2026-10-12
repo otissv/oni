@@ -33,6 +33,7 @@ Batch_Key :: struct {
 	stack_index: u32,
 	nearest:     bool,
 	lcd:         bool,
+	multi_atlas: bool,
 }
 
 /*
@@ -348,7 +349,12 @@ Finalizes the previous segment's index count before appending a new one.
 `nearest` selects the NEAREST atlas sampler (crisp 1:1 glyph quads).
 `lcd` selects the dual-source LCD text pipeline.
 */
-batch_check_key :: proc(texture_id: Asset_Id, nearest := false, lcd := false) {
+batch_check_key :: proc(
+	texture_id: Asset_Id,
+	nearest := false,
+	lcd := false,
+	multi_atlas := false,
+) {
 	clip := batch_current_clip()
 	key := Batch_Key {
 		texture_id  = texture_id,
@@ -356,10 +362,12 @@ batch_check_key :: proc(texture_id: Asset_Id, nearest := false, lcd := false) {
 		stack_index = batch_current().current_stack,
 		nearest     = nearest,
 		lcd         = lcd,
+		multi_atlas = multi_atlas,
 	}
 
 	if batch_current().has_current_key &&
-	   batch_current().current_key.texture_id == key.texture_id &&
+	   (key.multi_atlas || batch_current().current_key.texture_id == key.texture_id) &&
+	   batch_current().current_key.multi_atlas == key.multi_atlas &&
 	   batch_current().current_key.clip == key.clip &&
 	   batch_current().current_key.stack_index == key.stack_index &&
 	   batch_current().current_key.nearest == key.nearest &&
@@ -412,6 +420,7 @@ batch_push_vertex :: proc(
 	border: Bd_px,
 	mode_f32: f32,
 	tex_clip: bool = false,
+	tex_slot: f32 = 0,
 ) {
 	tex_clip_flag: f32 = 0
 	if tex_clip do tex_clip_flag = 1
@@ -425,7 +434,7 @@ batch_push_vertex :: proc(
 			border_color = border_color,
 			rect_size = rect_size,
 			radii = radii,
-			params = {tex_clip_flag, mode_f32},
+			params = {tex_clip_flag, mode_f32, tex_slot, 0},
 			border = {border.t, border.b, border.l, border.r},
 		},
 	)
@@ -447,6 +456,7 @@ batch_push_quad :: proc(
 	border: Bd_px,
 	mode: Draw_Mode,
 	tex_clip: bool = false,
+	tex_slot: f32 = 0,
 ) {
 	if !batch_ensure_capacity(4) do return
 
@@ -470,6 +480,7 @@ batch_push_quad :: proc(
 			border,
 			mode_f32,
 			tex_clip,
+			tex_slot,
 		)
 	}
 	batch_push_indices(base)
@@ -542,6 +553,7 @@ batch_push_axis_quad :: proc(
 	border: Bd_px,
 	mode: Draw_Mode,
 	snap_device := false,
+	tex_slot: f32 = 0,
 ) {
 	screen := view_transform_rect(r)
 	u0, v0 := uv_rect.x, uv_rect.y
@@ -587,7 +599,19 @@ batch_push_axis_quad :: proc(
 		uvs = [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 	}
 
-	batch_push_quad(corners, uvs, local_uvs, color, border_color, screen_size, radii, border, mode)
+	batch_push_quad(
+		corners,
+		uvs,
+		local_uvs,
+		color,
+		border_color,
+		screen_size,
+		radii,
+		border,
+		mode,
+		false,
+		tex_slot,
+	)
 }
 
 /*
@@ -789,9 +813,6 @@ batch_flush_draws :: proc() {
 	for seg in batch_current().segments {
 		if seg.index_count == 0 do continue
 
-		tex := texture_get_gpu(seg.key.texture_id)
-		if tex == nil do continue
-
 		pipeline := state.gpu_state.pipeline
 		if seg.key.lcd {
 			if state.gpu_state.lcd_pipeline == nil do continue
@@ -828,11 +849,46 @@ batch_flush_draws :: proc() {
 			sampler = state.gpu_state.sampler_nearest
 		}
 
-		binding := sdl.GPUTextureSamplerBinding {
-			texture = tex,
-			sampler = sampler,
+		bindings: [ATLAS_SAMPLER_SLOTS]sdl.GPUTextureSamplerBinding
+		for &binding in bindings {
+			binding = {
+				texture = state.gpu_state.white_texture,
+				sampler = sampler,
+			}
 		}
-		sdl.BindGPUFragmentSamplers(batch_current().pass, 0, &binding, 1)
+
+		if seg.key.multi_atlas {
+			count := min(texture_atlas_count(), ATLAS_SAMPLER_SLOTS)
+			valid := true
+			for slot in 0 ..< count {
+				atlas := slot == 0 ? &state.textures.atlas : &state.textures.overflow[slot - 1]
+				tex := texture_get_gpu(atlas.texture_id)
+				if tex == nil {
+					valid = false
+					break
+				}
+
+				bindings[slot].texture = tex
+			}
+
+			if !valid {
+				continue
+			}
+		} else {
+			tex := texture_get_gpu(seg.key.texture_id)
+			if tex == nil {
+				continue
+			}
+
+			bindings[0].texture = tex
+		}
+
+		sdl.BindGPUFragmentSamplers(
+			batch_current().pass,
+			0,
+			raw_data(bindings[:]),
+			ATLAS_SAMPLER_SLOTS,
+		)
 
 		scissor := clip_to_scissor(seg.key.clip, batch_current().dpi)
 		sdl.SetGPUScissor(batch_current().pass, scissor)

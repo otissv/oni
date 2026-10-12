@@ -728,7 +728,7 @@ gpu_ui_vertex_layout_matches_ui_vertex_offsets_and_formats :: proc(t: ^testing.T
 	testing.expect_value(t, attrs[6].format, sdl.GPUVertexElementFormat.FLOAT4)
 
 	testing.expect_value(t, attrs[7].offset, u32(offset_of(UI_Vertex, params)))
-	testing.expect_value(t, attrs[7].format, sdl.GPUVertexElementFormat.FLOAT2)
+	testing.expect_value(t, attrs[7].format, sdl.GPUVertexElementFormat.FLOAT4)
 
 	testing.expect_value(t, attrs[8].offset, u32(offset_of(UI_Vertex, border)))
 	testing.expect_value(t, attrs[8].format, sdl.GPUVertexElementFormat.FLOAT4)
@@ -1363,7 +1363,8 @@ gpu_lcd_pipeline_binds_and_draws_dual_source_quad :: proc(t: ^testing.T) {
 				texture = cov_tex,
 				sampler = sampler,
 			}
-			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			samps := [ATLAS_SAMPLER_SLOTS]sdl.GPUTextureSamplerBinding{samp, samp, samp, samp}
+			sdl.BindGPUFragmentSamplers(pass, 0, raw_data(samps[:]), ATLAS_SAMPLER_SLOTS)
 			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
 			sdl.EndGPURenderPass(pass)
 
@@ -1545,7 +1546,8 @@ gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
 				texture = cov_tex,
 				sampler = sampler,
 			}
-			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			samps := [ATLAS_SAMPLER_SLOTS]sdl.GPUTextureSamplerBinding{samp, samp, samp, samp}
+			sdl.BindGPUFragmentSamplers(pass, 0, raw_data(samps[:]), ATLAS_SAMPLER_SLOTS)
 			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
 			sdl.EndGPURenderPass(pass)
 
@@ -1595,7 +1597,7 @@ gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
 			sdl.PushGPUVertexUniformData(cmd, 0, &proj, u32(size_of(proj)))
 			sdl.PushGPUFragmentUniformData(cmd, 0, &lcd_ubo, u32(size_of(lcd_ubo)))
 			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
-			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			sdl.BindGPUFragmentSamplers(pass, 0, raw_data(samps[:]), ATLAS_SAMPLER_SLOTS)
 			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
 			sdl.EndGPURenderPass(pass)
 			fence_bgr := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
@@ -1635,9 +1637,9 @@ gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
 			defer sdl.ReleaseGPUTexture(state.gpu, gray_target)
 
 			gray_verts := [3]UI_Vertex {
-				{pos = {-1, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
-				{pos = {3, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
-				{pos = {-1, 3}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
+				{pos = {-1, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4, 0, 0}},
+				{pos = {3, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4, 0, 0}},
+				{pos = {-1, 3}, uv = {0.5, 0.5}, color = tint, params = {0, 4, 0, 0}},
 			}
 			gtransfer := sdl.CreateGPUTransferBuffer(
 				state.gpu,
@@ -1683,7 +1685,13 @@ gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
 				texture = gray_tex,
 				sampler = sampler,
 			}
-			sdl.BindGPUFragmentSamplers(pass, 0, &gsamp, 1)
+			gsamps := [ATLAS_SAMPLER_SLOTS]sdl.GPUTextureSamplerBinding {
+				gsamp,
+				gsamp,
+				gsamp,
+				gsamp,
+			}
+			sdl.BindGPUFragmentSamplers(pass, 0, raw_data(gsamps[:]), ATLAS_SAMPLER_SLOTS)
 			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
 			sdl.EndGPURenderPass(pass)
 			fence_gray := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)

@@ -19,7 +19,7 @@ UI_Vertex :: struct {
 	border_color: [4]f32,
 	rect_size:    [2]f32,
 	radii:        [4]f32,
-	params:       [2]f32,
+	params:       [4]f32,
 	border:       [4]f32,
 }
 
@@ -224,7 +224,7 @@ gpu_ui_vertex_layout :: proc() -> (
 		{
 			location = 7,
 			buffer_slot = 0,
-			format = .FLOAT2,
+			format = .FLOAT4,
 			offset = u32(offset_of(UI_Vertex, params)),
 		},
 		{
@@ -251,7 +251,13 @@ gpu_create_ui_layout_pipeline :: proc(
 	frag_uniform_buffers: u32 = 0,
 ) -> ^sdl.GPUGraphicsPipeline {
 	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
-	frag := gpu_load_shader(gpu, frag_code, .FRAGMENT, frag_uniform_buffers, 1)
+	frag := gpu_load_shader(
+		gpu,
+		frag_code,
+		.FRAGMENT,
+		frag_uniform_buffers,
+		ATLAS_SAMPLER_SLOTS,
+	)
 
 	defer {
 		if vert != nil do sdl.ReleaseGPUShader(gpu, vert)
@@ -604,6 +610,13 @@ gpu_init :: proc() -> bool {
 	state.gpu_state.sampler = sampler
 	state.gpu_state.sampler_nearest = sampler_nearest
 	state.gpu_state.white_texture = white_texture
+
+	// Pipeline creation with ATLAS_SAMPLER_SLOTS is the portable SDL_GPU
+	// capability probe: success proves the backend accepted all bindings.
+	texture_atlas_select_draw_mode(true)
+
+	// Atlas growth ceiling (Group D); tests may override max_2d_texture_size later.
+	texture_atlas_probe_device_max()
 
 	assets_init(state.gpu)
 	batch_init()

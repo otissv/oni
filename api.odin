@@ -108,6 +108,14 @@ Font_Family_By_Name :: font_family_by_name
 Font_With_Size :: font_with_size
 Font_Face_From :: font_face_from_handle
 Font_Resolve :: font_resolve
+Font_Prefetch_Glyphs :: font_prefetch_glyphs
+Font_Prefetch_Text :: font_prefetch_text
+Font_Prefetch_Ascii_Ui :: FONT_PREFETCH_ASCII_UI
+
+// Glyph atlas (see docs/ATLAS.md). Types: `Atlas_Stats`, `Atlas_Draw_Mode`.
+// Shelf mutators and raster workers stay internal.
+Get_Atlas_Stats :: atlas_stats
+Atlas_Compact :: atlas_compact
 
 View_Set_Zoom :: view_set_zoom
 View_Set_Pan :: view_set_pan

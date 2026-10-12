@@ -1,56 +1,39 @@
 # APP UI and HUD plan — SDL3 + SDL_GPU + custom widgets
 
-Build a **production HUD/APP UI** on the hot-reload stack (`main.odin` host + `app/` DLL). Each checkbox tracks codebase reality: `[x]` **done**, `[ ]` **not done**. Later sections add features; they do not redesign earlier APIs.
+Production HUD / app UI on the hot-reload stack (`main.odin` host + `app/` DLL). Checkboxes track codebase reality: `[x]` **done**, `[~]` **partial**, `[ ]` **not done**. Sequence and non-UI work (platform game, audio, editor) live in [ROAD_MAP.md](ROAD_MAP.md).
 
-**Out of scope for this plan:** accessibility (phase 2), packaging/installers, SVG/`draw_path`, audio.
+**Out of scope here:** accessibility, packaging/installers, SVG/`draw_path`, audio, gameplay collision/camera/entities — see road map Tracks 2–5.
 
-**Reuse as-is:** `main.odin`, `build_hot_reload.sh`, hot-reload export procs (`app/exports.odin`), tracking allocator in the host, `WINDOW_HIGH_PIXEL_DENSITY`, performance counter timing.
+**Reuse as-is:** `main.odin`, `oni/scripts/build_hot_reload.sh`, hot-reload exports (`app/exports.odin`), tracking allocator in the host, `WINDOW_HIGH_PIXEL_DENSITY`, performance counter timing, `APP_TYPE` / `FRAME_MODE` in `app/globlas/global.odin`.
 
 ---
 
 ## System requirements
 
-Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Build and run need the toolchain below plus a working Vulkan ICD for at least one GPU.
+Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Dual-source blend is required for LCD text.
 
 ### Build / link
 
 | Dependency | Role |
 | ---------- | ---- |
 | [Odin](https://odin-lang.org/) | Compiler |
-| `glslc` | Compiles `oni/shaders/ui.{vert,frag}` to SPIR-V (`shaderc` / Vulkan SDK) |
-| SDL3 | Window, input, SDL_GPU |
+| `glslc` | Compiles `oni/shaders/ui*.{vert,frag}` to SPIR-V |
+| SDL3 | Window, input, SDL_GPU (pinned build under `oni/third_party/sdl3/` when used) |
 | SDL3_image | Texture loading |
-| FreeType | Font rasterization |
+| FreeType | Font rasterization (gray + LCD) |
 | HarfBuzz | Text shaping |
-| `inotify-tools` (Linux) | Hot-reload file watch in `build_hot_reload.sh` |
+| `inotify-tools` (Linux) | Hot-reload file watch |
 
-Build flags used by the scripts: `-vet -strict-style -debug`.
-
-Arch / CachyOS example packages: `odin` (or a local Odin install), `shaderc`, `sdl3`, `sdl3_image`, `freetype2`, `harfbuzz`, `inotify-tools`.
+Build flags: `-vet -strict-style -debug`. Collections via `oni/odin_collections.sh`.
 
 ### Runtime GPU (Vulkan)
 
-At startup the engine calls `SDL_CreateGPUDevice` with SPIR-V. That fails with `No supported SDL_GPU backend found!` if Vulkan cannot enumerate any physical device.
-
-| Need | Notes |
-| ---- | ----- |
-| Vulkan ICD for the GPU in use | Install the driver package for **each** GPU you expect to use |
-| Intel iGPU | `vulkan-intel` → `/usr/share/vulkan/icd.d/intel_icd.*.json` |
-| AMD GPU | `vulkan-radeon` |
-| NVIDIA discrete | `nvidia-utils` (provides `nvidia_icd.json`) |
-
-Hybrid machines must install the iGPU ICD as well as the discrete one. If only the NVIDIA ICD is present and the discrete driver is unavailable (`nvidia-smi` failing, GPU powered off, etc.), `vkEnumeratePhysicalDevices` fails and the app will not open — even though the Intel GPU is present in PCI/DRM.
-
-Quick checks:
+`SDL_CreateGPUDevice` with SPIR-V fails with `No supported SDL_GPU backend found!` if no Vulkan ICD enumerates a device. Install the ICD for each GPU you use (`vulkan-intel`, `vulkan-radeon`, `nvidia-utils`). Hybrid machines need the iGPU ICD even when a discrete GPU is preferred.
 
 ```bash
-vulkaninfo --summary          # should list at least one GPU
-ls /usr/share/vulkan/icd.d/   # expect an ICD for each vendor you care about
-```
-
-Optional: force a specific ICD for one run, e.g. Intel only:
-
-```bash
+vulkaninfo --summary
+ls /usr/share/vulkan/icd.d/
+# optional:
 VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/build_hot_reload.sh run
 ```
 
@@ -58,57 +41,51 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/bui
 
 ## Target architecture (synced with codebase)
 
-
-
 ### Package layout
 
-
-| Path                  | Role                                                                  | Status |
-| --------------------- | --------------------------------------------------------------------- | ------ |
-| `main.odin`           | Hot-reload host; loads `build/hot_reload/app.so`                      | [x]    |
-| `oni/`                | Engine: GPU, layout, draw, fonts, UI frame, lifecycle                 | [x]    |
-| `oni/widgets/`        | Built-in widgets (`Button`, `Text`, `Rectangle`, `Image`, `Table`, …) | [x]    |
-| `oni/set/`            | Style helpers that wrap values in `Cfg(T)`                            | [x]    |
-| `oni/api.odin`        | Public PascalCase aliases for the engine API                          | [x]    |
-| `oni/templates/`      | Starter app/theme templates                                           | [x]    |
-| `app/`                | Demo app: routes, components, theme, exported DLL entry points        | [x]    |
-| `tengu/`              | Standalone animation library (no Oni dependency)                      | [x]    |
-| `assets/`             | Runtime assets (fonts, textures)                                      | [x]    |
-| `build_hot_reload.sh` | Build, run, watch, stop                                               | [x]    |
-
-
-
+| Path | Role | Status |
+| ---- | ---- | ------ |
+| `main.odin` | Hot-reload host; loads `build/hot_reload/app.so` | [x] |
+| `oni/` | Engine: GPU, layout, draw, fonts, UI frame, lifecycle | [x] |
+| `oni/widgets/` | Built-in widgets | [x] |
+| `oni/set/` | Style helpers (`Cfg(T)`) | [x] |
+| `oni/api.odin` | Public PascalCase aliases | [x] |
+| `oni/templates/` | Starter host + app | [x] |
+| `oni/libs/tengu` | Standalone animation library | [x] |
+| `oni/libs/colors` | Color helpers | [x] |
+| `app/` | Consumer demo: routes, components, theme, DLL exports | [x] |
+| `assets/` | Runtime fonts / textures | [x] |
+| `oni/scripts/build_hot_reload.sh` | Build, run, watch, stop | [x] |
+| `oni/scripts/test_all.sh` | Package tests + leak checks | [x] |
 
 ### Engine modules
 
-
-| File                                              | Role                                                                   | Status |
-| ------------------------------------------------- | ---------------------------------------------------------------------- | ------ |
-| `oni/engine.odin` / `runtime.odin` / `state.odin` | Window/GPU lifecycle, main loop, event pump                            | [x]    |
-| `oni/gpu.odin`                                    | GPU device helpers, pipeline creation, shader load                     | [x]    |
-| `oni/present.odin`                                | Frame begin/end, swapchain, clear, present                             | [x]    |
-| `oni/draw.odin`                                   | Public draw API (`draw_rect`, `draw_texture`, `draw_line`, clip stack) | [x]    |
-| `oni/batch.odin`                                  | GPU vertex/index buffers, texture batch flush                          | [x]    |
-| `oni/texture.odin`                                | GPU texture upload, sampler, shelf atlas                               | [x]    |
-| `oni/font_shaper.odin`                            | Font family registry, VF/static matching, FreeType + HarfBuzz          | [x]    |
-| `oni/font.odin`                                   | Glyph atlas, resolve instances, synthetic bold/italic, text draw       | [x]    |
-| `oni/assets.odin`                                 | Path resolution, load cache, stable `Asset_Id` handles                 | [x]    |
-| `app/theme.odin`                                  | App theme build (Inter body/heading); palette lives in engine          | [x]    |
-| `oni/layout.odin`                                 | Pass-1 measure + flex/stack solve; writes `rect` on each node          | [x]    |
-| `oni/ui.odin`                                     | UI frame: two-pass build, IDs, focus, tab order                        | [x]    |
-| `oni/widgets/*.odin`                              | Button, Text, Rectangle, Image, Table (+ parts)                        | [x]    |
-| `oni/log.odin`                                    | Structured error/warn/debug logging helpers                            | [x]    |
-| `oni/shaders/ui.vert` / `ui.frag`                 | 2D ortho + tinted textured quad                                        | [x]    |
-| `oni/input.odin` (shortcuts + text-editing state) | Dedicated input module beyond tab/focus                                | [ ]    |
-| `oni/modal.odin`                                  | Modal UX widgets (stacking slot: `space = .POPOVER` / `Popover_Begin`) | [ ]    |
-| `oni/platform_os.odin`                            | Native file dialogs, system clipboard, drag-and-drop                   | [ ]    |
-
-
-
+| File | Role | Status |
+| ---- | ---- | ------ |
+| `engine.odin` / `runtime.odin` / `state.odin` | Window/GPU lifecycle, main loop, events | [x] |
+| `gpu.odin` | Device, pipelines (UI + LCD), shaders | [x] |
+| `present.odin` | Frame begin/end, swapchain, present | [x] |
+| `draw.odin` | Public draw API + clip / space stacks | [x] |
+| `batch.odin` | Vertex/index batches, multi-atlas slots | [x] |
+| `texture.odin` | Upload, sampler, production shelf atlas | [x] |
+| `font_shaper.odin` / `font.odin` | Families, FreeType + HarfBuzz, glyph cache, LCD | [x] |
+| `assets.odin` | Path cache, `Asset_Id` | [x] |
+| `layout.odin` (+ grid / stack / chrome) | Measure + flex/grid solve | [x] |
+| `ui.odin` | Two-pass UI, IDs, focus, tab order | [x] |
+| `input.odin` | Mouse/keys/text session, modifiers | [x] |
+| `shortcut*.odin` | Bindings, actions, text-edit integration | [x] |
+| `text_edit.odin` / `text_document.odin` | Caret, selection, document model | [x] |
+| `scroll.odin` | Scrollport offsets | [x] |
+| `settings.odin` / `settings_kdl.odin` | User prefs (window, DPI, fonts, shortcuts) | [x] |
+| `platform_os.odin` | Clipboard, open URL | [x] |
+| `frame_mode.odin` | Continuous / on-demand / focused pacing | [x] |
+| `gamepad.odin` | Gamepad polling (+ shortcut binds) | [x] |
+| `log.odin` / `error.odin` | Logging + structured errors | [x] |
+| File open/save / folder / drag-drop | Native dialogs + drop events | [ ] |
 
 ### Core types (stable)
 
-Logical UI coordinates — always in design pixels, not raw framebuffer pixels. Engine uses `RGBA`, richer `Theme` (palette + CSS-like layout defaults), and layout/widget IDs as implemented in `oni/types.odin`.
+Logical UI coordinates — design pixels, not raw framebuffer pixels.
 
 ```odin
 Vec2  :: [2]f32
@@ -125,10 +102,8 @@ UI_Id :: distinct u64
 
 - [x] Logical coords + `Dpi_Info`
 - [x] `Asset_Id` / texture + font handles
-- [x] Theme with palette, fonts, layout defaults (richer than original flat token sketch)
-- [ ] Flat `theme_light` / `theme_dark` preset procs as originally sketched
-
-
+- [x] Theme with palette, fonts, layout defaults
+- [ ] Flat `theme_light` / `theme_dark` preset procs + runtime switch demo
 
 ### Frame order (fixed)
 
@@ -137,7 +112,7 @@ UI_Id :: distinct u64
 3. `ui_begin_frame()` — reset per-frame UI transient state
 4. **Pass 1 — layout:** widgets register tree nodes; solver writes `rect`
 5. **Pass 2 — draw:** same widget procs; `ui_layout_rect`; emit draw + handle input
-6. `ui_end_frame()` — focus / tab bookkeeping (popover paint/hit via `space = .POPOVER` / `Popover_Begin`)
+6. `ui_end_frame()` — focus / tab bookkeeping (popover via `space = .POPOVER` / `Popover_Begin`)
 7. `present_frame()` — flush draw lists, present swapchain
 
 App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
@@ -151,429 +126,344 @@ App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
 
 ---
 
-
-
 ## Section 1 — App shell
 
-**Goal:** App shell. Window, GPU claim, resize, focus, timing, logging; no gameplay / 3D demo.
+**Goal:** Window, GPU claim, resize, focus, timing, logging.
 
 ### Deliverables
 
 - [x] Hot-reload host + `app` DLL (`build/hot_reload/app.so`)
 - [x] Engine state: window, GPU, running, input, dpi, perf timing, force reload/restart
-- [x] Loop: poll events + tick + clear/present (no fixed-timestep gameplay)
+- [x] Loop: poll events + tick + clear/present (`FRAME_MODE` pacing)
 - [x] Events: quit, resize, focus lost (clear keys/mouse), F5 reload, F6 restart, F11 fullscreen
 - [x] Clear swapchain from theme background
 - [x] `Input_State`: mouse (logical), buttons, wheel, keys, text_input buffer, modifiers
-
-
+- [x] Settings.kdl for window mode / DPI / fonts / shortcuts
 
 ### Checkpoint
 
-- [x] `./build_hot_reload.sh` builds; host runs a resizable window with solid background
+- [x] `./oni/scripts/build_hot_reload.sh` builds; resizable window
 - [x] Minimize / restore does not crash (nil swapchain / zero drawable path)
-- [x] F5 hot reload works; F6 restart resets app user fields via host lifecycle
+- [x] F5 hot reload; F6 restart resets app user fields via host lifecycle
 - [x] `WINDOW_HIGH_PIXEL_DENSITY` + pixel/display-scale events update `dpi`
 
 ---
 
-
-
 ## Section 2 — 2D GPU pipeline & coordinates
-
-**Goal:** Orthographic 2D rendering path kept for all later drawing.
 
 ### Deliverables
 
-- [x] `oni/shaders/ui.vert` / `ui.frag` (replace triangle demo shaders)
-- [x] Build compiles UI shaders to SPIR-V
-- [x] `GPU_State`: pipeline, sampler, white 1×1 texture, projection
+- [x] `oni/shaders/ui.vert` / `ui.frag` (+ LCD fragment path)
+- [x] SPIR-V compile in build script
+- [x] `GPU_State`: pipelines, sampler, white 1×1, projection
 - [x] Ortho `0..logical_w`, `0..logical_h`, Y-down logical space
-- [x] Triangle list, blended alpha, swapchain color target
+- [x] Triangle list, blended alpha, dual-source LCD pipeline
 - [x] `screen_to_logical` / `logical_to_screen` / `rect_contains`
-- [x] Mouse events converted to logical via `dpi.scale`
-- [x] Artboard / screen draw spaces (`Begin_Artboard` / `Begin_Screen`) beyond original stub
-
-
+- [x] Mouse in logical coords via `dpi.scale`
+- [x] Artboard / screen draw spaces (`Begin_Artboard` / `Begin_Screen`)
 
 ### Checkpoint
 
-- [x] Colored fullscreen clear / quads fill the window in logical space
-- [x] Resizing updates projection
-- [x] `gpu_reload()` recreates pipeline after F5
+- [x] Quads fill the window in logical space; resize updates projection
+- [x] `gpu_reload()` recreates pipelines after F5
+- [x] Opaque 1:1 UI text uses LCD when legal; gray fallback otherwise
 
 ---
 
-
-
 ## Section 3 — Draw API & GPU batching
-
-**Goal:** Production draw layer. Public API stable; batching internal.
 
 ### Public API
 
 - [x] `draw_begin` / `draw_end` (+ record/flush split used by present)
 - [x] `draw_push_clip` / `draw_pop_clip`
-- [x] `draw_rect` with corner radii (+ border support)
+- [x] `draw_rect` with corner radii (+ border)
 - [x] `draw_line`
 - [x] `draw_texture` (+ fitted / atlas helpers)
-
-
+- [x] Multi-atlas sampling in one batch segment (see [ATLAS.md](ATLAS.md), [DRAW.md](DRAW.md))
 
 ### Batching / present
 
-- [x] Persistent grow-only GPU vertex/index buffers
-- [x] Batch key by texture + clip; flush on change
-- [x] Quads: 4 verts / 6 indices; interleaved pos/uv/color (+ rounded modes)
-- [x] Scissor in framebuffer pixels from clip stack
+- [x] Persistent grow-only GPU vertex/index buffers (ping-pong)
+- [x] Batch key by texture / clip / pipeline / atlas slot; flush on change
+- [x] Quads: 4 verts / 6 indices; scissor in framebuffer pixels
 - [x] `present_frame` acquires swapchain → pass → flush → present
-
-
 
 ### Checkpoint
 
 - [ ] Proven 10,000 `draw_rect` calls at 60 FPS (batching exists; no benchmark demo)
-- [x] Nested clips correctly scissor children
-- [x] `draw_texture` works with white texture and loaded images
-- [x] Core draw signatures stable for later sections (extended, not replaced)
+- [x] Nested clips scissor children
+- [x] `draw_texture` with white texture and loaded images
+- [x] Core draw signatures stable (extended, not replaced)
 
 ---
 
-
-
 ## Section 4 — Assets & GPU textures
-
-**Goal:** Load images once; stable `Asset_Id` across hot reloads.
 
 ### Deliverables
 
-- [x] `assets_init` / `assets_shutdown` / reload-after-hot-reload path
+- [x] `assets_init` / `assets_shutdown` / reload-after-hot-reload
 - [x] `assets_load_texture` / `assets_get_texture` (`Load_Texture` / `Get_Texture`)
 - [x] Paths relative to exe working directory
-- [x] Surface load → `SDL_CreateGPUTexture` (no `SDL_Renderer`)
+- [x] Surface load → `SDL_CreateGPUTexture`
 - [x] Path → `Asset_Id` cache; GPU re-upload on reload
-- [x] Shelf atlas allocator in `texture.odin` (glyphs + pack helpers)
+- [x] Production shelf atlas (glyphs + small packs): evict, repack, grow, overflow, prefetch — [ATLAS.md](ATLAS.md)
 - [ ] Ship `assets/ui/icons.png` UI icon atlas sheet
 - [ ] Missing-image checker / pink-black fallback texture handle for widgets
-
-
 
 ### Checkpoint
 
 - [ ] Load icon sheet; draw multiple sub-rects via atlas regions
-- [x] Hot reload texture path exists (allocator cleanliness assumed via host tracking)
-- [x] Missing file logs via `log.odin` and returns false without crashing
+- [x] Hot reload texture path
+- [x] Missing file logs and returns false without crashing
 
 ---
 
-
-
 ## Section 5 — Font shaping, text & theme
-
-**Goal:** Font families, FreeType rasterization, HarfBuzz shaping, glyph atlas, weight/style/decoration, theme-driven text.
 
 ### Dependencies
 
-- [x] FreeType + HarfBuzz linked in `build_hot_reload.sh`
+- [x] FreeType + HarfBuzz linked
 - [x] Thin bindings: `oni/freetype.odin`, `oni/harfbuzz.odin`
-
-
+- [x] LCD dual-source path — [FONT.md](../../FONT.md)
 
 ### Public font API
 
 - [x] `Register_Font_Family` / `Font_With_Size` / `font_resolve`
-- [x] Theme registers Inter; body 16px + heading 20px
-- [x] VF `wght` / `opsz`; static face weight matching
-- [x] Synthetic bold / italic when faces missing
-- [x] Style surface: font, size, weight, style, decoration lines/style/color, text direction
+- [x] Theme registers Inter; body + heading sizes
+- [x] VF `wght` / `opsz`; static face weight matching; synthetic bold/italic
 - [x] Glyph atlas + `font_ensure_glyphs` / layout-owned wrap + draw
-- [x] Decoration: underline / line-through / overline × solid/double/dotted/dashed/wavy
-- [x] Wrap modes + letter-spacing; HarfBuzz clusters
-- [x] Explicit `Text_Direction` (LTR/RTL)
+- [x] Decorations: underline / line-through / overline × solid/double/dotted/dashed/wavy
+- [x] Wrap modes + letter-spacing; HarfBuzz clusters; `Text_Direction` (LTR/RTL)
+- [x] Prefetch APIs (`Font_Prefetch_*`)
 - [ ] `theme_light()` / `theme_dark()` presets + runtime switch demo
 - [ ] Optional Noto Arabic / CJK fallback families in `fixtures/fonts/`
 - [ ] Demo routes proving Arabic RTL, mixed EN+AR, and CJK wrap samples
 
-
-
 ### Checkpoint
 
 - [x] Layout-owned multi-line wrapped Latin text in clipped rects
-- [x] `font_weight` / `font_style` select VF axes or static faces; missing faces synthesize
-- [x] Decorations draw for underline / line-through / overline in all five styles
-- [ ] Arabic sample shapes RTL when `direction = .RTL` (API ready; no demo font/route)
-- [ ] Mixed EN+AR paragraph without tofu (needs fallback fonts + demo)
-- [ ] CJK sample shapes/wraps without mid-glyph splits (needs font + demo)
-- [x] Measure/draw path shared via layout-owned text
-- [x] DPI-aware rasterization / artboard zoom path for sharp text
+- [x] Weight/style select VF or static faces; missing faces synthesize
+- [x] Decorations for all five line styles
+- [ ] Arabic / mixed / CJK demos (API ready; needs fonts + routes)
+- [x] Measure/draw path shared via layout-owned text; DPI-aware raster
 - [ ] Switching light/dark theme at runtime without draw-call code changes
 - [x] Hot reload re-registers families and recreates GPU atlas path
 
 ---
 
-
-
 ## Section 6 — Layout (CSS-style, two-pass)
-
-**Goal:** Flex/stack layout on every widget. Pass 1 measures/solves; pass 2 draws from rects.
 
 ### Deliverables
 
-- [x] No separate layout-only widget; layout fields on widget config
-- [x] Any widget can take children (`child` / `Children`)
+- [x] Layout fields on widget config; any widget can take children
 - [x] Flex child sizing (`flex`, fixed, %, hug), padding, gap, direction, justify
 - [x] `min_w` / `max_w` / `min_h` / `max_h` clamps
+- [x] Width/Height `.FIT` / `.GROW`
+- [x] `position` (relative / absolute / fixed / sticky), `visibility`, `z_index` / order, `pointer_events`
+- [x] Overflow clip + scrollports (`Scroll` / `Auto`) with overlay scroll bars
+- [x] CSS-like grid (`layout_grid.odin` / `widgets/grid.odin`)
 - [ ] `aspect_ratio` style field
-- [ ] `ui_grid(cols, rows, …)` helper (nested stacks OK for now)
-- [x] `layout_push` / measure / `layout_solve` tree
-- [x] Pass 2: `ui_layout_rect(id)`; no layout solve during draw
+- [x] `layout_push` / measure / `layout_solve`; pass 2 reads `ui_layout_rect`
 - [x] `o.Render` runs layout then draw
-- [x] Table layout (beyond original plan): caption/head/body/foot/row/cell
-
-
+- [x] Table layout (caption/head/body/foot/row/cell)
 
 ### Checkpoint
 
 - [x] Pass 1 builds tree; pass 2 draws from stored rects
-- [x] Nav + sidebar + content shell works without manual `y += height` math
-- [x] `min_w` / `max_w` clamping supported by solver
-- [ ] Text field with `flex = 1` + icon adornments (needs text field widget)
-- [x] Padding and gap affect child rects on panel-like widgets
-- [x] Layout results stable (covered by `oni/layout_test.odin`)
+- [x] Nav + sidebar + content shell without manual `y += height`
+- [x] Clamps, padding, gap; layout tests + edge tests
+- [x] Text field with flex + adornments (text input widgets exist)
+- [~] Nested scroll / sticky + scroll edge cases — harden as found
 
 ---
-
-
 
 ## Section 7 — UI core
 
-**Goal:** Immediate-mode foundation: pass coordination, IDs, hit testing, focus, input consumption.
-
 ### Deliverables
 
-- [x] `UI_Pass` Layout/Draw; `ui_begin_frame` / `ui_end_layout_pass` / end frame
-- [x] `ui_pass` / `ui_layout_rect` / stable string IDs
-- [x] Hover / pressed / focused helpers used by widgets
+- [x] `UI_Pass` Layout/Draw; begin / end layout / end frame
+- [x] Stable string IDs; hover / pressed / focused helpers
 - [x] Focus: click sets; click-empty clears; tab moves focus
-- [x] Tab order registration (`register_tabbable` / `focus_next` / `focus_prev`)
-- [x] Global hit stack so only topmost overlapping widget receives hover/click (layout paint lists)
-- [x] Modal/popover insertion at top of hit pass (`space = .POPOVER` / `Popover_Begin`)
-- [ ] Modal UX widgets (dialog chrome, focus trap) on top of the stacking slot
+- [x] Tab order registration
+- [x] Global hit stack (topmost wins); popover paint/hit slot
+- [~] Modal UX widgets (dialog chrome, focus trap) on that slot — see Section 10
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard`
 - [x] Clip push/pop during draw
 
-
-
 ### Checkpoint
 
-- [ ] Three overlapping buttons; strictly topmost-only hover/click
-- [x] Clicking a button sets focus; clicking empty clears focus
-- [x] Tab cycles focusable widgets
-- [ ] Mouse wheel over scrollable region consumed by scroll view (no scroll view yet; wheel used for artboard zoom)
+- [~] Topmost-only hover/click (hit stack exists; keep a dedicated overlap demo if useful)
+- [x] Click focus / clear; tab cycles focusable widgets
+- [x] Wheel over scrollport consumed by scroll view
 
 ---
 
-
-
 ## Section 8 — Widget library
-
-**Goal:** Complete widget set for apps and tools. Theme + draw only; no ad-hoc SDL/GPU in widgets.
 
 ### Widgets
 
-
-| Widget                                                         | Status                              |
-| -------------------------------------------------------------- | ----------------------------------- |
-| Panel-like container                                           | [x] via `Rectangle` (+ app chrome)  |
-| Label / paragraph / heading                                    | [x] via `Text` + `app/ui/*` helpers |
-| `Text` (multi-line, wrap)                                      | [x]                                 |
-| `Image` (fit / fill / stretch)                                 | [x]                                 |
-| `Button` (hover / pressed / disabled; optional children)       | [x]                                 |
-| `Table` (+ head/body/foot/row/cell/caption/heading)            | [x] (beyond original plan)          |
-| `Checkbox`                                                     | [ ]                                 |
-| `Slider`                                                       | [ ]                                 |
-| `Text_Field` (caret, selection, editable; optional adornments) | [ ]                                 |
-| `Select` (listbox)                                             | [ ]                                 |
-| `Dropdown` (closed row + popup list)                           | [ ]                                 |
-| `Scroll_View` (clip + offset + wheel + scrollbar)              | [ ]                                 |
-| `List_Row`                                                     | [ ]                                 |
-
-
-
+| Widget | Status |
+| ------ | ------ |
+| Panel-like container | [x] `Rectangle` (+ app chrome) |
+| Label / paragraph / heading | [x] `Text` + `app/ui/*` helpers |
+| `Text` (multi-line, wrap) | [x] |
+| `Image` (fit / fill / stretch) | [x] |
+| `Button` | [x] |
+| `Table` (+ parts) | [x] |
+| `Checkbox` | [x] |
+| `Radio` / `Radio_Group` | [x] |
+| `Slider` | [x] |
+| `Text_Input` / `Rich_Text_Input` | [x] |
+| `Select` (trigger + popup list) | [x] |
+| Scroll (`overflow` + `Scroll_Bar`) | [x] |
+| `Popover` | [x] |
+| `Link` | [x] |
+| `Calendar` / `Date_Picker` | [x] |
+| `Color_Picker` | [x] |
+| `Grid` | [x] |
+| `Preserve` | [x] |
+| `Error_Banner` | [x] |
+| `Shortcuts_Table` | [x] |
+| Tooltip | [ ] |
+| Context menu / menu bar | [ ] |
+| Dialog / modal chrome | [ ] |
+| Tabs | [ ] |
+| Progress | [ ] |
 
 ### Other
 
-- [x] Shared style / interaction / focus helpers under `oni/widgets/widget_*.odin`
+- [x] Shared style / interaction / focus / scroll helpers under `oni/widgets/widget_*.odin`
 - [x] Disabled skips interaction on existing widgets
-- [ ] First-class `Widget_Flags { Disabled, Hidden }` bit-set as originally sketched
-- [ ] Settings demo: sidebar + slider/checkbox/dropdown/text field mutating live state
-- [x] Widget gallery routes under `app/routes/widgets/`
-- [x] Existing widgets do not call SDL/GPU directly
-
-
+- [x] Widget gallery / docs routes under consumer `app/` (and templates)
+- [x] Widgets do not call SDL/GPU directly
+- [ ] Settings demo: sidebar + slider/checkbox/select/text field mutating live state (compose from shipped widgets)
 
 ### Checkpoint
 
 - [ ] Settings demo mutates live values (volume, username, theme toggle)
-- [ ] Dropdown popup draws above siblings and clips to screen edges
-- [ ] Scroll view scrolls 200 list rows with scrollbar thumb
-- [x] No existing widget proc reaches into GPU or SDL directly
+- [x] Select popup draws above siblings via popover stack
+- [x] Scroll view scrolls long content with scrollbar thumb
+- [x] No widget proc reaches into GPU or SDL directly
 
 ---
 
-
-
 ## Section 9 — Keyboard, shortcuts & text editing
-
-**Goal:** Desktop-grade input without revisiting widget drawing code.
 
 ### Deliverables
 
 - [x] Tab / Shift+Tab focus order
-- [ ] Shortcut table (`Shortcut { keys, ctrl, shift, alt, callback }`)
-- [ ] Global vs focused shortcut rules (e.g. Ctrl+S while typing)
-- [ ] `SDL_StartTextInput` / `Stop` when text field focused
-- [ ] Caret, selection `{start,end}` in UTF-8 byte offsets aligned to HarfBuzz clusters
-- [ ] Arrow / Home / End / Ctrl+A/C/V/X (clipboard via Section 11)
-- [ ] Delete/backspace remove whole clusters
-- [ ] Caret blink timer; caret x from shaped advances
-- [ ] Single-level undo stack for text fields
-- [x] SDL text events collected into `input.text_input` buffer (unused by a field widget yet)
-
-
+- [x] Shortcut table + actions (key / mouse / wheel / gamepad / sequences)
+- [x] Global vs focused shortcut rules; text-edit integration
+- [x] `SDL_StartTextInput` / `Stop` when a text field is focused
+- [x] Caret, selection in UTF-8 / cluster-aware editing (`text_edit` / document)
+- [x] Clipboard via Section 11 (`Clipboard_Get_Text` / `Set_Text`)
+- [x] Arrow / Home / End / select-all / copy / paste / cut paths (shortcut + edit stack)
+- [~] Undo stack for text fields (extend as needed for multi-level)
+- [x] Caret blink / x from shaped advances
 
 ### Checkpoint
 
-- [x] Tab cycles through focusable widgets in demos
-- [ ] Text field: select all, copy, paste, undo
-- [ ] Caret/selection correct for RTL and Latin via clusters
-- [ ] Ctrl+S stub save without inserting `s` into the field
+- [x] Tab cycles through focusable widgets
+- [x] Text field: select, copy, paste (system clipboard)
+- [~] Caret/selection for RTL — API direction exists; prove with Arabic demo fonts
+- [x] Shortcuts do not insert into the field when consumed
 
 ---
-
-- [ ] Standalone `draw_text(font, text, pos, …)` — text is layout-owned `font_draw_layout_text`)
 
 ## Section 10 — Modal & overlay layer
 
-**Goal:** Z-ordered overlays on the same UI core.
-
-Stacking/hit for overlays is already in layout (`space = .POPOVER`, `Popover_Begin` / `End`). Remaining work is modal UX widgets on that slot.
+Stacking/hit for overlays: `space = .POPOVER`, `Popover_Begin` / `End`, Select popups. Remaining work is shared modal UX.
 
 ### Deliverables
 
-- [ ] `ui_open_popup(anchor, body)`
-- [ ] `ui_tooltip(text, anchor)` — 400 ms delay; one active
+- [~] Shared popup path (Popover / Select) — keep consolidating; no second system
+- [ ] `ui_tooltip(text, anchor)` — delay; one active
 - [ ] `ui_context_menu(items, pos)` — arrows + Enter; Escape closes
+- [ ] Dialog / modal chrome + focus trap + click-outside (configurable)
 - [ ] `ui_drag_overlay(preview)` — drag ghost
-- [x] Popup/top layer drawn last; separate hit pass (layout paint lists)
-- [ ] Click outside closes popup (configurable)
-- [ ] Dropdown uses shared popup API (no duplicate system)
-- [x] Widget `on_contextmenu` hook exists (no menu system behind it yet)
-
-
+- [x] Popup/top layer drawn last; separate hit pass
+- [x] Widget `on_contextmenu` hook (menu system still open)
 
 ### Checkpoint
 
-- [ ] Dropdown from Section 8 uses `ui_open_popup` internally
-- [ ] Right-click context menu on list row
-- [ ] Drag slider thumb shows `ui_drag_overlay` ghost on top
+- [ ] Dropdown/select uses only the shared popup API
+- [ ] Right-click context menu on a list row
+- [ ] Drag slider thumb can show a drag overlay ghost
 
 ---
 
-
-
 ## Section 11 — Native OS integration
 
-**Goal:** Behaviors users expect from desktop apps.
-
-
-| Feature                                                              | Status                                               |
-| -------------------------------------------------------------------- | ---------------------------------------------------- |
-| System clipboard (SDL UTF-8) bridged to text editing                 | [ ]                                                  |
-| File open/save dialogs (`SDL_ShowOpenFileDialog` / save)             | [ ]                                                  |
-| Folder pick                                                          | [ ]                                                  |
-| Drag and drop (`SDL_EVENT_DROP_FILE` → app/widget handler)           | [ ]                                                  |
-| Persist window size/position/maximized; restore on launch            | [ ]                                                  |
-| Multi-monitor: display-changed updates dpi (dialogs re-center later) | [x] dpi events handled; [ ] dialog re-center / prefs |
-
-
-
+| Feature | Status |
+| ------- | ------ |
+| System clipboard (SDL UTF-8) bridged to text editing | [x] |
+| Open URL (`Open_URL` / allowlisted schemes) | [x] |
+| File open/save dialogs | [ ] |
+| Folder pick | [ ] |
+| Drag and drop (`SDL_EVENT_DROP_FILE`) | [ ] |
+| Persist window size/position/maximized | [~] mode via settings; geometry restore open |
+| Multi-monitor DPI | [x] dpi events; [ ] dialog re-center when dialogs exist |
 
 ### Checkpoint
 
 - [ ] Open file dialog loads path into a text field
 - [ ] Drag image onto window loads preview in `Image`
-- [ ] Copy/paste works between app and external text editor
+- [x] Copy/paste between app and external text editor
 - [ ] Restart app restores window geometry
 
 ---
 
-
-
 ## Section 12 — Performance
-
-**Goal:** Stay fast with large UIs; no redraw architecture rewrite later.
 
 ### Deliverables
 
-- [ ] `Render_Dirty` / `ui_invalidate(rect)` / partial clear when not `full_frame`
+- [x] Frame modes: continuous / on-demand / focused dirty wake — [FRAME_MODES.md](FRAME_MODES.md)
+- [x] On-demand present skip when wake-only and not oneshot dirty (`Request_Frame`); partial dirty-rect region updates deferred
 - [ ] `ui_list_virtualized(count, row_h, body)`
 - [ ] Virtualization used by select / asset lists
-- [ ] F3 debug overlay: rolling FPS, draw_call_count, batch_flush_count
+- [ ] F3 (or settings) debug overlay: FPS, draw_call_count, batch_flush_count, atlas stats
 - [ ] Log frame spikes > 33 ms
-
-
+- [~] Atlas / font / batch production paths — see [ATLAS.md](ATLAS.md), AGENTS.md Performance
 
 ### Checkpoint
 
 - [ ] 10k-row virtual list scrolls at 60 FPS
-- [ ] Dirty rect mode reduces GPU clear cost when only a caret blinks
-- [ ] F3 overlay shows batch stats without stuttering
+- [x] Dirty / on-demand mode keeps idle CPU low (wait + wake-only present skip; caret uses `Request_Frame`)
+- [ ] Debug overlay shows batch / atlas stats without stuttering
 
 ---
 
-
-
 ## Section 13 — Production hardening
-
-**Goal:** Ship-quality diagnostics and failure modes.
 
 ### Deliverables
 
-- [x] `log_error` / `log_warn` / debug helpers with file/line (`oni/log.odin`)
-- [x] `last_error` string + on-screen error banner
-- [ ] Non-fatal toast panel (auto-dismiss ~3 s) via modal layer
+- [x] `log_error` / `log_warn` / debug helpers with file/line
+- [x] Structured errors / on-screen error banner
+- [ ] Non-fatal toast panel (auto-dismiss) via modal layer
 - [ ] Fatal GPU device loss: message box + graceful quit
-- [ ] RenderDoc notes; pipeline `debug_name = "ui_pipeline"`
+- [ ] RenderDoc notes; pipeline `debug_name` where useful
 - [ ] Checker `Texture_Handle` for missing images; widgets still layout
 - [ ] Document browser demo: menu bar, virtualized file list, main text area, status bar
-- [x] Host tracking allocator reports on quit
-
-
+- [x] Host tracking allocator + `test_all.sh` leak failure
+- [x] Production atlas ship criteria (groups A–I) — [ATLAS.md](ATLAS.md)
 
 ### Checkpoint
 
 - [ ] Deliberately missing texture shows fallback, logs once, no crash
 - [ ] GPU pipeline creation failure shows error banner and exits cleanly
 - [ ] Document browser survives F5 with document text preserved in `Persistent`
-- [x] Tracking allocator path exists for leak reporting on quit
+- [x] Tracking allocator path exists for leak reporting on quit / tests
 
 ---
 
-
-
 ## Build & assets checklist
 
+### `oni/scripts/build_hot_reload.sh`
 
-
-### `build_hot_reload.sh`
-
-- [x] Compile `oni/shaders/ui.vert` and `ui.frag`
+- [x] Compile UI (+ LCD) shaders to SPIR-V
 - [x] Link FreeType + HarfBuzz
 - [x] Build host + `app` shared library; watch `oni/` and `app/`
 - [ ] Optional: copy `assets/` next to `build/hot_reload/` output on build
-
-
 
 ### `assets/` layout
 
@@ -594,14 +484,12 @@ assets/
 
 ### Dependencies
 
-- [x] Vulkan SDK (`glslc`)
-- [x] SDL3 with GPU enabled
+- [x] Vulkan SDK (`glslc`) / `shaderc`
+- [x] SDL3 with GPU (+ dual-source for LCD)
 - [x] FreeType
 - [x] HarfBuzz (with FreeType support)
 
 ---
-
-
 
 ## Section dependency graph
 
@@ -626,23 +514,18 @@ flowchart TD
     S8 --> S9 --> S10 --> S11 --> S12 --> S13
 ```
 
-
-
-**Progress snapshot:** Sections **1–7** are largely in place (some partial checkpoints). Section **8** has core display/input widgets + Table; form/overlay widgets remain. Sections **9–13** are mostly open (tab focus exists).
+**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, LCD text). Open work concentrates in **10** (tooltip/menu/dialog), remaining **11** (file dialogs / DnD / geometry persist), **12** (virtualization / debug overlay), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
 
 ---
 
-
 ## What this plan deliberately excludes
 
-
-| Topic                                 | Reason                                       |
-| ------------------------------------- | -------------------------------------------- |
-| Accessibility                         | Phase 2                                      |
-| Packaging / installers / code signing | Phase 2                                      |
-| SDL_ttf                               | Replaced by FreeType + HarfBuzz in Section 5 |
-| SVG / vector paths                    | Phase 2 future module behind `draw_path`     |
-| Audio                                 | Phase 2                                      |
-| Game collision, camera, entities      | Phase 3                                      |
-
-
+| Topic | Where it lives |
+| ----- | -------------- |
+| Accessibility | Road map Track 5 |
+| Packaging / installers / code signing | Road map Track 5 |
+| SVG / vector paths | Road map Track 5 |
+| Audio (SDL3_mixer) | Road map Track 3 |
+| Platform game (collision, camera, entities) | Road map Track 2 |
+| Tiny level editor | Road map Track 4 |
+| Dear ImGui / other GUI libraries | Never |

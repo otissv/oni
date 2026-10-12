@@ -71,6 +71,13 @@ test_hook_gpu_fail_pipeline: bool
 @(private)
 test_hook_gpu_fail_lcd_pipeline: bool
 /*
+Forces the tested atlas fallback after multi-sampler pipelines are created.
+*/
+@(private)
+test_hook_atlas_force_fallback_split: bool
+@(private)
+test_hook_atlas_fallback_log_count: int
+/*
 When true, gpu_device_supports_dual_source_blending reports false (init refuse).
 */
 @(private)
@@ -149,6 +156,8 @@ clear_test_hooks :: proc() {
 	test_hook_gpu_fail_frag_shader = false
 	test_hook_gpu_fail_pipeline = false
 	test_hook_gpu_fail_lcd_pipeline = false
+	test_hook_atlas_force_fallback_split = false
+	test_hook_atlas_fallback_log_count = 0
 	test_hook_gpu_force_no_dual_source = false
 	test_hook_gpu_fail_sampler = false
 	test_hook_gpu_fail_create_texture = false
