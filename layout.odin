@@ -2307,14 +2307,23 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 		main_sum: f32
 		cross_max: f32
 		for child, i in child_nodes {
-			if layout_child_main_grow_weight(child, info.is_horizontal) > 0 do continue
-
 			outer := layout_size_with_margin(child_sizes[i], child.margin)
+			// Main-axis `.GROW` / flex items are omitted from the intrinsic main
+			// sum (zero basis), but still contribute to cross size so a
+			// content-sized parent keeps the correct height/width.
+			grows_main := layout_child_main_grow_weight(child, info.is_horizontal) > 0
+
 			if info.is_horizontal {
-				main_sum += outer.x
+				if !grows_main {
+					main_sum += outer.x
+				}
+
 				cross_max = max(cross_max, outer.y)
 			} else {
-				main_sum += outer.y
+				if !grows_main {
+					main_sum += outer.y
+				}
+
 				cross_max = max(cross_max, outer.x)
 			}
 		}

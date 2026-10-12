@@ -2020,6 +2020,60 @@ layout_width_grow_shares_remaining_like_flex_one :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_horizontal_content_height_includes_width_grow_child :: proc(t: ^testing.T) {
+	// doc_preview is horizontal; Tabs theme uses width .GROW. Measure must still
+	// pick up the child's height so a vertical ancestor can stack siblings.
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		page := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{x = .STRETCH},
+			{},
+			{direction = .VERTICAL, width = layout_len_fixed(300)},
+		)
+		preview := layout_test_append_node(
+			layout,
+			page,
+			.RECT,
+			{},
+			{},
+			{direction = .HORIZONTAL},
+		)
+		child := layout_test_append_node(
+			layout,
+			preview,
+			.RECT,
+			{},
+			{40, 80},
+			{width = layout_len_grow(), height = layout_len_fixed(80)},
+		)
+		sibling := layout_test_append_node(
+			layout,
+			page,
+			.RECT,
+			{},
+			{100, 20},
+			{width = layout_len_fixed(100), height = layout_len_fixed(20)},
+		)
+
+		layout.nodes[preview].desired = layout_measure(&layout.nodes[preview])
+		layout.nodes[page].desired = layout_measure(&layout.nodes[page])
+		layout_solve(&layout.nodes[page], {0, 0, 300, 600})
+
+		expect_close(t, layout.nodes[preview].desired.y, 80)
+		expect_close(t, layout.nodes[preview].rect.h, 80)
+		expect_close(t, layout.nodes[child].rect.h, 80)
+		expect_close(t, layout.nodes[child].rect.w, 300)
+		testing.expect(
+			t,
+			layout.nodes[sibling].rect.y >=
+			layout.nodes[preview].rect.y + layout.nodes[preview].rect.h - 0.5,
+		)
+	})
+}
+
+@(test)
 layout_width_fit_clamps_to_available_space :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
 		fit := layout_test_append_node(

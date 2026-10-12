@@ -18,11 +18,10 @@ DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX :: f32(8)
 DATE_PICKER_DEFAULT_CALENDAR_WIDTH :: f32(320)
 
 /*
-Cross-frame date picker runtime for uncontrolled open and input draft text.
+Cross-frame date picker runtime for input draft text while editing.
 */
 @(private)
 Date_Picker_Runtime :: struct {
-	open:          bool,
 	input_text:    string,
 	input_editing: bool,
 }
@@ -43,7 +42,6 @@ Date_Picker_Ctx :: struct {
 	selected_dates:       []Calendar_Date,
 	selected_range:       Calendar_Range,
 	month:                Calendar_Date,
-	default_month:        Calendar_Date,
 	on_month_change:      proc(month: Calendar_Date),
 	on_select:            proc(selection: Calendar_Selection),
 	on_day_click:         proc(date: Calendar_Date),
@@ -71,7 +69,6 @@ Date_Picker_Ctx :: struct {
 	trigger_rect:         o.Rect,
 	has_trigger:          bool,
 	pointer_owned:        bool,
-	open_controlled:      bool,
 	user_child:           proc(frame_state: Date_Picker_State),
 	user_content:         proc(frame_state: Date_Picker_State),
 	content_frame:        Date_Picker_State,
@@ -399,20 +396,8 @@ date_picker_set_open :: proc(open: bool) {
 
 	ctx.open = open
 
-	if ctx.open_controlled {
-		if ctx.on_open_change != nil {
-			ctx.on_open_change(open)
-		}
-	} else {
-		rt := date_picker_runtime_ensure(ctx.picker_key)
-
-		if rt != nil {
-			rt.open = open
-		}
-
-		if ctx.on_open_change != nil {
-			ctx.on_open_change(open)
-		}
+	if ctx.on_open_change != nil {
+		ctx.on_open_change(open)
 	}
 }
 
@@ -574,7 +559,6 @@ date_picker_default_content :: proc(fs: Date_Picker_State) {
 			selected_dates = ctx.selected_dates,
 			selected_range = ctx.selected_range,
 			month = ctx.month,
-			default_month = ctx.default_month,
 			on_month_change = ctx.on_month_change,
 			on_select = date_picker_on_calendar_select,
 			on_day_click = ctx.on_day_click,

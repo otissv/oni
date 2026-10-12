@@ -948,6 +948,16 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .DATE_PICKER_VALUE, true
 	case "date-picker-input":
 		return .DATE_PICKER_INPUT, true
+	case "grid":
+		return .GRID, true
+	case "tabs":
+		return .TABS, true
+	case "tabs-list":
+		return .TABS_LIST, true
+	case "tabs-trigger":
+		return .TABS_TRIGGER, true
+	case "tabs-content":
+		return .TABS_CONTENT, true
 	}
 	return .RECT, false
 }

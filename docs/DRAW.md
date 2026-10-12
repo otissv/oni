@@ -329,7 +329,7 @@ Draw pass updates hover/focus and dispatches events (not layout).
 
 These branch on [`ui_pass`](oni/ui.odin#L192) and paint on Draw:
 
-[`Button`](oni/widgets/button.odin#L66), [`Rectangle`](oni/widgets/rectangle.odin#L63) ([`draw_widget_rectangle`](oni/widgets/rectangle.odin#L174)), [`Text`](oni/widgets/text.odin#L107), [`Image`](oni/widgets/image.odin#L167), [`Table`](oni/widgets/table.odin), [`Table_Caption`](oni/widgets/table_caption.odin), [`Table_Head`](oni/widgets/table_head.odin), [`Table_Heading`](oni/widgets/table_heading.odin), [`Table_Body`](oni/widgets/table_body.odin), [`Table_Row`](oni/widgets/table_row.odin), [`Table_Cell`](oni/widgets/table_cell.odin), [`Table_Foot`](oni/widgets/table_foot.odin) — table family chrome via [`table_widget_draw_chrome`](oni/widgets/table_shared.odin#L13).
+[`Button`](oni/widgets/button.odin#L66), [`Rectangle`](oni/widgets/rectangle.odin#L63) ([`draw_widget_rectangle`](oni/widgets/rectangle.odin#L174)), [`Text`](oni/widgets/text.odin#L107), [`Image`](oni/widgets/image.odin#L167), [`Tabs`](oni/widgets/tabs.odin), [`Tabs_List`](oni/widgets/tabs_list.odin), [`Tabs_Trigger`](oni/widgets/tabs_trigger.odin), [`Tabs_Content`](oni/widgets/tabs_content.odin), [`Table`](oni/widgets/table.odin), [`Table_Caption`](oni/widgets/table_caption.odin), [`Table_Head`](oni/widgets/table_head.odin), [`Table_Heading`](oni/widgets/table_heading.odin), [`Table_Body`](oni/widgets/table_body.odin), [`Table_Row`](oni/widgets/table_row.odin), [`Table_Cell`](oni/widgets/table_cell.odin), [`Table_Foot`](oni/widgets/table_foot.odin) — table family chrome via [`table_widget_draw_chrome`](oni/widgets/table_shared.odin#L13).
 
 ## Complete proc index (`oni/draw.odin`)
 

@@ -100,7 +100,7 @@ calendar_composable_registers_day_labels :: proc(t: ^testing.T) {
 		Calendar({
 			config = {id = "calendar-parts"},
 			mode = .SINGLE,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			child = proc(_: Calendar_State) {
 				Calendar_Month({config = {id = "calendar-parts/month"}, month_index = 0})
@@ -260,7 +260,7 @@ calendar_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		Calendar({
 			config = {id = "calendar-layout"},
 			mode = .SINGLE,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			child = proc(_: Calendar_State) {
 				Calendar_Month({config = {id = "calendar-layout/month"}, month_index = 0})
@@ -293,7 +293,7 @@ calendar_disabled_not_tabbable :: proc(t: ^testing.T) {
 			{
 				config = {id = "calendar-disabled"},
 				mode = .SINGLE,
-				default_month = {2024, 6, 1},
+				month = {2024, 6, 1},
 				today = calendar_test_fixed_today(),
 				disabled = true,
 				child = calendar_test_month_child,
@@ -314,7 +314,7 @@ calendar_shutdown_clears_runtimes :: proc(t: ^testing.T) {
 		Calendar(
 			{
 				config = {id = "calendar-shutdown"},
-				default_month = {2024, 6, 1},
+				month = {2024, 6, 1},
 				today = calendar_test_fixed_today(),
 				child = calendar_test_month_child,
 			},
@@ -337,7 +337,7 @@ calendar_unmount_clears_runtime :: proc(t: ^testing.T) {
 
 		Calendar({
 			config = {id = "calendar-unmount"},
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			unmount = true,
 			child = calendar_test_month_child,
@@ -367,7 +367,7 @@ calendar_keyboard_selects_focused_day :: proc(t: ^testing.T) {
 		props := Calendar_Props {
 			config = {id = "calendar-keyboard"},
 			mode = .SINGLE,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			selected = selected,
 			has_selected = has_selected,
@@ -443,7 +443,7 @@ calendar_pointer_selects_day :: proc(t: ^testing.T) {
 			props := Calendar_Props {
 				config = {id = "calendar-pointer"},
 				mode = .SINGLE,
-				default_month = {2024, 6, 1},
+				month = {2024, 6, 1},
 				today = calendar_test_fixed_today(),
 				on_select = calendar_test_on_select,
 				on_day_click = calendar_test_on_day_click,
@@ -507,8 +507,9 @@ calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
 			props := Calendar_Props {
 				config = {id = "calendar-nav-click"},
 				mode = .SINGLE,
-				default_month = {2024, 6, 1},
+				month = {2024, 6, 1},
 				today = calendar_test_fixed_today(),
+				on_month_change = calendar_test_on_month,
 				child = calendar_test_month_child,
 			}
 			Calendar(props)
@@ -535,10 +536,7 @@ calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
 				down    = true,
 			}
 			Calendar(props)
-
-			rt := calendar_runtime_ensure("calendar-nav-click")
-			testing.expect(t, rt != nil)
-			testing.expect(t, Calendar_Date_Equal(rt.month, {2024, 6, 1}))
+			testing.expect_value(t, calendar_test_month_count, 0)
 
 			o.w_ctx.left_mouse = {
 				pressed  = false,
@@ -547,7 +545,8 @@ calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
 			}
 			Calendar(props)
 
-			testing.expect(t, Calendar_Date_Equal(rt.month, {2024, 7, 1}))
+			testing.expect_value(t, calendar_test_month_count, 1)
+			testing.expect(t, Calendar_Date_Equal(calendar_test_last_month, {2024, 7, 1}))
 		},
 	)
 }
@@ -566,7 +565,7 @@ calendar_disabled_matcher_blocks_select :: proc(t: ^testing.T) {
 			props := Calendar_Props {
 				config = {id = "calendar-matcher"},
 				mode = .SINGLE,
-				default_month = {2024, 6, 1},
+				month = {2024, 6, 1},
 				today = calendar_test_fixed_today(),
 				on_select = calendar_test_on_select,
 				disabled_matcher = proc(date: Calendar_Date) -> bool {
@@ -660,7 +659,7 @@ calendar_start_end_date_blocks_select :: proc(t: ^testing.T) {
 		props := Calendar_Props {
 			config = {id = "calendar-bounds"},
 			mode = .SINGLE,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			start_date = {2024, 6, 10},
 			end_date = {2024, 6, 20},
@@ -717,7 +716,7 @@ calendar_config_disabled_blocks_interaction :: proc(t: ^testing.T) {
 		props := Calendar_Props {
 			config = {id = "calendar-config-disabled", disabled = set.Disabled(true)},
 			mode = .SINGLE,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = calendar_test_fixed_today(),
 			on_select = calendar_test_on_select,
 			child = calendar_test_month_child,

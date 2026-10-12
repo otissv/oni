@@ -32,10 +32,14 @@ Select root event snapshot.
 Select_Event :: o.Widget_Event(Select_State)
 
 /*
-Select root props: controlled value/open, compound children, and handlers.
+Select root props: caller-owned value/open, compound children, and handlers.
 
 `child` builds the trigger tree. `content` is the options panel (Radix Content);
 when open it is laid out in a viewport-aware popover beside the trigger.
+
+Pass `value` / `values` and `open` every frame; update them from
+`on_value_change` / `on_values_change` and `on_open_change`. The widget does
+not keep value or open as runtime source of truth.
 
 HTML-like fields:
 - `disabled` — blocks interaction (also honors `config.disabled`)
@@ -127,33 +131,13 @@ select_resolve_open_value :: proc(
 	open: bool,
 	value: string,
 	value_label: string,
-	open_controlled: bool,
-	value_controlled: bool,
 ) {
-	open_controlled = props.on_open_change != nil
-	value_controlled =
-		(props.multiple && props.on_values_change != nil) ||
-		(!props.multiple && props.on_value_change != nil)
+	open = props.open
+	value = props.multiple ? "" : props.value
+	value_label = ""
 	rt := select_runtime_ensure(key)
 
-	if open_controlled {
-		open = props.open
-	} else if rt != nil {
-		open = rt.open
-	}
-
-	if props.multiple {
-		value = ""
-		value_label = ""
-	} else if value_controlled {
-		value = props.value
-	} else if rt != nil && rt.value_set {
-		value = rt.value
-	} else {
-		value = props.value
-	}
-
-	if !props.multiple && rt != nil && rt.value == value {
+	if !props.multiple && rt != nil && rt.cache_value == value {
 		value_label = rt.value_label
 	}
 
@@ -174,10 +158,7 @@ Select :: proc(props: Select_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	open, value, value_label, open_controlled, value_controlled := select_resolve_open_value(
-		props,
-		key,
-	)
+	open, value, value_label := select_resolve_open_value(props, key)
 	listbox := select_is_listbox(props.multiple, props.size)
 	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
 
@@ -237,8 +218,6 @@ Select :: proc(props: Select_Props) {
 			on_values_change = props.on_values_change,
 			on_open_change = props.on_open_change,
 			highlight = highlight,
-			value_controlled = value_controlled,
-			open_controlled = open_controlled,
 			user_child = props.child,
 			user_content = props.content,
 		},
@@ -248,12 +227,7 @@ Select :: proc(props: Select_Props) {
 	ctx := select_ctx_top()
 
 	if props.multiple {
-		if value_controlled {
-			select_copy_values_into_ctx(ctx, props.values)
-		} else {
-			select_load_runtime_values(ctx, rt)
-		}
-
+		select_copy_values_into_ctx(ctx, props.values)
 		frame_state.values = Select_Get_Values()
 	}
 

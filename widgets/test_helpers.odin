@@ -64,6 +64,7 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	o.batch_current().index_capacity = 64 * 1024 * 6
 
 	radio_shutdown()
+	tabs_shutdown()
 	color_picker_shutdown()
 	calendar_shutdown()
 	date_picker_shutdown()
@@ -71,6 +72,7 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	o.ui_init()
 	defer {
 		radio_shutdown()
+		tabs_shutdown()
 		color_picker_shutdown()
 		calendar_shutdown()
 		date_picker_shutdown()

@@ -47,21 +47,24 @@ Color_Picker_Event :: o.Widget_Event(Color_Picker_State)
 /*
 Color picker root props (Radix-style).
 
-`value`, `channel`, and `previous` are caller-owned and must be passed every
-frame. Parts such as `Color_Picker_Field` must be descendants of this root.
-Interaction reports updates through `on_value_change` / `on_channel_change` only.
+`value`, `channel`, `previous`, and `web_only` are caller-owned and must be
+passed every frame. Parts such as `Color_Picker_Field` must be descendants of
+this root. Interaction reports updates through `on_value_change` /
+`on_channel_change` / `on_web_only_change` only.
 */
 Color_Picker_Props :: struct {
 	config:                       Color_Picker_Config,
 	value:                        o.RGBA,
 	channel:                      o.Color_Picker_Channel,
 	previous:                     o.RGBA,
+	web_only:                     bool,
 	disabled:                     bool,
 	style:                        Color_Picker_Style,
 	child:                        proc(frame_state: Color_Picker_State),
 	on_value_change:              proc(value: o.RGBA),
 	on_value_commit:              proc(value: o.RGBA),
 	on_channel_change:            proc(channel: o.Color_Picker_Channel),
+	on_web_only_change:           proc(web_only: bool),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Color_Picker_State) -> o.Mount,
@@ -97,7 +100,6 @@ Color_Picker_Runtime :: struct {
 	hex_editing:  bool,
 	type_drafts:  [COLOR_PICKER_TYPE_SLOT_COUNT]Color_Picker_Type_Drafts,
 	type_active:  [COLOR_PICKER_TYPE_SLOT_COUNT]bool,
-	web_only:     bool,
 	initialized:  bool,
 }
 
@@ -116,12 +118,13 @@ Color_Picker_Ctx :: struct {
 	hex_include_alpha: bool,
 	disabled:          bool,
 	style:             Color_Picker_Style,
-	on_value_change:   proc(value: o.RGBA),
-	on_value_commit:   proc(value: o.RGBA),
-	on_channel_change: proc(channel: o.Color_Picker_Channel),
-	on_key_down:       proc(event: Color_Picker_Event),
-	on_key_pressed:    proc(event: Color_Picker_Event),
-	on_key_released:   proc(event: Color_Picker_Event),
+	on_value_change:    proc(value: o.RGBA),
+	on_value_commit:    proc(value: o.RGBA),
+	on_channel_change:  proc(channel: o.Color_Picker_Channel),
+	on_web_only_change: proc(web_only: bool),
+	on_key_down:        proc(event: Color_Picker_Event),
+	on_key_pressed:     proc(event: Color_Picker_Event),
+	on_key_released:    proc(event: Color_Picker_Event),
 }
 
 @(private)
@@ -1432,14 +1435,18 @@ color_picker_type_on_blur :: proc(color_type: o.Color_Picker_Color_Type, index: 
 color_picker_web_only_on_change :: proc(checked: Checkbox_Value) {
 	ctx := color_picker_ctx_top()
 
-	if !ctx.active || ctx.runtime == nil {
+	if !ctx.active {
 		return
 	}
 
-	ctx.runtime.web_only = checked == .TRUE
-	ctx.web_only = ctx.runtime.web_only
+	next := checked == .TRUE
+	ctx.web_only = next
 
-	if ctx.web_only {
+	if ctx.on_web_only_change != nil {
+		ctx.on_web_only_change(next)
+	}
+
+	if next {
 		snapped := o.rgba_to_web_safe(ctx.value)
 		ctx.hsva = o.color_picker_hsva_from_rgba(snapped, ctx.hsva)
 		color_picker_emit(ctx, snapped, false)
@@ -1659,7 +1666,7 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 	previous := props.previous
 	hsva := rt != nil ? rt.hsva : o.rgba_to_hsva(value)
 	channel := props.channel
-	web_only := rt != nil ? rt.web_only : false
+	web_only := props.web_only
 
 	frame_state := Color_Picker_State {
 		is_disabled = disabled,
@@ -1703,6 +1710,7 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 			on_value_change = props.on_value_change,
 			on_value_commit = props.on_value_commit,
 			on_channel_change = props.on_channel_change,
+			on_web_only_change = props.on_web_only_change,
 			on_key_down = props.on_key_down,
 			on_key_pressed = props.on_key_pressed,
 			on_key_released = props.on_key_released,

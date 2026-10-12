@@ -37,7 +37,7 @@ Shipped and in daily use:
 - [x] Assets + textures; production dynamic atlas (evict / repack / grow / overflow / multi-texture) — see [ATLAS.md](ATLAS.md)
 - [x] FreeType + HarfBuzz, LCD dual-source text — see [FONT.md](../../FONT.md)
 - [x] Two-pass UI (layout → draw), flex + CSS-like grid, overflow scrollports
-- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table
+- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table, Tabs
 - [x] Shortcuts (key / mouse / wheel / gamepad / sequences), settings.kdl, `APP_TYPE` / `FRAME_MODE`
 - [x] Clipboard + Open URL (`platform_os.odin`); Tengu animations (`oni/libs/tengu`)
 - [x] Package tests via `./oni/scripts/test_all.sh` (vet, strict-style, leak tracking)
@@ -55,8 +55,10 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [ ] First-class **tooltip** (delay, one active)
 - [ ] **Context menu** / menu bar (arrows + Enter; Escape closes)
 - [ ] **Dialog / modal** chrome on the existing popover stacking slot (focus trap, click-outside)
-- [~] Select / popover cover most “dropdown” needs; keep one shared popup API — no second overlay system
-- [ ] Tabs, progress indicator
+- [x] Select
+- [~] **Dropdown**: Select / popover cover most “dropdown” needs; keep one shared popup API — no second overlay system
+- [x] Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`)
+- [ ] **Progress indicator**
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard` for host / game input handoff
 
 ### 1.2 Layout & style gaps

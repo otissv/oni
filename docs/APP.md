@@ -327,7 +327,7 @@ App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
 | Tooltip | [ ] |
 | Context menu / menu bar | [ ] |
 | Dialog / modal chrome | [ ] |
-| Tabs | [ ] |
+| Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`) | [x] |
 | Progress | [ ] |
 
 ### Other

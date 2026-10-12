@@ -35,60 +35,63 @@ select_test_replace_values :: proc(values: []string) {
 
 @(private)
 select_test_anchor_trigger_child :: proc(_: Select_Trigger_State) {
-	Select_Value({
-		config = {id = "anchor-value"},
-		placeholder = "Pick",
-	})
+	Select_Value({config = {id = "anchor-value"}, placeholder = "Pick"})
 }
 
 @(private)
 select_test_anchor_child :: proc(_: Select_State) {
-	Select_Trigger({
-		config = {
-			id = "anchor-trigger",
-			width = set.Width(f32(240)),
-			height = set.Height(f32(40)),
+	Select_Trigger(
+		{
+			config = {
+				id = "anchor-trigger",
+				width = set.Width(f32(240)),
+				height = set.Height(f32(40)),
+			},
+			child = select_test_anchor_trigger_child,
 		},
-		child = select_test_anchor_trigger_child,
-	})
+	)
 }
 
 @(private)
 select_test_anchor_content :: proc(_: Select_State) {
-	Option({
-		config = {id = "anchor-option"},
-		value = "one",
-		text = "One",
-	})
+	Option({config = {id = "anchor-option"}, value = "one", text = "One"})
 }
 
 @(private)
 select_test_click_content :: proc(_: Select_State) {
-	Option({
-		config = {id = "click-option"},
-		value = "one",
-		text = "One",
-		on_click = select_test_on_option_click,
-	})
+	Option(
+		{
+			config = {id = "click-option"},
+			value = "one",
+			text = "One",
+			on_click = select_test_on_option_click,
+		},
+	)
 }
 
 @(private)
 select_test_sized_content :: proc(_: Select_State) {
-	Option({
-		config = {id = "sized-option-1", height = set.Height(f32(20))},
-		value = "one",
-		text = "One",
-	})
-	Option({
-		config = {id = "sized-option-2", height = set.Height(f32(40))},
-		value = "two",
-		text = "Two",
-	})
-	Option({
-		config = {id = "sized-option-3", height = set.Height(f32(60))},
-		value = "three",
-		text = "Three",
-	})
+	Option(
+		{
+			config = {id = "sized-option-1", height = set.Height(f32(20))},
+			value = "one",
+			text = "One",
+		},
+	)
+	Option(
+		{
+			config = {id = "sized-option-2", height = set.Height(f32(40))},
+			value = "two",
+			text = "Two",
+		},
+	)
+	Option(
+		{
+			config = {id = "sized-option-3", height = set.Height(f32(60))},
+			value = "three",
+			text = "Three",
+		},
+	)
 }
 
 @(private)
@@ -160,25 +163,14 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 		}
 
 		Select({
-			config = {
-				id = "fruit",
-				width = set.Width(f32(200)),
-				height = set.Height(f32(40)),
-			},
+			config = {id = "fruit", width = set.Width(f32(200)), height = set.Height(f32(40))},
 			open = true,
 			on_open_change = select_test_on_open,
 			child = proc(_: Select_State) {
 				Select_Trigger({
-					config = {
-						id = "fruit-trigger",
-						width = set.Width(f32(160)),
-						height = set.Height(f32(32)),
-					},
+					config = {id = "fruit-trigger", width = set.Width(f32(160)), height = set.Height(f32(32))},
 					child = proc(_: Select_Trigger_State) {
-						Select_Value({
-							config = {id = "fruit-value"},
-							placeholder = "Pick",
-						})
+						Select_Value({config = {id = "fruit-value"}, placeholder = "Pick"})
 					},
 				})
 			},
@@ -186,11 +178,7 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 				Option_Group({
 					config = {id = "fruit-group"},
 					child = proc(_: Option_Group_State) {
-						Option({
-							config = {id = "fruit-apple"},
-							value = "apple",
-							text = "Apple",
-						})
+						Option({config = {id = "fruit-apple"}, value = "apple", text = "Apple"})
 					},
 				})
 			},
@@ -237,43 +225,42 @@ select_trigger_tabbable_registers_in_tab_order :: proc(t: ^testing.T) {
 }
 
 @(test)
-select_uncontrolled_option_sets_value_and_closes :: proc(t: ^testing.T) {
+select_single_value_callback_updates_cache_and_closes :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
+		select_test_value = ""
+		select_test_open = true
 		select_ctx_push(
 			{
 				select_key = "pick",
 				open = true,
-				value_controlled = false,
-				open_controlled = false,
+				on_value_change = select_test_on_value,
+				on_open_change = select_test_on_open,
 			},
 		)
 		defer select_ctx_pop()
 
 		select_set_value("red", "Red")
-		testing.expect_value(t, Select_Get_Value(), "red")
-		testing.expect(t, !Select_Is_Open())
+		testing.expect_value(t, select_test_value, "red")
+		testing.expect(t, !select_test_open)
 
 		rt := select_runtime_ensure("pick")
 		testing.expect(t, rt != nil)
 		if rt == nil do return
-		testing.expect_value(t, rt.value, "red")
+		testing.expect_value(t, rt.cache_value, "red")
 		testing.expect_value(t, rt.value_label, "Red")
-		testing.expect(t, rt.value_set)
 	})
 }
 
 @(test)
-select_set_value_updates_runtime_label :: proc(t: ^testing.T) {
+select_set_value_updates_runtime_label_cache :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
 		select_ctx_push(
 			{
 				select_key = "runtime-sel",
-				value_controlled = false,
-				open_controlled = false,
 				open = true,
 			},
 		)
@@ -292,6 +279,14 @@ select_set_value_updates_runtime_label :: proc(t: ^testing.T) {
 select_multiple_toggles_without_closing :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
+		defer {
+			for value in select_test_values {
+				delete(value)
+			}
+
+			delete(select_test_values)
+			select_test_values = nil
+		}
 
 		select_ctx_push(
 			{
@@ -299,8 +294,7 @@ select_multiple_toggles_without_closing :: proc(t: ^testing.T) {
 				multiple = true,
 				listbox = true,
 				open = true,
-				value_controlled = false,
-				open_controlled = false,
+				on_values_change = select_test_replace_values,
 			},
 		)
 		defer select_ctx_pop()
@@ -308,11 +302,14 @@ select_multiple_toggles_without_closing :: proc(t: ^testing.T) {
 		select_set_value("a", "A")
 		select_set_value("b", "B")
 		testing.expect(t, Select_Is_Open())
-		testing.expect_value(t, len(Select_Get_Values()), 2)
+		testing.expect_value(t, len(select_test_values), 2)
 
 		select_set_value("a", "A")
-		testing.expect_value(t, len(Select_Get_Values()), 1)
-		testing.expect_value(t, Select_Get_Value(), "b")
+		testing.expect_value(t, len(select_test_values), 1)
+
+		if len(select_test_values) == 1 {
+			testing.expect_value(t, select_test_values[0], "b")
+		}
 	})
 }
 
@@ -336,7 +333,6 @@ select_controlled_multiple_callback_does_not_alias_source_values :: proc(t: ^tes
 				multiple = true,
 				listbox = true,
 				open = true,
-				value_controlled = true,
 				on_values_change = select_test_replace_values,
 			},
 		)
@@ -352,67 +348,6 @@ select_controlled_multiple_callback_does_not_alias_source_values :: proc(t: ^tes
 
 		if len(select_test_values) == 1 {
 			testing.expect_value(t, select_test_values[0], "b")
-		}
-	})
-}
-
-@(test)
-select_uncontrolled_multiple_replacement_does_not_alias_runtime_values :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		defer select_shutdown()
-
-		rt := select_runtime_ensure("uncontrolled-multi")
-		testing.expect(t, rt != nil)
-
-		if rt == nil do return
-
-		select_runtime_replace_values(rt, []string{"a", "b"}, []string{"A", "B"})
-		select_ctx_push(
-			{
-				select_key = "uncontrolled-multi",
-				multiple = true,
-				listbox = true,
-				open = true,
-			},
-		)
-		defer select_ctx_pop()
-
-		ctx := select_ctx_top()
-		select_load_runtime_values(ctx, rt)
-		select_set_value("a", "A")
-
-		testing.expect_value(t, ctx.value_count, 1)
-		testing.expect_value(t, ctx.values[0], "b")
-		testing.expect_value(t, len(rt.values), 1)
-
-		if len(rt.values) == 1 {
-			testing.expect_value(t, rt.values[0], "b")
-			testing.expect_value(t, rt.value_labels[0], "B")
-		}
-	})
-}
-
-@(test)
-select_runtime_replacement_accepts_aliased_input :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		defer select_shutdown()
-
-		rt := select_runtime_ensure("aliased-runtime")
-		testing.expect(t, rt != nil)
-
-		if rt == nil do return
-
-		select_runtime_replace_values(rt, []string{"a", "b"}, []string{"A", "B"})
-		select_runtime_replace_values(rt, rt.values[:], rt.value_labels[:])
-
-		testing.expect_value(t, len(rt.values), 2)
-		testing.expect_value(t, len(rt.value_labels), 2)
-
-		if len(rt.values) == 2 && len(rt.value_labels) == 2 {
-			testing.expect_value(t, rt.values[0], "a")
-			testing.expect_value(t, rt.values[1], "b")
-			testing.expect_value(t, rt.value_labels[0], "A")
-			testing.expect_value(t, rt.value_labels[1], "B")
 		}
 	})
 }
@@ -436,17 +371,7 @@ select_content_anchors_below_trigger_and_trigger_clips_children :: proc(t: ^test
 			widget_test_end_frame()
 		}
 
-		Select({
-			config = {
-				id = "anchor-select",
-				x = set.F32(35),
-				y = set.F32(60),
-			},
-			open = true,
-			on_open_change = select_test_on_open,
-			child = select_test_anchor_child,
-			content = select_test_anchor_content,
-		})
+		Select({config = {id = "anchor-select", x = set.F32(35), y = set.F32(60)}, open = true, on_open_change = select_test_on_open, child = select_test_anchor_child, content = select_test_anchor_content})
 		widget_test_finish_layout()
 
 		root, root_ok := widget_test_layout_node("anchor-select")
@@ -480,109 +405,117 @@ select_content_anchors_below_trigger_and_trigger_clips_children :: proc(t: ^test
 		testing.expect(t, content.rect.w >= trigger.rect.w)
 		testing.expect(t, trigger.has_clip)
 		testing.expect(t, trigger.clip_rect.y > trigger.rect.y)
-		testing.expect(
-			t,
-			trigger.clip_rect.y + trigger.clip_rect.h < trigger.rect.y + trigger.rect.h,
-		)
+		testing.expect(t, trigger.clip_rect.y + trigger.clip_rect.h < trigger.rect.y + trigger.rect.h)
 	})
 }
 
 @(test)
 select_dropdown_measures_options_and_flips_above_viewport_edge :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		widget_test_begin_layout()
-		defer {
-			select_shutdown()
-			widget_test_end_frame()
-		}
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			widget_test_begin_layout()
+			defer {
+				select_shutdown()
+				widget_test_end_frame()
+			}
 
-		Select({
-			config = {
-				id = "sized-select",
-				y = set.F32(540),
-			},
-			open = true,
-			on_open_change = select_test_on_open,
-			child = select_test_anchor_child,
-			content = select_test_sized_content,
-		})
-		widget_test_finish_layout()
+			Select(
+				{
+					config = {id = "sized-select", y = set.F32(540)},
+					open = true,
+					on_open_change = select_test_on_open,
+					child = select_test_anchor_child,
+					content = select_test_sized_content,
+				},
+			)
+			widget_test_finish_layout()
 
-		root, root_ok := widget_test_layout_node("sized-select")
-		trigger: ^o.Layout_Node
-		content: ^o.Layout_Node
+			root, root_ok := widget_test_layout_node("sized-select")
+			trigger: ^o.Layout_Node
+			content: ^o.Layout_Node
 
-		if root_ok {
-			for child_index in root.child_indices {
-				child := &o.state.ui.layout.nodes[child_index]
+			if root_ok {
+				for child_index in root.child_indices {
+					child := &o.state.ui.layout.nodes[child_index]
 
-				if child.kind == .SELECT_TRIGGER {
-					trigger = child
-				} else if child.space == .POPOVER {
-					content = child
+					if child.kind == .SELECT_TRIGGER {
+						trigger = child
+					} else if child.space == .POPOVER {
+						content = child
+					}
 				}
 			}
-		}
 
-		trigger_ok := trigger != nil
-		content_ok := content != nil
-		testing.expect(t, root_ok)
-		testing.expect(t, trigger_ok)
-		testing.expect(t, content_ok)
+			trigger_ok := trigger != nil
+			content_ok := content != nil
+			testing.expect(t, root_ok)
+			testing.expect(t, trigger_ok)
+			testing.expect(t, content_ok)
 
-		if !trigger_ok || !content_ok do return
+			if !trigger_ok || !content_ok do return
 
-		widget_test_begin_draw()
+			widget_test_begin_draw()
 
-		// Three measured rows (20 + 40 + 60), two 2px gaps, 8px padding,
-		// and a 1px border on each edge.
-		expect_close(t, content.rect.h, 134)
-		expect_close(t, content.rect.y, trigger.rect.y - SELECT_DROPDOWN_GAP_PX - content.rect.h)
-		testing.expect(t, content.rect.y >= SELECT_DROPDOWN_VIEWPORT_MARGIN_PX)
-	})
+			// Three measured rows (20 + 40 + 60), two 2px gaps, 8px padding,
+			// and a 1px border on each edge.
+			expect_close(t, content.rect.h, 134)
+			expect_close(
+				t,
+				content.rect.y,
+				trigger.rect.y - SELECT_DROPDOWN_GAP_PX - content.rect.h,
+			)
+			testing.expect(t, content.rect.y >= SELECT_DROPDOWN_VIEWPORT_MARGIN_PX)
+		},
+	)
 }
 
 @(test)
 select_listbox_size_uses_measured_option_rows :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		widget_test_begin_layout()
-		defer {
-			select_shutdown()
-			widget_test_end_frame()
-		}
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			widget_test_begin_layout()
+			defer {
+				select_shutdown()
+				widget_test_end_frame()
+			}
 
-		Select({
-			config = {id = "sized-listbox"},
-			size = 2,
-			child = select_test_anchor_child,
-			content = select_test_sized_content,
-		})
-		widget_test_finish_layout()
+			Select(
+				{
+					config = {id = "sized-listbox"},
+					size = 2,
+					child = select_test_anchor_child,
+					content = select_test_sized_content,
+				},
+			)
+			widget_test_finish_layout()
 
-		root, root_ok := widget_test_layout_node("sized-listbox")
-		content: ^o.Layout_Node
+			root, root_ok := widget_test_layout_node("sized-listbox")
+			content: ^o.Layout_Node
 
-		if root_ok {
-			for child_index in root.child_indices {
-				child := &o.state.ui.layout.nodes[child_index]
+			if root_ok {
+				for child_index in root.child_indices {
+					child := &o.state.ui.layout.nodes[child_index]
 
-				if child.kind == .RECT && child.space != .POPOVER {
-					content = child
+					if child.kind == .RECT && child.space != .POPOVER {
+						content = child
+					}
 				}
 			}
-		}
 
-		ok := content != nil
-		testing.expect(t, root_ok)
-		testing.expect(t, ok)
+			ok := content != nil
+			testing.expect(t, root_ok)
+			testing.expect(t, ok)
 
-		if !ok do return
+			if !ok do return
 
-		widget_test_begin_draw()
+			widget_test_begin_draw()
 
-		// The first two measured rows plus one gap and container chrome.
-		expect_close(t, content.rect.h, 72)
-	})
+			// The first two measured rows plus one gap and container chrome.
+			expect_close(t, content.rect.h, 72)
+		},
+	)
 }
 
 @(test)
@@ -638,10 +571,10 @@ select_runtime_initializes_and_shutdown_resets_state :: proc(t: ^testing.T) {
 
 		if rt != nil {
 			testing.expect_value(t, rt.highlight, -1)
-			select_runtime_set_string(&rt.value, "alpha")
-			aliased_tail := rt.value[1:]
-			select_runtime_set_string(&rt.value, aliased_tail)
-			testing.expect_value(t, rt.value, "lpha")
+			select_runtime_set_string(&rt.cache_value, "alpha")
+			aliased_tail := rt.cache_value[1:]
+			select_runtime_set_string(&rt.cache_value, aliased_tail)
+			testing.expect_value(t, rt.cache_value, "lpha")
 		}
 
 		select_ctx_push({select_key = "runtime"})
@@ -649,34 +582,6 @@ select_runtime_initializes_and_shutdown_resets_state :: proc(t: ^testing.T) {
 		testing.expect(t, select_runtimes == nil)
 		testing.expect_value(t, select_ctx_depth, 0)
 		testing.expect(t, !select_ctx_ok())
-	})
-}
-
-@(test)
-select_runtime_replacement_filters_invalid_values_and_labels :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		defer select_shutdown()
-
-		rt := select_runtime_ensure("normalized-runtime")
-		testing.expect(t, rt != nil)
-
-		if rt == nil do return
-
-		select_runtime_replace_values(
-			rt,
-			[]string{"", "a", "a", "b"},
-			[]string{"ignored", "", "duplicate", "Bee"},
-		)
-		testing.expect(t, rt.value_set)
-		testing.expect_value(t, len(rt.values), 2)
-		testing.expect_value(t, len(rt.value_labels), 2)
-
-		if len(rt.values) == 2 && len(rt.value_labels) == 2 {
-			testing.expect_value(t, rt.values[0], "a")
-			testing.expect_value(t, rt.value_labels[0], "a")
-			testing.expect_value(t, rt.values[1], "b")
-			testing.expect_value(t, rt.value_labels[1], "Bee")
-		}
 	})
 }
 
@@ -715,7 +620,7 @@ select_value_text_resolves_placeholder_labels_and_multiple_fallbacks :: proc(t: 
 }
 
 @(test)
-select_open_state_honors_disabled_listbox_controlled_and_highlight :: proc(t: ^testing.T) {
+select_open_state_honors_disabled_listbox_and_highlight :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
@@ -723,7 +628,6 @@ select_open_state_honors_disabled_listbox_controlled_and_highlight :: proc(t: ^t
 		select_ctx_push(
 			{
 				select_key = "open-controlled",
-				open_controlled = true,
 				on_open_change = select_test_on_open,
 			},
 		)
@@ -739,7 +643,7 @@ select_open_state_honors_disabled_listbox_controlled_and_highlight :: proc(t: ^t
 		testing.expect(t, rt != nil)
 
 		if rt != nil {
-			testing.expect(t, !rt.open)
+			testing.expect_value(t, rt.highlight, 0)
 		}
 
 		select_ctx_pop()
@@ -767,8 +671,6 @@ select_single_value_controlled_callback_closes_and_disabled_blocks :: proc(t: ^t
 			{
 				select_key = "controlled-value",
 				open = true,
-				value_controlled = true,
-				open_controlled = true,
 				on_value_change = select_test_on_value,
 				on_open_change = select_test_on_open,
 			},
@@ -876,7 +778,7 @@ select_wrapper_callbacks_preserve_user_handlers :: proc(t: ^testing.T) {
 }
 
 @(test)
-select_resolve_open_value_covers_controlled_and_uncontrolled_modes :: proc(t: ^testing.T) {
+select_resolve_open_value_uses_props_and_cached_label :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
@@ -885,52 +787,27 @@ select_resolve_open_value_covers_controlled_and_uncontrolled_modes :: proc(t: ^t
 
 		if rt == nil do return
 
-		rt.open = true
-		rt.value_set = true
-		select_runtime_set_string(&rt.value, "runtime")
+		select_runtime_set_string(&rt.cache_value, "runtime")
 		select_runtime_set_string(&rt.value_label, "Runtime")
 
-		open, value, label, open_controlled, value_controlled := select_resolve_open_value(
-			{},
-			"resolve",
-		)
+		open, value, label := select_resolve_open_value({open = true, value = "runtime"}, "resolve")
 		testing.expect(t, open)
 		testing.expect_value(t, value, "runtime")
 		testing.expect_value(t, label, "Runtime")
-		testing.expect(t, !open_controlled)
-		testing.expect(t, !value_controlled)
 
-		open, value, label, open_controlled, value_controlled = select_resolve_open_value(
-			{
-				open = false,
-				value = "controlled",
-				on_open_change = select_test_on_open,
-				on_value_change = select_test_on_value,
-			},
-			"resolve",
-		)
+		open, value, label = select_resolve_open_value({open = false, value = "controlled"}, "resolve")
 		testing.expect(t, !open)
 		testing.expect_value(t, value, "controlled")
 		testing.expect_value(t, label, "")
-		testing.expect(t, open_controlled)
-		testing.expect(t, value_controlled)
 
-		_, value, label, _, value_controlled = select_resolve_open_value(
-			{
-				multiple = true,
-				values = []string{"a"},
-				on_values_change = select_test_replace_values,
-			},
-			"resolve",
-		)
+		_, value, label = select_resolve_open_value({multiple = true, values = []string{"a"}}, "resolve")
 		testing.expect_value(t, value, "")
 		testing.expect_value(t, label, "")
-		testing.expect(t, value_controlled)
 	})
 }
 
 @(test)
-select_trigger_click_opens_uncontrolled_select_end_to_end :: proc(t: ^testing.T) {
+select_trigger_click_notifies_controlled_open_end_to_end :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer {
@@ -939,17 +816,13 @@ select_trigger_click_opens_uncontrolled_select_end_to_end :: proc(t: ^testing.T)
 		}
 
 		select_test_trigger_clicks = 0
+		select_test_open = false
 		props := Select_Props {
 			config = {id = "click-trigger-select"},
+			open = select_test_open,
+			on_open_change = select_test_on_open,
 			child = proc(_: Select_State) {
-				Select_Trigger({
-					config = {
-						id = "click-trigger",
-						width = set.Width(f32(160)),
-						height = set.Height(f32(32)),
-					},
-					on_click = select_test_on_trigger_click,
-				})
+				Select_Trigger({config = {id = "click-trigger", width = set.Width(f32(160)), height = set.Height(f32(32))}, on_click = select_test_on_trigger_click})
 			},
 			content = select_test_anchor_content,
 		}
@@ -973,17 +846,14 @@ select_trigger_click_opens_uncontrolled_select_end_to_end :: proc(t: ^testing.T)
 		widget_test_begin_draw()
 		o.w_ctx.mouse_x = trigger.rect.x + trigger.rect.w / 2
 		o.w_ctx.mouse_y = trigger.rect.y + trigger.rect.h / 2
-		o.w_ctx.left_mouse = {pressed = true, released = true}
+		o.w_ctx.left_mouse = {
+			pressed  = true,
+			released = true,
+		}
 		o.layout_resolve_pointer_hit()
 		Select(props)
 
-		rt := select_runtime_ensure("click-trigger-select")
-		testing.expect(t, rt != nil)
-
-		if rt != nil {
-			testing.expect(t, rt.open)
-		}
-
+		testing.expect(t, select_test_open)
 		testing.expect_value(t, select_test_trigger_clicks, 1)
 	})
 }
@@ -1028,7 +898,10 @@ select_option_click_commits_value_and_closes_end_to_end :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 		o.w_ctx.mouse_x = option.rect.x + option.rect.w / 2
 		o.w_ctx.mouse_y = option.rect.y + option.rect.h / 2
-		o.w_ctx.left_mouse = {pressed = true, released = true}
+		o.w_ctx.left_mouse = {
+			pressed  = true,
+			released = true,
+		}
 		o.layout_resolve_pointer_hit()
 		Select(props)
 
@@ -1061,7 +934,9 @@ select_outside_press_dismisses_open_dropdown_end_to_end :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 		o.w_ctx.mouse_x = 760
 		o.w_ctx.mouse_y = 560
-		o.w_ctx.left_mouse = {pressed = true}
+		o.w_ctx.left_mouse = {
+			pressed = true,
+		}
 		o.layout_resolve_pointer_hit()
 		Select(props)
 
@@ -1106,7 +981,9 @@ select_content_press_is_owned_and_does_not_dismiss :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 		o.w_ctx.mouse_x = option.rect.x + option.rect.w / 2
 		o.w_ctx.mouse_y = option.rect.y + option.rect.h / 2
-		o.w_ctx.left_mouse = {pressed = true}
+		o.w_ctx.left_mouse = {
+			pressed = true,
+		}
 		o.layout_resolve_pointer_hit()
 		Select(props)
 

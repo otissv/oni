@@ -30,8 +30,8 @@ Date picker root event snapshot.
 Date_Picker_Event :: o.Widget_Event(Date_Picker_State)
 
 /*
-Date picker root props: caller-owned selection, controlled/uncontrolled open,
-compound Trigger / Value / Input children, and an optional calendar content panel.
+Date picker root props: caller-owned selection, open, and month; compound
+Trigger / Value / Input children; optional calendar content panel.
 
 Composition (shadcn-style):
 ```
@@ -41,9 +41,9 @@ Date_Picker
 └── Popover content → Calendar (default) or custom `content`
 ```
 
-Selection is caller-owned for `SINGLE` / `MULTIPLE` / `RANGE`: pass the current
-selection every frame and update it from `on_select`. Open state is uncontrolled
-by default; pass `on_open_change` to control `open` each frame.
+Selection, open, and month are caller-owned: pass them every frame and update
+from `on_select` / `on_open_change` / `on_month_change`. The widget does not
+keep open or month as runtime source of truth.
 
 `mode` defaults to `.SINGLE` when `.NONE`. Single and completed range selections
 close the popover unless `keep_open` is set. Multiple mode stays open.
@@ -58,7 +58,6 @@ Date_Picker_Props :: struct {
 	open:                         bool,
 	keep_open:                    bool,
 	month:                        Calendar_Date,
-	default_month:                Calendar_Date,
 	on_month_change:              proc(month: Calendar_Date),
 	on_select:                    proc(selection: Calendar_Selection),
 	on_day_click:                 proc(date: Calendar_Date),
@@ -148,26 +147,6 @@ date_picker_refresh_merged_if_interaction_changed :: proc(
 	return date_picker_refresh_merged(props, frame_state), fp
 }
 
-@(private)
-date_picker_resolve_open :: proc(
-	props: Date_Picker_Props,
-	key: string,
-) -> (
-	open: bool,
-	open_controlled: bool,
-) {
-	open_controlled = props.on_open_change != nil
-	rt := date_picker_runtime_ensure(key)
-
-	if open_controlled {
-		open = props.open
-	} else if rt != nil {
-		open = rt.open
-	}
-
-	return
-}
-
 /*
 Renders a composable date picker root (Popover + Calendar).
 
@@ -182,7 +161,7 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	open, open_controlled := date_picker_resolve_open(props, key)
+	open := props.open
 	mode := date_picker_effective_mode(props.mode)
 	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
 
@@ -226,7 +205,6 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 			selected_dates = props.selected_dates,
 			selected_range = props.selected_range,
 			month = props.month,
-			default_month = props.default_month,
 			on_month_change = props.on_month_change,
 			on_select = props.on_select,
 			on_day_click = props.on_day_click,
@@ -249,7 +227,6 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 			format_weekday = props.format_weekday,
 			format_day = props.format_day,
 			format_value = props.format_value,
-			open_controlled = open_controlled,
 			user_child = props.child,
 			user_content = props.content,
 		},

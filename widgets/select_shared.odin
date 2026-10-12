@@ -38,17 +38,17 @@ Select_Option_Entry :: struct {
 }
 
 /*
-Cross-frame select runtime for uncontrolled open/value and cached value labels.
+Cross-frame select runtime: highlight + closed-trigger value label cache.
+
+Value and open are always caller-owned; this never stores them as source of truth.
 */
 @(private)
 Select_Runtime :: struct {
-	open:         bool,
-	value:        string,
-	value_label:  string,
-	values:       [dynamic]string,
-	value_labels: [dynamic]string,
 	highlight:    int,
-	value_set:    bool,
+	cache_value:  string,
+	value_label:  string,
+	cache_values: [dynamic]string,
+	value_labels: [dynamic]string,
 }
 
 /*
@@ -81,8 +81,6 @@ Select_Ctx :: struct {
 	trigger_rect:       o.Rect,
 	has_trigger:        bool,
 	pointer_owned:      bool,
-	value_controlled:   bool,
-	open_controlled:    bool,
 	user_child:         proc(frame_state: Select_State),
 	user_content:       proc(frame_state: Select_State),
 	content_frame:      Select_State,
@@ -110,15 +108,15 @@ select_shutdown :: proc() {
 	if select_runtimes == nil do return
 
 	for key, &rt in select_runtimes {
-		if rt.value != "" {
-			delete(rt.value)
+		if rt.cache_value != "" {
+			delete(rt.cache_value)
 		}
 
 		if rt.value_label != "" {
 			delete(rt.value_label)
 		}
 
-		for v in rt.values {
+		for v in rt.cache_values {
 			if v != "" {
 				delete(v)
 			}
@@ -130,7 +128,7 @@ select_shutdown :: proc() {
 			}
 		}
 
-		delete(rt.values)
+		delete(rt.cache_values)
 		delete(rt.value_labels)
 		delete(key)
 	}
@@ -152,7 +150,9 @@ select_runtime_ensure :: proc(key: string) -> ^Select_Runtime {
 	}
 
 	if _, ok := select_runtimes[key]; !ok {
-		select_runtimes[strings.clone(key)] = {highlight = -1}
+		select_runtimes[strings.clone(key)] = {
+			highlight = -1,
+		}
 	}
 
 	return &select_runtimes[key]
@@ -336,7 +336,7 @@ select_cache_value_label :: proc(ctx: ^Select_Ctx, text: string) {
 
 	if rt == nil do return
 
-	select_runtime_set_string(&rt.value, ctx.value)
+	select_runtime_set_string(&rt.cache_value, ctx.value)
 	select_runtime_set_string(&rt.value_label, text)
 }
 
@@ -354,12 +354,45 @@ select_cache_value_label_for :: proc(ctx: ^Select_Ctx, value, text: string) {
 		ctx.value_labels[i] = text
 		rt := select_runtime_ensure(ctx.select_key)
 
-		if rt == nil || i >= len(rt.value_labels) do return
+		if rt == nil do return
+
+		select_runtime_cache_multi_label(rt, value, text)
+
+		return
+	}
+}
+
+@(private)
+select_runtime_cache_multi_label :: proc(rt: ^Select_Runtime, value, text: string) {
+	if rt == nil || value == "" do return
+
+	for i in 0 ..< len(rt.cache_values) {
+		if rt.cache_values[i] != value do continue
 
 		select_runtime_set_string(&rt.value_labels[i], text)
 
 		return
 	}
+
+	append(&rt.cache_values, strings.clone(value))
+	append(&rt.value_labels, text != "" ? strings.clone(text) : strings.clone(value))
+}
+
+@(private)
+select_runtime_lookup_multi_label :: proc(rt: ^Select_Runtime, value: string) -> string {
+	if rt == nil || value == "" do return ""
+
+	for i in 0 ..< len(rt.cache_values) {
+		if rt.cache_values[i] == value {
+			if i < len(rt.value_labels) {
+				return rt.value_labels[i]
+			}
+
+			return ""
+		}
+	}
+
+	return ""
 }
 
 @(private)
@@ -390,7 +423,7 @@ select_resolve_value_label :: proc(ctx: ^Select_Ctx) -> string {
 
 	rt := select_runtime_ensure(ctx.select_key)
 
-	if rt != nil && rt.value == ctx.value && rt.value_label != "" {
+	if rt != nil && rt.cache_value == ctx.value && rt.value_label != "" {
 		return rt.value_label
 	}
 
@@ -407,6 +440,7 @@ select_has_selection :: proc(ctx: ^Select_Ctx) -> bool {
 @(private)
 select_copy_values_into_ctx :: proc(ctx: ^Select_Ctx, values: []string) {
 	ctx.value_count = 0
+	rt := select_runtime_ensure(ctx.select_key)
 
 	for v in values {
 		if v == "" || select_ctx_has_value(ctx, v) do continue
@@ -414,28 +448,9 @@ select_copy_values_into_ctx :: proc(ctx: ^Select_Ctx, values: []string) {
 		if ctx.value_count >= SELECT_VALUES_MAX do break
 
 		ctx.values[ctx.value_count] = strings.clone(v, context.temp_allocator)
-		ctx.value_labels[ctx.value_count] = ""
-		ctx.value_count += 1
-	}
-}
-
-@(private)
-select_load_runtime_values :: proc(ctx: ^Select_Ctx, rt: ^Select_Runtime) {
-	ctx.value_count = 0
-
-	if rt == nil do return
-
-	for i in 0 ..< len(rt.values) {
-		if ctx.value_count >= SELECT_VALUES_MAX do break
-
-		ctx.values[ctx.value_count] = strings.clone(rt.values[i], context.temp_allocator)
-		lab := ""
-
-		if i < len(rt.value_labels) {
-			lab = rt.value_labels[i]
-		}
-
-		ctx.value_labels[ctx.value_count] = strings.clone(lab, context.temp_allocator)
+		lab := select_runtime_lookup_multi_label(rt, v)
+		ctx.value_labels[ctx.value_count] =
+			lab != "" ? strings.clone(lab, context.temp_allocator) : ""
 		ctx.value_count += 1
 	}
 }
@@ -456,53 +471,14 @@ select_notify_values_change :: proc(ctx: ^Select_Ctx) {
 }
 
 @(private)
-select_runtime_replace_values :: proc(rt: ^Select_Runtime, values, labels: []string) {
-	replacement_values := make([dynamic]string, 0, len(values))
-	replacement_labels := make([dynamic]string, 0, len(values))
+select_runtime_sync_multi_labels :: proc(ctx: ^Select_Ctx) {
+	rt := select_runtime_ensure(ctx.select_key)
 
-	for value, i in values {
-		if value == "" do continue
+	if rt == nil do return
 
-		duplicate := false
-
-		for existing in replacement_values {
-			if existing == value {
-				duplicate = true
-
-				break
-			}
-		}
-
-		if duplicate do continue
-
-		append(&replacement_values, strings.clone(value))
-		label := value
-
-		if i < len(labels) && labels[i] != "" {
-			label = labels[i]
-		}
-
-		append(&replacement_labels, strings.clone(label))
+	for i in 0 ..< ctx.value_count {
+		select_runtime_cache_multi_label(rt, ctx.values[i], ctx.value_labels[i])
 	}
-
-	for v in rt.values {
-		if v != "" {
-			delete(v)
-		}
-	}
-
-	for lab in rt.value_labels {
-		if lab != "" {
-			delete(lab)
-		}
-	}
-
-	delete(rt.values)
-	delete(rt.value_labels)
-	rt.values = replacement_values
-	rt.value_labels = replacement_labels
-
-	rt.value_set = true
 }
 
 @(private)
@@ -525,21 +501,14 @@ select_set_open :: proc(open: bool) {
 		ctx.highlight = select_index_for_value(ctx, ctx.value)
 	}
 
-	if ctx.open_controlled {
-		if ctx.on_open_change != nil {
-			ctx.on_open_change(open)
-		}
-	} else {
-		rt := select_runtime_ensure(ctx.select_key)
+	rt := select_runtime_ensure(ctx.select_key)
 
-		if rt != nil {
-			rt.open = open
-			rt.highlight = ctx.highlight
-		}
+	if rt != nil {
+		rt.highlight = ctx.highlight
+	}
 
-		if ctx.on_open_change != nil {
-			ctx.on_open_change(open)
-		}
+	if ctx.on_open_change != nil {
+		ctx.on_open_change(open)
 	}
 }
 
@@ -578,22 +547,10 @@ select_set_value :: proc(value, text: string) {
 	ctx.value_label = strings.clone(label, context.temp_allocator)
 	select_cache_value_label(ctx, ctx.value_label)
 
-	if ctx.value_controlled {
-		if ctx.on_value_change != nil {
-			ctx.on_value_change(ctx.value)
-		}
-	} else {
-		rt := select_runtime_ensure(ctx.select_key)
-
-		if rt != nil {
-			select_runtime_set_string(&rt.value, value)
-			select_runtime_set_string(&rt.value_label, label)
-			rt.value_set = true
-		}
-
-		if ctx.on_value_change != nil {
-			ctx.on_value_change(value)
-		}
+	// Pass the caller-provided value (e.g. Option.value), not the temp clone on
+	// ctx — callers often store this pointer across frames.
+	if ctx.on_value_change != nil {
+		ctx.on_value_change(value)
 	}
 
 	if !ctx.listbox {
@@ -642,25 +599,8 @@ select_toggle_value :: proc(value, text: string) {
 		return
 	}
 
-	if ctx.value_controlled {
-		select_notify_values_change(ctx)
-	} else {
-		rt := select_runtime_ensure(ctx.select_key)
-
-		if rt != nil {
-			vals := make([]string, ctx.value_count, context.temp_allocator)
-			labs := make([]string, ctx.value_count, context.temp_allocator)
-
-			for i in 0 ..< ctx.value_count {
-				vals[i] = ctx.values[i]
-				labs[i] = ctx.value_labels[i]
-			}
-
-			select_runtime_replace_values(rt, vals, labs)
-		}
-
-		select_notify_values_change(ctx)
-	}
+	select_runtime_sync_multi_labels(ctx)
+	select_notify_values_change(ctx)
 }
 
 @(private)
@@ -788,10 +728,7 @@ select_handle_typing_keys :: proc() {
 }
 
 @(private)
-select_content_theme_config :: proc(
-	trigger_rect: o.Rect,
-	listbox: bool,
-) -> o.Widget_Config {
+select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool) -> o.Widget_Config {
 	if listbox {
 		return o.Widget_Config {
 			kind = .RECT,

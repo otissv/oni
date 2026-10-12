@@ -158,7 +158,7 @@ date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 			on_open_change = date_picker_test_on_open,
 			selected = {2024, 6, 5},
 			has_selected = true,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = {2024, 6, 5},
 			child = date_picker_test_child,
 		})
@@ -207,7 +207,7 @@ date_picker_trigger_tabbable_registers_in_tab_order :: proc(t: ^testing.T) {
 }
 
 @(test)
-date_picker_uncontrolled_open_toggle :: proc(t: ^testing.T) {
+date_picker_open_toggle_notifies_callback :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
@@ -216,51 +216,21 @@ date_picker_uncontrolled_open_toggle :: proc(t: ^testing.T) {
 			{
 				picker_key = "toggle",
 				open = false,
-				open_controlled = false,
 				mode = .SINGLE,
+				on_open_change = date_picker_test_on_open,
 			},
 		)
 		defer date_picker_ctx_pop()
 
 		date_picker_toggle_open()
 		testing.expect(t, Date_Picker_Is_Open())
-
-		rt := date_picker_runtime_ensure("toggle")
-		testing.expect(t, rt != nil)
-
-		if rt == nil {
-			return
-		}
-
-		testing.expect(t, rt.open)
+		testing.expect(t, date_picker_test_open)
+		testing.expect_value(t, date_picker_test_open_count, 1)
 
 		date_picker_set_open(false)
 		testing.expect(t, !Date_Picker_Is_Open())
-		testing.expect(t, !rt.open)
-	})
-}
-
-@(test)
-date_picker_controlled_open_notifies_callback :: proc(t: ^testing.T) {
-	with_widget_env(t, proc(t: ^testing.T) {
-		date_picker_test_reset()
-		defer date_picker_shutdown()
-
-		date_picker_ctx_push(
-			{
-				picker_key = "ctrl-open",
-				open = false,
-				open_controlled = true,
-				on_open_change = date_picker_test_on_open,
-				mode = .SINGLE,
-			},
-		)
-		defer date_picker_ctx_pop()
-
-		date_picker_set_open(true)
-		testing.expect(t, date_picker_test_open)
-		testing.expect_value(t, date_picker_test_open_count, 1)
-		testing.expect(t, Date_Picker_Is_Open())
+		testing.expect(t, !date_picker_test_open)
+		testing.expect_value(t, date_picker_test_open_count, 2)
 	})
 }
 
@@ -274,7 +244,6 @@ date_picker_select_single_closes_and_notifies :: proc(t: ^testing.T) {
 			{
 				picker_key = "pick-single",
 				open = true,
-				open_controlled = false,
 				mode = .SINGLE,
 				on_select = date_picker_test_on_select,
 			},
@@ -413,7 +382,6 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 				open = true,
 				mode = .SINGLE,
 				on_open_change = date_picker_test_on_open,
-				open_controlled = true,
 			},
 		)
 		defer date_picker_ctx_pop()
@@ -491,7 +459,7 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 			mode = .SINGLE,
 			open = true,
 			on_open_change = date_picker_test_on_open,
-			default_month = {2024, 6, 1},
+			month = {2024, 6, 1},
 			today = {2024, 6, 5},
 			child = proc(_: Date_Picker_State) {
 				Date_Picker_Input({
@@ -537,6 +505,7 @@ date_picker_trigger_click_toggles_open :: proc(t: ^testing.T) {
 				picker_key = "click",
 				open = false,
 				mode = .SINGLE,
+				on_open_change = date_picker_test_on_open,
 				trigger_user_click = date_picker_test_on_trigger_click,
 			},
 		)
@@ -544,6 +513,7 @@ date_picker_trigger_click_toggles_open :: proc(t: ^testing.T) {
 
 		date_picker_trigger_on_click({})
 		testing.expect(t, date_picker_ctx_top().open)
+		testing.expect(t, date_picker_test_open)
 		testing.expect_value(t, date_picker_test_trigger_clicks, 1)
 	})
 }

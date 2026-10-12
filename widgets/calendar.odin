@@ -57,13 +57,9 @@ Calendar root props (composable / DayPicker-style).
 Compose with `Calendar_Month` or finer parts (`Calendar_Navigation`, `Calendar_Caption`,
 `Calendar_Weekdays`, `Calendar_Week_Numbers`, `Calendar_Grid`) inside `child`.
 
-Selection is caller-owned for `SINGLE` / `MULTIPLE` / `RANGE`: pass the current
-selection every frame and update it from `on_select`. The widget never mutates
-caller slices or dates.
-
-Month navigation is uncontrolled by default (runtime owns the displayed month
-from `default_month` or today). Pass `on_month_change` to control the month via
-`month` each frame.
+Selection and displayed month are caller-owned: pass `selected*` / `month` every
+frame and update them from `on_select` / `on_month_change`. The widget never
+mutates caller slices or dates and does not keep month as runtime source of truth.
 
 `disabled_matcher` / `hidden_matcher` return true when a day cannot be selected
 or should not be shown. `start_date` / `end_date` disable days outside an
@@ -78,7 +74,6 @@ Calendar_Props :: struct {
 	selected_dates:               []Calendar_Date,
 	selected_range:               Calendar_Range,
 	month:                        Calendar_Date,
-	default_month:                Calendar_Date,
 	on_month_change:              proc(month: Calendar_Date),
 	on_select:                    proc(selection: Calendar_Selection),
 	on_day_click:                 proc(date: Calendar_Date),
@@ -125,10 +120,7 @@ Calendar_Props :: struct {
 
 @(private)
 Calendar_Runtime :: struct {
-	month:       Calendar_Date,
 	focused_day: Calendar_Date,
-	initialized: bool,
-	month_set:   bool,
 	focus_set:   bool,
 }
 
@@ -156,7 +148,6 @@ Calendar_Ctx :: struct {
 	today:             Calendar_Date,
 	day_size:          f32,
 	gap:               f32,
-	month_controlled:  bool,
 	disabled_matcher:  proc(date: Calendar_Date) -> bool,
 	hidden_matcher:    proc(date: Calendar_Date) -> bool,
 	on_month_change:   proc(month: Calendar_Date),
@@ -399,11 +390,6 @@ calendar_set_month :: proc(ctx: ^Calendar_Ctx, month: Calendar_Date) {
 	}
 
 	ctx.month = next
-
-	if ctx.runtime != nil {
-		ctx.runtime.month = next
-		ctx.runtime.month_set = true
-	}
 
 	if ctx.on_month_change != nil {
 		ctx.on_month_change(next)
@@ -1332,7 +1318,6 @@ Calendar :: proc(props: Calendar_Props) {
 	was_focused := widget_is_focused(key)
 	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
 	rt := calendar_runtime_ensure(key)
-	month_controlled := props.on_month_change != nil
 	number_of_months := calendar_resolve_months(props.number_of_months)
 	show_outside := calendar_resolve_show_outside(props)
 	today := calendar_resolve_today(props)
@@ -1340,28 +1325,10 @@ Calendar :: proc(props: Calendar_Props) {
 	day_size := calendar_style_f32(props.style.day_size, CALENDAR_DEFAULT_DAY_SIZE)
 	gap := calendar_style_f32(props.style.gap, CALENDAR_DEFAULT_GAP)
 
-	month := Calendar_Start_Of_Month(props.default_month)
+	month := Calendar_Start_Of_Month(props.month)
 
 	if month.year == 0 {
 		month = Calendar_Start_Of_Month(today)
-	}
-
-	if month_controlled {
-		month = Calendar_Start_Of_Month(props.month)
-
-		if month.year == 0 {
-			month = Calendar_Start_Of_Month(today)
-		}
-	} else if rt != nil {
-		if !rt.initialized {
-			rt.month = month
-			rt.initialized = true
-			rt.month_set = true
-		}
-
-		if rt.month_set {
-			month = rt.month
-		}
 	}
 
 	month = Calendar_Clamp_Month(month, props.start_month, props.end_month)
@@ -1445,7 +1412,6 @@ Calendar :: proc(props: Calendar_Props) {
 			today = today,
 			day_size = day_size,
 			gap = gap,
-			month_controlled = month_controlled,
 			disabled_matcher = props.disabled_matcher,
 			hidden_matcher = props.hidden_matcher,
 			on_month_change = props.on_month_change,
