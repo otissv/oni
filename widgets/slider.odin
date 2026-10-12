@@ -696,16 +696,10 @@ slider_root_size_for_thumbs :: proc(
 ) -> (
 	w, h: f32,
 ) {
+	// Layout-only provisional size for absolute thumb hosts before the root rect
+	// is solved. Draw must use layout_slider_result track geometry instead.
 	if cached, ok := o.slider_root_rect_get(layout_id); ok && cached.w > 0 && cached.h > 0 {
 		return cached.w, cached.h
-	}
-
-	if o.ui_pass() == .Draw {
-		rect := o.ui_layout_rect(layout_id)
-
-		if rect.w > 0 && rect.h > 0 {
-			return rect.w, rect.h
-		}
 	}
 
 	w = o.SLIDER_DEFAULT_WIDTH
@@ -774,6 +768,47 @@ slider_thumb_host_child :: proc(_: Rectangle_State) {
 }
 
 @(private)
+slider_paint_thumbs_from_track :: proc(
+	track: o.Rect,
+	orientation: o.Slider_Orientation,
+	values: [o.SLIDER_MAX_THUMBS]f32,
+	count: int,
+	min_v, max_v: f32,
+	inverted: bool,
+	thumb_size: f32,
+) -> (
+	thumbs: [o.SLIDER_MAX_THUMBS]o.Rect,
+	range_rect: o.Rect,
+) {
+	n := clamp(count, 0, o.SLIDER_MAX_THUMBS)
+
+	for i in 0 ..< n {
+		thumbs[i] = o.layout_slider_thumb_rect(
+			track,
+			orientation,
+			values[i],
+			min_v,
+			max_v,
+			inverted,
+			thumb_size,
+		)
+	}
+
+	range_rect = o.layout_slider_range_rect(
+		track,
+		orientation,
+		values,
+		n,
+		min_v,
+		max_v,
+		inverted,
+		thumb_size,
+	)
+
+	return thumbs, range_rect
+}
+
+@(private)
 slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
 	ctx := &slider_action_context
 
@@ -781,12 +816,40 @@ slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
 		return
 	}
 
-	root_w, root_h := slider_root_size_for_thumbs(ctx.layout_id, frame_state.config, ctx.orientation)
-	root := o.Rect {
-		w = root_w,
-		h = root_h,
+	track: o.Rect
+
+	if o.ui_pass() == .Draw {
+		// Draw hosts paint from the layout-owned track; map current values only.
+		chrome := o.layout_slider_result(ctx.layout_id)
+
+		if chrome == nil {
+			return
+		}
+
+		track = chrome.track
+	} else {
+		root_w, root_h := slider_root_size_for_thumbs(
+			ctx.layout_id,
+			frame_state.config,
+			ctx.orientation,
+		)
+		root := o.Rect {
+			w = root_w,
+			h = root_h,
+		}
+		track = o.layout_slider_track_rect(root, ctx.orientation, ctx.track_thickness)
 	}
-	track := o.layout_slider_track_rect(root, ctx.orientation, ctx.track_thickness)
+
+	thumbs, _ := slider_paint_thumbs_from_track(
+		track,
+		ctx.orientation,
+		ctx.values,
+		ctx.count,
+		ctx.min,
+		ctx.max,
+		ctx.inverted,
+		ctx.thumb_size,
+	)
 	previous_parent := slider_thumb_build_parent
 	previous_index := slider_thumb_build_index
 	slider_thumb_build_parent = frame_state
@@ -796,16 +859,7 @@ slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
 	}
 
 	for i in 0 ..< ctx.count {
-		thumb_rect := o.layout_slider_thumb_rect(
-			track,
-			ctx.orientation,
-			ctx.values[i],
-			ctx.min,
-			ctx.max,
-			ctx.inverted,
-			ctx.thumb_size,
-		)
-
+		thumb_rect := thumbs[i]
 		slider_thumb_build_index = i
 		Rectangle({
 			config = {
@@ -830,6 +884,9 @@ slider_children_body :: proc(frame_state: Slider_State) {
 
 /*
 Renders a production Radix/shadcn-style slider.
+
+Layout binds and finalizes track/thumb chrome; draw paints from the
+layout-owned track and maps current values onto that track only.
 
 `values` is caller-owned (length 1 or 2). Pointer drag, track press, and
 keyboard arrows / Home / End / PageUp / PageDown report updates via
@@ -1046,14 +1103,21 @@ Slider :: proc(props: Slider_Props) {
 		slider_handle_keyboard(&frame_state)
 		slider_action_context.values = frame_state.values
 		slider_action_context.count = frame_state.value_count
-		o.layout_slider_sync_values(layout_id, frame_state.values[:frame_state.value_count])
-		chrome = o.layout_slider_result(layout_id)
+	}
 
-		if chrome != nil {
-			track = chrome.track
-			thumbs = chrome.thumbs
-			range_rect = chrome.range
-		}
+	// Map values onto the layout-owned track for hit-test and paint. Do not
+	// re-finalize layout chrome during draw.
+	if chrome != nil {
+		thumbs, range_rect = slider_paint_thumbs_from_track(
+			track,
+			props.orientation,
+			slider_action_context.values,
+			slider_action_context.count,
+			min_v,
+			max_v,
+			props.inverted,
+			thumb_size,
+		)
 	}
 
 	// Always run drag handling so a latch can commit when interaction ends
@@ -1066,13 +1130,18 @@ Slider :: proc(props: Slider_Props) {
 		frame_state.is_hovered,
 		can_interact,
 	)
-	o.layout_slider_sync_values(layout_id, slider_action_context.values[:slider_action_context.count])
-	chrome = o.layout_slider_result(layout_id)
 
 	if chrome != nil {
-		track = chrome.track
-		thumbs = chrome.thumbs
-		range_rect = chrome.range
+		thumbs, range_rect = slider_paint_thumbs_from_track(
+			track,
+			props.orientation,
+			slider_action_context.values,
+			slider_action_context.count,
+			min_v,
+			max_v,
+			props.inverted,
+			thumb_size,
+		)
 	}
 
 	radius: o.Radius_px

@@ -23,6 +23,8 @@ ft_test_with_face :: proc(t: ^testing.T, body: proc(library: FT_Library, face: F
 	if library == nil do return
 	defer Done_FreeType(library)
 
+	testing.expect(t, font_library_enable_lcd_filter(library))
+
 	cpath := strings.clone_to_cstring(ft_test_fixture_path(), context.temp_allocator)
 	face: FT_Face
 	testing.expect(t, ft_ok(New_Face(library, cpath, 0, &face)))
@@ -82,11 +84,68 @@ ft_tag_and_load_flag_constants_match_freetype :: proc(t: ^testing.T) {
 	testing.expect_value(t, FT_LOAD_DEFAULT, 0)
 	testing.expect_value(t, FT_LOAD_RENDER, 1 << 2)
 	testing.expect_value(t, FT_LOAD_NO_BITMAP, 1 << 3)
+	testing.expect_value(t, FT_LOAD_TARGET_NORMAL, 0)
+	testing.expect_value(t, FT_LOAD_TARGET_LIGHT, 1 << 16)
+	testing.expect_value(t, FT_LOAD_TARGET_LCD, 3 << 16)
 	testing.expect_value(t, FT_RENDER_MODE_NORMAL, 0)
+	testing.expect_value(t, FT_RENDER_MODE_LIGHT, 1)
+	testing.expect_value(t, FT_RENDER_MODE_MONO, 2)
+	testing.expect_value(t, FT_RENDER_MODE_LCD, 3)
 	testing.expect_value(t, FT_PIXEL_MODE_MONO, 1)
 	testing.expect_value(t, FT_PIXEL_MODE_GRAY, 2)
+	testing.expect_value(t, FT_PIXEL_MODE_LCD, 5)
 	testing.expect_value(t, FT_PIXEL_MODE_BGRA, 7)
+	testing.expect_value(t, FT_LCD_FILTER_NONE, 0)
+	testing.expect_value(t, FT_LCD_FILTER_DEFAULT, 1)
 	testing.expect_value(t, int(FT_Glyph_Format.BITMAP), 1651078259)
+}
+
+@(test)
+ft_library_set_lcd_filter_default_succeeds :: proc(t: ^testing.T) {
+	library: FT_Library
+	testing.expect(t, ft_ok(Init_FreeType(&library)))
+	if library == nil do return
+	defer Done_FreeType(library)
+
+	testing.expect(t, font_library_enable_lcd_filter(library))
+	testing.expect(t, !font_library_enable_lcd_filter(nil))
+}
+
+@(test)
+ft_load_target_lcd_renders_lcd_pixel_mode :: proc(t: ^testing.T) {
+	ft_test_with_face(
+		t,
+		proc(library: FT_Library, face: FT_Face, t: ^testing.T) {
+			_ = library
+			hb := ft_font_create_referenced(face)
+			testing.expect(t, hb != nil)
+			if hb == nil do return
+			defer font_destroy(hb)
+
+			buf := buffer_create()
+			testing.expect(t, buf != nil)
+			if buf == nil do return
+			defer buffer_destroy(buf)
+
+			buffer_add_utf8(buf, "A", 1, 0, 1)
+			buffer_guess_segment_properties(buf)
+			testing.expect(t, shape(hb, buf, nil, 0) != 0)
+			info_len: c.uint
+			infos := buffer_get_glyph_infos(buf, &info_len)
+			testing.expect(t, infos != nil && info_len >= 1)
+			gid := infos[0].codepoint
+
+			flags := c.int(FT_LOAD_RENDER) | c.int(FT_LOAD_TARGET_LCD)
+			testing.expect(t, ft_ok(Load_Glyph(face, c.uint(gid), flags)))
+			slot := ft_glyph_slot(face)
+			bitmap := ft_slot_bitmap(slot)^
+			testing.expect_value(t, bitmap.pixel_mode, u8(FT_PIXEL_MODE_LCD))
+			testing.expect(t, bitmap.width > 0)
+			testing.expect(t, bitmap.width % 3 == 0)
+			testing.expect(t, bitmap.rows > 0)
+			testing.expect(t, bitmap.buffer != nil)
+		},
+	)
 }
 
 @(test)

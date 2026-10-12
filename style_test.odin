@@ -1049,7 +1049,9 @@ style_being_and_end_children_push_pop_scope_and_style :: proc(t: ^testing.T) {
 			being_children(id, config)
 			testing.expect_value(t, len(state.ui.style_stack), before_style + 1)
 			testing.expect_value(t, len(state.ui.scope_stack), before_scope + 1)
-			expect_close(t, ui_style_current().content_w, 800 - 10)
+			// Definite width/height shrink content box: 100-2*5 pad, 80-2*5 pad.
+			expect_close(t, ui_style_current().content_w, 100 - 10)
+			expect_close(t, ui_style_current().content_h, 80 - 10)
 			testing.expect(t, ui_has_layout_node(id))
 
 			end_children()

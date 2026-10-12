@@ -1,5 +1,6 @@
 package oni
 
+import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:testing"
@@ -18,6 +19,7 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 
 	saved_state := state
 	saved_theme := theme
+	saved_app_type_defaults := app_type_defaults_installer
 	defer {
 		widget_ctx_shutdown()
 		shortcut_shutdown()
@@ -25,6 +27,7 @@ with_engine_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
+		app_type_defaults_installer = saved_app_type_defaults
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -68,6 +71,7 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	test_state: State
 	saved_state := state
 	saved_theme := theme
+	saved_app_type_defaults := app_type_defaults_installer
 	defer {
 		widget_ctx_shutdown()
 		shortcut_shutdown()
@@ -75,6 +79,7 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
+		app_type_defaults_installer = saved_app_type_defaults
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -83,6 +88,9 @@ with_engine_sdl_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	state = &test_state
 	widget_ctx_sync()
 	theme = nil
+	register_app_type_defaults(proc(_: App_Type_Id) {
+		shortcut_install_tool_defaults()
+	})
 	clear_test_hooks()
 	defer clear_test_hooks()
 	state.running = true
@@ -130,6 +138,7 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	test_state: State
 	saved_state := state
 	saved_theme := theme
+	saved_app_type_defaults := app_type_defaults_installer
 	defer {
 		widget_ctx_shutdown()
 		shortcut_shutdown()
@@ -137,6 +146,7 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		font_shutdown()
 		delete(test_state.input.text_input)
 		batch_delete_cpu_arrays(&test_state.gpu_state)
+		app_type_defaults_installer = saved_app_type_defaults
 		state = saved_state
 		widget_ctx_sync()
 		theme = saved_theme
@@ -145,6 +155,9 @@ with_engine_sdl_window_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	state = &test_state
 	widget_ctx_sync()
 	theme = nil
+	register_app_type_defaults(proc(_: App_Type_Id) {
+		shortcut_install_tool_defaults()
+	})
 	clear_test_hooks()
 	defer clear_test_hooks()
 	state.window = window
@@ -243,7 +256,168 @@ engine_dpi_sync_updates_from_real_window :: proc(t: ^testing.T) {
 		testing.expect(t, state.dpi.drawable_h > 0)
 		testing.expect(t, state.dpi.scale > 0)
 		testing.expect(t, state.can_render)
+		// Subpixel order is always a known enum member after sync (may be Unknown).
+		order := state.dpi.subpixel_order
+		testing.expect(
+			t,
+			order == .Unknown || order == .None || order == .RGB || order == .BGR,
+		)
+		testing.expect_value(t, dpi_subpixel_order(), order)
 	})
+}
+
+@(test)
+engine_display_subpixel_order_from_wl_maps_horizontal_and_unknown :: proc(t: ^testing.T) {
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_UNKNOWN), Display_Subpixel_Order.Unknown)
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_NONE), Display_Subpixel_Order.None)
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_HORIZONTAL_RGB), Display_Subpixel_Order.RGB)
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_HORIZONTAL_BGR), Display_Subpixel_Order.BGR)
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_VERTICAL_RGB), Display_Subpixel_Order.Unknown)
+	testing.expect_value(t, display_subpixel_order_from_wl(DISPLAY_SUBPIXEL_WL_VERTICAL_BGR), Display_Subpixel_Order.Unknown)
+	testing.expect_value(t, display_subpixel_order_from_wl(99), Display_Subpixel_Order.Unknown)
+}
+
+@(test)
+engine_dpi_sync_sets_subpixel_from_os_query :: proc(t: ^testing.T) {
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		settings_ensure()
+		state.settings.dpi_subpixel = .Auto
+		test_hook_dpi_subpixel_os_override = true
+		test_hook_dpi_subpixel_os_value = .BGR
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.BGR)
+		testing.expect_value(t, dpi_subpixel_order(), Display_Subpixel_Order.BGR)
+
+		test_hook_dpi_subpixel_os_value = .RGB
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.RGB)
+	})
+}
+
+@(test)
+engine_dpi_sync_settings_subpixel_overrides_os :: proc(t: ^testing.T) {
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		settings_ensure()
+		test_hook_dpi_subpixel_os_override = true
+		test_hook_dpi_subpixel_os_value = .BGR
+		state.settings.dpi_subpixel = .RGB
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.RGB)
+
+		state.settings.dpi_subpixel = .None
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.None)
+	})
+}
+
+/*
+Phase C.5 exit: dpi_sync records subpixel order before draw; order change drops
+LCD cache entries only.
+*/
+@(test)
+engine_dpi_sync_subpixel_change_invalidates_lcd_glyphs_only :: proc(t: ^testing.T) {
+	with_engine_sdl_window_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			settings_ensure()
+			state.settings.dpi_subpixel = .Auto
+			test_hook_dpi_subpixel_os_override = true
+			test_hook_dpi_subpixel_os_value = .RGB
+			dpi_sync()
+			baseline_scale := state.dpi.scale
+			testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.RGB)
+
+			gray_key := Font_Glyph_Key {
+				face_id     = Asset_Id(1),
+				glyph_id    = 7,
+				render_mode = .Gray,
+			}
+			lcd_key := Font_Glyph_Key {
+				face_id     = Asset_Id(1),
+				glyph_id    = 7,
+				render_mode = .LCD,
+			}
+			state.fonts.glyph_cache[gray_key] = {}
+			state.fonts.glyph_cache[lcd_key] = {}
+
+			test_hook_dpi_subpixel_os_value = .BGR
+			dpi_sync()
+			testing.expect_value(t, state.dpi.scale, baseline_scale)
+			testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.BGR)
+			testing.expect(t, gray_key in state.fonts.glyph_cache)
+			testing.expect(t, lcd_key not_in state.fonts.glyph_cache)
+		},
+	)
+}
+
+@(test)
+engine_video_prefer_wayland_sets_hint_when_session_is_wayland :: proc(t: ^testing.T) {
+	prev_driver, had_driver := os.lookup_env("SDL_VIDEO_DRIVER", context.allocator)
+	prev_wayland, had_wayland := os.lookup_env("WAYLAND_DISPLAY", context.allocator)
+	defer {
+		if had_driver {
+			os.set_env("SDL_VIDEO_DRIVER", prev_driver)
+			delete(prev_driver)
+		} else {
+			os.unset_env("SDL_VIDEO_DRIVER")
+		}
+		if had_wayland {
+			os.set_env("WAYLAND_DISPLAY", prev_wayland)
+			delete(prev_wayland)
+		} else {
+			os.unset_env("WAYLAND_DISPLAY")
+		}
+		sdl.ResetHint(sdl.HINT_VIDEO_DRIVER)
+	}
+
+	os.unset_env("SDL_VIDEO_DRIVER")
+	os.set_env("WAYLAND_DISPLAY", "wayland-test-0")
+	sdl.ResetHint(sdl.HINT_VIDEO_DRIVER)
+	video_prefer_wayland()
+	hint := sdl.GetHint(sdl.HINT_VIDEO_DRIVER)
+	testing.expect(t, hint != nil)
+	testing.expect_value(t, string(hint), "wayland")
+
+	os.set_env("SDL_VIDEO_DRIVER", "x11")
+	sdl.ResetHint(sdl.HINT_VIDEO_DRIVER)
+	sdl.SetHint(sdl.HINT_VIDEO_DRIVER, "x11")
+	video_prefer_wayland()
+	hint = sdl.GetHint(sdl.HINT_VIDEO_DRIVER)
+	testing.expect(t, hint != nil)
+	testing.expect_value(t, string(hint), "x11")
+}
+
+@(test)
+engine_dpi_sync_invalidates_font_faces_on_scale_change :: proc(t: ^testing.T) {
+	if !font_fixture_available() do return
+
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, ok := font_register_family(
+				"dpi-invalidate",
+				{{path = INTER_FONT_FIXTURE, style = .NORMAL, weight = .Normal}},
+			)
+			testing.expect(t, ok)
+
+			state.dpi.scale = 1
+			handle, _, resolve_ok := font_resolve(inter, 16, .SCREEN)
+			testing.expect(t, resolve_ok)
+			testing.expect(t, font_face_from_handle(handle) != nil)
+			testing.expect(t, len(state.fonts.faces) > 0)
+
+			state.dpi.scale = 2
+			font_invalidate_dpi()
+			testing.expect_value(t, len(state.fonts.faces), 0)
+			testing.expect_value(t, len(state.fonts.glyph_cache), 0)
+		},
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,6 +1392,11 @@ engine_poll_events_resize_triggers_dpi_sync :: proc(t: ^testing.T) {
 		engine_test_push(t, {type = .WINDOW_DISPLAY_SCALE_CHANGED})
 		poll_events()
 		testing.expect(t, state.dpi.logical_w > 1)
+
+		state.dpi.logical_w = 1
+		engine_test_push(t, {type = .WINDOW_DISPLAY_CHANGED})
+		poll_events()
+		testing.expect(t, state.dpi.logical_w > 1)
 	})
 }
 
@@ -1501,8 +1680,47 @@ engine_create_window_fail_swapchain_tears_down :: proc(t: ^testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gap coverage: init font_init failure cleanup
+// Gap coverage: init gpu_init / font_init failure cleanup
 // ---------------------------------------------------------------------------
+
+@(test)
+engine_init_gpu_init_failure_returns_false_and_leaves_stack_clean :: proc(t: ^testing.T) {
+	sync.mutex_lock(&test_global_state_guard)
+	defer sync.mutex_unlock(&test_global_state_guard)
+	clear_test_hooks()
+	defer clear_test_hooks()
+
+	if !test_require_gpu_window_unlocked() {
+		return
+	}
+
+	test_state: State
+	saved := state
+	saved_theme := theme
+	defer {
+		state = saved
+		widget_ctx_sync()
+		theme = saved_theme
+	}
+	state = &test_state
+	widget_ctx_sync()
+	theme = nil
+
+	testing.expect(t, create_window(engine_test_create_window_cfg()))
+	defer shutdown()
+
+	test_hook_gpu_fail_lcd_pipeline = true
+	testing.expect(t, !init())
+	testing.expect(t, state.gpu_state.pipeline == nil)
+	testing.expect(t, state.gpu_state.lcd_pipeline == nil)
+	testing.expect(t, state.gpu_state.sampler == nil)
+	testing.expect(t, state.gpu_state.sampler_nearest == nil)
+	testing.expect(t, state.gpu_state.white_texture == nil)
+	testing.expect(t, state.fonts.library == nil)
+	// Window/GPU device from create_window remain; stack resources stay clean.
+	testing.expect(t, state.window != nil)
+	testing.expect(t, state.gpu != nil)
+}
 
 @(test)
 engine_init_font_init_failure_cleans_up_and_returns_false :: proc(t: ^testing.T) {

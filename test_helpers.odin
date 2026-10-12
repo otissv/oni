@@ -42,8 +42,11 @@ test_gpu_device_available_unlocked :: proc() -> bool {
 	}
 	defer sdl.Quit()
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
-	if gpu == nil {
+	gpu := gpu_create_device(true)
+	if gpu == nil || !gpu_device_supports_dual_source_blending(gpu) {
+		if gpu != nil {
+			sdl.DestroyGPUDevice(gpu)
+		}
 		test_gpu_device_status = .Unavailable
 		return false
 	}
@@ -78,8 +81,11 @@ test_gpu_window_available_unlocked :: proc() -> bool {
 	}
 	defer sdl.DestroyWindow(window)
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
-	if gpu == nil {
+	gpu := gpu_create_device(true)
+	if gpu == nil || !gpu_device_supports_dual_source_blending(gpu) {
+		if gpu != nil {
+			sdl.DestroyGPUDevice(gpu)
+		}
 		test_gpu_window_status = .Unavailable
 		test_gpu_device_status = .Unavailable
 		return false

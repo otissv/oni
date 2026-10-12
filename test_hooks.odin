@@ -1,5 +1,7 @@
 package oni
 
+import sdl "vendor:sdl3"
+
 /*
 Test-only injection points for branches that cannot be forced through real SDL /
 FreeType failures in CI. Default false; no effect outside tests that set them.
@@ -22,6 +24,13 @@ test_hook_dpi_sync_fail_get_pixels: bool
 test_hook_dpi_sync_force_logical_w_zero: bool
 @(private)
 test_hook_dpi_sync_force_drawable_zero: bool
+/*
+When true, dpi_query_os_subpixel_order returns test_hook_dpi_subpixel_os_value.
+*/
+@(private)
+test_hook_dpi_subpixel_os_override: bool
+@(private)
+test_hook_dpi_subpixel_os_value: Display_Subpixel_Order
 @(private)
 test_hook_set_fullscreen_fail: bool
 @(private)
@@ -46,12 +55,26 @@ test_hook_batch_fail_index_buffer: bool
 test_hook_batch_upload_fail_transfer: bool
 @(private)
 test_hook_batch_upload_fail_map: bool
+/*
+When true, `batch_flush_draws` appends each bound graphics pipeline pointer.
+*/
+@(private)
+test_hook_batch_record_pipeline_binds: bool
+@(private)
+test_batch_pipeline_binds: [dynamic]^sdl.GPUGraphicsPipeline
 @(private)
 test_hook_gpu_fail_vert_shader: bool
 @(private)
 test_hook_gpu_fail_frag_shader: bool
 @(private)
 test_hook_gpu_fail_pipeline: bool
+@(private)
+test_hook_gpu_fail_lcd_pipeline: bool
+/*
+When true, gpu_device_supports_dual_source_blending reports false (init refuse).
+*/
+@(private)
+test_hook_gpu_force_no_dual_source: bool
 @(private)
 test_hook_gpu_fail_sampler: bool
 @(private)
@@ -105,6 +128,8 @@ clear_test_hooks :: proc() {
 	test_hook_dpi_sync_fail_get_pixels = false
 	test_hook_dpi_sync_force_logical_w_zero = false
 	test_hook_dpi_sync_force_drawable_zero = false
+	test_hook_dpi_subpixel_os_override = false
+	test_hook_dpi_subpixel_os_value = .Unknown
 	test_hook_set_fullscreen_fail = false
 	test_hook_create_window_fail = .None
 	test_hook_font_init_fail = false
@@ -117,9 +142,14 @@ clear_test_hooks :: proc() {
 	test_hook_batch_fail_index_buffer = false
 	test_hook_batch_upload_fail_transfer = false
 	test_hook_batch_upload_fail_map = false
+	test_hook_batch_record_pipeline_binds = false
+	delete(test_batch_pipeline_binds)
+	test_batch_pipeline_binds = nil
 	test_hook_gpu_fail_vert_shader = false
 	test_hook_gpu_fail_frag_shader = false
 	test_hook_gpu_fail_pipeline = false
+	test_hook_gpu_fail_lcd_pipeline = false
+	test_hook_gpu_force_no_dual_source = false
 	test_hook_gpu_fail_sampler = false
 	test_hook_gpu_fail_create_texture = false
 	test_hook_gpu_fail_transfer_buffer = false

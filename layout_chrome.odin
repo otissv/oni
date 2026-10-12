@@ -191,7 +191,8 @@ layout_set_calendar :: proc(node: ^Layout_Node, input: Layout_Calendar_Input) {
 }
 
 /*
-Computes the slider track rect inside a root rect.
+Pure track rect inside a root/solved rect. Layout finalize and draw paint both
+use this; it does not mutate layout state.
 */
 layout_slider_track_rect :: proc(
 	root: Rect,
@@ -212,7 +213,8 @@ layout_slider_track_rect :: proc(
 }
 
 /*
-Computes one thumb rect along a track for the given value.
+Pure thumb rect along a track for a value. Layout finalize and draw paint both
+use this; it does not mutate layout state.
 */
 layout_slider_thumb_rect :: proc(
 	track: Rect,
@@ -239,7 +241,10 @@ layout_slider_thumb_rect :: proc(
 	return {x = track.x + pos, y = y, w = size, h = size}
 }
 
-@(private)
+/*
+Pure range fill along a track for current values. Layout finalize and draw paint
+both use this; it does not mutate layout state.
+*/
 layout_slider_range_rect :: proc(
 	track: Rect,
 	orientation: Slider_Orientation,
@@ -284,7 +289,10 @@ layout_slider_range_rect :: proc(
 	return {x = track.x + lo, y = track.y, w = span, h = track.h}
 }
 
-@(private)
+/*
+Pure thumb rect along a layout-owned track. Used by layout finalize and by draw
+for paint/hit-testing after scroll changes — does not mutate layout state.
+*/
 layout_scroll_bar_thumb_rect :: proc(
 	track: Rect,
 	axis: Scroll_Axis,
@@ -686,37 +694,6 @@ layout_calendar_result :: proc(id: UI_Id) -> ^Layout_Calendar {
 	}
 
 	return &node.calendar
-}
-
-/*
-Recomputes slider chrome after interaction changes values during the draw pass.
-
-Mirrors layout_apply_scroll_delta: layout owns the geometry; draw only syncs paint.
-*/
-layout_slider_sync_values :: proc(id: UI_Id, values: []f32) {
-	node, ok := layout_node_by_id(id)
-
-	if !ok || !node.slider_input.active {
-		return
-	}
-
-	count := slider_copy_values(values, &node.slider_input.values)
-	node.slider_input.count = count
-	layout_finalize_slider_node(node)
-}
-
-/*
-Recomputes scrollbar thumb geometry after interaction changes scroll during draw.
-*/
-layout_scroll_bar_sync_scroll :: proc(id: UI_Id, scroll: f32) {
-	node, ok := layout_node_by_id(id)
-
-	if !ok || !node.scroll_bar_input.active {
-		return
-	}
-
-	node.scroll_bar_input.scroll = scroll
-	layout_finalize_scroll_bar_node(node)
 }
 
 @(private)

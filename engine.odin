@@ -2,6 +2,7 @@ package oni
 
 import "core:c"
 import "core:fmt"
+import "core:os"
 import sdl "vendor:sdl3"
 
 MAX_FRAME_TIME :: 0.25
@@ -41,14 +42,112 @@ window_mode_create_flags :: proc(mode: Window_Mode) -> sdl.WindowFlags {
 }
 
 /*
-Refreshes logical and drawable window size, DPI scale, and can_render.
+wl_output subpixel enum values published on SDL_PROP_DISPLAY_SUBPIXEL_ORDER_NUMBER.
+*/
+DISPLAY_SUBPIXEL_WL_UNKNOWN :: 0
+DISPLAY_SUBPIXEL_WL_NONE :: 1
+DISPLAY_SUBPIXEL_WL_HORIZONTAL_RGB :: 2
+DISPLAY_SUBPIXEL_WL_HORIZONTAL_BGR :: 3
+DISPLAY_SUBPIXEL_WL_VERTICAL_RGB :: 4
+DISPLAY_SUBPIXEL_WL_VERTICAL_BGR :: 5
+
+/*
+Maps a wl_output-compatible subpixel value to Display_Subpixel_Order.
+
+Vertical layouts map to Unknown until LCD_V ships (C.6 treats Unknown as no LCD).
+*/
+display_subpixel_order_from_wl :: proc(value: i64) -> Display_Subpixel_Order {
+	switch value {
+	case DISPLAY_SUBPIXEL_WL_NONE:
+		return .None
+	case DISPLAY_SUBPIXEL_WL_HORIZONTAL_RGB:
+		return .RGB
+	case DISPLAY_SUBPIXEL_WL_HORIZONTAL_BGR:
+		return .BGR
+	case DISPLAY_SUBPIXEL_WL_UNKNOWN,
+	     DISPLAY_SUBPIXEL_WL_VERTICAL_RGB,
+	     DISPLAY_SUBPIXEL_WL_VERTICAL_BGR:
+		return .Unknown
+	}
+
+	return .Unknown
+}
+
+/*
+Reads LCD subpixel order from the window's SDL display properties.
+
+Uses the patched PROP_DISPLAY_SUBPIXEL_ORDER_NUMBER (Wayland/X11). Missing
+property or display → Unknown.
+*/
+dpi_query_os_subpixel_order :: proc() -> Display_Subpixel_Order {
+	if test_hook_dpi_subpixel_os_override {
+		return test_hook_dpi_subpixel_os_value
+	}
+
+	if state == nil || state.window == nil {
+		return .Unknown
+	}
+
+	display_id := sdl.GetDisplayForWindow(state.window)
+	if display_id == 0 {
+		return .Unknown
+	}
+
+	props := sdl.GetDisplayProperties(display_id)
+	if props == 0 {
+		return .Unknown
+	}
+
+	raw := sdl.GetNumberProperty(props, sdl.PROP_DISPLAY_SUBPIXEL_ORDER_NUMBER, DISPLAY_SUBPIXEL_WL_UNKNOWN)
+
+	return display_subpixel_order_from_wl(raw)
+}
+
+/*
+Resolves effective display subpixel order: settings override, else OS query.
+*/
+dpi_resolve_subpixel_order :: proc() -> Display_Subpixel_Order {
+	if state == nil {
+		return .Unknown
+	}
+
+	switch state.settings.dpi_subpixel {
+	case .Auto:
+		return dpi_query_os_subpixel_order()
+	case .None:
+		return .None
+	case .RGB:
+		return .RGB
+	case .BGR:
+		return .BGR
+	}
+
+	return .Unknown
+}
+
+/*
+Runtime display subpixel order after the last dpi_sync (Unknown when unset).
+*/
+dpi_subpixel_order :: proc() -> Display_Subpixel_Order {
+	if state == nil {
+		return .Unknown
+	}
+
+	return state.dpi.subpixel_order
+}
+
+/*
+Refreshes logical and drawable window size, DPI scale, subpixel order, and can_render.
 
 When settings.dpi_scale is greater than 0, that value is used as the pixel
 ratio and logical size is derived from the drawable buffer. Otherwise scale
 is SDL drawable / logical size.
 
+Subpixel order comes from settings (`dpi { subpixel … }`) or SDL display properties.
+LCD glyph cache entries are dropped when the effective order changes.
+
 Updates the GPU projection matrix; call after resize, display-scale change,
-or hot reload when the window handle is valid.
+display move, or hot reload when the window handle is valid.
 */
 dpi_sync :: proc() {
 	if state.window == nil do return
@@ -77,6 +176,7 @@ dpi_sync :: proc() {
 	}
 
 	prev_scale := state.dpi.scale
+	prev_subpixel := state.dpi.subpixel_order
 	state.dpi.drawable_w = i32(px_w)
 	state.dpi.drawable_h = i32(px_h)
 
@@ -95,11 +195,36 @@ dpi_sync :: proc() {
 		state.dpi.logical_h = log_h
 		state.dpi.scale = log_w > 0 ? f32(px_w) / f32(log_w) : 1
 	}
+
+	state.dpi.subpixel_order = dpi_resolve_subpixel_order()
+
 	if prev_scale != state.dpi.scale {
-		font_shape_cache_clear()
+		font_invalidate_dpi()
+	} else if prev_subpixel != state.dpi.subpixel_order {
+		font_invalidate_lcd_glyphs()
 	}
+
 	state.can_render = px_w > 0 && px_h > 0
 	gpu_update_projection(state.dpi)
+}
+
+/*
+Prefers the native Wayland video driver when the session is Wayland.
+
+Skips when SDL_VIDEO_DRIVER is already set so operators can force x11/XWayland.
+Native Wayland is required for correct HIGH_PIXEL_DENSITY drawable buffers;
+XWayland often reports scale 1 and lets the compositor upscale the window.
+*/
+video_prefer_wayland :: proc() {
+	if _, found := os.lookup_env("SDL_VIDEO_DRIVER", context.temp_allocator); found {
+		return
+	}
+
+	if _, found := os.lookup_env("WAYLAND_DISPLAY", context.temp_allocator); !found {
+		return
+	}
+
+	sdl.SetHint(sdl.HINT_VIDEO_DRIVER, "wayland")
 }
 
 /*
@@ -414,7 +539,10 @@ poll_events :: proc() {
 				gamepad_set_button(sdl.GamepadButton(event.gbutton.button), false)
 			}
 
-		case .WINDOW_RESIZED, .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_DISPLAY_SCALE_CHANGED:
+		case .WINDOW_RESIZED,
+		     .WINDOW_PIXEL_SIZE_CHANGED,
+		     .WINDOW_DISPLAY_SCALE_CHANGED,
+		     .WINDOW_DISPLAY_CHANGED:
 			dpi_sync()
 
 		case .WINDOW_ENTER_FULLSCREEN:
@@ -501,6 +629,8 @@ Claims the window for the GPU, sets swapchain and minimum size, and opens
 the first available gamepad. On failure, tears down partial resources.
 */
 create_window :: proc(config: Window_Config) -> bool {
+	video_prefer_wayland()
+
 	if test_hook_create_window_fail == .Init || !sdl.Init({.VIDEO, .GAMEPAD}) {
 		fmt.eprintln("SDL_Init failed:", sdl.GetError())
 		return false
@@ -522,13 +652,22 @@ create_window :: proc(config: Window_Config) -> bool {
 		return false
 	}
 
-	state.gpu = sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	state.gpu = gpu_create_device(true)
 	if test_hook_create_window_fail == .Gpu && state.gpu != nil {
 		sdl.DestroyGPUDevice(state.gpu)
 		state.gpu = nil
 	}
 	if state.gpu == nil {
 		fmt.eprintln("SDL_CreateGPUDevice failed:", sdl.GetError())
+		sdl.DestroyWindow(state.window)
+		state.window = nil
+		sdl.Quit()
+		return false
+	}
+	if !gpu_device_supports_dual_source_blending(state.gpu) {
+		fmt.eprintln("GPU device lacks dual-source blending (required for LCD text)")
+		sdl.DestroyGPUDevice(state.gpu)
+		state.gpu = nil
 		sdl.DestroyWindow(state.window)
 		state.window = nil
 		sdl.Quit()
@@ -600,7 +739,7 @@ init_window :: proc(config: Window_Config) -> bool {
 Initializes GPU pipeline, fonts, UI, and input after the window exists.
 
 Resets view if invalid, then runs gpu_init, font_init, and ui_init. Returns
-false if font_init fails.
+false if gpu_init or font_init fails.
 */
 init :: proc() -> bool {
 	if state == nil || state.window == nil do return false
@@ -609,17 +748,25 @@ init :: proc() -> bool {
 		state.view = view_default()
 	}
 
-	gpu_init()
+	if !gpu_init() {
+		log_error("gpu_init failed")
+
+		return false
+	}
+
 	if !font_init() {
 		log_error("font_init failed")
 		assets_shutdown()
 		gpu_destroy()
+
 		return false
 	}
+
 	ui_init()
 	shortcut_install_defaults()
 	reset_input_state()
 	dpi_sync()
+
 	return true
 }
 
@@ -693,9 +840,13 @@ end_frame :: proc() {
 Refreshes GPU resources after a hot library reload.
 
 Reloads shaders/pipeline and re-syncs DPI; SDL window and device persist.
+Logs when gpu_reload fails (present stays inert until a later successful reload).
 */
 on_hot_reload :: proc() {
-	gpu_reload()
+	if !gpu_reload() {
+		log_error("on_hot_reload: gpu_reload failed")
+	}
+
 	dpi_sync()
 	shortcut_rebind_builtin_actions()
 }

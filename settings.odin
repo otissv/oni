@@ -32,7 +32,8 @@ settings_apply_hook: Settings_Apply_Hook
 Loaded application settings: window, DPI, fonts, and user shortcut rows.
 
 Heap strings and face/shortcut arrays are owned by this struct. `dpi_scale`
-of 0 means follow the OS (SDL drawable / logical size).
+of 0 means follow the OS (SDL drawable / logical size). `dpi_subpixel`
+`.Auto` queries the display; other values force RGB/BGR/None.
 */
 Settings :: struct {
 	ready:             bool,
@@ -44,6 +45,7 @@ Settings :: struct {
 	min_height:         i32,
 	window_mode:       Window_Mode,
 	dpi_scale:         f32,
+	dpi_subpixel:      Dpi_Subpixel_Setting,
 	font_family:       string,
 	font_body_size:    f32,
 	font_heading_size: f32,
@@ -102,6 +104,7 @@ settings_defaults :: proc(allocator := context.allocator) -> Settings {
 	s.min_height = SETTINGS_DEFAULT_MIN_HEIGHT
 	s.window_mode = SETTINGS_DEFAULT_WINDOW_MODE
 	s.dpi_scale = 0
+	s.dpi_subpixel = .Auto
 	s.font_family = strings.clone(SETTINGS_DEFAULT_FONT_FAMILY, allocator)
 	s.font_body_size = SETTINGS_DEFAULT_FONT_BODY_SIZE
 	s.font_heading_size = SETTINGS_DEFAULT_FONT_HEADING_SIZE

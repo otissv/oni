@@ -1,10 +1,17 @@
 package oni
 
+import "core:math"
 import "core:math/linalg"
+import "core:mem"
 import "core:strings"
 import "core:sync"
 import "core:testing"
 import sdl "vendor:sdl3"
+
+@(private)
+dual_source_test_vert_code := #load("shaders/dual_source_test.spv.vert")
+@(private)
+dual_source_test_frag_code := #load("shaders/dual_source_test.spv.frag")
 
 /*
 CPU-only GPU state for blend / projection / destroy-nil paths.
@@ -53,7 +60,7 @@ with_gpu_device_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	}
 	defer sdl.Quit()
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	gpu := gpu_create_device(true)
 	if gpu == nil {
 		testing.expectf(t, false, "SDL_CreateGPUDevice failed: %s", sdl.GetError())
 		return
@@ -72,6 +79,14 @@ with_gpu_device_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		if state.gpu_state.sampler != nil {
 			sdl.ReleaseGPUSampler(gpu, state.gpu_state.sampler)
 			state.gpu_state.sampler = nil
+		}
+		if state.gpu_state.sampler_nearest != nil {
+			sdl.ReleaseGPUSampler(gpu, state.gpu_state.sampler_nearest)
+			state.gpu_state.sampler_nearest = nil
+		}
+		if state.gpu_state.lcd_pipeline != nil {
+			sdl.ReleaseGPUGraphicsPipeline(gpu, state.gpu_state.lcd_pipeline)
+			state.gpu_state.lcd_pipeline = nil
 		}
 		if state.gpu_state.pipeline != nil {
 			sdl.ReleaseGPUGraphicsPipeline(gpu, state.gpu_state.pipeline)
@@ -203,6 +218,270 @@ gpu_test_download_rgba1 :: proc(
 	return pixel, true
 }
 
+/*
+Creates and uploads a 1x1 RGBA8 texture for LCD / dual-source tests.
+*/
+@(private)
+gpu_test_create_rgba1_texture :: proc(
+	t: ^testing.T,
+	pixel: [4]u8,
+	loc := #caller_location,
+) -> ^sdl.GPUTexture {
+	texture := sdl.CreateGPUTexture(
+		state.gpu,
+		{
+			type = .D2,
+			format = .R8G8B8A8_UNORM,
+			usage = {.SAMPLER},
+			width = 1,
+			height = 1,
+			layer_count_or_depth = 1,
+			num_levels = 1,
+		},
+	)
+	if texture == nil {
+		testing.expectf(t, false, "CreateGPUTexture failed: %s", sdl.GetError(), loc = loc)
+
+		return nil
+	}
+
+	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = 4})
+	if transfer == nil {
+		testing.expectf(t, false, "CreateGPUTransferBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+	if mapped == nil {
+		testing.expectf(t, false, "MapGPUTransferBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	(cast(^[4]u8)mapped)^ = pixel
+	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+	cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+	if cmd == nil {
+		testing.expectf(t, false, "AcquireGPUCommandBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+
+	copy_pass := sdl.BeginGPUCopyPass(cmd)
+	sdl.UploadToGPUTexture(
+		copy_pass,
+		{transfer_buffer = transfer, offset = 0, pixels_per_row = 1, rows_per_layer = 1},
+		{texture = texture, mip_level = 0, layer = 0, x = 0, y = 0, z = 0, w = 1, h = 1, d = 1},
+		false,
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+
+	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+	if fence == nil {
+		testing.expectf(
+			t,
+			false,
+			"SubmitGPUCommandBufferAndAcquireFence failed: %s",
+			sdl.GetError(),
+			loc = loc,
+		)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	defer sdl.ReleaseGPUFence(state.gpu, fence)
+
+	fences := [1]^sdl.GPUFence{fence}
+	if !sdl.WaitForGPUFences(state.gpu, true, raw_data(fences[:]), 1) {
+		testing.expectf(t, false, "WaitForGPUFences failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+
+	return texture
+}
+
+@(private)
+gpu_test_expect_u8_near :: proc(t: ^testing.T, got, want: u8, channel: string) {
+	diff := abs(i32(got) - i32(want))
+	testing.expectf(t, diff <= 2, "%s: got %d want ~%d", channel, got, want)
+}
+
+/*
+Creates and uploads a WxH RGBA8 texture from tightly packed pixels (row-major).
+*/
+@(private)
+gpu_test_create_rgba_texture :: proc(
+	t: ^testing.T,
+	w, h: u32,
+	pixels: []u8,
+	loc := #caller_location,
+) -> ^sdl.GPUTexture {
+	need := int(w) * int(h) * 4
+	if w == 0 || h == 0 || len(pixels) < need {
+		testing.expectf(t, false, "gpu_test_create_rgba_texture: bad size/pixels", loc = loc)
+
+		return nil
+	}
+
+	texture := sdl.CreateGPUTexture(
+		state.gpu,
+		{
+			type = .D2,
+			format = .R8G8B8A8_UNORM,
+			usage = {.SAMPLER},
+			width = w,
+			height = h,
+			layer_count_or_depth = 1,
+			num_levels = 1,
+		},
+	)
+	if texture == nil {
+		testing.expectf(t, false, "CreateGPUTexture failed: %s", sdl.GetError(), loc = loc)
+
+		return nil
+	}
+
+	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = u32(need)})
+	if transfer == nil {
+		testing.expectf(t, false, "CreateGPUTransferBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+	if mapped == nil {
+		testing.expectf(t, false, "MapGPUTransferBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	mem.copy(mapped, raw_data(pixels), need)
+	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+	cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+	if cmd == nil {
+		testing.expectf(t, false, "AcquireGPUCommandBuffer failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+
+	copy_pass := sdl.BeginGPUCopyPass(cmd)
+	sdl.UploadToGPUTexture(
+		copy_pass,
+		{transfer_buffer = transfer, offset = 0, pixels_per_row = w, rows_per_layer = h},
+		{texture = texture, mip_level = 0, layer = 0, x = 0, y = 0, z = 0, w = w, h = h, d = 1},
+		false,
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+
+	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+	if fence == nil {
+		testing.expectf(
+			t,
+			false,
+			"SubmitGPUCommandBufferAndAcquireFence failed: %s",
+			sdl.GetError(),
+			loc = loc,
+		)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+	defer sdl.ReleaseGPUFence(state.gpu, fence)
+
+	fences := [1]^sdl.GPUFence{fence}
+	if !sdl.WaitForGPUFences(state.gpu, true, raw_data(fences[:]), 1) {
+		testing.expectf(t, false, "WaitForGPUFences failed: %s", sdl.GetError(), loc = loc)
+		sdl.ReleaseGPUTexture(state.gpu, texture)
+
+		return nil
+	}
+
+	return texture
+}
+
+/*
+Downloads a WxH RGBA8 texture into a heap slice (caller deletes).
+*/
+@(private)
+gpu_test_download_rgba :: proc(
+	t: ^testing.T,
+	texture: ^sdl.GPUTexture,
+	w, h: u32,
+	loc := #caller_location,
+) -> (
+	pixels: []u8,
+	ok: bool,
+) {
+	need := int(w) * int(h) * 4
+	if w == 0 || h == 0 {
+		testing.expectf(t, false, "gpu_test_download_rgba: bad size", loc = loc)
+
+		return nil, false
+	}
+
+	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .DOWNLOAD, size = u32(need)})
+	if transfer == nil {
+		testing.expectf(t, false, "CreateGPUTransferBuffer(DOWNLOAD) failed: %s", sdl.GetError(), loc = loc)
+
+		return nil, false
+	}
+	defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+	cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+	if cmd == nil {
+		testing.expectf(t, false, "AcquireGPUCommandBuffer failed: %s", sdl.GetError(), loc = loc)
+
+		return nil, false
+	}
+
+	copy_pass := sdl.BeginGPUCopyPass(cmd)
+	sdl.DownloadFromGPUTexture(
+		copy_pass,
+		{texture = texture, mip_level = 0, layer = 0, x = 0, y = 0, z = 0, w = w, h = h, d = 1},
+		{transfer_buffer = transfer, offset = 0, pixels_per_row = w, rows_per_layer = h},
+	)
+	sdl.EndGPUCopyPass(copy_pass)
+
+	fence := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+	if fence == nil {
+		testing.expectf(t, false, "SubmitGPUCommandBufferAndAcquireFence failed: %s", sdl.GetError(), loc = loc)
+
+		return nil, false
+	}
+	defer sdl.ReleaseGPUFence(state.gpu, fence)
+
+	fences := [1]^sdl.GPUFence{fence}
+	if !sdl.WaitForGPUFences(state.gpu, true, raw_data(fences[:]), 1) {
+		testing.expectf(t, false, "WaitForGPUFences failed: %s", sdl.GetError(), loc = loc)
+
+		return nil, false
+	}
+
+	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+	if mapped == nil {
+		testing.expectf(t, false, "MapGPUTransferBuffer failed: %s", sdl.GetError(), loc = loc)
+
+		return nil, false
+	}
+
+	out := make([]u8, need)
+	mem.copy(raw_data(out), mapped, need)
+	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+	return out, true
+}
+
 // ---------------------------------------------------------------------------
 // gpu_blend_state
 // ---------------------------------------------------------------------------
@@ -217,6 +496,203 @@ gpu_blend_state_matches_ui_compositing :: proc(t: ^testing.T) {
 	testing.expect_value(t, blend.dst_alpha_blendfactor, sdl.GPUBlendFactor.ONE_MINUS_SRC_ALPHA)
 	testing.expect_value(t, blend.alpha_blend_op, sdl.GPUBlendOp.ADD)
 	testing.expect(t, blend.enable_blend)
+}
+
+@(test)
+gpu_dual_source_blend_state_matches_lcd_compositing :: proc(t: ^testing.T) {
+	blend := gpu_dual_source_blend_state()
+	testing.expect_value(t, blend.src_color_blendfactor, sdl.GPUBlendFactor.ONE)
+	testing.expect_value(t, blend.dst_color_blendfactor, sdl.GPUBlendFactor.ONE_MINUS_SRC1_COLOR)
+	testing.expect_value(t, blend.color_blend_op, sdl.GPUBlendOp.ADD)
+	testing.expect_value(t, blend.src_alpha_blendfactor, sdl.GPUBlendFactor.ONE)
+	testing.expect_value(t, blend.dst_alpha_blendfactor, sdl.GPUBlendFactor.ONE_MINUS_SRC1_ALPHA)
+	testing.expect_value(t, blend.alpha_blend_op, sdl.GPUBlendOp.ADD)
+	testing.expect(t, blend.enable_blend)
+}
+
+/*
+Prove dst = src0 + dst * (1 - src1) per channel with colored dual-source blend.
+
+Shader emits tint*coverage and coverage; clear is opaque white. Expected:
+  R=0.9 G=0.8 B=0.325 A=1 → ~{230,204,83,255}
+*/
+@(test)
+gpu_dual_source_colored_blend_matches_skia_math :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, gpu_device_supports_dual_source_blending(state.gpu))
+
+			target := sdl.CreateGPUTexture(
+				state.gpu,
+				{
+					type = .D2,
+					format = .R8G8B8A8_UNORM,
+					usage = {.COLOR_TARGET, .SAMPLER},
+					width = 1,
+					height = 1,
+					layer_count_or_depth = 1,
+					num_levels = 1,
+				},
+			)
+			if target == nil {
+				testing.expectf(t, false, "CreateGPUTexture failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUTexture(state.gpu, target)
+
+			vert := gpu_load_shader(state.gpu, dual_source_test_vert_code, .VERTEX, 0, 0)
+			frag := gpu_load_shader(state.gpu, dual_source_test_frag_code, .FRAGMENT, 0, 0)
+			if vert == nil || frag == nil {
+				testing.expectf(t, false, "dual-source shader load failed: %s", sdl.GetError())
+
+				if vert != nil {
+					sdl.ReleaseGPUShader(state.gpu, vert)
+				}
+
+				if frag != nil {
+					sdl.ReleaseGPUShader(state.gpu, frag)
+				}
+
+				return
+			}
+			defer sdl.ReleaseGPUShader(state.gpu, vert)
+			defer sdl.ReleaseGPUShader(state.gpu, frag)
+
+			vertex_buffer_descs := [1]sdl.GPUVertexBufferDescription {
+				{slot = 0, pitch = u32(size_of([2]f32))},
+			}
+			vertex_attrs := [1]sdl.GPUVertexAttribute {
+				{location = 0, buffer_slot = 0, format = .FLOAT2, offset = 0},
+			}
+			color_target := sdl.GPUColorTargetDescription {
+				format      = .R8G8B8A8_UNORM,
+				blend_state = gpu_dual_source_blend_state(),
+			}
+			pipeline := sdl.CreateGPUGraphicsPipeline(
+				state.gpu,
+				{
+					vertex_shader = vert,
+					fragment_shader = frag,
+					vertex_input_state = {
+						vertex_buffer_descriptions = raw_data(vertex_buffer_descs[:]),
+						num_vertex_buffers = 1,
+						vertex_attributes = raw_data(vertex_attrs[:]),
+						num_vertex_attributes = 1,
+					},
+					primitive_type = .TRIANGLELIST,
+					rasterizer_state = {cull_mode = .NONE},
+					target_info = {
+						num_color_targets = 1,
+						color_target_descriptions = &color_target,
+					},
+				},
+			)
+			if pipeline == nil {
+				testing.expectf(t, false, "CreateGPUGraphicsPipeline(dual-source) failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
+			verts := [3][2]f32{{-1, -1}, {3, -1}, {-1, 3}}
+			vbuf := sdl.CreateGPUBuffer(
+				state.gpu,
+				{usage = {.VERTEX}, size = u32(size_of(verts))},
+			)
+			if vbuf == nil {
+				testing.expectf(t, false, "CreateGPUBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUBuffer(state.gpu, vbuf)
+
+			transfer := sdl.CreateGPUTransferBuffer(
+				state.gpu,
+				{usage = .UPLOAD, size = u32(size_of(verts))},
+			)
+			if transfer == nil {
+				testing.expectf(t, false, "CreateGPUTransferBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+			mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+			if mapped == nil {
+				testing.expectf(t, false, "MapGPUTransferBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			(cast(^[3][2]f32)mapped)^ = verts
+			sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+			if cmd == nil {
+				testing.expectf(t, false, "AcquireGPUCommandBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+
+			copy_pass := sdl.BeginGPUCopyPass(cmd)
+			sdl.UploadToGPUBuffer(
+				copy_pass,
+				{transfer_buffer = transfer, offset = 0},
+				{buffer = vbuf, offset = 0, size = u32(size_of(verts))},
+				false,
+			)
+			sdl.EndGPUCopyPass(copy_pass)
+
+			color_info := sdl.GPUColorTargetInfo {
+				texture     = target,
+				clear_color = {1, 1, 1, 1},
+				load_op     = .CLEAR,
+				store_op    = .STORE,
+			}
+			pass := sdl.BeginGPURenderPass(cmd, &color_info, 1, nil)
+			if pass == nil {
+				testing.expectf(t, false, "BeginGPURenderPass failed: %s", sdl.GetError())
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+
+				return
+			}
+			sdl.BindGPUGraphicsPipeline(pass, pipeline)
+			vbind := sdl.GPUBufferBinding {
+				buffer = vbuf,
+			}
+			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
+			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
+			sdl.EndGPURenderPass(pass)
+
+			fence := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+			if fence == nil {
+				testing.expectf(t, false, "SubmitGPUCommandBufferAndAcquireFence failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUFence(state.gpu, fence)
+
+			fences := [1]^sdl.GPUFence{fence}
+			if !sdl.WaitForGPUFences(state.gpu, true, raw_data(fences[:]), 1) {
+				testing.expectf(t, false, "WaitForGPUFences failed: %s", sdl.GetError())
+
+				return
+			}
+
+			pixel, ok := gpu_test_download_rgba1(t, target)
+			testing.expect(t, ok)
+			if !ok {
+				return
+			}
+
+			// dst = src0 + dst_clear * (1 - src1); allow ±2 for GPU rounding.
+			gpu_test_expect_u8_near(t, pixel[0], 230, "R")
+			gpu_test_expect_u8_near(t, pixel[1], 204, "G")
+			gpu_test_expect_u8_near(t, pixel[2], 83, "B")
+			gpu_test_expect_u8_near(t, pixel[3], 255, "A")
+		},
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -351,14 +827,17 @@ gpu_destroy_releases_pipeline_sampler_and_white_texture :: proc(t: ^testing.T) {
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
 
 			gpu_destroy()
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
+			testing.expect(t, state.gpu_state.sampler_nearest == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 			testing.expect(t, batch_current().vertex_buffer == nil)
 			testing.expect(t, batch_current().index_buffer == nil)
@@ -700,6 +1179,547 @@ gpu_create_pipeline_create_failure_returns_nil :: proc(t: ^testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// gpu_create_lcd_pipeline
+// ---------------------------------------------------------------------------
+
+@(test)
+gpu_create_lcd_pipeline_succeeds_with_rgba8_format :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, gpu_device_supports_dual_source_blending(state.gpu))
+			pipeline := gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
+			testing.expect(t, pipeline != nil)
+			if pipeline != nil {
+				sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+			}
+		},
+	)
+}
+
+@(test)
+gpu_create_lcd_pipeline_frag_shader_failure_returns_nil :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			test_hook_gpu_fail_frag_shader = true
+			testing.expect(t, gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM) == nil)
+		},
+	)
+}
+
+@(test)
+gpu_create_lcd_pipeline_create_failure_returns_nil :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			test_hook_gpu_fail_lcd_pipeline = true
+			testing.expect(t, gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM) == nil)
+		},
+	)
+}
+
+/*
+Phase C.2 exit: bind the production LCD pipeline and draw a dual-source quad
+with UI_Vertex + a test RGB coverage texture.
+*/
+@(test)
+gpu_lcd_pipeline_binds_and_draws_dual_source_quad :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, gpu_device_supports_dual_source_blending(state.gpu))
+
+			pipeline := gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
+			if pipeline == nil {
+				testing.expectf(t, false, "gpu_create_lcd_pipeline failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
+			sampler := gpu_create_sampler(state.gpu, .NEAREST, .NEAREST)
+			if sampler == nil {
+				testing.expectf(t, false, "gpu_create_sampler failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUSampler(state.gpu, sampler)
+
+			// RGB coverage atlas sample (A unused for LCD).
+			cov_px := [4]u8{128, 64, 192, 255}
+			cov_tex := gpu_test_create_rgba1_texture(t, cov_px)
+			if cov_tex == nil {
+				return
+			}
+			defer sdl.ReleaseGPUTexture(state.gpu, cov_tex)
+
+			target := sdl.CreateGPUTexture(
+				state.gpu,
+				{
+					type = .D2,
+					format = .R8G8B8A8_UNORM,
+					usage = {.COLOR_TARGET, .SAMPLER},
+					width = 1,
+					height = 1,
+					layer_count_or_depth = 1,
+					num_levels = 1,
+				},
+			)
+			if target == nil {
+				testing.expectf(t, false, "CreateGPUTexture(target) failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUTexture(state.gpu, target)
+
+			tint := [4]f32{0.8, 0.2, 0.1, 1}
+			verts := [3]UI_Vertex {
+				{pos = {-1, -1}, uv = {0.5, 0.5}, color = tint},
+				{pos = {3, -1}, uv = {0.5, 0.5}, color = tint},
+				{pos = {-1, 3}, uv = {0.5, 0.5}, color = tint},
+			}
+			vbuf := sdl.CreateGPUBuffer(
+				state.gpu,
+				{usage = {.VERTEX}, size = u32(size_of(verts))},
+			)
+			if vbuf == nil {
+				testing.expectf(t, false, "CreateGPUBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUBuffer(state.gpu, vbuf)
+
+			transfer := sdl.CreateGPUTransferBuffer(
+				state.gpu,
+				{usage = .UPLOAD, size = u32(size_of(verts))},
+			)
+			if transfer == nil {
+				testing.expectf(t, false, "CreateGPUTransferBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+			mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+			if mapped == nil {
+				testing.expectf(t, false, "MapGPUTransferBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+			(cast(^[3]UI_Vertex)mapped)^ = verts
+			sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+			if cmd == nil {
+				testing.expectf(t, false, "AcquireGPUCommandBuffer failed: %s", sdl.GetError())
+
+				return
+			}
+
+			copy_pass := sdl.BeginGPUCopyPass(cmd)
+			sdl.UploadToGPUBuffer(
+				copy_pass,
+				{transfer_buffer = transfer, offset = 0},
+				{buffer = vbuf, offset = 0, size = u32(size_of(verts))},
+				false,
+			)
+			sdl.EndGPUCopyPass(copy_pass)
+
+			color_info := sdl.GPUColorTargetInfo {
+				texture     = target,
+				clear_color = {1, 1, 1, 1},
+				load_op     = .CLEAR,
+				store_op    = .STORE,
+			}
+			pass := sdl.BeginGPURenderPass(cmd, &color_info, 1, nil)
+			if pass == nil {
+				testing.expectf(t, false, "BeginGPURenderPass failed: %s", sdl.GetError())
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+
+				return
+			}
+
+			identity: matrix[4, 4]f32
+			identity[0, 0] = 1
+			identity[1, 1] = 1
+			identity[2, 2] = 1
+			identity[3, 3] = 1
+			ubo := GPU_Proj_UBO {
+				proj = identity,
+			}
+
+			sdl.BindGPUGraphicsPipeline(pass, pipeline)
+			sdl.PushGPUVertexUniformData(cmd, 0, &ubo, u32(size_of(ubo)))
+			lcd_ubo := GPU_Lcd_UBO {
+				bgr = 0,
+			}
+			sdl.PushGPUFragmentUniformData(cmd, 0, &lcd_ubo, u32(size_of(lcd_ubo)))
+			vbind := sdl.GPUBufferBinding {
+				buffer = vbuf,
+			}
+			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
+			samp := sdl.GPUTextureSamplerBinding {
+				texture = cov_tex,
+				sampler = sampler,
+			}
+			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
+			sdl.EndGPURenderPass(pass)
+
+			fence := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+			if fence == nil {
+				testing.expectf(
+					t,
+					false,
+					"SubmitGPUCommandBufferAndAcquireFence failed: %s",
+					sdl.GetError(),
+				)
+
+				return
+			}
+			defer sdl.ReleaseGPUFence(state.gpu, fence)
+
+			fences := [1]^sdl.GPUFence{fence}
+			if !sdl.WaitForGPUFences(state.gpu, true, raw_data(fences[:]), 1) {
+				testing.expectf(t, false, "WaitForGPUFences failed: %s", sdl.GetError())
+
+				return
+			}
+
+			pixel, ok := gpu_test_download_rgba1(t, target)
+			testing.expect(t, ok)
+			if !ok {
+				return
+			}
+
+			cov := [3]f32 {
+				f32(cov_px[0]) / 255,
+				f32(cov_px[1]) / 255,
+				f32(cov_px[2]) / 255,
+			}
+			lum := 0.2126 * tint[0] + 0.7152 * tint[1] + 0.0722 * tint[2]
+			want_u8 :: proc(cov_c, tint_c, lum: f32) -> u8 {
+				adj := font_text_coverage_alpha(cov_c, lum)
+				dst := tint_c * adj + (1 - adj)
+
+				return u8(math.round(dst * 255))
+			}
+			gpu_test_expect_u8_near(t, pixel[0], want_u8(cov[0], tint[0], lum), "R")
+			gpu_test_expect_u8_near(t, pixel[1], want_u8(cov[1], tint[1], lum), "G")
+			gpu_test_expect_u8_near(t, pixel[2], want_u8(cov[2], tint[2], lum), "B")
+			gpu_test_expect_u8_near(t, pixel[3], 255, "A")
+		},
+	)
+}
+
+/*
+Phase C.7: colored LCD text shows distinct R/G/B edge coverage through the
+production LCD pipeline + frag UBO; gray UI-pipeline fallback still composites.
+*/
+@(test)
+gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
+	with_gpu_device_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, gpu_device_supports_dual_source_blending(state.gpu))
+
+			lcd_pipeline := gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
+			testing.expect(t, lcd_pipeline != nil)
+			if lcd_pipeline == nil do return
+			defer sdl.ReleaseGPUGraphicsPipeline(state.gpu, lcd_pipeline)
+
+			ui_pipeline := gpu_create_ui_layout_pipeline(
+				state.gpu,
+				.R8G8B8A8_UNORM,
+				frag_shader_code,
+				gpu_blend_state(),
+			)
+			testing.expect(t, ui_pipeline != nil)
+			if ui_pipeline == nil do return
+			defer sdl.ReleaseGPUGraphicsPipeline(state.gpu, ui_pipeline)
+
+			sampler := gpu_create_sampler(state.gpu, .NEAREST, .NEAREST)
+			testing.expect(t, sampler != nil)
+			if sampler == nil do return
+			defer sdl.ReleaseGPUSampler(state.gpu, sampler)
+
+			identity: matrix[4, 4]f32
+			identity[0, 0] = 1
+			identity[1, 1] = 1
+			identity[2, 2] = 1
+			identity[3, 3] = 1
+			proj := GPU_Proj_UBO {
+				proj = identity,
+			}
+
+			// --- LCD: 3×1 R|G|B coverage on black → distinct edge channels ---
+			cov_px := [12]u8{255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255}
+			cov_tex := gpu_test_create_rgba_texture(t, 3, 1, cov_px[:])
+			if cov_tex == nil do return
+			defer sdl.ReleaseGPUTexture(state.gpu, cov_tex)
+
+			lcd_target := sdl.CreateGPUTexture(
+				state.gpu,
+				{
+					type = .D2,
+					format = .R8G8B8A8_UNORM,
+					usage = {.COLOR_TARGET, .SAMPLER},
+					width = 3,
+					height = 1,
+					layer_count_or_depth = 1,
+					num_levels = 1,
+				},
+			)
+			testing.expect(t, lcd_target != nil)
+			if lcd_target == nil do return
+			defer sdl.ReleaseGPUTexture(state.gpu, lcd_target)
+
+			tint := [4]f32{1, 1, 1, 1}
+			// Clip-covering triangle; UV.x spans 0..1 across NDC x ∈ [-1,1].
+			lcd_verts := [3]UI_Vertex {
+				{pos = {-1, -1}, uv = {0, 0.5}, color = tint},
+				{pos = {3, -1}, uv = {2, 0.5}, color = tint},
+				{pos = {-1, 3}, uv = {0, 0.5}, color = tint},
+			}
+			vbuf := sdl.CreateGPUBuffer(
+				state.gpu,
+				{usage = {.VERTEX}, size = u32(size_of(lcd_verts))},
+			)
+			testing.expect(t, vbuf != nil)
+			if vbuf == nil do return
+			defer sdl.ReleaseGPUBuffer(state.gpu, vbuf)
+
+			transfer := sdl.CreateGPUTransferBuffer(
+				state.gpu,
+				{usage = .UPLOAD, size = u32(size_of(lcd_verts))},
+			)
+			testing.expect(t, transfer != nil)
+			if transfer == nil do return
+			defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+
+			mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+			testing.expect(t, mapped != nil)
+			if mapped == nil do return
+			(cast(^[3]UI_Vertex)mapped)^ = lcd_verts
+			sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+			testing.expect(t, cmd != nil)
+			if cmd == nil do return
+
+			copy_pass := sdl.BeginGPUCopyPass(cmd)
+			sdl.UploadToGPUBuffer(
+				copy_pass,
+				{transfer_buffer = transfer, offset = 0},
+				{buffer = vbuf, offset = 0, size = u32(size_of(lcd_verts))},
+				false,
+			)
+			sdl.EndGPUCopyPass(copy_pass)
+
+			color_info := sdl.GPUColorTargetInfo {
+				texture     = lcd_target,
+				clear_color = {0, 0, 0, 1},
+				load_op     = .CLEAR,
+				store_op    = .STORE,
+			}
+			pass := sdl.BeginGPURenderPass(cmd, &color_info, 1, nil)
+			testing.expect(t, pass != nil)
+			if pass == nil {
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+
+				return
+			}
+
+			lcd_ubo := GPU_Lcd_UBO {
+				bgr = 0,
+			}
+			sdl.BindGPUGraphicsPipeline(pass, lcd_pipeline)
+			sdl.PushGPUVertexUniformData(cmd, 0, &proj, u32(size_of(proj)))
+			sdl.PushGPUFragmentUniformData(cmd, 0, &lcd_ubo, u32(size_of(lcd_ubo)))
+			vbind := sdl.GPUBufferBinding {
+				buffer = vbuf,
+			}
+			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
+			samp := sdl.GPUTextureSamplerBinding {
+				texture = cov_tex,
+				sampler = sampler,
+			}
+			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
+			sdl.EndGPURenderPass(pass)
+
+			fence_rgb := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+			testing.expect(t, fence_rgb != nil)
+			if fence_rgb == nil do return
+			defer sdl.ReleaseGPUFence(state.gpu, fence_rgb)
+			fences_rgb := [1]^sdl.GPUFence{fence_rgb}
+			testing.expect(t, sdl.WaitForGPUFences(state.gpu, true, raw_data(fences_rgb[:]), 1))
+
+			lcd_pixels, lcd_ok := gpu_test_download_rgba(t, lcd_target, 3, 1)
+			testing.expect(t, lcd_ok)
+			if !lcd_ok do return
+			defer delete(lcd_pixels)
+
+			// Fake-gamma on pure 0/1 coverage leaves channels at 0 or 1 for white tint
+			// on black: columns must stay distinctly R / G / B.
+			gpu_test_expect_u8_near(t, lcd_pixels[0], 255, "LCD col0 R")
+			gpu_test_expect_u8_near(t, lcd_pixels[1], 0, "LCD col0 G")
+			gpu_test_expect_u8_near(t, lcd_pixels[2], 0, "LCD col0 B")
+			gpu_test_expect_u8_near(t, lcd_pixels[4], 0, "LCD col1 R")
+			gpu_test_expect_u8_near(t, lcd_pixels[5], 255, "LCD col1 G")
+			gpu_test_expect_u8_near(t, lcd_pixels[6], 0, "LCD col1 B")
+			gpu_test_expect_u8_near(t, lcd_pixels[8], 0, "LCD col2 R")
+			gpu_test_expect_u8_near(t, lcd_pixels[9], 0, "LCD col2 G")
+			gpu_test_expect_u8_near(t, lcd_pixels[10], 255, "LCD col2 B")
+
+			// BGR UBO swaps coverage → column 0 becomes blue.
+			cmd = sdl.AcquireGPUCommandBuffer(state.gpu)
+			testing.expect(t, cmd != nil)
+			if cmd == nil do return
+			color_info = {
+				texture     = lcd_target,
+				clear_color = {0, 0, 0, 1},
+				load_op     = .CLEAR,
+				store_op    = .STORE,
+			}
+			pass = sdl.BeginGPURenderPass(cmd, &color_info, 1, nil)
+			testing.expect(t, pass != nil)
+			if pass == nil {
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+
+				return
+			}
+			lcd_ubo.bgr = 1
+			sdl.BindGPUGraphicsPipeline(pass, lcd_pipeline)
+			sdl.PushGPUVertexUniformData(cmd, 0, &proj, u32(size_of(proj)))
+			sdl.PushGPUFragmentUniformData(cmd, 0, &lcd_ubo, u32(size_of(lcd_ubo)))
+			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
+			sdl.BindGPUFragmentSamplers(pass, 0, &samp, 1)
+			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
+			sdl.EndGPURenderPass(pass)
+			fence_bgr := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+			testing.expect(t, fence_bgr != nil)
+			if fence_bgr == nil do return
+			defer sdl.ReleaseGPUFence(state.gpu, fence_bgr)
+			fences_bgr := [1]^sdl.GPUFence{fence_bgr}
+			testing.expect(t, sdl.WaitForGPUFences(state.gpu, true, raw_data(fences_bgr[:]), 1))
+
+			bgr_pixels, bgr_ok := gpu_test_download_rgba(t, lcd_target, 3, 1)
+			testing.expect(t, bgr_ok)
+			if !bgr_ok do return
+			defer delete(bgr_pixels)
+			gpu_test_expect_u8_near(t, bgr_pixels[0], 0, "BGR col0 R")
+			gpu_test_expect_u8_near(t, bgr_pixels[2], 255, "BGR col0 B")
+
+			// --- Gray AA fallback on UI pipeline (coverage in .a) ---
+			gray_px := [4]u8{255, 255, 255, 128}
+			gray_tex := gpu_test_create_rgba1_texture(t, gray_px)
+			if gray_tex == nil do return
+			defer sdl.ReleaseGPUTexture(state.gpu, gray_tex)
+
+			gray_target := sdl.CreateGPUTexture(
+				state.gpu,
+				{
+					type = .D2,
+					format = .R8G8B8A8_UNORM,
+					usage = {.COLOR_TARGET, .SAMPLER},
+					width = 1,
+					height = 1,
+					layer_count_or_depth = 1,
+					num_levels = 1,
+				},
+			)
+			testing.expect(t, gray_target != nil)
+			if gray_target == nil do return
+			defer sdl.ReleaseGPUTexture(state.gpu, gray_target)
+
+			gray_verts := [3]UI_Vertex {
+				{pos = {-1, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
+				{pos = {3, -1}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
+				{pos = {-1, 3}, uv = {0.5, 0.5}, color = tint, params = {0, 4}},
+			}
+			gtransfer := sdl.CreateGPUTransferBuffer(
+				state.gpu,
+				{usage = .UPLOAD, size = u32(size_of(gray_verts))},
+			)
+			testing.expect(t, gtransfer != nil)
+			if gtransfer == nil do return
+			defer sdl.ReleaseGPUTransferBuffer(state.gpu, gtransfer)
+			gmapped := sdl.MapGPUTransferBuffer(state.gpu, gtransfer, false)
+			testing.expect(t, gmapped != nil)
+			if gmapped == nil do return
+			(cast(^[3]UI_Vertex)gmapped)^ = gray_verts
+			sdl.UnmapGPUTransferBuffer(state.gpu, gtransfer)
+
+			cmd = sdl.AcquireGPUCommandBuffer(state.gpu)
+			testing.expect(t, cmd != nil)
+			if cmd == nil do return
+			copy_pass = sdl.BeginGPUCopyPass(cmd)
+			sdl.UploadToGPUBuffer(
+				copy_pass,
+				{transfer_buffer = gtransfer, offset = 0},
+				{buffer = vbuf, offset = 0, size = u32(size_of(gray_verts))},
+				false,
+			)
+			sdl.EndGPUCopyPass(copy_pass)
+			color_info = {
+				texture     = gray_target,
+				clear_color = {0, 0, 0, 1},
+				load_op     = .CLEAR,
+				store_op    = .STORE,
+			}
+			pass = sdl.BeginGPURenderPass(cmd, &color_info, 1, nil)
+			testing.expect(t, pass != nil)
+			if pass == nil {
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+
+				return
+			}
+			sdl.BindGPUGraphicsPipeline(pass, ui_pipeline)
+			sdl.PushGPUVertexUniformData(cmd, 0, &proj, u32(size_of(proj)))
+			sdl.BindGPUVertexBuffers(pass, 0, &vbind, 1)
+			gsamp := sdl.GPUTextureSamplerBinding {
+				texture = gray_tex,
+				sampler = sampler,
+			}
+			sdl.BindGPUFragmentSamplers(pass, 0, &gsamp, 1)
+			sdl.DrawGPUPrimitives(pass, 3, 1, 0, 0)
+			sdl.EndGPURenderPass(pass)
+			fence_gray := sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
+			testing.expect(t, fence_gray != nil)
+			if fence_gray == nil do return
+			defer sdl.ReleaseGPUFence(state.gpu, fence_gray)
+			fences_gray := [1]^sdl.GPUFence{fence_gray}
+			testing.expect(t, sdl.WaitForGPUFences(state.gpu, true, raw_data(fences_gray[:]), 1))
+
+			gray_pixel, gray_ok := gpu_test_download_rgba1(t, gray_target)
+			testing.expect(t, gray_ok)
+			if !gray_ok do return
+			// SRC_ALPHA: white × coverage_alpha(~0.5) over black → mid-gray, not LCD fringe.
+			testing.expect(t, gray_pixel[0] > 40 && gray_pixel[0] < 220)
+			testing.expect_value(t, gray_pixel[0], gray_pixel[1])
+			testing.expect_value(t, gray_pixel[1], gray_pixel[2])
+		},
+	)
+}
+
+@(test)
+gpu_init_refuses_without_dual_source_blending :: proc(t: ^testing.T) {
+	with_gpu_window_env(
+		t,
+		proc(t: ^testing.T) {
+			test_hook_gpu_force_no_dual_source = true
+			testing.expect(t, !gpu_init())
+			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
+			testing.expect(t, state.gpu_state.sampler == nil)
+			testing.expect(t, state.gpu_state.white_texture == nil)
+		},
+	)
+}
+
+// ---------------------------------------------------------------------------
 // gpu_init
 // ---------------------------------------------------------------------------
 
@@ -708,8 +1728,9 @@ gpu_init_noop_without_gpu_or_window :: proc(t: ^testing.T) {
 	with_gpu_cpu_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, !gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 		},
@@ -719,8 +1740,9 @@ gpu_init_noop_without_gpu_or_window :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			testing.expect(t, state.window == nil)
-			gpu_init()
+			testing.expect(t, !gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 		},
@@ -732,9 +1754,11 @@ gpu_init_creates_pipeline_sampler_white_batch_and_projection :: proc(t: ^testing
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
+			testing.expect(t, state.gpu_state.sampler_nearest != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
 			testing.expect(t, batch_current().vertex_buffer != nil)
 			testing.expect(t, batch_current().index_buffer != nil)
@@ -758,12 +1782,14 @@ gpu_init_is_idempotent_when_pipeline_already_set :: proc(t: ^testing.T) {
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			pipeline := state.gpu_state.pipeline
+			lcd_pipeline := state.gpu_state.lcd_pipeline
 			sampler := state.gpu_state.sampler
 			white := state.gpu_state.white_texture
-			gpu_init()
+			testing.expect(t, gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == pipeline)
+			testing.expect(t, state.gpu_state.lcd_pipeline == lcd_pipeline)
 			testing.expect(t, state.gpu_state.sampler == sampler)
 			testing.expect(t, state.gpu_state.white_texture == white)
 		},
@@ -776,8 +1802,25 @@ gpu_init_pipeline_failure_leaves_state_clean :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			test_hook_gpu_fail_pipeline = true
-			gpu_init()
+			testing.expect(t, !gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
+			testing.expect(t, state.gpu_state.sampler == nil)
+			testing.expect(t, state.gpu_state.white_texture == nil)
+			testing.expect(t, batch_current().vertex_buffer == nil)
+		},
+	)
+}
+
+@(test)
+gpu_init_lcd_pipeline_failure_releases_ui_pipeline :: proc(t: ^testing.T) {
+	with_gpu_window_env(
+		t,
+		proc(t: ^testing.T) {
+			test_hook_gpu_fail_lcd_pipeline = true
+			testing.expect(t, !gpu_init())
+			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 			testing.expect(t, batch_current().vertex_buffer == nil)
@@ -791,8 +1834,9 @@ gpu_init_sampler_failure_releases_pipeline :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			test_hook_gpu_fail_sampler = true
-			gpu_init()
+			testing.expect(t, !gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 			testing.expect(t, batch_current().vertex_buffer == nil)
@@ -806,8 +1850,9 @@ gpu_init_white_texture_failure_releases_sampler_and_pipeline :: proc(t: ^testing
 		t,
 		proc(t: ^testing.T) {
 			test_hook_gpu_fail_create_texture = true
-			gpu_init()
+			testing.expect(t, !gpu_init())
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 			testing.expect(t, state.gpu_state.sampler == nil)
 			testing.expect(t, state.gpu_state.white_texture == nil)
 			testing.expect(t, batch_current().vertex_buffer == nil)
@@ -824,18 +1869,22 @@ gpu_reload_recreates_gpu_stack :: proc(t: ^testing.T) {
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			old_pipeline := state.gpu_state.pipeline
+			old_lcd := state.gpu_state.lcd_pipeline
 			old_sampler := state.gpu_state.sampler
 			old_white := state.gpu_state.white_texture
 			testing.expect(t, old_pipeline != nil)
+			testing.expect(t, old_lcd != nil)
 
-			gpu_reload()
+			testing.expect(t, gpu_reload())
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
 			// Handles are recreated; identity may or may not change across drivers.
 			_ = old_pipeline
+			_ = old_lcd
 			_ = old_sampler
 			_ = old_white
 			want := linalg.matrix_ortho3d_f32(
@@ -856,7 +1905,7 @@ gpu_reload_restores_registered_textures_and_font_faces :: proc(t: ^testing.T) {
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			testing.expect(t, font_init())
 
 			family, family_ok := font_register_family(
@@ -880,9 +1929,10 @@ gpu_reload_restores_registered_textures_and_font_faces :: proc(t: ^testing.T) {
 			testing.expect(t, state.textures.records[int(id)].gpu != nil)
 			testing.expect(t, state.textures.records[int(id)].surface != nil)
 
-			gpu_reload()
+			testing.expect(t, gpu_reload())
 
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
 			testing.expect(t, state.textures.records[int(id)].gpu != nil)
@@ -912,12 +1962,14 @@ gpu_reload_after_destroy_reinitializes :: proc(t: ^testing.T) {
 	with_gpu_window_env(
 		t,
 		proc(t: ^testing.T) {
-			gpu_init()
+			testing.expect(t, gpu_init())
 			gpu_destroy()
 			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
 
-			gpu_reload()
+			testing.expect(t, gpu_reload())
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
 		},
@@ -930,10 +1982,38 @@ gpu_reload_is_safe_without_prior_init :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			testing.expect(t, state.gpu_state.pipeline == nil)
-			gpu_reload()
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
+			testing.expect(t, gpu_reload())
 			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
 			testing.expect(t, state.gpu_state.sampler != nil)
 			testing.expect(t, state.gpu_state.white_texture != nil)
+		},
+	)
+}
+
+@(test)
+gpu_reload_init_failure_skips_texture_and_font_restore :: proc(t: ^testing.T) {
+	with_gpu_window_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, gpu_init())
+			testing.expect(t, font_init())
+
+			surface := texture_test_make_surface(2, 2, {1, 2, 3, 4})
+			testing.expect(t, surface != nil)
+			if surface == nil do return
+
+			id, _, tex_ok := texture_register_surface(surface, "gpu_reload_fail_tex.png")
+			testing.expect(t, tex_ok)
+			testing.expect(t, state.textures.records[int(id)].gpu != nil)
+
+			test_hook_gpu_fail_lcd_pipeline = true
+			testing.expect(t, !gpu_reload())
+			testing.expect(t, state.gpu_state.pipeline == nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline == nil)
+			testing.expect(t, state.textures.records[int(id)].gpu == nil)
+			testing.expect(t, state.textures.records[int(id)].surface != nil)
 		},
 	)
 }
@@ -946,12 +2026,15 @@ clear_test_hooks_resets_gpu_hooks :: proc(t: ^testing.T) {
 	test_hook_gpu_fail_vert_shader = true
 	test_hook_gpu_fail_frag_shader = true
 	test_hook_gpu_fail_pipeline = true
+	test_hook_gpu_fail_lcd_pipeline = true
 	test_hook_gpu_fail_sampler = true
 	test_hook_gpu_fail_create_texture = true
 	test_hook_gpu_fail_transfer_buffer = true
 	test_hook_gpu_fail_map_transfer = true
 	test_hook_gpu_fail_acquire_cmd = true
 	test_hook_gpu_fail_submit_cmd = true
+	test_hook_batch_record_pipeline_binds = true
+	append(&test_batch_pipeline_binds, (^sdl.GPUGraphicsPipeline)(nil))
 	test_hook_present_fail_acquire_cmd = true
 	test_hook_present_fail_swapchain = true
 	test_hook_present_nil_swapchain = true
@@ -962,7 +2045,10 @@ clear_test_hooks_resets_gpu_hooks :: proc(t: ^testing.T) {
 	testing.expect(t, !test_hook_gpu_fail_vert_shader)
 	testing.expect(t, !test_hook_gpu_fail_frag_shader)
 	testing.expect(t, !test_hook_gpu_fail_pipeline)
+	testing.expect(t, !test_hook_gpu_fail_lcd_pipeline)
 	testing.expect(t, !test_hook_gpu_fail_sampler)
+	testing.expect(t, !test_hook_batch_record_pipeline_binds)
+	testing.expect(t, test_batch_pipeline_binds == nil)
 	testing.expect(t, !test_hook_gpu_fail_create_texture)
 	testing.expect(t, !test_hook_gpu_fail_transfer_buffer)
 	testing.expect(t, !test_hook_gpu_fail_map_transfer)

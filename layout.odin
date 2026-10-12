@@ -25,6 +25,9 @@ Layout_Measure :: struct {
 
 /*
 One layout-owned glyph paint quad in absolute logical coordinates.
+
+Render mode is not stored: layout raster and draw both call
+`font_glyph_render_mode_for_draw` / `should_use_lcd` with the same draw state.
 */
 Layout_Glyph_Paint :: struct {
 	face_id:   Asset_Id,
@@ -1262,27 +1265,108 @@ layout_glyph_paint_quad :: proc(
 	glyph: Shaped_Glyph,
 	pen_x, baseline_y, scale: f32,
 	run_index: u16 = 0,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
 ) -> (
 	paint: Layout_Glyph_Paint,
 	ok: bool,
 ) {
+	key := Font_Glyph_Key {
+		face_id     = face_id,
+		glyph_id    = glyph.glyph_id,
+		render_mode = render_mode,
+	}
+	entry, cache_ok := state.fonts.glyph_cache[key]
+	if !cache_ok && state.gpu != nil {
+		_ = font_ensure_glyphs(face, face_id, {glyph}, render_mode)
+		entry, cache_ok = state.fonts.glyph_cache[key]
+	}
+
+	if cache_ok {
+		paint = font_glyph_paint_from_entry(
+			face_id,
+			glyph,
+			entry,
+			pen_x,
+			baseline_y,
+			scale,
+			run_index,
+		)
+
+		return paint, true
+	}
+
+	// No atlas yet (headless / pre-GPU layout): outline metrics in logical px.
 	w, h, bearing_x, bearing_y, metrics_ok := font_glyph_metrics(face, glyph.glyph_id)
 	if !metrics_ok do return {}, false
 
-	glyph_x := pen_x + glyph.x_offset * scale
-	glyph_y := baseline_y + glyph.y_offset * scale - bearing_y * scale
+	layout_scale := scale
+	if layout_scale <= 0 do layout_scale = 1
+
+	bx := bearing_x * layout_scale
+	by := bearing_y * layout_scale
+	glyph_x := pen_x + glyph.x_offset * layout_scale
+	glyph_y := baseline_y + glyph.y_offset * layout_scale - by
+
 	return Layout_Glyph_Paint {
-			face_id = face_id,
-			glyph_id = glyph.glyph_id,
-			dst = {
-				x = snap_logical(glyph_x + bearing_x * scale),
+			face_id   = face_id,
+			glyph_id  = glyph.glyph_id,
+			dst       = {
+				x = snap_logical(glyph_x + bx),
 				y = snap_logical(glyph_y),
-				w = w * scale,
-				h = h * scale,
+				w = w * layout_scale,
+				h = h * layout_scale,
 			},
 			run_index = run_index,
 		},
 		true
+}
+
+/*
+Product of resolved opacity from `node` through its ancestors (CSS group opacity).
+*/
+layout_node_effective_opacity :: proc(node: ^Layout_Node) -> f32 {
+	if node == nil || state == nil {
+		return 1
+	}
+
+	opacity := f32(1)
+	idx := node.index
+	for idx >= 0 && idx < len(state.ui.layout.nodes) {
+		opacity = clamp_opacity(opacity * state.ui.layout.nodes[idx].config.opacity)
+		idx = state.ui.layout.nodes[idx].parent
+	}
+
+	return opacity
+}
+
+/*
+Product of ancestor opacities excluding `node` itself.
+*/
+layout_parent_effective_opacity :: proc(node: ^Layout_Node) -> f32 {
+	if node == nil || state == nil {
+		return 1
+	}
+
+	opacity := f32(1)
+	idx := node.parent
+	for idx >= 0 && idx < len(state.ui.layout.nodes) {
+		opacity = clamp_opacity(opacity * state.ui.layout.nodes[idx].config.opacity)
+		idx = state.ui.layout.nodes[idx].parent
+	}
+
+	return opacity
+}
+
+/*
+LCD/gray render mode from the same draw-state inputs used at paint time.
+*/
+layout_text_render_mode :: proc(
+	tint_a: u8,
+	effective_opacity: f32,
+) -> Font_Glyph_Render_Mode {
+	return font_glyph_render_mode_for_draw(
+		{tint_a = tint_a, effective_opacity = effective_opacity, axis_aligned = true},
+	)
 }
 
 /*
@@ -1308,10 +1392,19 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 	face_id := node.text.font.id
 	scale := node.text.layout_scale
 	ascent_scaled := face.ascent * scale
+	tint_a: u8 = 255
+	if node.config.color_rgba_ok {
+		tint_a = node.config.color_rgba.a
+	}
+	render_mode := layout_text_render_mode(tint_a, layout_node_effective_opacity(node))
 	glyphs := make([dynamic]Layout_Glyph_Paint, layout_frame_allocator())
 
 	for line, i in node.text.lines {
 		if len(line.glyphs) == 0 do continue
+
+		if state.gpu != nil {
+			_ = font_ensure_glyphs(face, face_id, line.glyphs, render_mode)
+		}
 
 		origin := node.text.line_origins[i]
 		pos := Vec2{node.rect.x + origin.x, node.rect.y + origin.y}
@@ -1331,7 +1424,16 @@ layout_text_position_glyphs :: proc(node: ^Layout_Node) {
 				pen_x += glyph.x_advance * scale
 			}
 
-			paint, ok := layout_glyph_paint_quad(face, face_id, glyph, glyph_x, baseline_y, scale)
+			paint, ok := layout_glyph_paint_quad(
+				face,
+				face_id,
+				glyph,
+				glyph_x,
+				baseline_y,
+				scale,
+				0,
+				render_mode,
+			)
 			if !ok do continue
 
 			append(&glyphs, paint)
@@ -1429,6 +1531,24 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 
 			if !shape_ok do continue
 
+			base_rgba: RGBA = {255, 255, 255, 255}
+			if node.config.color_rgba_ok {
+				base_rgba = node.config.color_rgba
+			}
+			run_rgba, _ := text_run_resolve_color(run, base_rgba, true)
+			leaf_opacity := text_run_resolve_opacity(run, node.config.opacity)
+			// Match text_core draw: bake leaf opacity into tint.a; stack carries
+			// parent opacities + this node's style.opacity.
+			run_tint_a := u8(clamp(f32(run_rgba.a) * leaf_opacity, 0, 255))
+			stack_opacity := clamp_opacity(
+				layout_parent_effective_opacity(node) * node.config.opacity,
+			)
+			render_mode := layout_text_render_mode(run_tint_a, stack_opacity)
+
+			if state.gpu != nil {
+				_ = font_ensure_glyphs(seg_face, resolved_font.id, seg_line.glyphs, render_mode)
+			}
+
 			for glyph in seg_line.glyphs {
 				paint, paint_ok := layout_glyph_paint_quad(
 					seg_face,
@@ -1438,6 +1558,7 @@ layout_rich_text_position_glyphs :: proc(node: ^Layout_Node) {
 					baseline_y,
 					seg_scale,
 					u16(run_index),
+					render_mode,
 				)
 				if !paint_ok do continue
 

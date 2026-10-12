@@ -1084,12 +1084,37 @@ Style_Bool :: union {
 }
 
 /*
-Window DPI scale and logical vs drawable pixel dimensions.
+LCD subpixel geometry for the window's display.
+
+Unknown / None → no LCD text (C.6). Vertical layouts map to Unknown until LCD_V ships.
+*/
+Display_Subpixel_Order :: enum u8 {
+	Unknown = 0,
+	None    = 1,
+	RGB     = 2,
+	BGR     = 3,
+}
+
+/*
+User preference for display subpixel order (`dpi subpixel=` in settings.kdl).
+
+Auto queries the OS on dpi_sync; other values force the runtime order.
+*/
+Dpi_Subpixel_Setting :: enum u8 {
+	Auto = 0,
+	None = 1,
+	RGB  = 2,
+	BGR  = 3,
+}
+
+/*
+Window DPI scale, logical vs drawable pixels, and display subpixel order.
 */
 Dpi_Info :: struct {
 	scale:                  f32,
 	logical_w, logical_h:   i32,
 	drawable_w, drawable_h: i32,
+	subpixel_order:         Display_Subpixel_Order,
 }
 
 Asset_Id :: distinct i32

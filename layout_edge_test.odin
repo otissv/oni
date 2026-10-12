@@ -300,9 +300,8 @@ layout_text_position_glyphs_matches_rasterized_dst :: proc(t: ^testing.T) {
 
 			cache_before := len(state.fonts.glyph_cache)
 			layout_text_position_glyphs(&node)
-			testing.expect_value(t, len(state.fonts.glyph_cache), cache_before)
+			testing.expect(t, len(state.fonts.glyph_cache) > cache_before)
 
-			testing.expect(t, font_ensure_glyphs(face, font.id, shaped))
 			baseline_y := snap_logical(node.rect.y + node.text.line_origins[0].y + face.ascent)
 			pen_x := node.rect.x + node.text.line_origins[0].x
 
@@ -318,10 +317,10 @@ layout_text_position_glyphs_matches_rasterized_dst :: proc(t: ^testing.T) {
 				testing.expect(t, expected_ok)
 				pen_x += glyph.x_advance
 
-				expect_close(t, node.text.glyphs[i].dst.x, expected.dst.x, 1.5)
-				expect_close(t, node.text.glyphs[i].dst.y, expected.dst.y, 1.5)
-				expect_close(t, node.text.glyphs[i].dst.w, expected.dst.w, 1.5)
-				expect_close(t, node.text.glyphs[i].dst.h, expected.dst.h, 1.5)
+				expect_close(t, node.text.glyphs[i].dst.x, expected.dst.x)
+				expect_close(t, node.text.glyphs[i].dst.y, expected.dst.y)
+				expect_close(t, node.text.glyphs[i].dst.w, expected.dst.w)
+				expect_close(t, node.text.glyphs[i].dst.h, expected.dst.h)
 			}
 
 			layout_text_release(&node)

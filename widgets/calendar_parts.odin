@@ -70,7 +70,11 @@ calendar_part_month_origin :: proc(month_index: int) -> (origin: o.Vec2, ok: boo
 		return {}, false
 	}
 
-	// Layout pass: root rect is not solved yet — place parts in parent-local space.
+	// Provisional placement is layout-only; draw must use finalized chrome.
+	if o.ui_pass() != .Layout {
+		return {}, false
+	}
+
 	root := o.Rect{}
 	origin = calendar_month_origin(
 		root,

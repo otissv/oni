@@ -133,17 +133,27 @@ Font_State :: struct {
 }
 
 /*
-Cache key identifying a rasterized glyph by face and glyph id.
+Glyph atlas / FreeType raster mode. Gray and LCD never share a cache entry.
+*/
+Font_Glyph_Render_Mode :: enum u8 {
+	Gray = 0,
+	LCD  = 1,
+}
+
+/*
+Cache key identifying a rasterized glyph by face, glyph id, and render mode.
 */
 Font_Glyph_Key :: struct {
-	face_id:  Asset_Id,
-	glyph_id: u32,
+	face_id:     Asset_Id,
+	glyph_id:    u32,
+	render_mode: Font_Glyph_Render_Mode,
 }
 
 /*
 Initializes the FreeType library and glyph cache on first use.
 
-Returns false if FT_Init_FreeType fails.
+Sets LCD filter DEFAULT once on the library. Returns false if FreeType or
+LCD filter setup fails.
 */
 font_init :: proc() -> bool {
 	if test_hook_font_init_fail do return false
@@ -154,8 +164,32 @@ font_init :: proc() -> bool {
 		return false
 	}
 
+	if !font_library_enable_lcd_filter(state.fonts.library) {
+		Done_FreeType(state.fonts.library)
+		state.fonts.library = nil
+
+		return false
+	}
+
 	if state.fonts.glyph_cache == nil {
 		state.fonts.glyph_cache = make(map[Font_Glyph_Key]Font_Glyph_Entry)
+	}
+
+	return true
+}
+
+/*
+Applies FT_LCD_FILTER_DEFAULT to a FreeType library (once per library lifetime).
+*/
+font_library_enable_lcd_filter :: proc(library: FT_Library) -> bool {
+	if library == nil {
+		return false
+	}
+
+	if !ft_ok(Library_SetLcdFilter(library, FT_LCD_FILTER_DEFAULT)) {
+		log_error("FT_Library_SetLcdFilter(DEFAULT) failed")
+
+		return false
 	}
 
 	return true
@@ -667,30 +701,267 @@ font_face_from_handle :: proc(handle: Font_Face_Handle) -> ^Font_Face {
 	return &state.fonts.faces[index]
 }
 
+// Device-pixel sizes at or below this use FT_LOAD_TARGET_LIGHT (slight hinting).
+FONT_UI_HINT_MAX_PX :: 48
+
 /*
 Converts a logical pixel size to a DPI-scaled integer raster size.
 
 Clamps to at least one pixel.
 */
 font_pixel_size :: proc(size_px: f32) -> i32 {
-	scale := state.dpi.scale
-	if scale <= 0 do scale = 1
-	return max(i32(math.round(size_px * scale)), 1)
+	return max(i32(math.round(size_px * font_dpi_scale())), 1)
+}
+
+/*
+True when `device_px` is in the UI range that uses slight FreeType hinting.
+*/
+font_uses_ui_hinting :: proc(device_px: i32) -> bool {
+	return device_px > 0 && device_px <= FONT_UI_HINT_MAX_PX
+}
+
+/*
+FreeType load flags for a face raster size and render mode.
+
+LCD uses FT_LOAD_TARGET_LCD. Gray UI sizes use FT_LOAD_TARGET_LIGHT; larger gray
+sizes keep FT_LOAD_TARGET_NORMAL. Combinable with FT_LOAD_RENDER / NO_BITMAP.
+*/
+font_load_flags :: proc(
+	device_px: i32,
+	base: c.int,
+	mode: Font_Glyph_Render_Mode = .Gray,
+) -> c.int {
+	flags := base
+	switch mode {
+	case .LCD:
+		flags |= c.int(FT_LOAD_TARGET_LCD)
+	case .Gray:
+		if font_uses_ui_hinting(device_px) {
+			flags |= c.int(FT_LOAD_TARGET_LIGHT)
+		} else {
+			flags |= c.int(FT_LOAD_TARGET_NORMAL)
+		}
+	}
+
+	return flags
+}
+
+/*
+FreeType FT_Render_Glyph mode for an outline slot after load.
+*/
+font_render_mode_ft :: proc(
+	device_px: i32,
+	mode: Font_Glyph_Render_Mode = .Gray,
+) -> c.int {
+	switch mode {
+	case .LCD:
+		return c.int(FT_RENDER_MODE_LCD)
+	case .Gray:
+		if font_uses_ui_hinting(device_px) {
+			return c.int(FT_RENDER_MODE_LIGHT)
+		}
+
+		return c.int(FT_RENDER_MODE_NORMAL)
+	}
+
+	return c.int(FT_RENDER_MODE_NORMAL)
+}
+
+/*
+Coverage→alpha exponent matching `text_coverage_alpha` in ui.frag.
+
+`luminance` is linear Rec.709 of the text tint in 0..1. Light text uses a
+lower exponent (denser AA); dark text uses a higher one (thinner AA).
+*/
+font_text_coverage_exponent :: proc(luminance: f32) -> f32 {
+	lum := clamp(luminance, 0, 1)
+
+	return 1.45 * (1 - lum) + 0.70 * lum
+}
+
+/*
+Applies Skia-style fake-gamma to a linear FreeType coverage sample [0,1].
+*/
+font_text_coverage_alpha :: proc(coverage: f32, luminance: f32, tint_a: f32 = 1) -> f32 {
+	exp := font_text_coverage_exponent(luminance)
+	c := max(coverage, 0)
+
+	return math.pow(c, exp) * tint_a
+}
+
+/*
+Rec.709 luminance of an 8-bit RGB tint, scaled to 0..1.
+*/
+font_tint_luminance :: proc(tint: RGBA) -> f32 {
+	r := f32(tint.r) / 255
+	g := f32(tint.g) / 255
+	b := f32(tint.b) / 255
+
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/*
+Active window DPI scale used for font rasterization and logical conversion.
+
+Defaults to 1 when state is nil or scale is non-positive.
+*/
+font_dpi_scale :: proc() -> f32 {
+	if state == nil || state.dpi.scale <= 0 do return 1
+
+	return state.dpi.scale
+}
+
+/*
+Converts a FreeType/atlas device-pixel length into logical design pixels.
+*/
+font_device_to_logical :: proc(device_px: f32) -> f32 {
+	return device_px / font_dpi_scale()
+}
+
+/*
+True when DPI scale is an integer (within a small epsilon).
+
+Integer scales can map atlas texels 1:1 onto drawable pixels without resampling.
+*/
+font_dpi_scale_is_integer :: proc() -> bool {
+	scale := font_dpi_scale()
+	rounded := math.round(scale)
+
+	return abs(scale - rounded) <= 0.001
+}
+
+/*
+True when glyph atlas draws can use NEAREST filtering without stretch.
+
+Requires integer DPI scale and identity artboard zoom so quads stay 1:1 with
+cached bitmap pixels after the logical → drawable present transform.
+*/
+font_text_uses_nearest_filter :: proc() -> bool {
+	if !font_dpi_scale_is_integer() do return false
+
+	if view_artboard_zoom() != 1 do return false
+
+	return true
+}
+
+/*
+Draw-state inputs for the LCD text gate (same values at layout raster and draw).
+*/
+Lcd_Draw_State :: struct {
+	tint_a:             u8,
+	effective_opacity:  f32,
+	axis_aligned:       bool,
+}
+
+/*
+True when this text draw may use FreeType LCD + the dual-source LCD pipeline.
+
+Requires: LCD pipeline present, known horizontal RGB/BGR, axis-aligned quads,
+integer DPI + identity artboard zoom (snap + nearest), and fully opaque tint
+and parent opacity. Vertical subpixel orders are Unknown (no LCD_V).
+
+Production text always emits axis-aligned quads (`batch_push_axis_quad`); pass
+`axis_aligned=false` when a future rotated/transformed path appears.
+*/
+should_use_lcd :: proc(draw: Lcd_Draw_State) -> bool {
+	if state == nil || state.gpu_state.lcd_pipeline == nil {
+		return false
+	}
+
+	order := dpi_subpixel_order()
+	if order != .RGB && order != .BGR {
+		return false
+	}
+
+	if !draw.axis_aligned {
+		return false
+	}
+
+	if !font_text_uses_nearest_filter() {
+		return false
+	}
+
+	if draw.tint_a < 255 {
+		return false
+	}
+
+	if clamp_opacity(draw.effective_opacity) < 1 - 0.001 {
+		return false
+	}
+
+	return true
+}
+
+/*
+Glyph render mode selected by should_use_lcd for the given draw state.
+*/
+font_glyph_render_mode_for_draw :: proc(draw: Lcd_Draw_State) -> Font_Glyph_Render_Mode {
+	if should_use_lcd(draw) {
+		return .LCD
+	}
+
+	return .Gray
+}
+
+/*
+Discards face instances, glyph cache, and atlas packing after a DPI change.
+
+Families stay registered; the next font_resolve recreates faces at the new
+device-pixel size.
+*/
+font_invalidate_dpi :: proc() {
+	if state == nil do return
+
+	if state.fonts.library != nil {
+		font_atlas_reset()
+		font_destroy_faces()
+
+		return
+	}
+
+	font_shape_cache_clear()
+}
+
+/*
+Removes LCD glyph cache entries after display subpixel order changes.
+
+Gray AA entries and atlas packing stay intact; orphaned LCD atlas pixels are
+reclaimed on the next full atlas reset (DPI / face reload).
+*/
+font_invalidate_lcd_glyphs :: proc() {
+	if state == nil || state.fonts.glyph_cache == nil {
+		return
+	}
+
+	to_delete := make([dynamic]Font_Glyph_Key, context.temp_allocator)
+
+	for key in state.fonts.glyph_cache {
+		if key.render_mode == .LCD {
+			append(&to_delete, key)
+		}
+	}
+
+	for key in to_delete {
+		delete_key(&state.fonts.glyph_cache, key)
+	}
 }
 
 /*
 Reads ascent, descent, and line height from a FreeType face in logical pixels.
 
-Falls back to reasonable defaults when size metrics are unavailable.
+FreeType reports metrics in the face's device-pixel size; values are converted
+through font_device_to_logical. Falls back to defaults when metrics are missing.
 */
 font_metrics_from_face :: proc(ft_face: FT_Face) -> (ascent, descent, line_height: f32) {
 	if metrics := ft_face_size_metrics(ft_face); metrics != nil {
-		ascent = f32(metrics.ascender) / 64.0
-		descent = f32(-metrics.descender) / 64.0
-		line_height = f32(metrics.height) / 64.0
+		ascent = font_device_to_logical(f32(metrics.ascender) / 64.0)
+		descent = font_device_to_logical(f32(-metrics.descender) / 64.0)
+		line_height = font_device_to_logical(f32(metrics.height) / 64.0)
+
 		if line_height <= 0 {
 			line_height = ascent + descent
 		}
+
 		return
 	}
 
@@ -753,10 +1024,10 @@ font_shape :: proc(
 		glyphs[i] = {
 			glyph_id  = u32(infos[i].codepoint),
 			cluster   = infos[i].cluster,
-			x_offset  = hb_pos_to_px(positions[i].x_offset),
-			y_offset  = hb_pos_to_px(positions[i].y_offset),
-			x_advance = hb_pos_to_px(positions[i].x_advance),
-			y_advance = hb_pos_to_px(positions[i].y_advance),
+			x_offset  = font_device_to_logical(hb_pos_to_px(positions[i].x_offset)),
+			y_offset  = font_device_to_logical(hb_pos_to_px(positions[i].y_offset)),
+			x_advance = font_device_to_logical(hb_pos_to_px(positions[i].x_advance)),
+			y_advance = font_device_to_logical(hb_pos_to_px(positions[i].y_advance)),
 		}
 	}
 

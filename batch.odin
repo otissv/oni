@@ -10,6 +10,7 @@ Draw_Mode :: enum {
 	Textured,
 	Line,
 	Textured_Rounded,
+	Textured_Text,
 }
 
 /*
@@ -22,12 +23,16 @@ draw_mode_f32 :: proc(mode: Draw_Mode) -> f32 {
 BATCH_INITIAL_VERT_CAPACITY :: 64 * 1024
 
 /*
-Identifies a draw batch by texture asset, active clip rectangle, and stack index.
+Identifies a draw batch by texture asset, clip, stack index, sampler, and pipeline.
+
+`lcd` selects the dual-source LCD text pipeline; gray UI uses the SRC_ALPHA pipeline.
 */
 Batch_Key :: struct {
 	texture_id:  Asset_Id,
 	clip:        Rect,
 	stack_index: u32,
+	nearest:     bool,
+	lcd:         bool,
 }
 
 /*
@@ -337,22 +342,28 @@ batch_set_stack_index :: proc(stack_index: u32) {
 }
 
 /*
-Starts a new batch segment when the texture, clip, or stack index key changes.
+Starts a new batch segment when the texture, clip, stack, sampler, or pipeline key changes.
 
 Finalizes the previous segment's index count before appending a new one.
+`nearest` selects the NEAREST atlas sampler (crisp 1:1 glyph quads).
+`lcd` selects the dual-source LCD text pipeline.
 */
-batch_check_key :: proc(texture_id: Asset_Id) {
+batch_check_key :: proc(texture_id: Asset_Id, nearest := false, lcd := false) {
 	clip := batch_current_clip()
 	key := Batch_Key {
 		texture_id  = texture_id,
 		clip        = clip,
 		stack_index = batch_current().current_stack,
+		nearest     = nearest,
+		lcd         = lcd,
 	}
 
 	if batch_current().has_current_key &&
 	   batch_current().current_key.texture_id == key.texture_id &&
 	   batch_current().current_key.clip == key.clip &&
-	   batch_current().current_key.stack_index == key.stack_index {
+	   batch_current().current_key.stack_index == key.stack_index &&
+	   batch_current().current_key.nearest == key.nearest &&
+	   batch_current().current_key.lcd == key.lcd {
 		return
 	}
 
@@ -477,6 +488,34 @@ batch_axis_quad_has_chrome :: proc(radii: [4]f32, border: Bd_px) -> bool {
 }
 
 /*
+Snaps a logical-space rect so each edge lands on a device-pixel boundary.
+
+Uses `dpi.scale` so HiDPI (scale 2, 3, …) aligns to drawable pixels, not merely
+integer logical coordinates.
+*/
+batch_snap_rect_to_device_pixels :: proc(r: Rect, dpi: Dpi_Info) -> Rect {
+	if r.w <= 0 || r.h <= 0 do return r
+
+	scale := dpi.scale
+	if scale <= 0 do scale = 1
+
+	x0 := math.round(r.x * scale) / scale
+	y0 := math.round(r.y * scale) / scale
+	x1 := math.round((r.x + r.w) * scale) / scale
+	y1 := math.round((r.y + r.h) * scale) / scale
+
+	if x1 <= x0 {
+		x1 = x0 + 1 / scale
+	}
+
+	if y1 <= y0 {
+		y1 = y0 + 1 / scale
+	}
+
+	return {x0, y0, x1 - x0, y1 - y0}
+}
+
+/*
 Snaps screen-space rect edges to device pixels for stable 1px chrome.
 
 This keeps bordered / rounded solid quads from landing on fractional edges,
@@ -484,22 +523,7 @@ which otherwise makes thin borders fade or disappear inconsistently.
 */
 @(private)
 batch_snap_rect_to_pixels :: proc(r: Rect) -> Rect {
-	if r.w <= 0 || r.h <= 0 do return r
-
-	x0 := math.floor(r.x + 0.5)
-	y0 := math.floor(r.y + 0.5)
-	x1 := math.floor(r.x + r.w + 0.5)
-	y1 := math.floor(r.y + r.h + 0.5)
-
-	if x1 <= x0 {
-		x1 = x0 + 1
-	}
-
-	if y1 <= y0 {
-		y1 = y0 + 1
-	}
-
-	return {x0, y0, x1 - x0, y1 - y0}
+	return batch_snap_rect_to_device_pixels(r, batch_current().dpi)
 }
 
 /*
@@ -517,13 +541,14 @@ batch_push_axis_quad :: proc(
 	radii: [4]f32,
 	border: Bd_px,
 	mode: Draw_Mode,
+	snap_device := false,
 ) {
 	screen := view_transform_rect(r)
 	u0, v0 := uv_rect.x, uv_rect.y
 	u1, v1 := uv_rect.x + uv_rect.w, uv_rect.y + uv_rect.h
 
 	#partial switch mode {
-	case .Textured, .Textured_Rounded:
+	case .Textured, .Textured_Rounded, .Textured_Text:
 		clip := batch_current_clip()
 		visible := rect_intersect(screen, clip)
 		if visible.w <= 0 || visible.h <= 0 do return
@@ -541,7 +566,9 @@ batch_push_axis_quad :: proc(
 		screen = visible
 	}
 
-	if mode == .Solid && batch_axis_quad_has_chrome(radii, border) {
+	if (mode == .Solid && batch_axis_quad_has_chrome(radii, border)) ||
+	   snap_device ||
+	   mode == .Textured_Text {
 		screen = batch_snap_rect_to_pixels(screen)
 	}
 
@@ -556,7 +583,7 @@ batch_push_axis_quad :: proc(
 	switch mode {
 	case .Solid, .Line:
 		uvs = rect_local
-	case .Textured, .Textured_Rounded:
+	case .Textured, .Textured_Rounded, .Textured_Text:
 		uvs = [4]Vec2{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
 	}
 
@@ -569,19 +596,23 @@ Records multiple textured atlas quads that share one texture / clip / stack key.
 Checks the batch key once and ensures vertex capacity for all quads up front,
 so glyph runs avoid per-quad capacity growth and segment-key work.
 `srcs` are pixel-space rectangles in the texture; `dsts` are logical quads.
+When `nearest` is true, the segment binds the NEAREST sampler for 1:1 glyphs.
+When `lcd` is true, the segment binds the dual-source LCD pipeline.
 */
 batch_push_atlas_quads :: proc(
 	texture: Texture_Handle,
 	dsts: []Rect,
 	srcs: []Rect,
 	tint: RGBA,
+	nearest := false,
+	lcd := false,
 ) {
 	n := len(dsts)
 	if n == 0 || len(srcs) != n do return
 	if texture.w <= 0 || texture.h <= 0 do return
 
 	batch_current().dpi = state.dpi
-	batch_check_key(texture.id)
+	batch_check_key(texture.id, nearest, lcd)
 	if !batch_ensure_capacity(4 * n) do return
 
 	inv_w := 1 / texture.w
@@ -590,7 +621,7 @@ batch_push_atlas_quads :: proc(
 		src := srcs[i]
 		dst := dsts[i]
 		uv := Rect{src.x * inv_w, src.y * inv_h, src.w * inv_w, src.h * inv_h}
-		batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured)
+		batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured_Text, true)
 	}
 }
 
@@ -724,8 +755,9 @@ clip_to_scissor :: proc(clip: Rect, dpi: Dpi_Info) -> sdl.Rect {
 /*
 Issues indexed draw calls for each batch segment with bound texture and scissor.
 
-Binds the UI pipeline, projection UBO, vertex/index buffers, and draws each
-segment. Skips segments with zero indices or missing GPU textures.
+Binds vertex/index buffers once, then per segment selects the UI or LCD pipeline
+(rebind only when `seg.key.lcd` changes), sampler, scissor, and draws. Skips
+segments with zero indices, missing GPU textures, or LCD without `lcd_pipeline`.
 */
 batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
@@ -734,8 +766,6 @@ batch_flush_draws :: proc() {
 	ubo := GPU_Proj_UBO {
 		proj = state.gpu_state.proj_mat,
 	}
-	sdl.BindGPUGraphicsPipeline(batch_current().pass, state.gpu_state.pipeline)
-	sdl.PushGPUVertexUniformData(batch_current().cmd, 0, &ubo, u32(size_of(ubo)))
 
 	vertex_binding := sdl.GPUBufferBinding {
 		buffer = batch_current().vertex_buffer,
@@ -749,12 +779,54 @@ batch_flush_draws :: proc() {
 	sdl.BindGPUVertexBuffers(batch_current().pass, 0, &vertex_binding, 1)
 	sdl.BindGPUIndexBuffer(batch_current().pass, index_binding, ._16BIT)
 
-	sampler := state.gpu_state.sampler
+	has_pipeline_bound := false
+	bound_lcd := false
+	lcd_ubo_pushed := false
+	lcd_ubo := GPU_Lcd_UBO {
+		bgr = dpi_subpixel_order() == .BGR ? 1 : 0,
+	}
+
 	for seg in batch_current().segments {
 		if seg.index_count == 0 do continue
 
 		tex := texture_get_gpu(seg.key.texture_id)
 		if tex == nil do continue
+
+		pipeline := state.gpu_state.pipeline
+		if seg.key.lcd {
+			if state.gpu_state.lcd_pipeline == nil do continue
+
+			pipeline = state.gpu_state.lcd_pipeline
+		}
+
+		if !has_pipeline_bound || bound_lcd != seg.key.lcd {
+			sdl.BindGPUGraphicsPipeline(batch_current().pass, pipeline)
+			if test_hook_batch_record_pipeline_binds {
+				append(&test_batch_pipeline_binds, pipeline)
+			}
+
+			if !has_pipeline_bound {
+				sdl.PushGPUVertexUniformData(batch_current().cmd, 0, &ubo, u32(size_of(ubo)))
+			}
+
+			if seg.key.lcd && !lcd_ubo_pushed {
+				sdl.PushGPUFragmentUniformData(
+					batch_current().cmd,
+					0,
+					&lcd_ubo,
+					u32(size_of(lcd_ubo)),
+				)
+				lcd_ubo_pushed = true
+			}
+
+			has_pipeline_bound = true
+			bound_lcd = seg.key.lcd
+		}
+
+		sampler := state.gpu_state.sampler
+		if seg.key.nearest && state.gpu_state.sampler_nearest != nil {
+			sampler = state.gpu_state.sampler_nearest
+		}
 
 		binding := sdl.GPUTextureSamplerBinding {
 			texture = tex,

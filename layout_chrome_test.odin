@@ -81,7 +81,7 @@ layout_slider_single_thumb_range_starts_at_track :: proc(t: ^testing.T) {
 }
 
 @(test)
-layout_slider_sync_values_updates_thumb :: proc(t: ^testing.T) {
+layout_slider_finalize_moves_thumb_with_value :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
 		idx := layout_test_append_node(layout, -1, .SLIDER, desired = {100, 20})
 		node := &layout.nodes[idx]
@@ -112,7 +112,8 @@ layout_slider_sync_values_updates_thumb :: proc(t: ^testing.T) {
 		}
 
 		x0 := before.thumbs[0].x
-		layout_slider_sync_values(node.ui_id, []f32{100})
+		node.slider_input.values[0] = 100
+		layout_finalize_slider_node(node)
 		after := layout_slider_result(node.ui_id)
 		testing.expect(t, after != nil)
 
@@ -121,6 +122,19 @@ layout_slider_sync_values_updates_thumb :: proc(t: ^testing.T) {
 		}
 
 		testing.expect(t, after.thumbs[0].x > x0)
+
+		// Paint helper must match finalize without mutating layout state.
+		paint := layout_slider_thumb_rect(
+			after.track,
+			.HORIZONTAL,
+			100,
+			0,
+			100,
+			false,
+			10,
+		)
+		testing.expect(t, paint.x == after.thumbs[0].x)
+		testing.expect(t, paint.y == after.thumbs[0].y)
 	})
 }
 
@@ -156,7 +170,8 @@ layout_scroll_bar_finalize_builds_thumb :: proc(t: ^testing.T) {
 		testing.expect(t, chrome.thumb.h >= 24)
 		testing.expect(t, chrome.thumb.y == 0)
 
-		layout_scroll_bar_sync_scroll(node.ui_id, 150)
+		node.scroll_bar_input.scroll = 150
+		layout_finalize_scroll_bar_node(node)
 		chrome = layout_scroll_bar_result(node.ui_id)
 		testing.expect(t, chrome != nil)
 
@@ -165,6 +180,10 @@ layout_scroll_bar_finalize_builds_thumb :: proc(t: ^testing.T) {
 		}
 
 		testing.expect(t, chrome.thumb.y > 0)
+
+		paint := layout_scroll_bar_thumb_rect(node.rect, .Y, 50, 200, 150, 24)
+		testing.expect(t, paint.y == chrome.thumb.y)
+		testing.expect(t, paint.h == chrome.thumb.h)
 	})
 }
 

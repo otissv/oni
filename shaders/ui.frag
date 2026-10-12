@@ -68,9 +68,24 @@ vec4 rounded_shape(vec4 tint, vec2 local_uv, vec2 size, vec4 outer_r, vec4 borde
     return vec4(v_border_color.rgb, v_border_color.a * border_a);
 }
 
+// Skia-style fake-gamma for grayscale coverage blended in gamma-ish UNORM space.
+// Light text (high lum): lower exponent → denser mid-coverage (crisper on dark UI).
+// Dark text (low lum): higher exponent → thinner mid-coverage (less muddy on light UI).
+float text_coverage_alpha(float coverage, vec3 tint_rgb, float tint_a) {
+    float lum = dot(tint_rgb, vec3(0.2126, 0.7152, 0.0722));
+    float exponent = mix(1.45, 0.70, clamp(lum, 0.0, 1.0));
+    return pow(max(coverage, 0.0), exponent) * tint_a;
+}
+
 void main() {
     vec4 tint = v_color;
     float mode = v_params.y;
+
+    if (mode >= 3.5) {
+        float coverage = texture(tex, v_uv).a;
+        out_color = vec4(tint.rgb, text_coverage_alpha(coverage, tint.rgb, tint.a));
+        return;
+    }
 
     if (mode >= 2.5) {
         vec2 local_px = v_local_uv * v_rect_size;

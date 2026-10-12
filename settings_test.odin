@@ -43,7 +43,9 @@ window {
 	min-width 200
 	min-height 100
 }
-dpi scale=2
+dpi {
+	scale 2
+}
 fonts {
 	body-size 18
 	heading-size 24
@@ -67,6 +69,7 @@ bind trigger="CTRL+P" action="demo.ping" enabled=#false
 		testing.expect_value(t, parsed.min_width, i32(200))
 		testing.expect_value(t, parsed.min_height, i32(100))
 		expect_close(t, parsed.dpi_scale, 2)
+		testing.expect_value(t, parsed.dpi_subpixel, Dpi_Subpixel_Setting.Auto)
 		testing.expect_value(t, parsed.font_family, "Inter")
 		expect_close(t, parsed.font_body_size, 18)
 		expect_close(t, parsed.font_heading_size, 24)
@@ -154,15 +157,50 @@ settings_export_includes_window_mode :: proc(t: ^testing.T) {
 @(test)
 settings_parse_dpi_auto_and_unknown_node_fails :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
-		parsed, err := settings_parse_document(`dpi scale="auto"`)
+		parsed, err := settings_parse_document("dpi {\n\tscale auto\n}\n")
 		defer settings_destroy_value(parsed)
 		testing.expect(t, err.ok)
 		expect_close(t, parsed.dpi_scale, 0)
+		testing.expect_value(t, parsed.dpi_subpixel, Dpi_Subpixel_Setting.Auto)
+
+		flat, flat_err := settings_parse_document(`dpi scale=2`)
+		settings_destroy_value(flat)
+		testing.expect(t, !flat_err.ok)
 
 		bad, bad_err := settings_parse_document("NOT_A_VALID_BINDING\n")
 		settings_destroy_value(bad)
 		testing.expect(t, !bad_err.ok)
 		testing.expect(t, bad_err.line >= 1)
+	})
+}
+
+@(test)
+settings_parse_dpi_subpixel_values :: proc(t: ^testing.T) {
+	with_engine_env(t, proc(t: ^testing.T) {
+		cases := [?]struct {
+			token:    string,
+			expected: Dpi_Subpixel_Setting,
+		} {
+			{"auto", .Auto},
+			{"none", .None},
+			{"rgb", .RGB},
+			{"bgr", .BGR},
+			{"RGB", .RGB},
+		}
+		for c in cases {
+			doc := strings.concatenate(
+				{"dpi {\n\tscale 1\n\tsubpixel ", c.token, "\n}\n"},
+				context.temp_allocator,
+			)
+			parsed, err := settings_parse_document(doc)
+			defer settings_destroy_value(parsed)
+			testing.expect(t, err.ok)
+			testing.expect_value(t, parsed.dpi_subpixel, c.expected)
+		}
+
+		bad, bad_err := settings_parse_document("dpi {\n\tscale 1\n\tsubpixel vertical\n}\n")
+		settings_destroy_value(bad)
+		testing.expect(t, !bad_err.ok)
 	})
 }
 
@@ -179,6 +217,7 @@ settings_parse_empty_uses_defaults :: proc(t: ^testing.T) {
 		testing.expect_value(t, parsed.font_faces[0].path, SETTINGS_DEFAULT_FONT_REGULAR_PATH)
 		testing.expect_value(t, parsed.font_faces[1].path, SETTINGS_DEFAULT_FONT_ITALIC_PATH)
 		expect_close(t, parsed.dpi_scale, 0)
+		testing.expect_value(t, parsed.dpi_subpixel, Dpi_Subpixel_Setting.Auto)
 	})
 }
 
@@ -295,7 +334,9 @@ settings_load_parse_error_keeps_previous :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
 		good_path := "build/test/settings_keep_prev_good.kdl"
 		bad_path := "build/test/settings_keep_prev_bad.kdl"
-		testing.expect(t, settings_test_write(good_path, `dpi scale=2
+		testing.expect(t, settings_test_write(good_path, `dpi {
+	scale 2
+}
 window { title "KeepMe" }`))
 		testing.expect(t, settings_test_write(bad_path, "NOT_A_VALID_BINDING\n"))
 		defer os.remove(good_path)
@@ -358,6 +399,7 @@ settings_export_roundtrip_user_bind :: proc(t: ^testing.T) {
 		data := settings_export(context.temp_allocator)
 		testing.expect(t, strings.contains(data, "window"))
 		testing.expect(t, strings.contains(data, "dpi"))
+		testing.expect(t, strings.contains(data, "subpixel"))
 		testing.expect(t, strings.contains(data, "fonts"))
 		testing.expect(t, strings.contains(data, "CTRL+P"))
 		testing.expect(t, strings.contains(data, "demo.ping"))
@@ -372,7 +414,9 @@ settings_export_roundtrip_user_bind :: proc(t: ^testing.T) {
 settings_reload_applies_dpi_and_shortcuts :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
 		doc := `
-dpi scale=2
+dpi {
+	scale 2
+}
 bind trigger="CTRL+P" action="demo.ping"
 `
 		path := "build/test/settings_reload_test.kdl"
@@ -405,7 +449,9 @@ settings_apply_hook_invoked_from_runtime :: proc(t: ^testing.T) {
 settings_poll_reloads_on_mtime_change_with_cooldown :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
 		path := "build/test/settings_poll_watch.kdl"
-		testing.expect(t, settings_test_write(path, `dpi scale=1
+		testing.expect(t, settings_test_write(path, `dpi {
+	scale 1
+}
 window { title "One" }`))
 		defer os.remove(path)
 
@@ -414,7 +460,9 @@ window { title "One" }`))
 		testing.expect(t, settings_load(path))
 		testing.expect_value(t, state.settings.window_title, "One")
 
-		testing.expect(t, settings_test_write(path, `dpi scale=2
+		testing.expect(t, settings_test_write(path, `dpi {
+	scale 2
+}
 window { title "Two" }`))
 		state.settings.watch_mtime_nsec = 0
 		state.settings.watch_cooldown_until_ns = 0
@@ -424,7 +472,9 @@ window { title "Two" }`))
 		testing.expect_value(t, settings_test_hook_count, 1)
 		testing.expect(t, state.settings.watch_cooldown_until_ns > 0)
 
-		testing.expect(t, settings_test_write(path, `dpi scale=3
+		testing.expect(t, settings_test_write(path, `dpi {
+	scale 3
+}
 window { title "Three" }`))
 		state.settings.watch_mtime_nsec = 0
 		settings_poll()
@@ -444,7 +494,9 @@ window { title "Three" }`))
 settings_poll_failed_reload_keeps_settings_and_updates_mtime :: proc(t: ^testing.T) {
 	with_engine_env(t, proc(t: ^testing.T) {
 		path := "build/test/settings_poll_bad.kdl"
-		testing.expect(t, settings_test_write(path, `dpi scale=2
+		testing.expect(t, settings_test_write(path, `dpi {
+	scale 2
+}
 window { title "Good" }`))
 		defer os.remove(path)
 
@@ -505,6 +557,23 @@ settings_dpi_override_applied_by_dpi_sync :: proc(t: ^testing.T) {
 		state.settings.dpi_scale = 0
 		dpi_sync()
 		testing.expect(t, state.dpi.scale > 0)
+	})
+}
+
+@(test)
+settings_dpi_subpixel_override_applied_by_dpi_sync :: proc(t: ^testing.T) {
+	with_engine_sdl_window_env(t, proc(t: ^testing.T) {
+		settings_ensure()
+		test_hook_dpi_subpixel_os_override = true
+		test_hook_dpi_subpixel_os_value = .Unknown
+		state.settings.dpi_subpixel = .BGR
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.BGR)
+
+		state.settings.dpi_subpixel = .Auto
+		test_hook_dpi_subpixel_os_value = .RGB
+		dpi_sync()
+		testing.expect_value(t, state.dpi.subpixel_order, Display_Subpixel_Order.RGB)
 	})
 }
 

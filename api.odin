@@ -39,6 +39,9 @@ Peek_Force_Restart :: peek_force_restart
 Consume_Force_Reload :: consume_force_reload
 Consume_Force_Restart :: consume_force_restart
 Dpi_Sync :: dpi_sync
+Dpi_Subpixel_Order :: dpi_subpixel_order
+Should_Use_Lcd :: should_use_lcd
+Font_Glyph_Render_Mode_For_Draw :: font_glyph_render_mode_for_draw
 Set_Window_Mode :: set_window_mode
 Set_Fullscreen :: set_fullscreen
 Toggle_Fullscreen :: toggle_fullscreen

@@ -29,9 +29,10 @@ Each worker opens a temporary FT_Face (and FT_Library) so FreeType work never
 touches the engine face concurrently.
 */
 Font_Glyph_Worker_Args :: struct {
-	face:      ^Font_Face,
-	glyph_ids: []u32,
-	results:   []Font_Glyph_Bitmap_Result,
+	face:         ^Font_Face,
+	glyph_ids:    []u32,
+	results:      []Font_Glyph_Bitmap_Result,
+	render_mode:  Font_Glyph_Render_Mode,
 }
 
 /*
@@ -155,15 +156,17 @@ font_resolve :: proc(
 }
 
 /*
-Loads one glyph outline and returns layout paint metrics without rasterizing.
+Loads one glyph outline and returns layout paint metrics in logical pixels.
 
-Uses FT_LOAD_DEFAULT (or FT_LOAD_NO_BITMAP + embolden for synthetic bold) so
-layout can position quads while draw owns atlas rasterization.
+Uses FT_LOAD_DEFAULT (or FT_LOAD_NO_BITMAP + embolden for synthetic bold).
+Prefer atlas-backed paint quads (layout_glyph_paint_quad) for draw sizes;
+these outline metrics remain for tests and non-atlas fallbacks.
 */
 font_glyph_metrics :: proc(face: ^Font_Face, glyph_id: u32) -> (w, h, bearing_x, bearing_y: f32, ok: bool) {
 	if face == nil || face.ft_face == nil do return 0, 0, 0, 0, false
 
-	load_flags: c.int = face.fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_DEFAULT)
+	base: c.int = face.fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_DEFAULT)
+	load_flags := font_load_flags(face.pixel_size, base)
 	if !ft_ok(Load_Glyph(face.ft_face, c.uint(glyph_id), load_flags)) {
 		log_errorf("FT_Load_Glyph failed for metrics glyph %d", glyph_id)
 		return 0, 0, 0, 0, false
@@ -175,14 +178,14 @@ font_glyph_metrics :: proc(face: ^Font_Face, glyph_id: u32) -> (w, h, bearing_x,
 	}
 
 	metrics := ft_slot_metrics(slot)^
-	w = ft_pos_to_f32(metrics.width)
-	h = ft_pos_to_f32(metrics.height)
-	bearing_x = ft_pos_to_f32(metrics.hori_bearing_x)
-	bearing_y = ft_pos_to_f32(metrics.hori_bearing_y)
+	w = font_device_to_logical(ft_pos_to_f32(metrics.width))
+	h = font_device_to_logical(ft_pos_to_f32(metrics.height))
+	bearing_x = font_device_to_logical(ft_pos_to_f32(metrics.hori_bearing_x))
+	bearing_y = font_device_to_logical(ft_pos_to_f32(metrics.hori_bearing_y))
 
 	if w <= 0 || h <= 0 {
-		w = 1
-		h = 1
+		w = font_device_to_logical(1)
+		h = font_device_to_logical(1)
 		bearing_x = 0
 		bearing_y = 0
 	}
@@ -218,8 +221,14 @@ Rasterizes and caches any glyphs from shaped lines that are not yet in the atlas
 
 Ensures the atlas is initialized before packing missing glyphs. Large miss sets
 rasterize FreeType bitmaps in parallel, then pack into the atlas serially.
+`render_mode` selects gray AA or LCD RGB coverage (separate cache entries).
 */
-font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped_Glyph) -> bool {
+font_ensure_glyphs :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	glyphs: []Shaped_Glyph,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> bool {
 	if face == nil || len(glyphs) == 0 do return true
 
 	missing := make([dynamic]u32, 0, len(glyphs), context.temp_allocator)
@@ -227,8 +236,9 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 
 	for glyph in glyphs {
 		key := Font_Glyph_Key {
-			face_id  = face_id,
-			glyph_id = glyph.glyph_id,
+			face_id     = face_id,
+			glyph_id    = glyph.glyph_id,
+			render_mode = render_mode,
 		}
 		if key in state.fonts.glyph_cache do continue
 		if glyph.glyph_id in seen do continue
@@ -237,7 +247,7 @@ font_ensure_glyphs :: proc(face: ^Font_Face, face_id: Asset_Id, glyphs: []Shaped
 	}
 	if len(missing) == 0 do return true
 	if !texture_atlas_init() do return false
-	return font_rasterize_and_cache_missing(face, face_id, missing[:])
+	return font_rasterize_and_cache_missing(face, face_id, missing[:], render_mode)
 }
 
 /*
@@ -251,6 +261,11 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 
 	if !ft_ok(Init_FreeType(&library)) {
 		log_error("FT_Init_FreeType failed for worker face")
+		return {}, nil, false
+	}
+
+	if !font_library_enable_lcd_filter(library) {
+		Done_FreeType(library)
 		return {}, nil, false
 	}
 
@@ -321,11 +336,15 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 
 /*
 FT load/render + SDL surface copy. Does not touch the glyph atlas.
+
+LCD bitmaps use FreeType subpixel width; the surface is logical width (bitmap.w/3).
 */
 font_rasterize_glyph_bitmap :: proc(
 	ft_face: FT_Face,
 	fake_bold: bool,
 	glyph_id: u32,
+	device_px: i32 = 0,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
 ) -> (
 	surface: ^sdl.Surface,
 	bearing_x: f32,
@@ -334,7 +353,16 @@ font_rasterize_glyph_bitmap :: proc(
 ) {
 	if ft_face == nil do return nil, 0, 0, false
 
-	load_flags: c.int = fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_RENDER)
+	pixel_size := device_px
+	if pixel_size <= 0 {
+		if metrics := ft_face_size_metrics(ft_face); metrics != nil {
+			pixel_size = i32(math.round(f32(metrics.height) / 64))
+		}
+		if pixel_size <= 0 do pixel_size = FONT_UI_HINT_MAX_PX
+	}
+
+	base: c.int = fake_bold ? c.int(FT_LOAD_NO_BITMAP) : c.int(FT_LOAD_RENDER)
+	load_flags := font_load_flags(pixel_size, base, render_mode)
 	if !ft_ok(Load_Glyph(ft_face, c.uint(glyph_id), load_flags)) {
 		log_errorf("FT_Load_Glyph failed for glyph %d", glyph_id)
 		return nil, 0, 0, false
@@ -346,7 +374,8 @@ font_rasterize_glyph_bitmap :: proc(
 	}
 
 	if ft_slot_format(slot) != .BITMAP {
-		if !ft_ok(Render_Glyph(slot, FT_RENDER_MODE_NORMAL)) {
+		ft_mode := font_render_mode_ft(pixel_size, render_mode)
+		if !ft_ok(Render_Glyph(slot, ft_mode)) {
 			log_errorf("FT_Render_Glyph failed for glyph %d", glyph_id)
 			return nil, 0, 0, false
 		}
@@ -365,7 +394,17 @@ font_rasterize_glyph_bitmap :: proc(
 		return surface, 0, 0, true
 	}
 
-	surface = sdl.CreateSurface(w, h, .RGBA8888)
+	surface_w := w
+	if bitmap.pixel_mode == FT_PIXEL_MODE_LCD {
+		if w % 3 != 0 {
+			log_errorf("LCD glyph bitmap width %d is not divisible by 3", w)
+			return nil, 0, 0, false
+		}
+
+		surface_w = w / 3
+	}
+
+	surface = sdl.CreateSurface(surface_w, h, .RGBA8888)
 	if surface == nil {
 		log_error("SDL_CreateSurface failed for glyph bitmap")
 		return nil, 0, 0, false
@@ -416,7 +455,13 @@ font_glyph_worker :: proc(args: ^Font_Glyph_Worker_Args) {
 
 	for i in 0 ..< len(args.glyph_ids) {
 		gid := args.glyph_ids[i]
-		surface, bx, by, rok := font_rasterize_glyph_bitmap(ft_face, args.face.fake_bold, gid)
+		surface, bx, by, rok := font_rasterize_glyph_bitmap(
+			ft_face,
+			args.face.fake_bold,
+			gid,
+			args.face.pixel_size,
+			args.render_mode,
+		)
 		args.results[i] = Font_Glyph_Bitmap_Result {
 			glyph_id  = gid,
 			surface   = surface,
@@ -433,14 +478,23 @@ Rasterizes missing glyph ids and inserts them into the glyph cache.
 Uses the serial FreeType path for small miss counts; larger sets fan out to
 temporary faces on worker threads, then pack into the atlas on this thread.
 */
-font_rasterize_and_cache_missing :: proc(face: ^Font_Face, face_id: Asset_Id, missing: []u32) -> bool {
+font_rasterize_and_cache_missing :: proc(
+	face: ^Font_Face,
+	face_id: Asset_Id,
+	missing: []u32,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> bool {
 	if len(missing) == 0 do return true
+
+	cache_key :: proc(face_id: Asset_Id, gid: u32, mode: Font_Glyph_Render_Mode) -> Font_Glyph_Key {
+		return Font_Glyph_Key{face_id = face_id, glyph_id = gid, render_mode = mode}
+	}
 
 	if len(missing) < FONT_GLYPH_PARALLEL_THRESHOLD {
 		for gid in missing {
-			entry, ok := font_rasterize_glyph(face, gid)
+			entry, ok := font_rasterize_glyph(face, gid, render_mode)
 			if !ok do return false
-			state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = gid}] = entry
+			state.fonts.glyph_cache[cache_key(face_id, gid, render_mode)] = entry
 		}
 		return true
 	}
@@ -466,9 +520,10 @@ font_rasterize_and_cache_missing :: proc(face: ^Font_Face, face_id: Asset_Id, mi
 		chunks_left := n_workers - w
 		count := remaining / chunks_left
 		worker_args[w] = Font_Glyph_Worker_Args {
-			face      = face,
-			glyph_ids = missing[base:][:count],
-			results   = results[base:][:count],
+			face         = face,
+			glyph_ids    = missing[base:][:count],
+			results      = results[base:][:count],
+			render_mode  = render_mode,
 		}
 		base += count
 	}
@@ -495,9 +550,9 @@ font_rasterize_and_cache_missing :: proc(face: ^Font_Face, face_id: Asset_Id, mi
 				}
 			}
 			for gid in missing {
-				entry, ok := font_rasterize_glyph(face, gid)
+				entry, ok := font_rasterize_glyph(face, gid, render_mode)
 				if !ok do return false
-				state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = gid}] = entry
+				state.fonts.glyph_cache[cache_key(face_id, gid, render_mode)] = entry
 			}
 			return true
 		}
@@ -511,7 +566,7 @@ font_rasterize_and_cache_missing :: proc(face: ^Font_Face, face_id: Asset_Id, mi
 		if !r.ok || r.surface == nil do return false
 		entry, ok := font_pack_glyph_bitmap(r.surface, r.bearing_x, r.bearing_y, r.glyph_id)
 		if !ok do return false
-		state.fonts.glyph_cache[Font_Glyph_Key{face_id = face_id, glyph_id = r.glyph_id}] = entry
+		state.fonts.glyph_cache[cache_key(face_id, r.glyph_id, render_mode)] = entry
 		sdl.DestroySurface(r.surface)
 		r.surface = nil
 	}
@@ -523,9 +578,22 @@ Rasterizes a single glyph via FreeType and packs it into the texture atlas.
 
 Applies synthetic embolden when the face instance requests fake bold.
 */
-font_rasterize_glyph :: proc(face: ^Font_Face, glyph_id: u32) -> (Font_Glyph_Entry, bool) {
+font_rasterize_glyph :: proc(
+	face: ^Font_Face,
+	glyph_id: u32,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> (
+	Font_Glyph_Entry,
+	bool,
+) {
 	if face == nil || face.ft_face == nil do return {}, false
-	surface, bx, by, ok := font_rasterize_glyph_bitmap(face.ft_face, face.fake_bold, glyph_id)
+	surface, bx, by, ok := font_rasterize_glyph_bitmap(
+		face.ft_face,
+		face.fake_bold,
+		glyph_id,
+		face.pixel_size,
+		render_mode,
+	)
 	if !ok do return {}, false
 	defer sdl.DestroySurface(surface)
 	return font_pack_glyph_bitmap(surface, bx, by, glyph_id)
@@ -542,15 +610,16 @@ font_bitmap_row :: proc(buffer: [^]u8, pitch: c.int, row: int) -> [^]u8 {
 }
 
 /*
-Copies a FreeType glyph bitmap into an RGBA SDL surface as white with alpha.
+Copies a FreeType glyph bitmap into an RGBA SDL surface.
 
-Handles gray, mono, and BGRA pixel modes (including negative pitch); logs a
-warning for unsupported modes.
+Gray/mono → white with coverage in alpha. LCD → RGB coverage (logical width =
+bitmap.width/3); alpha is unused by the LCD shader and written as 255.
+Handles negative pitch; logs a warning for unsupported modes.
 */
 font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 	w := int(bitmap.width)
 	h := int(bitmap.rows)
-	if w <= 0 || h <= 0 || bitmap.buffer == nil do return
+	if w <= 0 || h <= 0 || bitmap.buffer == nil || surface == nil do return
 
 	switch bitmap.pixel_mode {
 	case FT_PIXEL_MODE_GRAY:
@@ -568,6 +637,29 @@ font_copy_glyph_bitmap :: proc(bitmap: ^FT_Bitmap, surface: ^sdl.Surface) {
 				bit := (byte >> u8(7 - (col % 8))) & 1
 				alpha: u8 = bit != 0 ? 255 : 0
 				sdl.WriteSurfacePixel(surface, c.int(col), c.int(row), 255, 255, 255, alpha)
+			}
+		}
+	case FT_PIXEL_MODE_LCD:
+		if w % 3 != 0 {
+			log_warnf("LCD glyph bitmap width %d is not divisible by 3", w)
+
+			return
+		}
+
+		logical_w := w / 3
+		for row in 0 ..< h {
+			src := font_bitmap_row(bitmap.buffer, bitmap.pitch, row)
+			for col in 0 ..< logical_w {
+				src_off := col * 3
+				sdl.WriteSurfacePixel(
+					surface,
+					c.int(col),
+					c.int(row),
+					src[src_off + 0],
+					src[src_off + 1],
+					src[src_off + 2],
+					255,
+				)
 			}
 		}
 	case FT_PIXEL_MODE_BGRA:
@@ -639,7 +731,7 @@ font_text_segment_advance_estimate :: proc(
 			continue
 		}
 
-		if !ft_ok(Load_Glyph(face.ft_face, glyph_index, c.int(FT_LOAD_DEFAULT))) {
+		if !ft_ok(Load_Glyph(face.ft_face, glyph_index, font_load_flags(face.pixel_size, c.int(FT_LOAD_DEFAULT)))) {
 			i += w
 			continue
 		}
@@ -653,7 +745,7 @@ font_text_segment_advance_estimate :: proc(
 			width += letter_spacing
 		}
 
-		width += ft_pos_to_f32(ft_slot_metrics(slot).hori_advance)
+		width += font_device_to_logical(ft_pos_to_f32(ft_slot_metrics(slot).hori_advance))
 
 		if r == ' ' || r == '\t' {
 			width += word_spacing
@@ -761,16 +853,62 @@ font_measure_lines :: proc(
 }
 
 /*
-Snaps a logical coordinate to the nearest half-pixel for crisp glyph placement.
+Snaps a logical coordinate onto a device-pixel boundary.
+
+`logical * dpi.scale` lands on an integer drawable pixel so glyph edges do not
+straddle fragments after the present transform.
 */
 snap_logical :: proc(v: f32) -> f32 {
-	return math.round(v * 2) / 2
+	scale := font_dpi_scale()
+
+	return math.round(v * scale) / scale
+}
+
+/*
+Builds a logical paint quad from a cached atlas glyph entry.
+
+`layout_scale` maps artboard-zoomed face units back to layout space. Bitmap
+size and bearings stay device-pixel in the cache and are converted here.
+*/
+font_glyph_paint_from_entry :: proc(
+	face_id: Asset_Id,
+	glyph: Shaped_Glyph,
+	entry: Font_Glyph_Entry,
+	pen_x, baseline_y, layout_scale: f32,
+	run_index: u16 = 0,
+) -> Layout_Glyph_Paint {
+	scale := layout_scale
+	if scale <= 0 do scale = 1
+
+	bx := font_device_to_logical(entry.bearing_x) * scale
+	by := font_device_to_logical(entry.bearing_y) * scale
+	w := font_device_to_logical(entry.region.w) * scale
+	h := font_device_to_logical(entry.region.h) * scale
+
+	if w <= 0 do w = font_device_to_logical(1) * scale
+	if h <= 0 do h = font_device_to_logical(1) * scale
+
+	glyph_x := pen_x + glyph.x_offset * scale
+	glyph_y := baseline_y + glyph.y_offset * scale - by
+
+	return Layout_Glyph_Paint {
+		face_id = face_id,
+		glyph_id = glyph.glyph_id,
+		dst = {
+			x = snap_logical(glyph_x + bx),
+			y = snap_logical(glyph_y),
+			w = w,
+			h = h,
+		},
+		run_index = run_index,
+	}
 }
 
 /*
 Draws layout-owned shaped text using precomputed glyph quads and decoration strokes.
 
 Does not reshape, wrap, align, or position — layout owns those.
+Uses should_use_lcd for raster mode and Batch_Key.lcd (same gate as layout).
 */
 font_draw_layout_text :: proc(
 	laid: ^Layout_Text,
@@ -780,8 +918,12 @@ font_draw_layout_text :: proc(
 ) -> Vec2 {
 	if laid == nil || len(laid.lines) == 0 do return {}
 
+	opacity := draw_effective_opacity()
+
 	if len(laid.glyphs) > 0 {
-		if !font_ensure_glyphs_from_paint(laid.glyphs) do return {}
+		if !font_ensure_glyphs_from_paint_for_draw(laid.glyphs, color, run_colors, opacity) {
+			return {}
+		}
 	}
 
 	atlas := texture_handle(state.textures.atlas.texture_id)
@@ -801,17 +943,21 @@ font_draw_layout_text :: proc(
 		return run_colors[idx]
 	}
 
+	nearest := font_text_uses_nearest_filter()
+
 	flush_batch :: proc(
 		atlas: Texture_Handle,
 		use_atlas_batch: bool,
 		dsts: ^[dynamic]Rect,
 		srcs: ^[dynamic]Rect,
 		batch_color: RGBA,
+		nearest: bool,
+		lcd: bool,
 	) {
 		if len(dsts) == 0 do return
 
 		if use_atlas_batch {
-			batch_push_atlas_quads(atlas, dsts[:], srcs[:], batch_color)
+			batch_push_atlas_quads(atlas, dsts[:], srcs[:], batch_color, nearest, lcd)
 		}
 
 		clear(dsts)
@@ -821,36 +967,63 @@ font_draw_layout_text :: proc(
 	dsts := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
 	srcs := make([dynamic]Rect, 0, len(laid.glyphs), context.temp_allocator)
 	current_color := color
+	current_lcd := false
+	have_batch := false
 
 	for paint in laid.glyphs {
 		tint := glyph_color(paint, color, run_colors)
+		mode := font_glyph_render_mode_for_draw(
+			{tint_a = tint.a, effective_opacity = opacity, axis_aligned = true},
+		)
+		lcd := mode == .LCD
 
 		key := Font_Glyph_Key {
-			face_id  = paint.face_id,
-			glyph_id = paint.glyph_id,
+			face_id     = paint.face_id,
+			glyph_id    = paint.glyph_id,
+			render_mode = mode,
 		}
 		entry, ok := state.fonts.glyph_cache[key]
 		if !ok do continue
 
 		if use_atlas_batch && entry.region.texture_id == atlas.id {
-			if len(dsts) > 0 && tint != current_color {
-				flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
+			if have_batch && (tint != current_color || lcd != current_lcd) {
+				flush_batch(
+					atlas,
+					use_atlas_batch,
+					&dsts,
+					&srcs,
+					current_color,
+					nearest,
+					current_lcd,
+				)
 			}
 
 			current_color = tint
+			current_lcd = lcd
+			have_batch = true
 			append(&dsts, paint.dst)
 			append(
 				&srcs,
 				Rect{entry.region.x, entry.region.y, entry.region.w, entry.region.h},
 			)
 		} else {
-			flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
+			flush_batch(
+				atlas,
+				use_atlas_batch,
+				&dsts,
+				&srcs,
+				current_color,
+				nearest,
+				current_lcd,
+			)
+			have_batch = false
 			current_color = tint
-			draw_atlas_region(entry.region, paint.dst, tint)
+			current_lcd = lcd
+			draw_glyph_atlas_region(entry.region, paint.dst, tint, lcd)
 		}
 	}
 
-	flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color)
+	flush_batch(atlas, use_atlas_batch, &dsts, &srcs, current_color, nearest, current_lcd)
 
 	if decoration_color.a > 0 || len(laid.decoration_strokes) > 0 {
 		for stroke in laid.decoration_strokes {
@@ -868,9 +1041,94 @@ font_draw_layout_text :: proc(
 }
 
 /*
+Ensures atlas glyphs for paint quads using each glyph's gated render mode at draw.
+*/
+font_ensure_glyphs_from_paint_for_draw :: proc(
+	glyphs: []Layout_Glyph_Paint,
+	default_color: RGBA,
+	run_colors: []RGBA,
+	effective_opacity: f32,
+) -> bool {
+	if len(glyphs) == 0 do return true
+
+	if !texture_atlas_init() do return false
+
+	Face_Mode :: struct {
+		face_id:     Asset_Id,
+		render_mode: Font_Glyph_Render_Mode,
+	}
+
+	face_missing: map[Face_Mode][dynamic]u32
+	defer {
+		for _, list in face_missing {
+			delete(list)
+		}
+		delete(face_missing)
+	}
+
+	for paint in glyphs {
+		tint := default_color
+		if len(run_colors) > 0 {
+			idx := int(paint.run_index)
+			if idx >= 0 && idx < len(run_colors) {
+				tint = run_colors[idx]
+			}
+		}
+
+		mode := font_glyph_render_mode_for_draw(
+			{tint_a = tint.a, effective_opacity = effective_opacity, axis_aligned = true},
+		)
+		key := Font_Glyph_Key {
+			face_id     = paint.face_id,
+			glyph_id    = paint.glyph_id,
+			render_mode = mode,
+		}
+
+		if key in state.fonts.glyph_cache do continue
+
+		fm := Face_Mode {
+			face_id     = paint.face_id,
+			render_mode = mode,
+		}
+		list, ok := &face_missing[fm]
+		if !ok {
+			face_missing[fm] = make([dynamic]u32)
+			list = &face_missing[fm]
+		}
+
+		seen := false
+		for id in list {
+			if id == paint.glyph_id {
+				seen = true
+				break
+			}
+		}
+		if seen do continue
+
+		append(list, paint.glyph_id)
+	}
+
+	for fm, missing in face_missing {
+		if len(missing) == 0 do continue
+
+		face := font_face_from_handle(Font_Face_Handle{id = fm.face_id})
+		if face == nil do return false
+
+		if !font_rasterize_and_cache_missing(face, fm.face_id, missing[:], fm.render_mode) {
+			return false
+		}
+	}
+
+	return true
+}
+
+/*
 Ensures atlas glyphs exist for precomputed layout glyph paint quads.
 */
-font_ensure_glyphs_from_paint :: proc(glyphs: []Layout_Glyph_Paint) -> bool {
+font_ensure_glyphs_from_paint :: proc(
+	glyphs: []Layout_Glyph_Paint,
+	render_mode: Font_Glyph_Render_Mode = .Gray,
+) -> bool {
 	if len(glyphs) == 0 do return true
 
 	if !texture_atlas_init() do return false
@@ -885,8 +1143,9 @@ font_ensure_glyphs_from_paint :: proc(glyphs: []Layout_Glyph_Paint) -> bool {
 
 	for paint in glyphs {
 		key := Font_Glyph_Key {
-			face_id  = paint.face_id,
-			glyph_id = paint.glyph_id,
+			face_id     = paint.face_id,
+			glyph_id    = paint.glyph_id,
+			render_mode = render_mode,
 		}
 
 		if key in state.fonts.glyph_cache do continue
@@ -917,7 +1176,7 @@ font_ensure_glyphs_from_paint :: proc(glyphs: []Layout_Glyph_Paint) -> bool {
 		face := font_face_from_handle(Font_Face_Handle{id = face_id})
 		if face == nil do return false
 
-		if !font_rasterize_and_cache_missing(face, face_id, missing[:]) do return false
+		if !font_rasterize_and_cache_missing(face, face_id, missing[:], render_mode) do return false
 	}
 
 	return true

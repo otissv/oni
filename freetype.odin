@@ -13,11 +13,23 @@ FT_LOAD_DEFAULT :: 0
 FT_LOAD_RENDER :: 1 << 2
 FT_LOAD_NO_BITMAP :: 1 << 3
 
+// FT_LOAD_TARGET_(mode) = (mode & 15) << 16 — selects hinter algorithm.
+FT_LOAD_TARGET_NORMAL :: 0
+FT_LOAD_TARGET_LIGHT :: 1 << 16
+FT_LOAD_TARGET_LCD :: 3 << 16
+
 FT_RENDER_MODE_NORMAL :: 0
+FT_RENDER_MODE_LIGHT :: 1
+FT_RENDER_MODE_MONO :: 2
+FT_RENDER_MODE_LCD :: 3
 
 FT_PIXEL_MODE_MONO :: 1
 FT_PIXEL_MODE_GRAY :: 2
+FT_PIXEL_MODE_LCD :: 5
 FT_PIXEL_MODE_BGRA :: 7
+
+FT_LCD_FILTER_NONE :: 0
+FT_LCD_FILTER_DEFAULT :: 1
 
 FT_TAG_WGHT :: u32(0x77676874) // 'wght'
 FT_TAG_OPSZ :: u32(0x6F70737A) // 'opsz'
@@ -160,6 +172,13 @@ foreign lib {
 	Binds to FT_Done_FreeType.
 	*/
 	Done_FreeType :: proc(library: FT_Library) -> FT_Error ---
+
+	/*
+	Selects the LCD subpixel filter applied to FT_RENDER_MODE_LCD bitmaps.
+
+	Binds to FT_Library_SetLcdFilter. Pass FT_LCD_FILTER_DEFAULT once at library init.
+	*/
+	Library_SetLcdFilter :: proc(library: FT_Library, filter: c.int) -> FT_Error ---
 
 	/*
 	Opens a font file and returns a new face at the given index.

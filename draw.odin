@@ -4,6 +4,15 @@ import "core:math"
 import sdl "vendor:sdl3"
 
 /*
+UI draw recording is strictly render-only.
+
+Paint layout-owned rects, chrome, and glyphs already solved in the layout pass.
+Do not measure text or intrinsics, resolve flex/content sizes, or re-finalize
+layout geometry from this package's draw path. Interaction may map values onto
+layout-owned tracks for paint/hit-testing without mutating layout measure state.
+*/
+
+/*
 Converts pixel coordinates to logical (DPI-scaled) space.
 
 Divides by the DPI scale factor, defaulting to 1 when scale is invalid.
@@ -451,6 +460,31 @@ draw_atlas_region :: proc(region: Atlas_Region, dst: Rect, tint: RGBA = {255, 25
 	texture := atlas_region_handle(region)
 	src := Rect{region.x, region.y, region.w, region.h}
 	draw_texture(texture, src, dst, tint, {})
+}
+
+/*
+Draws a glyph atlas region with text coverage gamma and device-pixel snap.
+
+`lcd` selects the dual-source LCD pipeline segment (gray AA when false).
+*/
+draw_glyph_atlas_region :: proc(
+	region: Atlas_Region,
+	dst: Rect,
+	tint: RGBA = {255, 255, 255, 255},
+	lcd := false,
+) {
+	texture := atlas_region_handle(region)
+	if texture.w <= 0 || texture.h <= 0 do return
+
+	uv := Rect {
+		region.x / texture.w,
+		region.y / texture.h,
+		region.w / texture.w,
+		region.h / texture.h,
+	}
+	batch_current().dpi = state.dpi
+	batch_check_key(texture.id, font_text_uses_nearest_filter(), lcd)
+	batch_push_axis_quad(dst, uv, tint, {}, {dst.w, dst.h}, {}, {}, .Textured_Text, true)
 }
 
 /*

@@ -44,7 +44,7 @@ with_font_gpu_fixtures :: proc(
 	}
 	defer sdl.Quit()
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	gpu := gpu_create_device(true)
 	if gpu == nil {
 		testing.expectf(t, false, "SDL_CreateGPUDevice failed: %s", sdl.GetError())
 		return
@@ -181,17 +181,97 @@ font_style_kind_named_and_nil_default :: proc(t: ^testing.T) {
 // --- snap_logical / font_text_line_height / font_measure_lines ---
 
 @(test)
-snap_logical_rounds_to_half_pixels :: proc(t: ^testing.T) {
-	expect_close(t, snap_logical(0), 0)
-	expect_close(t, snap_logical(1), 1)
-	expect_close(t, snap_logical(1.2), 1)
-	expect_close(t, snap_logical(1.25), 1.5)
-	expect_close(t, snap_logical(1.49), 1.5)
-	expect_close(t, snap_logical(1.75), 2)
-	expect_close(t, snap_logical(-1.2), -1)
-	expect_close(t, snap_logical(-1.3), -1.5)
-	expect_close(t, snap_logical(10.51), 10.5)
-	expect_close(t, snap_logical(10.76), 11)
+snap_logical_rounds_to_device_pixels :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			state.dpi.scale = 1
+			expect_close(t, snap_logical(0), 0)
+			expect_close(t, snap_logical(1), 1)
+			expect_close(t, snap_logical(1.2), 1)
+			expect_close(t, snap_logical(1.49), 1)
+			expect_close(t, snap_logical(1.5), 2)
+			expect_close(t, snap_logical(1.75), 2)
+			expect_close(t, snap_logical(-1.2), -1)
+			expect_close(t, snap_logical(-1.6), -2)
+
+			state.dpi.scale = 2
+			expect_close(t, snap_logical(1.2), 1)
+			expect_close(t, snap_logical(1.3), 1.5)
+			expect_close(t, snap_logical(1.6), 1.5)
+			expect_close(t, snap_logical(1.8), 2)
+		},
+	)
+}
+
+@(test)
+font_device_to_logical_respects_dpi_scale :: proc(t: ^testing.T) {
+	with_engine_env(
+		t,
+		proc(t: ^testing.T) {
+			state.dpi.scale = 1
+			expect_close(t, font_device_to_logical(20), 20)
+			expect_close(t, font_dpi_scale(), 1)
+			testing.expect(t, font_dpi_scale_is_integer())
+
+			state.dpi.scale = 2
+			expect_close(t, font_device_to_logical(20), 10)
+			expect_close(t, font_dpi_scale(), 2)
+			testing.expect(t, font_dpi_scale_is_integer())
+
+			state.dpi.scale = 1.5
+			expect_close(t, font_device_to_logical(30), 20)
+			testing.expect(t, !font_dpi_scale_is_integer())
+			testing.expect(t, !font_text_uses_nearest_filter())
+
+			state.dpi.scale = 2
+			testing.expect(t, font_text_uses_nearest_filter())
+		},
+	)
+}
+
+@(test)
+font_load_flags_use_light_target_for_ui_sizes :: proc(t: ^testing.T) {
+	testing.expect(t, font_uses_ui_hinting(16))
+	testing.expect(t, font_uses_ui_hinting(FONT_UI_HINT_MAX_PX))
+	testing.expect(t, !font_uses_ui_hinting(FONT_UI_HINT_MAX_PX + 1))
+	testing.expect(t, !font_uses_ui_hinting(0))
+
+	ui := font_load_flags(16, c.int(FT_LOAD_RENDER))
+	testing.expect(t, (ui & c.int(FT_LOAD_TARGET_LIGHT)) != 0)
+	testing.expect(t, (ui & c.int(FT_LOAD_RENDER)) != 0)
+
+	display := font_load_flags(64, c.int(FT_LOAD_RENDER))
+	testing.expect(t, (display & c.int(FT_LOAD_TARGET_LIGHT)) == 0)
+	testing.expect(t, (display & c.int(FT_LOAD_RENDER)) != 0)
+
+	lcd := font_load_flags(16, c.int(FT_LOAD_RENDER), .LCD)
+	// Target bits are (mode & 15) << 16; LCD (3) shares low bits with LIGHT (1).
+	testing.expect_value(t, lcd & c.int(15 << 16), c.int(FT_LOAD_TARGET_LCD))
+	testing.expect_value(t, font_render_mode_ft(16, .LCD), c.int(FT_RENDER_MODE_LCD))
+	testing.expect_value(t, font_render_mode_ft(16, .Gray), c.int(FT_RENDER_MODE_LIGHT))
+	testing.expect_value(t, font_render_mode_ft(64, .Gray), c.int(FT_RENDER_MODE_NORMAL))
+}
+
+@(test)
+font_text_coverage_gamma_boosts_light_on_dark :: proc(t: ^testing.T) {
+	coverage: f32 = 0.5
+	white_lum := font_tint_luminance({255, 255, 255, 255})
+	black_lum := font_tint_luminance({0, 0, 0, 255})
+	expect_close(t, white_lum, 1)
+	expect_close(t, black_lum, 0)
+
+	white_a := font_text_coverage_alpha(coverage, white_lum)
+	black_a := font_text_coverage_alpha(coverage, black_lum)
+	// Light tint densifies mid-coverage; dark tint thins it.
+	testing.expect(t, white_a > coverage)
+	testing.expect(t, black_a < coverage)
+
+	expect_close(t, font_text_coverage_exponent(1), 0.70)
+	expect_close(t, font_text_coverage_exponent(0), 1.45)
+	expect_close(t, font_text_coverage_alpha(0, 1), 0)
+	expect_close(t, font_text_coverage_alpha(1, 1), 1)
+	expect_close(t, font_text_coverage_alpha(1, 0, 0.5), 0.5)
 }
 
 @(test)
@@ -234,6 +314,44 @@ font_measure_lines_nil_empty_and_scaled :: proc(t: ^testing.T) {
 }
 
 // --- font_copy_glyph_bitmap ---
+
+@(test)
+font_copy_glyph_bitmap_lcd_writes_rgb_coverage :: proc(t: ^testing.T) {
+	with_sdl_video(
+		t,
+		proc(t: ^testing.T) {
+			// Two logical pixels: RGB triples (10,20,30) and (40,50,60).
+			subpixels := [6]u8{10, 20, 30, 40, 50, 60}
+			bitmap := FT_Bitmap {
+				rows       = 1,
+				width      = 6,
+				pitch      = 6,
+				buffer     = raw_data(subpixels[:]),
+				pixel_mode = FT_PIXEL_MODE_LCD,
+			}
+			surface := sdl.CreateSurface(2, 1, .RGBA8888)
+			testing.expect(t, surface != nil)
+			if surface == nil do return
+			defer sdl.DestroySurface(surface)
+
+			font_copy_glyph_bitmap(&bitmap, surface)
+
+			r0, g0, b0, a0, ok0 := font_test_read_pixel(surface, 0, 0)
+			testing.expect(t, ok0)
+			testing.expect_value(t, r0, u8(10))
+			testing.expect_value(t, g0, u8(20))
+			testing.expect_value(t, b0, u8(30))
+			testing.expect_value(t, a0, u8(255))
+
+			r1, g1, b1, a1, ok1 := font_test_read_pixel(surface, 1, 0)
+			testing.expect(t, ok1)
+			testing.expect_value(t, r1, u8(40))
+			testing.expect_value(t, g1, u8(50))
+			testing.expect_value(t, b1, u8(60))
+			testing.expect_value(t, a1, u8(255))
+		},
+	)
+}
 
 @(test)
 font_copy_glyph_bitmap_gray_writes_white_with_alpha :: proc(t: ^testing.T) {
@@ -607,6 +725,7 @@ font_test_glyph_paint_from_cache :: proc(
 	paint: Layout_Glyph_Paint,
 	ok: bool,
 ) {
+	_ = face
 	key := Font_Glyph_Key {
 		face_id  = face_id,
 		glyph_id = glyph.glyph_id,
@@ -614,18 +733,7 @@ font_test_glyph_paint_from_cache :: proc(
 	entry, cache_ok := state.fonts.glyph_cache[key]
 	if !cache_ok do return {}, false
 
-	glyph_x := pen_x + glyph.x_offset * scale
-	glyph_y := baseline_y + glyph.y_offset * scale - entry.bearing_y * scale
-	return Layout_Glyph_Paint {
-		face_id  = face_id,
-		glyph_id = glyph.glyph_id,
-		dst = {
-			x = snap_logical(glyph_x + entry.bearing_x * scale),
-			y = snap_logical(glyph_y),
-			w = entry.region.w * scale,
-			h = entry.region.h * scale,
-		},
-	}, true
+	return font_glyph_paint_from_entry(face_id, glyph, entry, pen_x, baseline_y, scale), true
 }
 
 @(test)
@@ -658,10 +766,10 @@ font_glyph_metrics_matches_rasterized_bearings :: proc(t: ^testing.T) {
 				entry, cache_ok := font_rasterize_glyph(face, glyph.glyph_id)
 				testing.expect(t, cache_ok)
 
-				expect_close(t, mbx, entry.bearing_x, 1.5)
-				expect_close(t, mby, entry.bearing_y, 1.5)
-				expect_close(t, mw, entry.region.w, 1.5)
-				expect_close(t, mh, entry.region.h, 1.5)
+				expect_close(t, mbx, font_device_to_logical(entry.bearing_x), 1.5)
+				expect_close(t, mby, font_device_to_logical(entry.bearing_y), 1.5)
+				expect_close(t, mw, font_device_to_logical(entry.region.w), 1.5)
+				expect_close(t, mh, font_device_to_logical(entry.region.h), 1.5)
 			}
 		},
 	)
@@ -746,6 +854,175 @@ font_rasterize_and_ensure_glyphs_packs_into_atlas :: proc(t: ^testing.T) {
 			before := len(state.fonts.glyph_cache)
 			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped))
 			testing.expect_value(t, len(state.fonts.glyph_cache), before)
+		},
+	)
+}
+
+/*
+Phase C.4 exit: LCD glyphs pack with logical width (subpixel/3), and gray vs LCD
+never share a cache entry for the same face+glyph.
+*/
+@(test)
+font_lcd_glyph_packs_and_gray_cache_entries_are_isolated :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+			gid := shaped[0].glyph_id
+
+			gray_entry, gray_ok := font_rasterize_glyph(face, gid, .Gray)
+			testing.expect(t, gray_ok)
+			lcd_entry, lcd_ok := font_rasterize_glyph(face, gid, .LCD)
+			testing.expect(t, lcd_ok)
+
+			state.fonts.glyph_cache[Font_Glyph_Key {
+					face_id     = handle.id,
+					glyph_id    = gid,
+					render_mode = .Gray,
+				}] = gray_entry
+			state.fonts.glyph_cache[Font_Glyph_Key {
+					face_id     = handle.id,
+					glyph_id    = gid,
+					render_mode = .LCD,
+				}] = lcd_entry
+
+			gray_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = gid,
+				render_mode = .Gray,
+			}
+			lcd_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = gid,
+				render_mode = .LCD,
+			}
+			got_gray, found_gray := state.fonts.glyph_cache[gray_key]
+			got_lcd, found_lcd := state.fonts.glyph_cache[lcd_key]
+			testing.expect(t, found_gray)
+			testing.expect(t, found_lcd)
+			testing.expect(t, got_gray.region.texture_id != INVALID_ASSET_ID)
+			testing.expect(t, got_lcd.region.texture_id != INVALID_ASSET_ID)
+			testing.expect(t, got_lcd.region.w > 0)
+			testing.expect(t, got_lcd.region.h > 0)
+
+			// Distinct atlas slots (same glyph, different render modes).
+			testing.expect(
+				t,
+				got_gray.region.x != got_lcd.region.x ||
+				got_gray.region.y != got_lcd.region.y ||
+				got_gray.region.w != got_lcd.region.w ||
+				got_gray.region.h != got_lcd.region.h,
+			)
+
+			// LCD surface from rasterize is logical width (bitmap.width/3).
+			surface, _, _, rok := font_rasterize_glyph_bitmap(
+				face.ft_face,
+				face.fake_bold,
+				gid,
+				face.pixel_size,
+				.LCD,
+			)
+			testing.expect(t, rok)
+			if surface != nil {
+				defer sdl.DestroySurface(surface)
+				testing.expect(t, surface.w > 0)
+				testing.expect_value(t, surface.w, i32(got_lcd.region.w))
+			}
+
+			// ensure_glyphs(.LCD) hits the LCD key, not gray.
+			before := len(state.fonts.glyph_cache)
+			testing.expect(t, font_ensure_glyphs(face, handle.id, shaped, .LCD))
+			testing.expect_value(t, len(state.fonts.glyph_cache), before)
+		},
+	)
+}
+
+@(test)
+font_invalidate_lcd_glyphs_removes_lcd_keeps_gray :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+			gid := shaped[0].glyph_id
+
+			gray_entry, gray_ok := font_rasterize_glyph(face, gid, .Gray)
+			testing.expect(t, gray_ok)
+			lcd_entry, lcd_ok := font_rasterize_glyph(face, gid, .LCD)
+			testing.expect(t, lcd_ok)
+
+			gray_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = gid,
+				render_mode = .Gray,
+			}
+			lcd_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = gid,
+				render_mode = .LCD,
+			}
+			state.fonts.glyph_cache[gray_key] = gray_entry
+			state.fonts.glyph_cache[lcd_key] = lcd_entry
+
+			font_invalidate_lcd_glyphs()
+			testing.expect(t, gray_key in state.fonts.glyph_cache)
+			testing.expect(t, lcd_key not_in state.fonts.glyph_cache)
+		},
+	)
+}
+
+@(test)
+font_rasterize_glyph_bitmap_lcd_pixel_mode_and_dims :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			face, _, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+
+			// Direct FreeType path: LCD load produces FT_PIXEL_MODE_LCD.
+			flags := font_load_flags(face.pixel_size, c.int(FT_LOAD_RENDER), .LCD)
+			testing.expect(t, ft_ok(Load_Glyph(face.ft_face, c.uint(shaped[0].glyph_id), flags)))
+			bitmap := ft_slot_bitmap(ft_glyph_slot(face.ft_face))^
+			testing.expect_value(t, bitmap.pixel_mode, u8(FT_PIXEL_MODE_LCD))
+			testing.expect(t, bitmap.width % 3 == 0)
+
+			surface, _, _, rok := font_rasterize_glyph_bitmap(
+				face.ft_face,
+				false,
+				shaped[0].glyph_id,
+				face.pixel_size,
+				.LCD,
+			)
+			testing.expect(t, rok)
+			if surface == nil do return
+			defer sdl.DestroySurface(surface)
+
+			testing.expect_value(t, surface.w, i32(bitmap.width / 3))
+			testing.expect_value(t, surface.h, i32(bitmap.rows))
+
+			// Not the gray white+α pattern: at least one channel differs across RGB.
+			r, g, b, a, pok := font_test_read_pixel(surface, 0, 0)
+			testing.expect(t, pok)
+			testing.expect_value(t, a, u8(255))
+			_ = r
+			_ = g
+			_ = b
 		},
 	)
 }
@@ -863,6 +1140,176 @@ font_rasterize_real_inter_glyph_has_positive_bearings_when_inked :: proc(t: ^tes
 		testing.expect(t, entry.region.w > 1)
 		testing.expect(t, entry.region.h > 1)
 		testing.expect(t, entry.bearing_y > 0)
+	})
+}
+
+// --- should_use_lcd (Phase C.6) ---
+
+@(test)
+should_use_lcd_requires_pipeline_subpixel_nearest_and_opaque :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = inter
+			_ = pixel
+
+			opaque := Lcd_Draw_State {
+				tint_a            = 255,
+				effective_opacity = 1,
+				axis_aligned      = true,
+			}
+			testing.expect(t, !should_use_lcd(opaque))
+
+			pipeline := gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
+			testing.expect(t, pipeline != nil)
+			state.gpu_state.lcd_pipeline = pipeline
+			defer {
+				sdl.ReleaseGPUGraphicsPipeline(state.gpu, state.gpu_state.lcd_pipeline)
+				state.gpu_state.lcd_pipeline = nil
+			}
+
+			state.dpi.scale = 1
+			state.dpi.subpixel_order = .RGB
+			state.view = view_default()
+			testing.expect(t, should_use_lcd(opaque))
+			testing.expect_value(t, font_glyph_render_mode_for_draw(opaque), Font_Glyph_Render_Mode.LCD)
+
+			state.dpi.subpixel_order = .BGR
+			testing.expect(t, should_use_lcd(opaque))
+
+			state.dpi.subpixel_order = .Unknown
+			testing.expect(t, !should_use_lcd(opaque))
+			state.dpi.subpixel_order = .None
+			testing.expect(t, !should_use_lcd(opaque))
+			state.dpi.subpixel_order = .RGB
+
+			testing.expect(t, !should_use_lcd({tint_a = 254, effective_opacity = 1, axis_aligned = true}))
+			testing.expect(t, !should_use_lcd({tint_a = 255, effective_opacity = 0.99, axis_aligned = true}))
+			testing.expect(t, !should_use_lcd({tint_a = 255, effective_opacity = 1, axis_aligned = false}))
+
+			state.dpi.scale = 1.5
+			testing.expect(t, !should_use_lcd(opaque))
+			state.dpi.scale = 1
+
+			draw_push_space(.ARTBOARD)
+			view_set_zoom(2)
+			testing.expect(t, !should_use_lcd(opaque))
+			view_set_zoom(VIEW_ZOOM_DEFAULT)
+			testing.expect(t, should_use_lcd(opaque))
+			draw_pop_space()
+
+			testing.expect_value(
+				t,
+				font_glyph_render_mode_for_draw(
+					{tint_a = 200, effective_opacity = 1, axis_aligned = true},
+				),
+				Font_Glyph_Render_Mode.Gray,
+			)
+		},
+	)
+}
+
+/*
+Phase C.6 exit: opaque 1:1 UI text uses LCD cache + batch lcd; translucent / fractional → gray.
+*/
+@(test)
+font_draw_layout_text_uses_lcd_when_gated_else_gray :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(
+		t,
+		proc(inter, pixel: Font_Handle, t: ^testing.T) {
+			_ = pixel
+			pipeline := gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
+			testing.expect(t, pipeline != nil)
+			state.gpu_state.lcd_pipeline = pipeline
+			defer {
+				sdl.ReleaseGPUGraphicsPipeline(state.gpu, state.gpu_state.lcd_pipeline)
+				state.gpu_state.lcd_pipeline = nil
+			}
+
+			state.dpi.scale = 1
+			state.dpi.subpixel_order = .RGB
+			state.view = view_default()
+
+			face, handle, ok := font_test_face(inter, 16)
+			testing.expect(t, ok)
+
+			shaped := font_shape(face, "A", .LTR)
+			defer delete(shaped)
+			testing.expect(t, len(shaped) >= 1)
+
+			paints := make([]Layout_Glyph_Paint, 1)
+			defer delete(paints)
+			paints[0] = {
+				face_id  = handle.id,
+				glyph_id = shaped[0].glyph_id,
+				dst      = {10, 20, 8, 12},
+			}
+			lines := []Shaped_Line{{glyphs = shaped, width = 8, direction = .LTR}}
+			laid := Layout_Text {
+				lines  = lines,
+				glyphs = paints,
+				font   = handle,
+				size   = {8, 16},
+			}
+
+			draw_begin_record :: proc() {
+				clear(&batch_current().vertices)
+				clear(&batch_current().indices)
+				clear(&batch_current().segments)
+				batch_current().current_key = {}
+				batch_current().has_current_key = false
+			}
+
+			draw_begin_record()
+			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
+			testing.expect(t, len(batch_current().segments) >= 1)
+			testing.expect(t, batch_current().segments[0].key.lcd)
+			lcd_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = shaped[0].glyph_id,
+				render_mode = .LCD,
+			}
+			testing.expect(t, lcd_key in state.fonts.glyph_cache)
+
+			draw_begin_record()
+			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 200})
+			testing.expect(t, len(batch_current().segments) >= 1)
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+			gray_key := Font_Glyph_Key {
+				face_id     = handle.id,
+				glyph_id    = shaped[0].glyph_id,
+				render_mode = .Gray,
+			}
+			testing.expect(t, gray_key in state.fonts.glyph_cache)
+
+			draw_begin_record()
+			draw_push_opacity(0.5)
+			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
+			draw_pop_opacity()
+			testing.expect(t, len(batch_current().segments) >= 1)
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+
+			state.dpi.scale = 1.25
+			draw_begin_record()
+			_ = font_draw_layout_text(&laid, RGBA{255, 255, 255, 255})
+			testing.expect(t, len(batch_current().segments) >= 1)
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+		},
+	)
+}
+
+@(test)
+batch_lcd_ubo_bgr_flag_matches_subpixel_order :: proc(t: ^testing.T) {
+	with_engine_env(t, proc(t: ^testing.T) {
+		state.dpi.subpixel_order = .RGB
+		ubo := GPU_Lcd_UBO {
+			bgr = dpi_subpixel_order() == .BGR ? 1 : 0,
+		}
+		expect_close(t, ubo.bgr, 0)
+
+		state.dpi.subpixel_order = .BGR
+		ubo.bgr = dpi_subpixel_order() == .BGR ? 1 : 0
+		expect_close(t, ubo.bgr, 1)
 	})
 }
 

@@ -12,7 +12,7 @@ Coordinates are logical design pixels. DPI scale is applied at clip/scissor conv
    - [`draw_record_begin`](oni/draw.odin#L57) → app/UI records vertices into the current ping-pong [`Batch_State`](oni/batch.odin#L45)
    - [`draw_record_end`](oni/draw.odin#L68) → [`batch_finalize_segments`](oni/batch.odin#L561) (sort by `stack_index`)
    - deferred texture uploads → swapchain acquire → [`batch_upload`](oni/batch.odin#L590) → render pass → [`draw_flush`](oni/draw.odin#L89) → [`batch_reset`](oni/batch.odin#L224) + [`batch_flip`](oni/batch.odin#L85)
-4. Primitives never talk to SDL directly — they append [`UI_Vertex`](oni/gpu.odin#L13) data and segment keys; the UI shader ([`oni/shaders/ui.vert`](oni/shaders/ui.vert), [`oni/shaders/ui.frag`](oni/shaders/ui.frag)) rasterizes solid, textured, line, and rounded modes ([`Draw_Mode`](oni/batch.odin#L8)).
+4. Primitives never talk to SDL directly — they append [`UI_Vertex`](oni/gpu.odin#L13) data and segment keys; the UI shader ([`oni/shaders/ui.vert`](oni/shaders/ui.vert), [`oni/shaders/ui.frag`](oni/shaders/ui.frag)) rasterizes solid, textured, line, rounded, and text-coverage modes ([`Draw_Mode`](oni/batch.odin#L8)).
 
 **Critical timing:** geometry is recorded during the Draw pass inside `present_frame`'s callback, **before** GPU upload. Layout must be solved and stack order finalized ([`ui_end_layout_pass`](oni/ui.odin#L132)) before any paint runs.
 
@@ -236,7 +236,9 @@ Layout owns shaping, line positions, glyph quads, and decoration segments ([`Lay
 | [`font_ensure_glyphs`](oni/font.odin#L185) | Ensure shaped glyph set is in atlas |
 | [`font_rasterize_glyph`](oni/font.odin#L491) / [`font_rasterize_and_cache_missing`](oni/font.odin#L401) | FreeType rasterize → atlas pack |
 | [`font_resolve`](oni/font.odin#L110) | Resolve face + size (artboard applies zoom / layout scale) |
-| [`snap_logical`](oni/font.odin#L594) | Half-pixel snap for glyph placement |
+| [`snap_logical`](oni/font.odin) | Device-pixel snap for glyph placement (`round(v * dpi) / dpi`) |
+| [`font_glyph_paint_from_entry`](oni/font.odin) | Atlas bitmap size/bearings → logical paint quad |
+| [`font_text_uses_nearest_filter`](oni/font_shaper.odin) | NEAREST atlas sampling when integer DPI + no artboard zoom |
 
 [`Text`](oni/widgets/text.odin#L107) widget: [`layout_text_result`](oni/layout.odin#L944) → [`font_draw_layout_text`](oni/font.odin#L603) with resolved text and decoration colors.
 
@@ -297,7 +299,7 @@ Draw pass updates hover/focus and dispatches events (not layout).
 
 | Type | File | Role |
 |------|------|------|
-| `Draw_Mode` | [oni/batch.odin](oni/batch.odin#L8) | `.Solid`, `.Textured`, `.Line`, `.Textured_Rounded` |
+| `Draw_Mode` | [oni/batch.odin](oni/batch.odin#L8) | `.Solid`, `.Textured`, `.Line`, `.Textured_Rounded`, `.Textured_Text` |
 | `UI_Vertex` | [oni/gpu.odin](oni/gpu.odin#L13) | pos, uv, local_uv, colors, radii, border, mode params |
 | `Batch_State` / `Batch_Key` / `Batch_Segment` | [oni/batch.odin](oni/batch.odin#L27) | CPU record + segment metadata |
 | `GPU_State` / `GPU_Proj_UBO` | [oni/gpu.odin](oni/gpu.odin#L28) | Pipeline, sampler, projection, ping-pong batches |

@@ -6,6 +6,7 @@ import sdl "vendor:sdl3"
 
 vert_shader_code := #load("shaders/ui.spv.vert")
 frag_shader_code := #load("shaders/ui.spv.frag")
+lcd_frag_shader_code := #load("shaders/ui_lcd.spv.frag")
 
 /*
 Per-vertex data for the UI shader: position, UVs, colors, radii, and borders.
@@ -30,7 +31,20 @@ GPU_Proj_UBO :: struct {
 }
 
 /*
-GPU rendering resources: pipeline, sampler, white texture, projection, and batches.
+LCD fragment uniform: FreeType atlas is RGB; set bgr=1 when the display is BGR.
+
+Padded to 16 bytes for std140-friendly push size.
+*/
+GPU_Lcd_UBO :: struct {
+	bgr:  f32,
+	_pad: [3]f32,
+}
+
+/*
+GPU rendering resources: pipelines, sampler, white texture, projection, and batches.
+
+`pipeline` is SRC_ALPHA UI (including gray text). `lcd_pipeline` is dual-source
+LCD text (ONE / ONE_MINUS_SRC1_*). Both share `UI_Vertex` layout.
 
 `batches` is ping-ponged via `batch_index` so CPU recording for frame N+1 can
 proceed while the GPU still reads frame N's vertex/index buffers. WaitAndAcquire
@@ -38,12 +52,14 @@ remains the swapchain sync point; alternate slots avoid uploading into in-flight
 GPU buffers within the same present_frame.
 */
 GPU_State :: struct {
-	pipeline:      ^sdl.GPUGraphicsPipeline,
-	sampler:       ^sdl.GPUSampler,
-	white_texture: ^sdl.GPUTexture,
-	proj_mat:      matrix[4, 4]f32,
-	batches:       [2]Batch_State,
-	batch_index:   int,
+	pipeline:         ^sdl.GPUGraphicsPipeline,
+	lcd_pipeline:     ^sdl.GPUGraphicsPipeline,
+	sampler:          ^sdl.GPUSampler,
+	sampler_nearest:  ^sdl.GPUSampler,
+	white_texture:    ^sdl.GPUTexture,
+	proj_mat:         matrix[4, 4]f32,
+	batches:          [2]Batch_State,
+	batch_index:      int,
 }
 
 /*
@@ -80,6 +96,54 @@ gpu_load_shader :: proc(
 }
 
 /*
+Creates an SDL GPU device with SPIR-V shaders and dual-source blending enabled.
+
+Dual-source is required for LCD text (Phase C). Device create fails when the
+backend cannot enable it (Vulkan without dualSrcBlend).
+*/
+gpu_create_device :: proc(debug_mode := true) -> ^sdl.GPUDevice {
+	props := sdl.CreateProperties()
+	if props == 0 {
+		return nil
+	}
+	defer sdl.DestroyProperties(props)
+
+	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true)
+	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug_mode)
+	_ = sdl.SetBooleanProperty(
+		props,
+		sdl.PROP_GPU_DEVICE_CREATE_FEATURE_DUAL_SOURCE_BLENDING_BOOLEAN,
+		true,
+	)
+
+	return sdl.CreateGPUDeviceWithProperties(props)
+}
+
+/*
+True when the device was created with dual-source blending and the backend supports it.
+*/
+gpu_device_supports_dual_source_blending :: proc(device: ^sdl.GPUDevice) -> bool {
+	if test_hook_gpu_force_no_dual_source {
+		return false
+	}
+
+	if device == nil {
+		return false
+	}
+
+	props := sdl.GetGPUDeviceProperties(device)
+	if props == 0 {
+		return false
+	}
+
+	return sdl.GetBooleanProperty(
+		props,
+		sdl.PROP_GPU_DEVICE_FEATURE_DUAL_SOURCE_BLENDING_BOOLEAN,
+		false,
+	)
+}
+
+/*
 Returns premultiplied-style alpha blending state for the UI color target.
 
 Uses standard src-alpha over dst-alpha compositing for UI transparency.
@@ -91,6 +155,24 @@ gpu_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
 		color_blend_op = .ADD,
 		src_alpha_blendfactor = .ONE,
 		dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
+		alpha_blend_op = .ADD,
+		enable_blend = true,
+	}
+}
+
+/*
+Dual-source LCD blend: dst = src0 + dst * (1 - src1) per channel.
+
+Requires a fragment shader that writes color location/index 0 (src0) and 1 (src1),
+and a device created with dual-source blending enabled.
+*/
+gpu_dual_source_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
+	return {
+		src_color_blendfactor = .ONE,
+		dst_color_blendfactor = .ONE_MINUS_SRC1_COLOR,
+		color_blend_op = .ADD,
+		src_alpha_blendfactor = .ONE,
+		dst_alpha_blendfactor = .ONE_MINUS_SRC1_ALPHA,
 		alpha_blend_op = .ADD,
 		enable_blend = true,
 	}
@@ -156,14 +238,20 @@ gpu_ui_vertex_layout :: proc() -> (
 }
 
 /*
-Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
+Builds a graphics pipeline with UI_Vertex layout, shared vertex shader, and
+the given fragment SPIR-V + color-target blend state.
 
-Loads embedded SPIR-V shaders, configures blend state for the swapchain
-format, and returns nil if shader compilation or pipeline creation fails.
+`frag_uniform_buffers` is 0 for the UI pipeline and 1 for LCD (subpixel order).
 */
-gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
+gpu_create_ui_layout_pipeline :: proc(
+	gpu: ^sdl.GPUDevice,
+	format: sdl.GPUTextureFormat,
+	frag_code: []u8,
+	blend: sdl.GPUColorTargetBlendState,
+	frag_uniform_buffers: u32 = 0,
+) -> ^sdl.GPUGraphicsPipeline {
 	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
-	frag := gpu_load_shader(gpu, frag_shader_code, .FRAGMENT, 0, 1)
+	frag := gpu_load_shader(gpu, frag_code, .FRAGMENT, frag_uniform_buffers, 1)
 
 	defer {
 		if vert != nil do sdl.ReleaseGPUShader(gpu, vert)
@@ -172,10 +260,13 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 
 	if vert == nil {
 		fmt.eprintln("gpu_load_shader (vertex) failed:", sdl.GetError())
+
 		return nil
 	}
+
 	if frag == nil {
 		fmt.eprintln("gpu_load_shader (fragment) failed:", sdl.GetError())
+
 		return nil
 	}
 
@@ -192,11 +283,11 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 	}
 
 	color_target_desc := sdl.GPUColorTargetDescription {
-		format      = sdl.GetGPUSwapchainTextureFormat(gpu, window),
-		blend_state = gpu_blend_state(),
+		format      = format,
+		blend_state = blend,
 	}
 
-	pipeline := sdl.CreateGPUGraphicsPipeline(
+	return sdl.CreateGPUGraphicsPipeline(
 		gpu,
 		{
 			vertex_shader = vert,
@@ -207,24 +298,75 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 			target_info = {num_color_targets = 1, color_target_descriptions = &color_target_desc},
 		},
 	)
-	if test_hook_gpu_fail_pipeline && pipeline != nil {
-		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
+}
+
+/*
+Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
+
+Loads embedded SPIR-V shaders, configures SRC_ALPHA blend for the swapchain
+format, and returns nil if shader compilation or pipeline creation fails.
+*/
+gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
+	if gpu == nil || window == nil {
 		return nil
 	}
+
+	format := sdl.GetGPUSwapchainTextureFormat(gpu, window)
+	pipeline := gpu_create_ui_layout_pipeline(gpu, format, frag_shader_code, gpu_blend_state())
+	if test_hook_gpu_fail_pipeline && pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
+
+		return nil
+	}
+
 	return pipeline
 }
 
 /*
-Creates a linear, clamp-to-edge sampler for UI texture rendering.
+Builds the LCD text pipeline: same UI_Vertex layout, dual-source blend.
 
-Used for both atlas textures and the 1x1 white fallback texture.
+Fragment shader writes location/index 0 (tint*coverage) and 1 (coverage).
+Requires a device created with dual-source blending enabled.
 */
-gpu_create_sampler :: proc(gpu: ^sdl.GPUDevice) -> ^sdl.GPUSampler {
+gpu_create_lcd_pipeline :: proc(
+	gpu: ^sdl.GPUDevice,
+	format: sdl.GPUTextureFormat,
+) -> ^sdl.GPUGraphicsPipeline {
+	if gpu == nil {
+		return nil
+	}
+
+	pipeline := gpu_create_ui_layout_pipeline(
+		gpu,
+		format,
+		lcd_frag_shader_code,
+		gpu_dual_source_blend_state(),
+		1,
+	)
+	if test_hook_gpu_fail_lcd_pipeline && pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
+
+		return nil
+	}
+
+	return pipeline
+}
+
+/*
+Creates a clamp-to-edge sampler with the given min/mag filters.
+
+LINEAR is the default UI path; NEAREST is used for 1:1 glyph atlas quads.
+*/
+gpu_create_sampler :: proc(
+	gpu: ^sdl.GPUDevice,
+	min_filter: sdl.GPUFilter = .LINEAR,
+	mag_filter: sdl.GPUFilter = .LINEAR,
+) -> ^sdl.GPUSampler {
 	sampler := sdl.CreateGPUSampler(
 		gpu,
 		{
-			min_filter = .LINEAR,
-			mag_filter = .LINEAR,
+			min_filter = min_filter,
+			mag_filter = mag_filter,
 			mipmap_mode = .NEAREST,
 			address_mode_u = .CLAMP_TO_EDGE,
 			address_mode_v = .CLAMP_TO_EDGE,
@@ -356,7 +498,7 @@ gpu_update_projection :: proc(dpi: Dpi_Info) {
 }
 
 /*
-Tears down batch state and releases pipeline, sampler, and white texture.
+Tears down batch state and releases pipelines, samplers, and white texture.
 
 Safe to call when state is nil or GPU resources were partially initialized.
 */
@@ -374,6 +516,14 @@ gpu_destroy :: proc() {
 		sdl.ReleaseGPUSampler(state.gpu, state.gpu_state.sampler)
 		state.gpu_state.sampler = nil
 	}
+	if state.gpu_state.sampler_nearest != nil {
+		sdl.ReleaseGPUSampler(state.gpu, state.gpu_state.sampler_nearest)
+		state.gpu_state.sampler_nearest = nil
+	}
+	if state.gpu_state.lcd_pipeline != nil {
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, state.gpu_state.lcd_pipeline)
+		state.gpu_state.lcd_pipeline = nil
+	}
 	if state.gpu_state.pipeline != nil {
 		sdl.ReleaseGPUGraphicsPipeline(state.gpu, state.gpu_state.pipeline)
 		state.gpu_state.pipeline = nil
@@ -383,55 +533,102 @@ gpu_destroy :: proc() {
 /*
 Initializes the full GPU rendering stack when device and window are ready.
 
-Creates pipeline, sampler, white texture, asset GPU resources, batch buffers,
-and projection matrix. No-op if already initialized or prerequisites missing.
+Creates UI + LCD pipelines, samplers, white texture, asset GPU resources, batch
+buffers, and projection matrix. Requires dual-source blending. Returns true when
+the stack is ready (including idempotent re-entry). Returns false if prerequisites
+are missing or any create fails; leaves GPU stack resources clean on failure.
 */
-gpu_init :: proc() {
-	if state.gpu == nil || state.window == nil || state.gpu_state.pipeline != nil do return
+gpu_init :: proc() -> bool {
+	if state.gpu == nil || state.window == nil {
+		return false
+	}
+
+	if state.gpu_state.pipeline != nil {
+		return true
+	}
+
+	if !gpu_device_supports_dual_source_blending(state.gpu) {
+		log_errorf("gpu_init: dual-source blending is required for LCD text")
+
+		return false
+	}
 
 	pipeline := gpu_create_pipeline(state.gpu, state.window)
 	if pipeline == nil {
 		log_errorf("gpu_init: failed to create UI graphics pipeline: %s", sdl.GetError())
 
-		return
+		return false
 	}
 
-	sampler := gpu_create_sampler(state.gpu)
-	if sampler == nil {
-		log_errorf("gpu_init: failed to create UI sampler: %s", sdl.GetError())
+	format := sdl.GetGPUSwapchainTextureFormat(state.gpu, state.window)
+	lcd_pipeline := gpu_create_lcd_pipeline(state.gpu, format)
+	if lcd_pipeline == nil {
+		log_errorf("gpu_init: failed to create LCD graphics pipeline: %s", sdl.GetError())
 		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
 
-		return
+		return false
+	}
+
+	sampler := gpu_create_sampler(state.gpu, .LINEAR, .LINEAR)
+	if sampler == nil {
+		log_errorf("gpu_init: failed to create UI sampler: %s", sdl.GetError())
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, lcd_pipeline)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
+		return false
+	}
+
+	sampler_nearest := gpu_create_sampler(state.gpu, .NEAREST, .NEAREST)
+	if sampler_nearest == nil {
+		log_errorf("gpu_init: failed to create nearest UI sampler: %s", sdl.GetError())
+		sdl.ReleaseGPUSampler(state.gpu, sampler)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, lcd_pipeline)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
+
+		return false
 	}
 
 	white_texture := gpu_create_white_texture(state.gpu)
 	if white_texture == nil {
 		log_errorf("gpu_init: failed to create white fallback texture: %s", sdl.GetError())
+		sdl.ReleaseGPUSampler(state.gpu, sampler_nearest)
 		sdl.ReleaseGPUSampler(state.gpu, sampler)
+		sdl.ReleaseGPUGraphicsPipeline(state.gpu, lcd_pipeline)
 		sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline)
 
-		return
+		return false
 	}
 
 	state.gpu_state.pipeline = pipeline
+	state.gpu_state.lcd_pipeline = lcd_pipeline
 	state.gpu_state.sampler = sampler
+	state.gpu_state.sampler_nearest = sampler_nearest
 	state.gpu_state.white_texture = white_texture
 
 	assets_init(state.gpu)
 	batch_init()
 	gpu_update_projection(state.dpi)
+
+	return true
 }
 
 /*
 Recreates GPU resources after hot reload or device state changes.
 
 Releases texture GPU handles, destroys and re-inits the GPU stack, then
-reloads textures and font GPU faces.
+reloads textures and font GPU faces. Returns false if re-init fails; skips
+texture/font GPU restore when the stack is not ready.
 */
-gpu_reload :: proc() {
+gpu_reload :: proc() -> bool {
 	texture_release_gpu()
 	gpu_destroy()
-	gpu_init()
+
+	if !gpu_init() {
+		return false
+	}
+
 	texture_reload_gpu()
 	font_reload_faces()
+
+	return true
 }

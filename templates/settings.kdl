@@ -21,12 +21,15 @@ window {
 }
 
 // ---------------------------------------------------------------------------
-// dpi — logical vs drawable pixel scale
-//   scale "auto"  — follow OS (SDL drawable size / window size)
+// dpi — logical vs drawable pixel scale + LCD subpixel order
+//   scale auto    — follow OS (SDL drawable size / window size)
 //   scale 2       — force 2× (logical size derived from the drawable buffer)
+//   subpixel auto | none | rgb | bgr
 // ---------------------------------------------------------------------------
-dpi scale="auto"
-// dpi scale=2
+dpi {
+    scale auto
+    subpixel auto
+}
 
 // ---------------------------------------------------------------------------
 // fonts — theme body/heading sizes and one registered family

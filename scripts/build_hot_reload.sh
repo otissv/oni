@@ -40,6 +40,12 @@ UI_FRAG="${SHADER_DIR}/ui.frag"
 UI_VERT="${SHADER_DIR}/ui.vert"
 UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
 UI_SPV_VERT="${SHADER_DIR}/ui.spv.vert"
+UI_LCD_FRAG="${SHADER_DIR}/ui_lcd.frag"
+UI_LCD_SPV_FRAG="${SHADER_DIR}/ui_lcd.spv.frag"
+DUAL_FRAG="${SHADER_DIR}/dual_source_test.frag"
+DUAL_VERT="${SHADER_DIR}/dual_source_test.vert"
+DUAL_SPV_FRAG="${SHADER_DIR}/dual_source_test.spv.frag"
+DUAL_SPV_VERT="${SHADER_DIR}/dual_source_test.spv.vert"
 
 when_os() {
 	case "$(uname -s)" in
@@ -58,7 +64,8 @@ windows) LIB_EXT=".dll" ;;
 esac
 
 ODIN_FLAGS=(-vet -strict-style -debug)
-FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
+# Single -extra-linker-flags (Odin keeps only the last occurrence).
+FONT_LIBS=(-extra-linker-flags:"${ONI_SDL3_LINKER_FLAGS}-lfreetype -lharfbuzz")
 
 has_sdl3_image() {
 	for lib in /usr/lib/libSDL3_image.so /usr/local/lib/libSDL3_image.so; do
@@ -152,6 +159,27 @@ build_shaders() {
 	if [[ ! -f "$UI_SPV_VERT" || "$UI_VERT" -nt "$UI_SPV_VERT" ]]; then
 		echo "Compiling ui.vert"
 		glslc "$UI_VERT" -o "$UI_SPV_VERT" &
+		pids+=($!)
+		compiled=true
+	fi
+
+	if [[ ! -f "$UI_LCD_SPV_FRAG" || "$UI_LCD_FRAG" -nt "$UI_LCD_SPV_FRAG" ]]; then
+		echo "Compiling ui_lcd.frag"
+		glslc "$UI_LCD_FRAG" -o "$UI_LCD_SPV_FRAG" &
+		pids+=($!)
+		compiled=true
+	fi
+
+	if [[ -f "$DUAL_FRAG" && (! -f "$DUAL_SPV_FRAG" || "$DUAL_FRAG" -nt "$DUAL_SPV_FRAG") ]]; then
+		echo "Compiling dual_source_test.frag"
+		glslc "$DUAL_FRAG" -o "$DUAL_SPV_FRAG" &
+		pids+=($!)
+		compiled=true
+	fi
+
+	if [[ -f "$DUAL_VERT" && (! -f "$DUAL_SPV_VERT" || "$DUAL_VERT" -nt "$DUAL_SPV_VERT") ]]; then
+		echo "Compiling dual_source_test.vert"
+		glslc "$DUAL_VERT" -o "$DUAL_SPV_VERT" &
 		pids+=($!)
 		compiled=true
 	fi

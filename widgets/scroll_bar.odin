@@ -279,8 +279,8 @@ scroll_bar_resolve_thumb_rgba :: proc(
 /*
 Renders a scrollbar track and thumb that writes parent scroll_x / scroll_y on drag.
 
-Layout pass registers the bar and binds thumb geometry inputs; draw reads
-layout-owned thumb rects, syncs scroll after drag, and paints chrome.
+Layout pass registers the bar and binds thumb geometry inputs; draw paints from
+the layout-owned track rect and maps the current scroll onto that track only.
 */
 Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 	cfg := props.config
@@ -384,23 +384,28 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 	}
 
 	scroll := scroll_bar_parent_scroll(props)
-	o.layout_scroll_bar_sync_scroll(layout_id, scroll)
-	chrome := o.layout_scroll_bar_result(layout_id)
-	thumb: o.Rect
-
-	if chrome != nil {
-		thumb = chrome.thumb
-	}
+	// Paint/hit thumb from the layout-owned track + current scroll. Do not
+	// re-finalize layout chrome during draw.
+	thumb := o.layout_scroll_bar_thumb_rect(
+		rect,
+		props.axis,
+		props.viewport,
+		props.content,
+		scroll,
+		min_thumb,
+	)
 
 	if widget_can_interact(handlers, &frame_state) {
 		scroll_bar_handle_drag(props, layout_id, rect, thumb, frame_state.is_hovered)
 		scroll = scroll_bar_parent_scroll(props)
-		o.layout_scroll_bar_sync_scroll(layout_id, scroll)
-		chrome = o.layout_scroll_bar_result(layout_id)
-
-		if chrome != nil {
-			thumb = chrome.thumb
-		}
+		thumb = o.layout_scroll_bar_thumb_rect(
+			rect,
+			props.axis,
+			props.viewport,
+			props.content,
+			scroll,
+			min_thumb,
+		)
 	}
 
 	track_bg: o.RGBA

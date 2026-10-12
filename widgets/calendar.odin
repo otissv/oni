@@ -1317,6 +1317,9 @@ calendar_nav_next :: proc(_: Button_Event) {
 Renders the calendar root. Compose month chrome with `Calendar_Month` or finer
 parts inside `child`.
 
+Layout measures content size and finalizes day/nav chrome; draw paints from
+layout-owned rects only.
+
 One tab stop owns keyboard navigation (arrows, Page Up/Down, Home/End, Space /
 Enter). Month buttons own pointer navigation; day cells select according to `mode`.
 */
@@ -1390,13 +1393,6 @@ Calendar :: proc(props: Calendar_Props) {
 		rt.focus_set = true
 	}
 
-	content_w, content_h := calendar_measure(
-		number_of_months,
-		day_size,
-		gap,
-		props.show_week_numbers,
-	)
-
 	frame_state := Calendar_State {
 		is_disabled       = disabled,
 		is_focused        = was_focused,
@@ -1410,8 +1406,6 @@ Calendar :: proc(props: Calendar_Props) {
 		show_week_numbers = props.show_week_numbers,
 		can_go_prev       = Calendar_Can_Navigate(month, -1, props.start_month, props.end_month),
 		can_go_next       = Calendar_Can_Navigate(month, 1, props.start_month, props.end_month),
-		content_width     = content_w,
-		content_height    = content_h,
 	}
 
 	if disabled {
@@ -1483,6 +1477,18 @@ Calendar :: proc(props: Calendar_Props) {
 	child_proc := props.child
 
 	if o.ui_pass() == .Layout {
+		content_w, content_h := calendar_measure(
+			number_of_months,
+			day_size,
+			gap,
+			props.show_week_numbers,
+		)
+		frame_state.content_width = content_w
+		frame_state.content_height = content_h
+		event = calendar_refresh_merged(resolved_props, &frame_state)
+		config = frame_state.config
+		should_auto_focus = widget_should_auto_focus(config, key)
+
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,

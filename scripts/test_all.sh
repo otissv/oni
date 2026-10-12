@@ -10,12 +10,15 @@ source "${ROOT}/odin_collections.sh"
 
 OUT_DIR="build/test"
 ODIN_FLAGS=(-vet -strict-style -debug -keep-executable)
-FONT_LIBS=(-extra-linker-flags:"-lfreetype -lharfbuzz")
+# Single -extra-linker-flags (Odin keeps only the last occurrence).
+FONT_LIBS=(-extra-linker-flags:"${ONI_SDL3_LINKER_FLAGS}-lfreetype -lharfbuzz")
 
 # Odin's test runner tracking allocator: report leaks and fail the suite on them.
+# Single test thread: multi-thread GPU suites hang / segfault the driver on Linux.
 TEST_DEFINES=(
 	-define:ODIN_TEST_TRACK_MEMORY=true
 	-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
+	-define:ODIN_TEST_THREADS=1
 )
 
 # Packages with @(test) coverage (friendly names → source paths under repo root).
@@ -229,60 +232,19 @@ mkdir -p "$OUT_DIR"
 failed=()
 passed=()
 
-# Serial for ASAN/valgrind (exclusive process / cleaner diagnostics); otherwise run packages concurrently.
-if $USE_ASAN || $USE_VALGRIND || ((${#PACKAGES[@]} == 1)); then
-	for pkg in "${PACKAGES[@]}"; do
-		if run_package "$pkg"; then
-			passed+=("$pkg")
-			echo ""
-		else
-			status=$?
-			failed+=("$pkg")
-			echo ""
-			echo "FAILED: ${pkg} (exit ${status})"
-			echo ""
-		fi
-	done
-else
-	declare -A pids=()
-	declare -A statuses=()
-	log_dir="$(mktemp -d "${OUT_DIR}/logs.XXXXXX")"
-
-	for pkg in "${PACKAGES[@]}"; do
-		out_name="$(package_out_name "$pkg")"
-		log_file="${log_dir}/${out_name}.log"
-		status_file="${log_dir}/${out_name}.exit"
-		(
-			set +e
-			run_package "$pkg" "$log_file"
-			status=$?
-			set -e
-			echo "$status" >"$status_file"
-			exit "$status"
-		) 2>&1 | sed -u "s/^/[${pkg}] /" &
-		pids["$pkg"]=$!
-	done
-
-	for pkg in "${PACKAGES[@]}"; do
-		pid="${pids[$pkg]}"
-		set +e
-		wait "$pid"
-		set -e
-		out_name="$(package_out_name "$pkg")"
-		status_file="${log_dir}/${out_name}.exit"
-		status=$(cat "$status_file")
-		statuses["$pkg"]=$status
+# Always serial: concurrent oni+widgets GPU suites hang / segfault the driver.
+for pkg in "${PACKAGES[@]}"; do
+	if run_package "$pkg"; then
+		passed+=("$pkg")
 		echo ""
-		if ((status == 0)); then
-			passed+=("$pkg")
-		else
-			failed+=("$pkg")
-			echo "FAILED: ${pkg} (exit ${status})"
-			echo ""
-		fi
-	done
-	rm -rf "$log_dir"
-fi
+	else
+		status=$?
+		failed+=("$pkg")
+		echo ""
+		echo "FAILED: ${pkg} (exit ${status})"
+		echo ""
+	fi
+done
 
 echo "========================================"
 echo "Passed: ${#passed[@]}/${#PACKAGES[@]}"

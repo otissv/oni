@@ -206,7 +206,7 @@ with_assets_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	}
 	defer sdl.Quit()
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	gpu := gpu_create_device(true)
 	if gpu == nil {
 		testing.expectf(t, false, "SDL_CreateGPUDevice failed: %s", sdl.GetError())
 		return

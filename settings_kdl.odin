@@ -195,11 +195,16 @@ settings_export :: proc(allocator := context.allocator) -> string {
 	kdl.finish_emitting_children(&emitter)
 
 	kdl.emit_node(&emitter, "dpi")
+	kdl.start_emitting_children(&emitter)
+	kdl.emit_node(&emitter, "scale")
 	if s.dpi_scale > 0 {
-		kdl.emit_property(&emitter, "scale", settings_kdl_f32(s.dpi_scale))
+		kdl.emit_arg(&emitter, settings_kdl_f32(s.dpi_scale))
 	} else {
-		kdl.emit_property(&emitter, "scale", settings_kdl_str("auto"))
+		kdl.emit_arg(&emitter, settings_kdl_str("auto"))
 	}
+	kdl.emit_node(&emitter, "subpixel")
+	kdl.emit_arg(&emitter, settings_kdl_str(settings_kdl_subpixel_name(s.dpi_subpixel)))
+	kdl.finish_emitting_children(&emitter)
 
 	kdl.emit_node(&emitter, "fonts")
 	kdl.start_emitting_children(&emitter)
@@ -276,7 +281,10 @@ settings_kdl_start :: proc(
 			return .Field, key, true
 		}
 	case .Dpi:
-		if key == "scale" do return .Field, "scale", true
+		switch key {
+		case "scale", "subpixel":
+			return .Field, key, true
+		}
 	case .Fonts:
 		switch key {
 		case "body-size", "heading-size":
@@ -319,8 +327,8 @@ settings_kdl_apply :: proc(
 		switch key {
 		case "title", "width", "height", "min-width", "min-height", "mode":
 			return settings_kdl_apply_window(s, key, value, allocator)
-		case "scale":
-			return settings_kdl_apply_dpi(s, "scale", value)
+		case "scale", "subpixel":
+			return settings_kdl_apply_dpi(s, key, value)
 		case "family", "body-size", "heading-size":
 			return settings_kdl_apply_fonts(s, key, value, allocator)
 		case "":
@@ -328,7 +336,8 @@ settings_kdl_apply :: proc(
 		}
 		return false
 	case .Dpi:
-		return settings_kdl_apply_dpi(s, key, value)
+		// dpi fields are child nodes only: `dpi { scale …; subpixel … }`
+		return false
 	case .Fonts:
 		return settings_kdl_apply_fonts(s, key, value, allocator)
 	case .Root, .Family, .Face, .Shortcuts, .Bind:
@@ -412,22 +421,70 @@ settings_kdl_apply_window :: proc(
 }
 
 @(private)
-settings_kdl_apply_dpi :: proc(s: ^Settings, key: string, value: kdl.Value) -> bool {
-	if key != "" && key != "scale" do return false
-	if kdl.is_null(value) {
-		s.dpi_scale = 0
-		return true
+settings_kdl_subpixel_name :: proc(setting: Dpi_Subpixel_Setting) -> string {
+	switch setting {
+	case .Auto:
+		return "auto"
+	case .None:
+		return "none"
+	case .RGB:
+		return "rgb"
+	case .BGR:
+		return "bgr"
 	}
-	if str, is_str := settings_kdl_as_string(value); is_str {
-		if settings_kdl_norm(str) == "auto" {
+
+	return "auto"
+}
+
+@(private)
+settings_kdl_parse_subpixel :: proc(raw: string) -> (Dpi_Subpixel_Setting, bool) {
+	switch settings_kdl_norm(raw) {
+	case "auto":
+		return .Auto, true
+	case "none":
+		return .None, true
+	case "rgb":
+		return .RGB, true
+	case "bgr":
+		return .BGR, true
+	}
+
+	return .Auto, false
+}
+
+@(private)
+settings_kdl_apply_dpi :: proc(s: ^Settings, key: string, value: kdl.Value) -> bool {
+	switch key {
+	case "scale":
+		if kdl.is_null(value) {
 			s.dpi_scale = 0
 			return true
 		}
+
+		if str, is_str := settings_kdl_as_string(value); is_str {
+			if settings_kdl_norm(str) == "auto" {
+				s.dpi_scale = 0
+				return true
+			}
+		}
+
+		n, ok := settings_kdl_as_f32(value)
+		if !ok do return false
+
+		s.dpi_scale = n
+		return true
+	case "subpixel":
+		str, ok := settings_kdl_as_string(value)
+		if !ok do return false
+
+		setting, setting_ok := settings_kdl_parse_subpixel(str)
+		if !setting_ok do return false
+
+		s.dpi_subpixel = setting
+		return true
 	}
-	n, ok := settings_kdl_as_f32(value)
-	if !ok do return false
-	s.dpi_scale = n
-	return true
+
+	return false
 }
 
 @(private)

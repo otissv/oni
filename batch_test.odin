@@ -55,7 +55,7 @@ with_batch_gpu_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	}
 	defer sdl.Quit()
 
-	gpu := sdl.CreateGPUDevice({.SPIRV}, true, nil)
+	gpu := gpu_create_device(true)
 	if gpu == nil {
 		testing.expectf(t, false, "SDL_CreateGPUDevice failed: %s", sdl.GetError())
 		return
@@ -133,6 +133,7 @@ batch_draw_mode_f32_matches_enum_ordinals :: proc(t: ^testing.T) {
 	expect_close(t, draw_mode_f32(.Textured), 1)
 	expect_close(t, draw_mode_f32(.Line), 2)
 	expect_close(t, draw_mode_f32(.Textured_Rounded), 3)
+	expect_close(t, draw_mode_f32(.Textured_Text), 4)
 	testing.expect_value(t, BATCH_INITIAL_VERT_CAPACITY, 64 * 1024)
 }
 
@@ -412,6 +413,45 @@ batch_check_key_splits_on_clip_change :: proc(t: ^testing.T) {
 			testing.expect_value(t, len(batch_current().segments), 2)
 			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
 			expect_rect(t, batch_current().segments[1].key.clip, {10, 10, 50, 50})
+		},
+	)
+}
+
+@(test)
+batch_check_key_splits_on_nearest_change :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_check_key(TEXTURE_WHITE_ID, false)
+			batch_push_indices(0)
+			batch_check_key(TEXTURE_WHITE_ID, true)
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect(t, !batch_current().segments[0].key.nearest)
+			testing.expect(t, batch_current().segments[1].key.nearest)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
+		},
+	)
+}
+
+@(test)
+batch_check_key_splits_on_lcd_change :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_check_key(TEXTURE_WHITE_ID, true, false)
+			batch_push_indices(0)
+			batch_check_key(TEXTURE_WHITE_ID, true, true)
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+			testing.expect(t, batch_current().segments[1].key.lcd)
+			testing.expect(t, batch_current().segments[0].key.nearest)
+			testing.expect(t, batch_current().segments[1].key.nearest)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
+
+			// Same lcd key merges.
+			batch_push_indices(4)
+			batch_check_key(TEXTURE_WHITE_ID, true, true)
+			testing.expect_value(t, len(batch_current().segments), 2)
 		},
 	)
 }
@@ -809,9 +849,111 @@ batch_push_axis_quad_snaps_bordered_solid_to_pixels :: proc(t: ^testing.T) {
 	)
 }
 
+@(test)
+batch_push_axis_quad_textured_text_snaps_and_packs_mode :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			batch_push_axis_quad(
+				{10.2, 20.7, 12.4, 14.4},
+				{0.1, 0.2, 0.3, 0.4},
+				{255, 255, 255, 255},
+				{},
+				{12.4, 14.4},
+				{},
+				{},
+				.Textured_Text,
+			)
+			testing.expect_value(t, len(batch_current().vertices), 4)
+			v0 := batch_current().vertices[0]
+			v2 := batch_current().vertices[2]
+			expect_close(t, v0.pos[0], 10)
+			expect_close(t, v0.pos[1], 21)
+			expect_close(t, v2.pos[0], 23)
+			expect_close(t, v2.pos[1], 35)
+			expect_close(t, v0.params[1], draw_mode_f32(.Textured_Text))
+			expect_close(t, v0.uv[0], 0.1)
+			expect_close(t, v0.uv[1], 0.2)
+			expect_close(t, v2.uv[0], 0.4)
+			expect_close(t, v2.uv[1], 0.6)
+		},
+	)
+}
+
+@(test)
+batch_push_atlas_quads_emits_textured_text_and_nearest_key :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			tex := Texture_Handle {
+				id = Asset_Id(42),
+				w  = 100,
+				h  = 50,
+			}
+			dsts := []Rect{{10.2, 20.7, 8, 10}}
+			srcs := []Rect{{25, 10, 8, 10}}
+			batch_push_atlas_quads(tex, dsts, srcs, {240, 240, 240, 255}, true)
+			testing.expect_value(t, len(batch_current().vertices), 4)
+			testing.expect(t, batch_current().current_key.nearest)
+			testing.expect(t, !batch_current().current_key.lcd)
+			testing.expect_value(t, batch_current().current_key.texture_id, Asset_Id(42))
+			v0 := batch_current().vertices[0]
+			expect_close(t, v0.params[1], draw_mode_f32(.Textured_Text))
+			expect_close(t, v0.pos[0], 10)
+			expect_close(t, v0.pos[1], 21)
+			expect_close(t, v0.uv[0], 0.25)
+			expect_close(t, v0.uv[1], 0.2)
+		},
+	)
+}
+
+@(test)
+batch_push_atlas_quads_sets_lcd_key :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			tex := Texture_Handle {
+				id = Asset_Id(7),
+				w  = 32,
+				h  = 32,
+			}
+			dsts := []Rect{{0, 0, 8, 8}}
+			srcs := []Rect{{0, 0, 8, 8}}
+			batch_push_atlas_quads(tex, dsts, srcs, {255, 255, 255, 255}, true, true)
+			testing.expect(t, batch_current().current_key.nearest)
+			testing.expect(t, batch_current().current_key.lcd)
+			testing.expect_value(t, batch_current().current_key.texture_id, Asset_Id(7))
+		},
+	)
+}
+
 // ---------------------------------------------------------------------------
 // clip_to_scissor
 // ---------------------------------------------------------------------------
+
+@(test)
+batch_snap_rect_to_device_pixels_integer_and_hidpi :: proc(t: ^testing.T) {
+	dpi := Dpi_Info {
+		scale = 1,
+	}
+	r := batch_snap_rect_to_device_pixels({1.2, 2.6, 3.4, 4.1}, dpi)
+	expect_close(t, r.x, 1)
+	expect_close(t, r.y, 3)
+	expect_close(t, r.w, 4)
+	expect_close(t, r.h, 4)
+
+	dpi.scale = 2
+	r = batch_snap_rect_to_device_pixels({1.2, 2.6, 3.4, 4.1}, dpi)
+	expect_close(t, r.x, 1)
+	expect_close(t, r.y, 2.5)
+	expect_close(t, r.w, 3.5)
+	expect_close(t, r.h, 4)
+
+	dpi.scale = 0
+	r = batch_snap_rect_to_device_pixels({1.4, 1.6, 2, 2}, dpi)
+	expect_close(t, r.x, 1)
+	expect_close(t, r.y, 2)
+}
 
 @(test)
 batch_clip_to_scissor_empty_and_scale :: proc(t: ^testing.T) {
@@ -1039,9 +1181,13 @@ batch_key_equality_used_by_check_key :: proc(t: ^testing.T) {
 	b := Batch_Key{texture_id = Asset_Id(1), clip = {1, 2, 3, 4}}
 	c := Batch_Key{texture_id = Asset_Id(2), clip = {1, 2, 3, 4}}
 	d := Batch_Key{texture_id = Asset_Id(1), clip = {1, 2, 3, 5}}
+	e := Batch_Key{texture_id = Asset_Id(1), clip = {1, 2, 3, 4}, lcd = true}
+	f := Batch_Key{texture_id = Asset_Id(1), clip = {1, 2, 3, 4}, nearest = true}
 	testing.expect(t, a == b)
 	testing.expect(t, a != c)
 	testing.expect(t, a != d)
+	testing.expect(t, a != e)
+	testing.expect(t, a != f)
 }
 
 @(test)
@@ -1148,6 +1294,205 @@ batch_flush_draws_full_pipeline_path :: proc(t: ^testing.T) {
 			batch_current().pass = pass
 			batch_current().dpi = state.dpi
 			batch_flush_draws()
+			sdl.EndGPURenderPass(pass)
+			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
+			batch_reset()
+		},
+	)
+}
+
+/*
+Phase C.3 exit: mixed gray + LCD segments in one frame bind UI then LCD then UI.
+*/
+@(test)
+batch_flush_draws_rebinds_pipeline_for_mixed_gray_and_lcd_segments :: proc(t: ^testing.T) {
+	with_engine_window_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, state.gpu_state.lcd_pipeline != nil)
+			testing.expect(t, texture_get_gpu(TEXTURE_WHITE_ID) != nil)
+
+			batch_reset()
+
+			// Gray → LCD → gray; geometry mode is irrelevant to pipeline selection.
+			batch_check_key(TEXTURE_WHITE_ID, false, false)
+			batch_push_axis_quad(
+				{0, 0, 8, 8},
+				{0, 0, 1, 1},
+				{255, 255, 255, 255},
+				{},
+				{8, 8},
+				{},
+				{},
+				.Solid,
+			)
+
+			batch_check_key(TEXTURE_WHITE_ID, true, true)
+			batch_push_axis_quad(
+				{8, 0, 8, 8},
+				{0, 0, 1, 1},
+				{200, 200, 200, 255},
+				{},
+				{8, 8},
+				{},
+				{},
+				.Solid,
+			)
+
+			batch_check_key(TEXTURE_WHITE_ID, false, false)
+			batch_push_axis_quad(
+				{16, 0, 8, 8},
+				{0, 0, 1, 1},
+				{255, 0, 0, 255},
+				{},
+				{8, 8},
+				{},
+				{},
+				.Solid,
+			)
+
+			batch_finalize_segments()
+			testing.expect_value(t, len(batch_current().segments), 3)
+			testing.expect_value(t, batch_current().segments[0].index_count, u32(6))
+			testing.expect_value(t, batch_current().segments[1].index_count, u32(6))
+			testing.expect_value(t, batch_current().segments[2].index_count, u32(6))
+			testing.expect(t, !batch_current().segments[0].key.lcd)
+			testing.expect(t, batch_current().segments[1].key.lcd)
+			testing.expect(t, !batch_current().segments[2].key.lcd)
+
+			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+			testing.expect(t, cmd != nil)
+			if cmd == nil do return
+
+			swapchain: ^sdl.GPUTexture
+			if !sdl.WaitAndAcquireGPUSwapchainTexture(cmd, state.window, &swapchain, nil, nil) ||
+			   swapchain == nil {
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+				testing.expect(t, false, "swapchain acquire failed")
+
+				return
+			}
+
+			testing.expect(t, batch_upload(cmd))
+
+			color_target := sdl.GPUColorTargetInfo {
+				texture     = swapchain,
+				load_op     = .CLEAR,
+				clear_color = {0, 0, 0, 1},
+				store_op    = .STORE,
+			}
+			pass := sdl.BeginGPURenderPass(cmd, &color_target, 1, nil)
+			testing.expect(t, pass != nil)
+			if pass == nil {
+				_ = sdl.SubmitGPUCommandBuffer(cmd)
+
+				return
+			}
+
+			clear(&test_batch_pipeline_binds)
+			test_hook_batch_record_pipeline_binds = true
+
+			batch_current().cmd = cmd
+			batch_current().pass = pass
+			batch_current().dpi = state.dpi
+			batch_flush_draws()
+
+			testing.expect_value(t, len(test_batch_pipeline_binds), 3)
+			if len(test_batch_pipeline_binds) == 3 {
+				testing.expect(t, test_batch_pipeline_binds[0] == state.gpu_state.pipeline)
+				testing.expect(t, test_batch_pipeline_binds[1] == state.gpu_state.lcd_pipeline)
+				testing.expect(t, test_batch_pipeline_binds[2] == state.gpu_state.pipeline)
+			}
+
+			sdl.EndGPURenderPass(pass)
+			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
+			batch_reset()
+		},
+	)
+}
+
+/*
+Consecutive same-pipeline segments (texture change only) must not rebind.
+*/
+@(test)
+batch_flush_draws_skips_redundant_pipeline_binds_within_lcd_mode :: proc(t: ^testing.T) {
+	with_engine_window_env(
+		t,
+		proc(t: ^testing.T) {
+			testing.expect(t, state.gpu_state.pipeline != nil)
+			testing.expect(t, texture_get_gpu(TEXTURE_WHITE_ID) != nil)
+
+			batch_reset()
+			batch_check_key(TEXTURE_WHITE_ID, false, false)
+			batch_push_axis_quad(
+				{0, 0, 4, 4},
+				{0, 0, 1, 1},
+				{255, 255, 255, 255},
+				{},
+				{4, 4},
+				{},
+				{},
+				.Solid,
+			)
+			// Force a second gray segment via stack index (same lcd=false).
+			batch_set_stack_index(1)
+			batch_check_key(TEXTURE_WHITE_ID, false, false)
+			batch_push_axis_quad(
+				{4, 0, 4, 4},
+				{0, 0, 1, 1},
+				{255, 255, 255, 255},
+				{},
+				{4, 4},
+				{},
+				{},
+				.Solid,
+			)
+			batch_finalize_segments()
+			testing.expect_value(t, len(batch_current().segments), 2)
+
+			cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
+			testing.expect(t, cmd != nil)
+			if cmd == nil do return
+
+			swapchain: ^sdl.GPUTexture
+			if !sdl.WaitAndAcquireGPUSwapchainTexture(cmd, state.window, &swapchain, nil, nil) ||
+			   swapchain == nil {
+				_ = sdl.CancelGPUCommandBuffer(cmd)
+				testing.expect(t, false, "swapchain acquire failed")
+
+				return
+			}
+
+			testing.expect(t, batch_upload(cmd))
+
+			color_target := sdl.GPUColorTargetInfo {
+				texture     = swapchain,
+				load_op     = .CLEAR,
+				clear_color = {0, 0, 0, 1},
+				store_op    = .STORE,
+			}
+			pass := sdl.BeginGPURenderPass(cmd, &color_target, 1, nil)
+			testing.expect(t, pass != nil)
+			if pass == nil {
+				_ = sdl.SubmitGPUCommandBuffer(cmd)
+
+				return
+			}
+
+			clear(&test_batch_pipeline_binds)
+			test_hook_batch_record_pipeline_binds = true
+
+			batch_current().cmd = cmd
+			batch_current().pass = pass
+			batch_current().dpi = state.dpi
+			batch_flush_draws()
+
+			testing.expect_value(t, len(test_batch_pipeline_binds), 1)
+			if len(test_batch_pipeline_binds) == 1 {
+				testing.expect(t, test_batch_pipeline_binds[0] == state.gpu_state.pipeline)
+			}
+
 			sdl.EndGPURenderPass(pass)
 			testing.expect(t, sdl.SubmitGPUCommandBuffer(cmd))
 			batch_reset()
