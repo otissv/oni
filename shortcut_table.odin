@@ -49,9 +49,10 @@ shortcut_set_binding_enabled_at :: proc(index: int, enabled: bool) -> bool {
 /*
 Allocates a snapshot of registered action ids (sorted).
 
-Caller owns the slice and each string; free with Shortcut_Free_Action_List.
+Default allocator is temp. Pass `context.allocator` to own the result; free with
+Shortcut_Free_Action_List (no-op for temp).
 */
-shortcut_list_actions :: proc(allocator := context.allocator) -> []string {
+shortcut_list_actions :: proc(allocator := context.temp_allocator) -> []string {
 	if state == nil || state.shortcuts.actions == nil do return nil
 	n := len(state.shortcuts.actions)
 	out := make([]string, n, allocator)
@@ -67,7 +68,9 @@ shortcut_list_actions :: proc(allocator := context.allocator) -> []string {
 /*
 Frees a slice from Shortcut_List_Actions.
 */
-shortcut_free_action_list :: proc(list: []string, allocator := context.allocator) {
+shortcut_free_action_list :: proc(list: []string, allocator := context.temp_allocator) {
+	if allocator == context.temp_allocator do return
+
 	for id in list {
 		if id != "" do delete(id, allocator)
 	}
@@ -77,9 +80,10 @@ shortcut_free_action_list :: proc(list: []string, allocator := context.allocator
 /*
 Allocates a snapshot of all bindings with cloned string fields.
 
-Caller owns the slice and must free each binding's id/scope_key then the slice.
+Default allocator is temp. Pass `context.allocator` to own the result; free with
+Shortcut_Free_Binding_List (no-op for temp).
 */
-shortcut_list_bindings :: proc(allocator := context.allocator) -> []Shortcut_Binding {
+shortcut_list_bindings :: proc(allocator := context.temp_allocator) -> []Shortcut_Binding {
 	if state == nil do return nil
 	n := len(state.shortcuts.bindings)
 	out := make([]Shortcut_Binding, n, allocator)
@@ -94,7 +98,9 @@ shortcut_list_bindings :: proc(allocator := context.allocator) -> []Shortcut_Bin
 /*
 Frees a slice from Shortcut_List_Bindings.
 */
-shortcut_free_binding_list :: proc(list: []Shortcut_Binding, allocator := context.allocator) {
+shortcut_free_binding_list :: proc(list: []Shortcut_Binding, allocator := context.temp_allocator) {
+	if allocator == context.temp_allocator do return
+
 	for &b in list {
 		if b.id != "" do delete(b.id, allocator)
 		if b.scope_key != "" do delete(b.scope_key, allocator)
@@ -105,7 +111,7 @@ shortcut_free_binding_list :: proc(list: []Shortcut_Binding, allocator := contex
 /*
 Formats a scancode for display (e.g. "S", "F5", "Left Ctrl").
 */
-shortcut_format_scancode :: proc(key: Scancode, allocator := context.allocator) -> string {
+shortcut_format_scancode :: proc(key: Scancode, allocator := context.temp_allocator) -> string {
 	name := string(sdl.GetScancodeName(sdl.Scancode(key)))
 	if len(name) > 0 {
 		return strings.clone(name, allocator)
@@ -116,7 +122,7 @@ shortcut_format_scancode :: proc(key: Scancode, allocator := context.allocator) 
 /*
 Formats a chord for display (e.g. "CTRL+SHIFT+S").
 */
-shortcut_format_chord :: proc(chord: Shortcut_Chord, allocator := context.allocator) -> string {
+shortcut_format_chord :: proc(chord: Shortcut_Chord, allocator := context.temp_allocator) -> string {
 	b := strings.builder_make(allocator)
 	shortcut_write_mods(&b, chord)
 	if chord.key != .UNKNOWN {
@@ -139,7 +145,7 @@ Formats a binding trigger for a bindings-table row (UPPER_SNAKE tokens).
 */
 shortcut_format_binding :: proc(
 	binding: Shortcut_Binding,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> string {
 	return shortcut_format_trigger_token(binding, allocator)
 }

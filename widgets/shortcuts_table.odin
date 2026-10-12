@@ -311,7 +311,7 @@ shortcuts_table_apply_rebind :: proc(index: int, result: o.Shortcut_Capture_Resu
 @(private)
 shortcuts_table_format_capture :: proc(
 	result: o.Shortcut_Capture_Result,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> string {
 	return o.Shortcut_Format_Binding(
 		{

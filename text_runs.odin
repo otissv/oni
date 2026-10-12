@@ -770,7 +770,7 @@ text_runs_write_style_close :: proc(b: ^strings.Builder, style: Text_Run_Style) 
 /*
 Serializes styled runs into tagged author text.
 */
-text_runs_to_tagged :: proc(runs: []Text_Run, allocator := context.allocator) -> string {
+text_runs_to_tagged :: proc(runs: []Text_Run, allocator := context.temp_allocator) -> string {
 	b := strings.builder_make(allocator)
 
 	for run in runs {

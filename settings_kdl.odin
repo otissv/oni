@@ -52,8 +52,7 @@ settings_parse_document :: proc(
 	kdl.init(&parser, data)
 	defer kdl.destroy(&parser)
 
-	stack: [dynamic]Settings_Kdl_Node
-	defer delete(stack)
+	stack := make([dynamic]Settings_Kdl_Node, context.temp_allocator)
 	append(&stack, Settings_Kdl_Node.Root)
 
 	bind: Settings_Kdl_Bind_Acc
@@ -165,9 +164,9 @@ settings_parse_document :: proc(
 /*
 Serializes current engine settings and user shortcut bindings to KDL.
 
-Caller owns the returned string.
+Default allocator is temp. Pass `context.allocator` when the caller must own the string.
 */
-settings_export :: proc(allocator := context.allocator) -> string {
+settings_export :: proc(allocator := context.temp_allocator) -> string {
 	if state == nil do return strings.clone("", allocator)
 	settings_ensure()
 	s := state.settings

@@ -17,7 +17,6 @@ text_edit_cluster_navigation :: proc(t: ^testing.T) {
 @(test)
 text_edit_plain_splice_replaces_range :: proc(t: ^testing.T) {
 	new_text, caret := text_edit_plain_splice("hello", 1, 4, "i")
-	defer delete(new_text)
 
 	testing.expect_value(t, new_text, "hio")
 	testing.expect_value(t, caret, 2)
@@ -27,7 +26,6 @@ text_edit_plain_splice_replaces_range :: proc(t: ^testing.T) {
 text_edit_backspace_deletes_selection :: proc(t: ^testing.T) {
 	selection := Text_Selection{anchor = 1, head = 4}
 	new_text, caret, new_sel, changed := text_edit_backspace("hello", 4, selection)
-	defer delete(new_text)
 
 	testing.expect(t, changed)
 	testing.expect_value(t, new_text, "ho")
@@ -39,7 +37,6 @@ text_edit_backspace_deletes_selection :: proc(t: ^testing.T) {
 @(test)
 text_edit_delete_removes_codepoint :: proc(t: ^testing.T) {
 	new_text, caret, new_sel, changed := text_edit_delete("aβc", 1, {})
-	defer delete(new_text)
 
 	testing.expect(t, changed)
 	testing.expect_value(t, new_text, "ac")
@@ -172,7 +169,6 @@ text_edit_word_prev_next_and_delete :: proc(t: ^testing.T) {
 	testing.expect_value(t, text_edit_word_next(text, 4), 8)
 
 	new_text, caret, sel, changed := text_edit_backspace_word(text, 7, {})
-	defer delete(new_text)
 
 	testing.expect(t, changed)
 	testing.expect_value(t, new_text, "one  three")
@@ -180,11 +176,19 @@ text_edit_word_prev_next_and_delete :: proc(t: ^testing.T) {
 	testing.expect_value(t, sel.anchor, 4)
 
 	deleted, d_caret, _, d_changed := text_edit_delete_word("one two", 4, {})
-	defer delete(deleted)
 
 	testing.expect(t, d_changed)
 	testing.expect_value(t, deleted, "one ")
 	testing.expect_value(t, d_caret, 4)
+}
+
+@(test)
+text_edit_plain_splice_heap_owns_result :: proc(t: ^testing.T) {
+	new_text, caret := text_edit_plain_splice("hello", 1, 4, "i", context.allocator)
+	defer delete(new_text)
+
+	testing.expect_value(t, new_text, "hio")
+	testing.expect_value(t, caret, 2)
 }
 
 @(test)

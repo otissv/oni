@@ -8,7 +8,7 @@ Text_Document :: struct {
 	layout_runs: []Layout_Text_Run,
 }
 
-text_document_free_runs :: proc(doc: ^Text_Document, allocator := context.allocator) {
+text_document_free_runs :: proc(doc: ^Text_Document, allocator := context.temp_allocator) {
 	if allocator == context.temp_allocator {
 		doc^ = {}
 
@@ -36,11 +36,11 @@ text_document_free_runs :: proc(doc: ^Text_Document, allocator := context.alloca
 	doc^ = {}
 }
 
-text_document_rebuild :: proc(doc: ^Text_Document, allocator := context.allocator) {
+text_document_rebuild :: proc(doc: ^Text_Document, allocator := context.temp_allocator) {
 	doc.plain, doc.layout_runs = text_runs_to_layout(doc.runs[:], allocator)
 }
 
-text_document_from_tagged :: proc(tagged: string, allocator := context.allocator) -> Text_Document {
+text_document_from_tagged :: proc(tagged: string, allocator := context.temp_allocator) -> Text_Document {
 	parsed := text_tags_parse(tagged, allocator)
 	doc: Text_Document
 
@@ -82,7 +82,7 @@ text_document_from_tagged :: proc(tagged: string, allocator := context.allocator
 	return doc
 }
 
-text_document_to_tagged :: proc(doc: ^Text_Document, allocator := context.allocator) -> string {
+text_document_to_tagged :: proc(doc: ^Text_Document, allocator := context.temp_allocator) -> string {
 	return text_runs_to_tagged(doc.runs[:], allocator)
 }
 
@@ -106,7 +106,7 @@ text_document_insert_plain :: proc(
 	doc: ^Text_Document,
 	offset: int,
 	insert: string,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> bool {
 	if len(insert) == 0 do return false
 
@@ -162,7 +162,7 @@ text_document_insert_plain :: proc(
 text_document_delete_range :: proc(
 	doc: ^Text_Document,
 	start, end: int,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> bool {
 	start_idx := clamp(start, 0, len(doc.plain))
 	end_idx := clamp(end, 0, len(doc.plain))
@@ -211,7 +211,7 @@ text_document_splice_plain :: proc(
 	doc: ^Text_Document,
 	start, end: int,
 	insert: string,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> bool {
 	if !text_document_delete_range(doc, start, end, allocator) && start != end do return false
 

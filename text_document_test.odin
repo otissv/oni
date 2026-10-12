@@ -43,18 +43,19 @@ text_document_splice_plain_replaces_range :: proc(t: ^testing.T) {
 
 @(test)
 text_document_heap_edit_and_free_is_clean :: proc(t: ^testing.T) {
-	doc := text_document_from_tagged("{b}hi{/b} there")
-	defer text_document_free_runs(&doc)
+	alloc := context.allocator
+	doc := text_document_from_tagged("{b}hi{/b} there", alloc)
+	defer text_document_free_runs(&doc, alloc)
 
 	testing.expect_value(t, doc.plain, "hi there")
-	testing.expect(t, text_document_insert_plain(&doc, 2, "!"))
+	testing.expect(t, text_document_insert_plain(&doc, 2, "!", alloc))
 	testing.expect_value(t, doc.plain, "hi! there")
-	testing.expect(t, text_document_delete_range(&doc, 2, 3))
+	testing.expect(t, text_document_delete_range(&doc, 2, 3, alloc))
 	testing.expect_value(t, doc.plain, "hi there")
-	testing.expect(t, text_document_splice_plain(&doc, 0, len(doc.plain), "x"))
+	testing.expect(t, text_document_splice_plain(&doc, 0, len(doc.plain), "x", alloc))
 	testing.expect_value(t, doc.plain, "x")
 
-	tagged := text_document_to_tagged(&doc)
+	tagged := text_document_to_tagged(&doc, alloc)
 	defer delete(tagged)
 	testing.expect(t, len(tagged) > 0)
 }
@@ -84,7 +85,6 @@ text_document_temp_edit_to_tagged_heap_owns_result :: proc(t: ^testing.T) {
 text_runs_to_tagged_serializes_bold :: proc(t: ^testing.T) {
 	runs := []Text_Run{{text = "x", style = {fields = {.font_weight}, font_weight = .Bold}}}
 	out := text_runs_to_tagged(runs)
-	defer delete(out)
 
 	testing.expect(t, strings.contains(out, "{b}"))
 	testing.expect(t, strings.contains(out, "{/b}"))

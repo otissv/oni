@@ -657,11 +657,13 @@ Calendar_Dates_Contains :: proc(dates: []Calendar_Date, date: Calendar_Date) -> 
 }
 
 /*
-Copies `dates` into a new slice allocated with `allocator`.
+Copies `dates` into a new slice allocated with `allocator` (default: temp).
+
+Pass `context.allocator` when the slice must outlive the current frame.
 */
 Calendar_Dates_Clone :: proc(
 	dates: []Calendar_Date,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> []Calendar_Date {
 	if len(dates) == 0 {
 		return nil

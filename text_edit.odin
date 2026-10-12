@@ -480,7 +480,7 @@ text_edit_plain_splice :: proc(
 	text: string,
 	start, end: int,
 	insert: string,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> (
 	new_text: string,
 	new_caret: int,
@@ -625,7 +625,7 @@ text_edit_backspace :: proc(
 	text: string,
 	caret: int,
 	selection: Text_Selection,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> (
 	new_text: string,
 	new_caret: int,
@@ -667,7 +667,7 @@ text_edit_backspace_word :: proc(
 	text: string,
 	caret: int,
 	selection: Text_Selection,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> (
 	new_text: string,
 	new_caret: int,
@@ -701,7 +701,7 @@ text_edit_delete :: proc(
 	text: string,
 	caret: int,
 	selection: Text_Selection,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> (
 	new_text: string,
 	new_caret: int,
@@ -743,7 +743,7 @@ text_edit_delete_word :: proc(
 	text: string,
 	caret: int,
 	selection: Text_Selection,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> (
 	new_text: string,
 	new_caret: int,

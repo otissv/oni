@@ -269,12 +269,11 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 		return {}, nil, false
 	}
 
-	cpath := strings.clone_to_cstring(face.path)
+	cpath := strings.clone_to_cstring(face.path, context.temp_allocator)
 	if cpath == nil {
 		Done_FreeType(library)
 		return {}, nil, false
 	}
-	defer delete(cpath)
 
 	if !ft_ok(New_Face(library, cpath, 0, &ft_face)) {
 		log_errorf("FT_New_Face failed for worker face %q", face.path)
@@ -294,8 +293,7 @@ font_open_temp_raster_face :: proc(face: ^Font_Face) -> (library: FT_Library, ft
 	mm: ^FT_MM_Var
 	if ft_ok(Get_MM_Var(ft_face, &mm)) && mm != nil && mm.num_axis > 0 {
 		defer Done_MM_Var(library, mm)
-		coords := make([]FT_Fixed, int(mm.num_axis))
-		defer delete(coords)
+		coords := make([]FT_Fixed, int(mm.num_axis), context.temp_allocator)
 		for i in 0 ..< int(mm.num_axis) {
 			coords[i] = mm.axis[i].def
 			tag := u32(mm.axis[i].tag)
@@ -499,7 +497,7 @@ font_rasterize_and_cache_missing :: proc(
 		return true
 	}
 
-	results := make([]Font_Glyph_Bitmap_Result, len(missing))
+	results := make([]Font_Glyph_Bitmap_Result, len(missing), context.temp_allocator)
 	defer {
 		for &r in results {
 			if r.surface != nil {
@@ -507,12 +505,10 @@ font_rasterize_and_cache_missing :: proc(
 				r.surface = nil
 			}
 		}
-		delete(results)
 	}
 
 	n_workers := min(FONT_GLYPH_MAX_WORKERS, len(missing))
-	worker_args := make([]Font_Glyph_Worker_Args, n_workers)
-	defer delete(worker_args)
+	worker_args := make([]Font_Glyph_Worker_Args, n_workers, context.temp_allocator)
 
 	base := 0
 	for w in 0 ..< n_workers {
@@ -528,12 +524,11 @@ font_rasterize_and_cache_missing :: proc(
 		base += count
 	}
 
-	threads := make([]^thread.Thread, n_workers)
+	threads := make([]^thread.Thread, n_workers, context.temp_allocator)
 	defer {
 		for t in threads {
 			if t != nil do thread.destroy(t)
 		}
-		delete(threads)
 	}
 
 	for w in 0 ..< n_workers {
@@ -1058,13 +1053,7 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 		render_mode: Font_Glyph_Render_Mode,
 	}
 
-	face_missing: map[Face_Mode][dynamic]u32
-	defer {
-		for _, list in face_missing {
-			delete(list)
-		}
-		delete(face_missing)
-	}
+	face_missing := make(map[Face_Mode][dynamic]u32, context.temp_allocator)
 
 	for paint in glyphs {
 		tint := default_color
@@ -1092,7 +1081,7 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 		}
 		list, ok := &face_missing[fm]
 		if !ok {
-			face_missing[fm] = make([dynamic]u32)
+			face_missing[fm] = make([dynamic]u32, context.temp_allocator)
 			list = &face_missing[fm]
 		}
 
@@ -1133,13 +1122,7 @@ font_ensure_glyphs_from_paint :: proc(
 
 	if !texture_atlas_init() do return false
 
-	face_missing: map[Asset_Id][dynamic]u32
-	defer {
-		for _, list in face_missing {
-			delete(list)
-		}
-		delete(face_missing)
-	}
+	face_missing := make(map[Asset_Id][dynamic]u32, context.temp_allocator)
 
 	for paint in glyphs {
 		key := Font_Glyph_Key {
@@ -1152,7 +1135,7 @@ font_ensure_glyphs_from_paint :: proc(
 
 		list, ok := &face_missing[paint.face_id]
 		if !ok {
-			face_missing[paint.face_id] = make([dynamic]u32)
+			face_missing[paint.face_id] = make([dynamic]u32, context.temp_allocator)
 			list = &face_missing[paint.face_id]
 		}
 

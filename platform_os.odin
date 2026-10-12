@@ -80,9 +80,11 @@ open_url :: proc(url: string) -> bool {
 }
 
 /*
-Returns UTF-8 clipboard text copied to the heap, or false when empty/unavailable.
+Returns UTF-8 clipboard text copied with `allocator` (default: temp), or false when empty/unavailable.
+
+Pass `context.allocator` when the result must outlive the current frame.
 */
-clipboard_get_text :: proc(allocator := context.allocator) -> (text: string, ok: bool) {
+clipboard_get_text :: proc(allocator := context.temp_allocator) -> (text: string, ok: bool) {
 	raw := sdl.GetClipboardText()
 	if raw == nil do return {}, false
 

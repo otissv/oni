@@ -53,7 +53,13 @@ text_edit_widget_insert_text :: proc(
 
 	o.text_edit_record_mutation(edit, plain, o.state.ui.frame)
 	start, end := o.text_edit_selection_normalized(edit.selection)
-	new_plain, edit.caret = o.text_edit_plain_splice(plain, start, end, truncated)
+	new_plain, edit.caret = o.text_edit_plain_splice(
+		plain,
+		start,
+		end,
+		truncated,
+		context.temp_allocator,
+	)
 	edit.selection = {edit.caret, edit.caret}
 	edit.has_preferred_column = false
 
@@ -617,7 +623,13 @@ text_edit_widget_consume_commands :: proc(
 		if opts.editable && o.text_edit_copy_plain(plain, edit.selection) {
 			o.text_edit_record_mutation(edit, plain, o.state.ui.frame)
 			start, end := o.text_edit_selection_normalized(edit.selection)
-			new_plain, edit.caret = o.text_edit_plain_splice(plain, start, end, "")
+			new_plain, edit.caret = o.text_edit_plain_splice(
+				plain,
+				start,
+				end,
+				"",
+				context.temp_allocator,
+			)
 			edit.selection = {edit.caret, edit.caret}
 			edit.has_preferred_column = false
 			changed = true
@@ -792,13 +804,18 @@ text_edit_widget_apply_pending_shortcut_input :: proc(
 		result_changed: bool
 
 		if nav.ctrl {
-			result_plain, result_caret, result_sel, result_changed =
-				o.text_edit_backspace_word(new_plain, edit.caret, edit.selection)
+			result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace_word(
+				new_plain,
+				edit.caret,
+				edit.selection,
+				context.temp_allocator,
+			)
 		} else {
 			result_plain, result_caret, result_sel, result_changed = o.text_edit_backspace(
 				new_plain,
 				edit.caret,
 				edit.selection,
+				context.temp_allocator,
 			)
 		}
 
@@ -831,13 +848,18 @@ text_edit_widget_apply_pending_shortcut_input :: proc(
 		result_changed: bool
 
 		if nav.ctrl {
-			result_plain, result_caret, result_sel, result_changed =
-				o.text_edit_delete_word(new_plain, edit.caret, edit.selection)
+			result_plain, result_caret, result_sel, result_changed = o.text_edit_delete_word(
+				new_plain,
+				edit.caret,
+				edit.selection,
+				context.temp_allocator,
+			)
 		} else {
 			result_plain, result_caret, result_sel, result_changed = o.text_edit_delete(
 				new_plain,
 				edit.caret,
 				edit.selection,
+				context.temp_allocator,
 			)
 		}
 

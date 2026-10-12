@@ -44,12 +44,12 @@ platform_os_clipboard_round_trip :: proc(t: ^testing.T) {
 	testing.expect(t, ok)
 
 	got, got_ok := clipboard_get_text()
-	defer delete(got)
-
 	testing.expect(t, got_ok)
 	testing.expect_value(t, got, sample)
 
-	temp_got, temp_ok := clipboard_get_text(context.temp_allocator)
-	testing.expect(t, temp_ok)
-	testing.expect_value(t, temp_got, sample)
+	heap_got, heap_ok := clipboard_get_text(context.allocator)
+	defer delete(heap_got)
+
+	testing.expect(t, heap_ok)
+	testing.expect_value(t, heap_got, sample)
 }

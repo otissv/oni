@@ -1402,7 +1402,7 @@ shortcut_text_input_effective :: proc(focused_id: string) -> bool {
 /*
 Collects bindings that share the same trigger and overlapping scopes with different action ids.
 */
-shortcut_collect_conflicts :: proc(allocator := context.allocator) -> []Shortcut_Conflict {
+shortcut_collect_conflicts :: proc(allocator := context.temp_allocator) -> []Shortcut_Conflict {
 	if state == nil do return nil
 
 	out := make([dynamic]Shortcut_Conflict, allocator)

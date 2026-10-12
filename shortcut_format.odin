@@ -34,9 +34,9 @@ Shortcut_Parsed_Binding :: struct {
 /*
 Serializes current settings and user shortcut bindings as settings.kdl.
 
-Caller owns the returned string (allocator).
+Default allocator is temp. Pass `context.allocator` when the caller must own the string.
 */
-shortcut_export_bindings :: proc(allocator := context.allocator) -> string {
+shortcut_export_bindings :: proc(allocator := context.temp_allocator) -> string {
 	return settings_export(allocator)
 }
 
@@ -96,7 +96,7 @@ shortcut_import_bindings_ex :: proc(data: string, replace_user := true) -> Short
 @(private)
 shortcut_format_trigger_token :: proc(
 	binding: Shortcut_Binding,
-	allocator := context.allocator,
+	allocator := context.temp_allocator,
 ) -> string {
 	b := strings.builder_make(allocator)
 	shortcut_write_mods(&b, binding.chord)
@@ -141,7 +141,7 @@ shortcut_write_mods :: proc(b: ^strings.Builder, chord: Shortcut_Chord) {
 }
 
 @(private)
-shortcut_key_token :: proc(key: Scancode, allocator := context.allocator) -> string {
+shortcut_key_token :: proc(key: Scancode, allocator := context.temp_allocator) -> string {
 	#partial switch key {
 	case .EQUALS:
 		return "EQUAL"
@@ -217,7 +217,7 @@ shortcut_key_token :: proc(key: Scancode, allocator := context.allocator) -> str
 }
 
 @(private)
-shortcut_upper_snake :: proc(name: string, allocator := context.allocator) -> string {
+shortcut_upper_snake :: proc(name: string, allocator := context.temp_allocator) -> string {
 	b := strings.builder_make(allocator)
 	prev_underscore := true
 	for r in name {
@@ -559,7 +559,7 @@ shortcut_parse_key_token :: proc(token: string) -> (Scancode, bool) {
 }
 
 @(private)
-shortcut_insert_spaces_pascal :: proc(token: string, allocator := context.allocator) -> string {
+shortcut_insert_spaces_pascal :: proc(token: string, allocator := context.temp_allocator) -> string {
 	b := strings.builder_make(allocator)
 	for r, i in token {
 		if i > 0 && unicode.is_upper(r) {
