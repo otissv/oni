@@ -58,6 +58,8 @@ button_theme_base :: proc(frame_state: ^Button_State) -> Button_Config {
 		line_height = set.F32(1),
 		border = set.Border(1),
 		border_color = set.Border_color(o.Color.TRANSPARENT),
+		width = set.Width(.FIT),
+		wrap = set.Wrap(.NONE),
 	}
 }
 
