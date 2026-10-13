@@ -536,6 +536,20 @@ Widget_Kind :: enum {
 	TABS_TRIGGER,
 	// Tab panel content.
 	TABS_CONTENT,
+	// Popover root (shadcn Popover).
+	POPOVER,
+	// Popover trigger.
+	POPOVER_TRIGGER,
+	// Popover floating content panel.
+	POPOVER_CONTENT,
+	// Modal dialog root (shadcn Dialog).
+	DIALOG,
+	// Dialog trigger.
+	DIALOG_TRIGGER,
+	// Dialog viewport-fixed scrim overlay.
+	DIALOG_SCRIM,
+	// Dialog centered content panel.
+	DIALOG_CONTENT,
 }
 
 /*
@@ -639,7 +653,11 @@ f32_i_is_set :: proc(v: F32_I) -> bool {
 How a resolved axis length should be interpreted by layout.
 */
 Length_Kind :: enum {
-	// Size from content / available space heuristics.
+	// Zero-value / unresolved Length. Layout treats this as content-sized on both
+	// axes (historical test default). Author-time unset width resolves to `.GROW`
+	// and unset height to `.AUTO` via `resolve_length_from_*`.
+	UNSET,
+	// Width: content size (empty may stretch). Height: fill parent content area.
 	AUTO,
 	// Explicit pixel size in `value`.
 	FIXED,
@@ -647,9 +665,9 @@ Length_Kind :: enum {
 	PERCENT,
 	// Match the parent axis size.
 	INHERIT,
-	// CSS fit-content on this axis.
+	// CSS fit-content: shrink to content, clamped to available when known.
 	FIT,
-	// Grow into free space on this axis.
+	// Take free space on this axis (flex weight 1 when `flex` unset).
 	GROW,
 	// CSS min-content on this axis.
 	MIN_CONTENT,
@@ -1470,9 +1488,11 @@ Dim_struct :: struct {
 /*
 Author-time width keyword.
 
+Unset width resolves to `.GROW` (see `resolve_length_from_width`).
+
 `.AUTO` — content size; may stretch to bounds when content is empty.
-`.FIT` — CSS `fit-content`: content size clamped to available space.
-`.GROW` — take free space on this axis (flex weight 1 when `flex` unset).
+`.FIT` — CSS `fit-content`: shrink to content, clamped to available space.
+`.GROW` — take free space on this axis (flex weight 1 when `flex` unset). Default when unset.
 `.MIN_CONTENT` — CSS `min-content`: smallest size without avoidable overflow.
 `.MAX_CONTENT` — CSS `max-content`: size that fits content without soft-wrap.
 `.INHERIT` — match parent axis size.
@@ -1484,7 +1504,7 @@ Width_Mode :: enum {
 	AUTO,
 	// CSS fit-content on the horizontal axis.
 	FIT,
-	// Grow into free horizontal space.
+	// Grow into free horizontal space. Default when width is unset.
 	GROW,
 	// CSS min-content width.
 	MIN_CONTENT,
@@ -1493,7 +1513,7 @@ Width_Mode :: enum {
 }
 
 /*
-Author-time width: empty (theme), keyword, fixed px, dim struct, or reactive proc.
+Author-time width: empty (defaults to `.GROW`), keyword, fixed px, dim struct, or reactive proc.
 */
 Width :: union {
 	struct{},
@@ -1504,16 +1524,25 @@ Width :: union {
 }
 
 /*
-Author-time height keyword. Same semantics as `Width_Mode` on the vertical axis.
+Author-time height keyword.
+
+Unset height is content-sized (`Length_Kind.UNSET` via `resolve_length_from_height`).
+
+`.GROW` — fill free vertical space (flex weight 1 when `flex` unset).
+`.AUTO` — fill the parent content area (scrollport viewport; does not grow with content).
+`.FIT` — shrink to content size, clamped to available space (CSS `fit-content`).
+`.MIN_CONTENT` — CSS `min-content` height.
+`.MAX_CONTENT` — CSS `max-content` height.
+`.INHERIT` — match parent axis size.
 */
 Height_Mode :: enum {
 	// Match the parent height.
 	INHERIT,
-	// Size from content; may stretch when empty.
+	// Fill the parent content area (scrollport viewport).
 	AUTO,
 	// CSS fit-content on the vertical axis.
 	FIT,
-	// Grow into free vertical space.
+	// Fill free vertical space.
 	GROW,
 	// CSS min-content height.
 	MIN_CONTENT,
@@ -1522,7 +1551,7 @@ Height_Mode :: enum {
 }
 
 /*
-Author-time height: empty (theme), keyword, fixed px, dim struct, or reactive proc.
+Author-time height: empty (content-sized), keyword, fixed px, dim struct, or reactive proc.
 */
 Height :: union {
 	struct{},
@@ -1560,7 +1589,8 @@ Text_Wrap_Kind :: enum {
 	NONE,
 	// Wrap only at explicit newline characters.
 	NEWLINES,
-	// Wrap to balance line lengths within the container width.
+	// Soft-wrap at break opportunities, then balance line lengths.
+	// Unbreakable runs never split mid-word; they may overflow the box.
 	BALANCE,
 	// Wrap at the container width, preserving whitespace/newlines.
 	PRESERVE,
@@ -1947,17 +1977,17 @@ Window DPI scale, logical vs drawable pixels, and display subpixel order.
 */
 Dpi_Info :: struct {
 	// Logical-to-drawable scale factor (1.0 = 100% DPI).
-	scale:                  f32,
+	scale:          f32,
 	// Window width in logical design pixels.
-	logical_w:              i32,
+	logical_w:      i32,
 	// Window height in logical design pixels.
-	logical_h:              i32,
+	logical_h:      i32,
 	// Drawable / framebuffer width in physical pixels.
-	drawable_w:             i32,
+	drawable_w:     i32,
 	// Drawable / framebuffer height in physical pixels.
-	drawable_h:             i32,
+	drawable_h:     i32,
 	// Active LCD subpixel order for text rasterization.
-	subpixel_order:         Display_Subpixel_Order,
+	subpixel_order: Display_Subpixel_Order,
 }
 
 /*
@@ -2182,39 +2212,39 @@ Per-frame input snapshot: mouse, keyboard, text input, modifiers, and gamepad.
 */
 Input_State :: struct {
 	// Pointer X in logical design pixels.
-	mouse_x:           f32,
+	mouse_x:             f32,
 	// Pointer Y in logical design pixels.
-	mouse_y:           f32,
+	mouse_y:             f32,
 	// Left mouse button is held.
-	mouse_left:        bool,
+	mouse_left:          bool,
 	// Right mouse button is held.
-	mouse_right:       bool,
+	mouse_right:         bool,
 	// Middle mouse button is held.
-	mouse_middle:      bool,
+	mouse_middle:        bool,
 	// Click count for the latest left press.
-	mouse_left_clicks: int,
+	mouse_left_clicks:   int,
 	// Click count for the latest right press.
-	mouse_right_clicks: int,
+	mouse_right_clicks:  int,
 	// Click count for the latest middle press.
 	mouse_middle_clicks: int,
 	// Horizontal wheel delta this frame.
-	mouse_wheel_x:     f32,
+	mouse_wheel_x:       f32,
 	// Vertical wheel delta this frame.
-	mouse_wheel_y:     f32,
+	mouse_wheel_y:       f32,
 	// Per-scancode key held state.
-	keys_down:         [KEY_COUNT]bool,
+	keys_down:           [KEY_COUNT]bool,
 	// Per-scancode key-repeat pulses this frame.
-	keys_repeat:       [KEY_COUNT]bool,
+	keys_repeat:         [KEY_COUNT]bool,
 	// UTF-8 text committed this frame (IME / key typing).
-	text_input:        [dynamic]u8,
+	text_input:          [dynamic]u8,
 	// Current IME composition string (borrowed / transient).
-	ime_text:          string,
+	ime_text:            string,
 	// IME caret offset within `ime_text`.
-	ime_cursor:        int,
+	ime_cursor:          int,
 	// IME selection / composition length hint.
-	ime_length:        int,
+	ime_length:          int,
 	// Modifier keys for this frame.
-	modifiers:         Input_Modifiers,
+	modifiers:           Input_Modifiers,
 	// Primary gamepad snapshot for this frame.
-	gamepad:           Gamepad_Input,
+	gamepad:             Gamepad_Input,
 }

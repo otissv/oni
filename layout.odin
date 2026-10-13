@@ -13,14 +13,14 @@ Author text and optional wrap-width hint for leaf text measurement.
 BALANCE text (0 when height was not soft-wrap measured).
 */
 Layout_Measure :: struct {
-	text:             string,
-	edit_plain:       string,
-	edit_plain_set:   bool,
-	max_w:            f32,
-	measured_wrap_w:  f32,
-	runs:             []Layout_Text_Run,
-	rich:             bool,
-	tag_diagnostics:  bool,
+	text:            string,
+	edit_plain:      string,
+	edit_plain_set:  bool,
+	max_w:           f32,
+	measured_wrap_w: f32,
+	runs:            []Layout_Text_Run,
+	rich:            bool,
+	tag_diagnostics: bool,
 }
 
 /*
@@ -103,44 +103,48 @@ Layout_Collapsed_Borders :: struct {
 One node in the flex layout tree with resolved style, geometry, and children.
 */
 Layout_Node :: struct {
-	index:             int,
-	ui_id:             UI_Id,
-	kind:              Widget_Kind,
-	config:            Resolved_Widget_Style,
-	direction_info:    Layout_Direction_Info,
-	margin:            Mg_px,
-	padding:           Pd_px,
-	border:            Bd_px,
-	desired:           Vec2,
-	intrinsic_min:     Vec2,
-	rect:              Rect,
-	parent:            int,
-	child_indices:     [dynamic]int,
-	wrap_lines:        []Layout_Wrap_Line,
-	measure:                       Layout_Measure,
-	text:                          Layout_Text,
-	image_input:                   Layout_Image_Input,
-	image:                         Layout_Image,
-	collapsed_borders:             Layout_Collapsed_Borders,
-	slider_input:                  Layout_Slider_Input,
-	slider:                        Layout_Slider,
-	scroll_bar_input:              Layout_Scroll_Bar_Input,
-	scroll_bar:                    Layout_Scroll_Bar,
-	color_picker_channels_input:   Layout_Color_Picker_Channels_Input,
-	color_picker_channels:         Layout_Color_Picker_Channels,
-	calendar_input:                Layout_Calendar_Input,
-	calendar:                      Layout_Calendar,
-	stack_index:                   u32,
-	paint_skip:                    bool,
-	hit_skip:                      bool,
-	in_flex_flow:                  bool,
-	clip_rect:                     Rect,
-	has_clip:                      bool,
-	space:                         Draw_Space,
-	content_size:                  Vec2,
-	viewport_size:                 Vec2,
-	scroll:                        Vec2,
-	max_scroll:                    Vec2,
+	index:                       int,
+	ui_id:                       UI_Id,
+	kind:                        Widget_Kind,
+	config:                      Resolved_Widget_Style,
+	direction_info:              Layout_Direction_Info,
+	margin:                      Mg_px,
+	padding:                     Pd_px,
+	border:                      Bd_px,
+	desired:                     Vec2,
+	intrinsic_min:               Vec2,
+	rect:                        Rect,
+	parent:                      int,
+	child_indices:               [dynamic]int,
+	wrap_lines:                  []Layout_Wrap_Line,
+	measure:                     Layout_Measure,
+	text:                        Layout_Text,
+	image_input:                 Layout_Image_Input,
+	image:                       Layout_Image,
+	collapsed_borders:           Layout_Collapsed_Borders,
+	slider_input:                Layout_Slider_Input,
+	slider:                      Layout_Slider,
+	scroll_bar_input:            Layout_Scroll_Bar_Input,
+	scroll_bar:                  Layout_Scroll_Bar,
+	color_picker_channels_input: Layout_Color_Picker_Channels_Input,
+	color_picker_channels:       Layout_Color_Picker_Channels,
+	calendar_input:              Layout_Calendar_Input,
+	calendar:                    Layout_Calendar,
+	stack_index:                 u32,
+	paint_skip:                  bool,
+	hit_skip:                    bool,
+	in_flex_flow:                bool,
+	clip_rect:                   Rect,
+	has_clip:                    bool,
+	// Ancestor overflow clip for hit-testing (excludes this node's own content-box
+	// overflow inset so padding/border remain hittable on scrollports).
+	hit_clip_rect:               Rect,
+	has_hit_clip:                bool,
+	space:                       Draw_Space,
+	content_size:                Vec2,
+	viewport_size:               Vec2,
+	scroll:                      Vec2,
+	max_scroll:                  Vec2,
 }
 
 /*
@@ -169,12 +173,22 @@ Layout_Anchor_Below :: struct {
 /*
 Viewport-aware floating relation used by menu-like popovers.
 */
+/*
+Horizontal alignment of a popup relative to its anchor width.
+*/
+Layout_Popup_Align :: enum {
+	START,
+	CENTER,
+	END,
+}
+
 Layout_Popup_Anchor :: struct {
 	anchor_id:   UI_Id,
 	floating_id: UI_Id,
 	gap:         f32,
 	margin:      f32,
 	match_width: bool,
+	align:       Layout_Popup_Align,
 }
 
 /*
@@ -672,10 +686,7 @@ layout_inner_rect :: proc(outer: Rect, border: Bd_px, padding: Pd_px) -> Rect {
 Expands a border-box size by margin to the margin-box size used in flex flow.
 */
 layout_size_with_margin :: proc(size: Vec2, margin: Mg_px) -> Vec2 {
-	return {
-		size.x + margin.l + margin.r,
-		size.y + margin.t + margin.b,
-	}
+	return {size.x + margin.l + margin.r, size.y + margin.t + margin.b}
 }
 
 /*
@@ -899,18 +910,11 @@ layout_text_sync_height_for_assigned_width :: proc(node: ^Layout_Node, assigned_
 	inset_w := layout_text_horizontal_insets(node)
 	inset_h := layout_text_vertical_insets(node)
 
-	node.desired.y = layout_clamp_axis(
-		measured.y + inset_h,
-		node.config.min_h,
-		node.config.max_h,
-	)
+	node.desired.y = layout_clamp_axis(measured.y + inset_h, node.config.min_h, node.config.max_h)
 
-	if !length_is_definite(node.config.width) {
-		node.desired.x = layout_clamp_axis(
-			wrap_w + inset_w,
-			node.config.min_w,
-			node.config.max_w,
-		)
+	// `.GROW` keeps a content basis; do not rewrite desired width to the wrap box.
+	if !length_is_definite(node.config.width) && !length_is_grow(node.config.width) {
+		node.desired.x = layout_clamp_axis(wrap_w + inset_w, node.config.min_w, node.config.max_w)
 	}
 
 	node.measure.measured_wrap_w = wrap_w
@@ -919,13 +923,15 @@ layout_text_sync_height_for_assigned_width :: proc(node: ^Layout_Node, assigned_
 /*
 Measures text size for layout `desired` calculation.
 
-When BALANCE wrap width is known (fixed/`max_w`) or provisionally available
-(parent content width), soft-wrap shapes through the cache and returns that
-height so siblings and ancestors pack correctly in the same layout pass.
+When BALANCE wrap width is known (fixed/`max_w`) or provisionally available,
+soft-wrap shapes for height so column siblings pack in the same layout pass.
 
-Otherwise uses a FreeType advance estimate scaled by `layout_scale` (no HarfBuzz
-during measure — paint shapes in finalize). `.FIT` parents pass provisional_w 0
-so BALANCE takes the max-content estimate instead of stretching to the row.
+Desired width:
+- Definite width → the wrap box width
+- `.GROW` / `.FIT` / min/max-content / `.AUTO` → max-content width (not the
+  provisional parent width). That keeps grow/fit controls correct under theme
+  `wrap = .BALANCE` without requiring `wrap = .NONE`. Soft-wrap height still
+  uses the provisional width when available.
 */
 layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec2 {
 	if !layout_node_has_text(node) do return {}
@@ -954,12 +960,35 @@ layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec
 	wrap_w, wrap_known := layout_text_wrap_width_known(node)
 	effective_w := wrap_known ? wrap_w : provisional_w
 
-	if wrap == .BALANCE && effective_w > 0 && !length_is_intrinsic(config.width) {
+	if wrap == .BALANCE && effective_w > 0 && !length_is_min_content(config.width) {
 		measured := layout_text_measure_at_wrap_w(node, effective_w)
 		if measured.y > 0 {
 			node.measure.measured_wrap_w = effective_w
 
-			return {effective_w, measured.y}
+			if length_is_definite(config.width) {
+				return {effective_w, measured.y}
+			}
+
+			// Indefinite width: content basis capped by provisional (not forced to
+			// fill the row). Soft-wrap height still uses provisional width.
+			max_content := layout_text_measure_at_wrap_w(node, 0)
+			if max_content.x > 0 {
+				return {min(max_content.x, effective_w), measured.y}
+			}
+
+			return measured
+		}
+	}
+
+	// Max-content BALANCE: unconstrained shape when no wrap width is available.
+	if wrap == .BALANCE &&
+	   !length_is_min_content(config.width) &&
+	   (effective_w <= 0 || length_is_intrinsic(config.width)) {
+		measured := layout_text_measure_at_wrap_w(node, 0)
+		if measured.y > 0 {
+			node.measure.measured_wrap_w = 0
+
+			return measured
 		}
 	}
 
@@ -1029,9 +1058,7 @@ layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec
 			width = min(width, effective_w)
 		}
 	case .BALANCE:
-		if effective_w > 0 && !length_is_intrinsic(config.width) {
-			width = effective_w
-		} else if length_is_min_content(config.width) {
+		if length_is_min_content(config.width) {
 			width =
 				font_text_min_content_advance_estimate(
 					face,
@@ -1039,6 +1066,8 @@ layout_text_estimate_size :: proc(node: ^Layout_Node, provisional_w: f32) -> Vec
 					shape_letter_spacing,
 				) *
 				layout_scale
+		} else if effective_w > 0 && length_is_definite(config.width) {
+			width = effective_w
 		} else {
 			width =
 				font_text_max_line_advance_estimate(
@@ -1308,9 +1337,9 @@ layout_glyph_paint_quad :: proc(
 	glyph_y := baseline_y + glyph.y_offset * layout_scale - by
 
 	return Layout_Glyph_Paint {
-			face_id   = face_id,
-			glyph_id  = glyph.glyph_id,
-			dst       = {
+			face_id = face_id,
+			glyph_id = glyph.glyph_id,
+			dst = {
 				x = snap_logical(glyph_x + bx),
 				y = snap_logical(glyph_y),
 				w = w * layout_scale,
@@ -1360,10 +1389,7 @@ layout_parent_effective_opacity :: proc(node: ^Layout_Node) -> f32 {
 /*
 LCD/gray render mode from the same draw-state inputs used at paint time.
 */
-layout_text_render_mode :: proc(
-	tint_a: u8,
-	effective_opacity: f32,
-) -> Font_Glyph_Render_Mode {
+layout_text_render_mode :: proc(tint_a: u8, effective_opacity: f32) -> Font_Glyph_Render_Mode {
 	return font_glyph_render_mode_for_draw(
 		{tint_a = tint_a, effective_opacity = effective_opacity, axis_aligned = true},
 	)
@@ -2189,6 +2215,8 @@ layout_measure_leaf :: proc(node: ^Layout_Node) -> Vec2 {
 
 	if layout_node_has_text(node) {
 		available_w := ui_style_current().content_w
+		// Intrinsic axes ignore provisional width entirely. `.GROW` still receives
+		// provisional width for BALANCE height, but desired width stays max-content.
 		if length_is_intrinsic(node.config.width) {
 			available_w = 0
 		}
@@ -2264,12 +2292,14 @@ layout_text_min_content_width :: proc(node: ^Layout_Node) -> f32 {
 	face := font_face_from_handle(resolved_font)
 	if face == nil do return 0
 
-	return font_text_min_content_advance_estimate(
-		face,
-		node.measure.text,
-		config.letter_spacing / layout_scale,
-	) *
-	layout_scale
+	return(
+		font_text_min_content_advance_estimate(
+			face,
+			node.measure.text,
+			config.letter_spacing / layout_scale,
+		) *
+		layout_scale \
+	)
 }
 
 /*
@@ -2308,19 +2338,20 @@ layout_measure :: proc(node: ^Layout_Node) -> Vec2 {
 		cross_max: f32
 		for child, i in child_nodes {
 			outer := layout_size_with_margin(child_sizes[i], child.margin)
-			// Main-axis `.GROW` / flex items are omitted from the intrinsic main
-			// sum (zero basis), but still contribute to cross size so a
-			// content-sized parent keeps the correct height/width.
-			grows_main := layout_child_main_grow_weight(child, info.is_horizontal) > 0
+			// Explicit `flex` keeps a zero main-axis basis and is omitted from the
+			// intrinsic main sum. Axis `.GROW` contributes content size so `.FIT`
+			// ancestors can hug default-width children.
+			main_len := info.is_horizontal ? child.config.width : child.config.height
+			omit_main := child.config.flex > 0 && !length_is_definite(main_len)
 
 			if info.is_horizontal {
-				if !grows_main {
+				if !omit_main {
 					main_sum += outer.x
 				}
 
 				cross_max = max(cross_max, outer.y)
 			} else {
-				if !grows_main {
+				if !omit_main {
 					main_sum += outer.y
 				}
 
@@ -2660,9 +2691,14 @@ layout_pop_node :: proc() {
 /*
 Resolves one axis size from length kind, desired content, and available space.
 
-`.FIT` is CSS fit-content: `min(desired, available)` when available is known.
-`.GROW` fills available space (used for roots / non-flex placement).
-`.AUTO` uses content, then stretches to available when content is empty.
+`.FIT` is CSS fit-content: shrink to content (`min(desired, available)` when
+available is known).
+`.GROW` fills available / free space on this axis.
+`.UNSET` uses content, then stretches to available when content is empty.
+
+Width `.AUTO` uses content (empty may stretch). Height `.AUTO` fills the parent
+content area (scrollport viewport).
+
 `.MIN_CONTENT` / `.MAX_CONTENT` use the intrinsic size (`desired` already
 selected by the caller); they never stretch to available or clamp like fit.
 */
@@ -2672,6 +2708,7 @@ layout_resolve_axis_size :: proc(
 	available: f32,
 	min_v: f32,
 	max_v: f32,
+	is_height := false,
 ) -> f32 {
 	size: f32
 
@@ -2683,11 +2720,18 @@ layout_resolve_axis_size :: proc(
 	case .FIT:
 		size = desired
 		if available > 0 do size = min(size, available)
+	case .UNSET:
+		size = desired
+		if size <= 0 && available > 0 do size = available
 	case .GROW:
 		size = available > 0 ? available : desired
 	case .AUTO:
-		size = desired
-		if size <= 0 && available > 0 do size = available
+		if is_height {
+			size = available > 0 ? available : desired
+		} else {
+			size = desired
+			if size <= 0 && available > 0 do size = available
+		}
 	case .MIN_CONTENT, .MAX_CONTENT:
 		size = desired
 	}
@@ -2720,6 +2764,7 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 			bounds.w,
 			node.config.min_w,
 			node.config.max_w,
+			false,
 		),
 		layout_resolve_axis_size(
 			node.config.height,
@@ -2727,6 +2772,7 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 			bounds.h,
 			node.config.min_h,
 			node.config.max_h,
+			true,
 		),
 	}
 }
@@ -2741,27 +2787,46 @@ layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2
 }
 
 /*
-Flex/grow weight on the main axis. Explicit `flex` wins; otherwise `.GROW`
+Flex/grow weight on the main axis. Explicit `flex` wins; otherwise axis `.GROW`
 contributes weight 1. Definite main sizes never grow.
 */
 layout_child_main_grow_weight :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
 	main_len := is_horizontal ? child.config.width : child.config.height
 	if length_is_definite(main_len) do return 0
 	if child.config.flex > 0 do return child.config.flex
-	if length_is_grow(main_len) do return 1
+	if length_fills_free_space(main_len) do return 1
 
 	return 0
 }
 
 /*
+Returns the main-axis flex basis before free-space distribution.
+
+Explicit `flex` keeps a zero basis (CSS `flex: 1 1 0%`). Axis `.GROW` uses
+content desired as basis so default-width widgets hug under `.FIT` ancestors
+and still expand into leftover free space.
+*/
+layout_child_main_grow_basis :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
+	main_len := is_horizontal ? child.config.width : child.config.height
+	if length_is_definite(main_len) do return 0
+	if child.config.flex > 0 do return 0
+	if !length_fills_free_space(main_len) do return 0
+
+	return is_horizontal ? child.desired.x : child.desired.y
+}
+
+/*
 Computes a child's main-axis size including flex / grow distribution.
 
-`flex` and `.GROW` share free space from a zero basis: the item receives
-exactly `flex_unit * weight` (CSS `flex: 1` / `1 1 0%`). When no free space
-remains (`flex_unit == 0`), grow items collapse to 0 on the main axis.
+Explicit `flex` shares free space from a zero basis (CSS `flex: 1` /
+`1 1 0%`). Axis `.GROW` uses content desired as basis, then adds
+`flex_unit * weight` of remaining free space. When the line overflows,
+`flex_unit` is negative and GROW/flex items shrink so constrained parents
+(e.g. height `.GROW` scrollports) keep a viewport and scroll excess content.
 
-`.FIT` is content-sized and clamped to `parent_main` when available (CSS
-fit-content).
+Height `.AUTO` fills `parent_main` when available (parent content area /
+scrollport viewport) without flex weight. `.FIT` is content-sized and clamped
+to `parent_main` when available (CSS fit-content).
 */
 layout_child_main_size :: proc(
 	child: ^Layout_Node,
@@ -2775,11 +2840,17 @@ layout_child_main_size :: proc(
 
 	weight := layout_child_main_grow_weight(child, is_horizontal)
 	if weight > 0 {
-		if flex_unit > 0 {
-			return flex_unit * weight
+		basis := layout_child_main_grow_basis(child, is_horizontal)
+		if flex_unit != 0 {
+			return max(0, basis + flex_unit * weight)
 		}
 
-		return 0
+		return basis
+	}
+
+	// Height `.AUTO` fills the parent content area (not flex free-space weight).
+	if !is_horizontal && length_height_fills_parent(main_len) && parent_main > 0 {
+		return parent_main
 	}
 
 	desired := is_horizontal ? child.desired.x : child.desired.y
@@ -2812,6 +2883,8 @@ layout_child_in_main_flow :: proc(child: ^Layout_Node, is_horizontal: bool) -> b
 
 /*
 Computes a child's cross-axis size including stretch alignment.
+
+Intrinsic cross sizes (`.FIT` / min/max-content) are not stretched.
 */
 layout_child_cross_size :: proc(
 	child: ^Layout_Node,
@@ -2827,7 +2900,10 @@ layout_child_cross_size :: proc(
 	if cross_fixed > 0 do return cross_fixed
 
 	self := child.config.self
-	cross_stretch := child.config.flex > 0 || length_is_grow(cross_len)
+	cross_stretch :=
+		child.config.flex > 0 ||
+		length_fills_free_space(cross_len) ||
+		(is_horizontal && length_height_fills_parent(cross_len))
 	if is_horizontal {
 		if _, y_ok := resolve_justify_y(self.y); y_ok {
 			cross_stretch ||= justify_axis_is_stretch_y(self.y)
@@ -2842,7 +2918,9 @@ layout_child_cross_size :: proc(
 		}
 	}
 
-	if cross_stretch && cross_for_border > 0 {
+	// Intrinsic cross sizes (FIT / min/max-content) are definite for stretch
+	// purposes: CSS fit-content does not expand under align-items: stretch.
+	if cross_stretch && cross_for_border > 0 && !length_is_intrinsic(cross_len) {
 		return cross_for_border
 	}
 
@@ -3455,7 +3533,72 @@ layout_position_out_of_flow_children :: proc(node: ^Layout_Node) {
 }
 
 /*
+Grows a content-sized parent from post-finalize child rects.
+
+Used after children have been positioned and may have grown (nested BALANCE
+text, content-sized descendants). Same fill/scrollport exclusions as
+`layout_grow_content_sized_parent_for_children`.
+*/
+@(private)
+layout_fit_content_sized_parent_to_child_rects :: proc(
+	node: ^Layout_Node,
+	content: ^Rect,
+	is_horizontal: bool,
+	gap_main: f32,
+) {
+	if node == nil || content == nil do return
+	if length_is_definite(node.config.height) do return
+	if !length_height_expands_with_content(node.config.height) do return
+	if layout_node_scrolls_axis(node.config.overflow_y) do return
+
+	if is_horizontal {
+		cross_max: f32
+		for child_index in node.child_indices {
+			child := &state.ui.layout.nodes[child_index]
+			if !layout_child_in_main_flow(child, true) do continue
+			outer := layout_size_with_margin({child.rect.w, child.rect.h}, child.margin)
+			cross_max = max(cross_max, outer.y)
+		}
+
+		inset_h := node.padding.t + node.padding.b + node.border.t + node.border.b
+		needed := layout_clamp_axis(cross_max + inset_h, node.config.min_h, node.config.max_h)
+		if needed > node.rect.h {
+			node.rect.h = needed
+			node.desired.y = needed
+			content.h = max(0, needed - inset_h)
+		}
+
+		return
+	}
+
+	main_sum: f32
+	in_flow := 0
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		if !layout_child_in_main_flow(child, false) do continue
+		if in_flow > 0 do main_sum += gap_main
+		outer := layout_size_with_margin({child.rect.w, child.rect.h}, child.margin)
+		main_sum += outer.y
+		in_flow += 1
+	}
+
+	inset_h := node.padding.t + node.padding.b + node.border.t + node.border.b
+	needed := layout_clamp_axis(main_sum + inset_h, node.config.min_h, node.config.max_h)
+	if needed > node.rect.h {
+		node.rect.h = needed
+		node.desired.y = needed
+		content.h = max(0, needed - inset_h)
+	}
+}
+
+/*
 Grows a content-sized parent so soft-wrap remasured children still fit in-flow.
+
+Height `.AUTO` (parent content area) and `.GROW` (free space) must not expand
+with content — that would collapse scroll range on overflow scrollports.
+Vertical scrollports likewise keep a fixed viewport; excess scrolls. Height
+`.FIT` / unresolved content parents still grow so remasured text packs
+siblings correctly.
 */
 @(private)
 layout_grow_content_sized_parent_for_children :: proc(
@@ -3466,10 +3609,11 @@ layout_grow_content_sized_parent_for_children :: proc(
 	gap_main: f32,
 ) {
 	if node == nil || content == nil do return
+	if length_is_definite(node.config.height) do return
+	if !length_height_expands_with_content(node.config.height) do return
+	if layout_node_scrolls_axis(node.config.overflow_y) do return
 
 	if is_horizontal {
-		if length_is_definite(node.config.height) do return
-
 		cross_max: f32
 		for child_index, i in node.child_indices {
 			child := &state.ui.layout.nodes[child_index]
@@ -3479,11 +3623,7 @@ layout_grow_content_sized_parent_for_children :: proc(
 		}
 
 		inset_h := node.padding.t + node.padding.b + node.border.t + node.border.b
-		needed := layout_clamp_axis(
-			cross_max + inset_h,
-			node.config.min_h,
-			node.config.max_h,
-		)
+		needed := layout_clamp_axis(cross_max + inset_h, node.config.min_h, node.config.max_h)
 		if needed > node.rect.h {
 			node.rect.h = needed
 			node.desired.y = needed
@@ -3492,8 +3632,6 @@ layout_grow_content_sized_parent_for_children :: proc(
 
 		return
 	}
-
-	if length_is_definite(node.config.height) do return
 
 	main_sum: f32
 	in_flow := 0
@@ -3536,6 +3674,12 @@ layout_sync_soft_wrap_heights_before_flex :: proc(
 
 		if is_horizontal {
 			if layout_child_main_grow_weight(child, true) > 0 {
+				// Content-basis grow: sync to basis now; final width syncs after flex.
+				basis := layout_child_main_grow_basis(child, true)
+				if basis > 0 {
+					layout_text_sync_height_for_assigned_width(child, basis)
+				}
+
 				continue
 			}
 
@@ -3622,7 +3766,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 			weight := layout_child_main_grow_weight(child, is_horizontal)
 			if weight > 0 {
 				flex_total += weight
-				fixed_total += margin_main
+				fixed_total += margin_main + layout_child_main_grow_basis(child, is_horizontal)
 			} else {
 				fixed_total +=
 					layout_wrap_child_main(child_sizes[line.start + i], is_horizontal) +
@@ -3631,7 +3775,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 		}
 		if line.count > 1 do fixed_total += gap_main * f32(line.count - 1)
 
-		remaining := max(0, line_main_available - fixed_total)
+		remaining := line_main_available - fixed_total
 		flex_unit := flex_total > 0 ? remaining / flex_total : 0
 
 		line_cross_natural: f32
@@ -3827,7 +3971,12 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 
 			if in_flow_child {
 				if !main_space {
-					main_cursor += outer_main
+					actual_outer := layout_size_with_margin(
+						{child.rect.w, child.rect.h},
+						child.margin,
+					)
+					actual_main := layout_wrap_child_main(actual_outer, is_horizontal)
+					main_cursor += max(outer_main, actual_main)
 					if i + 1 < line.count {
 						next_child := &state.ui.layout.nodes[node.child_indices[line.start + i + 1]]
 						if layout_child_in_main_flow(next_child, is_horizontal) {
@@ -3844,6 +3993,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 	}
 
 	layout_position_out_of_flow_children(node)
+	layout_fit_content_sized_parent_to_child_rects(node, &content, is_horizontal, gap_main)
 	layout_finalize_scrollport(node, content)
 }
 
@@ -3853,6 +4003,7 @@ Expands a wrap parent's cross size to fit wrapped children.
 layout_wrap_apply_auto_cross_size :: proc(node: ^Layout_Node, is_horizontal: bool) {
 	cross_len := is_horizontal ? node.config.height : node.config.width
 	if length_is_definite(cross_len) do return
+	if length_fills_free_space(cross_len) do return
 
 	far_edge := node.rect.y if is_horizontal else node.rect.x
 	for child_index in node.child_indices {
@@ -3945,7 +4096,7 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 
 		if weight > 0 {
 			flex_total += weight
-			fixed_total += margin_main
+			fixed_total += margin_main + layout_child_main_grow_basis(child, is_horizontal)
 		} else {
 			main := layout_child_main_size(child, is_horizontal, 0, main_available)
 			fixed_total += main + margin_main
@@ -3956,7 +4107,7 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 		fixed_total += gap_main * f32(in_flow_count - 1)
 	}
 
-	remaining := max(0, main_available - fixed_total)
+	remaining := main_available - fixed_total
 	flex_unit := flex_total > 0 ? remaining / flex_total : 0
 
 	table_index := -1
@@ -4113,7 +4264,9 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 			if in_flow_child {
 				x = content.x + main_pos
 			} else {
-				x = content.x + justify_align_position_offset_x(content.w, outer.x, child_justify.x)
+				x =
+					content.x +
+					justify_align_position_offset_x(content.w, outer.x, child_justify.x)
 			}
 		} else if cross_space && in_flow_child {
 			x = content.x + cross_positions[flow_index]
@@ -4127,7 +4280,9 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 			if cross_space && in_flow_child {
 				y = content.y + cross_positions[flow_index]
 			} else {
-				y = content.y + justify_align_position_offset_y(content.h, outer.y, child_justify.y)
+				y =
+					content.y +
+					justify_align_position_offset_y(content.h, outer.y, child_justify.y)
 			}
 		} else if in_flow_child {
 			y = content.y + main_pos
@@ -4148,7 +4303,11 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 
 		if in_flow_child {
 			if !main_space {
-				main_cursor += outer_main
+				// Nested soft-wrap / content-sized finalize may grow the child;
+				// advance using the post-finalize box so later siblings pack below.
+				actual_outer := layout_size_with_margin({child.rect.w, child.rect.h}, child.margin)
+				actual_main := is_horizontal ? actual_outer.x : actual_outer.y
+				main_cursor += max(outer_main, actual_main)
 				next_in_flow := false
 				for j in i + 1 ..< len(node.child_indices) {
 					next_child := &state.ui.layout.nodes[node.child_indices[j]]
@@ -4168,6 +4327,7 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 	}
 
 	layout_position_out_of_flow_children(node)
+	layout_fit_content_sized_parent_to_child_rects(node, &content, is_horizontal, gap_main)
 	layout_finalize_scrollport(node, content)
 }
 
@@ -4244,6 +4404,7 @@ layout_anchor_popup :: proc(
 	gap: f32,
 	margin: f32,
 	match_width := true,
+	align: Layout_Popup_Align = .START,
 ) {
 	if state == nil || state.ui.pass != .Layout do return
 
@@ -4255,6 +4416,7 @@ layout_anchor_popup :: proc(
 			gap = max(gap, 0),
 			margin = max(margin, 0),
 			match_width = match_width,
+			align = align,
 		},
 	)
 }
@@ -4447,7 +4609,17 @@ layout_resolve_anchors :: proc() {
 		available := place_below ? available_below : available_above
 
 		rect.h = min(preferred_h, available)
-		rect.x = anchor.rect.x
+		switch relation.align {
+		case .START:
+			rect.x = anchor.rect.x
+		case .END:
+			rect.x = anchor.rect.x + anchor.rect.w - rect.w
+		case .CENTER:
+			rect.x = anchor.rect.x + (anchor.rect.w - rect.w) * 0.5
+		}
+		min_x := viewport.x + relation.margin
+		max_x := viewport.x + viewport.w - relation.margin - rect.w
+		rect.x = clamp(rect.x, min_x, max_x)
 		rect.y = place_below ? below_y : above_bottom - rect.h
 		floating.rect = rect
 		layout_finalize_after_rect(floating)

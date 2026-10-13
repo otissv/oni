@@ -18,7 +18,7 @@ length_resolve :: proc(length: Length, parent: f32) -> f32 {
 		return parent * length.value * 0.01
 	case .INHERIT:
 		return parent
-	case .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
+	case .UNSET, .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
 		return 0
 	}
 	return 0
@@ -31,7 +31,7 @@ length_is_definite :: proc(length: Length) -> bool {
 	switch length.kind {
 	case .FIXED, .PERCENT, .INHERIT:
 		return true
-	case .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
+	case .UNSET, .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
 		return false
 	}
 	return false
@@ -45,10 +45,50 @@ length_is_fit :: proc(length: Length) -> bool {
 }
 
 /*
-Returns whether a length grows into free space (`.GROW`).
+Returns whether a length is the `.GROW` keyword.
 */
 length_is_grow :: proc(length: Length) -> bool {
 	return length.kind == .GROW
+}
+
+/*
+Returns whether a length fills free space via flex weight (`.GROW`).
+
+Width unset defaults to `.GROW`. Height `.GROW` shares free vertical space.
+Height `.AUTO` fills the parent content area through axis resolve (not flex
+weight).
+*/
+length_fills_free_space :: proc(length: Length, is_height := false) -> bool {
+	_ = is_height
+	return length.kind == .GROW
+}
+
+/*
+Returns whether a height may expand after nested soft-wrap remasure.
+
+Height `.FIT` / min/max-content / unresolved content may grow with remasured
+children. Height `.AUTO` (parent content area / scrollport) and `.GROW` (free
+space) must not — that would collapse scroll range.
+*/
+length_height_expands_with_content :: proc(length: Length) -> bool {
+	switch length.kind {
+	case .UNSET, .FIT, .MIN_CONTENT, .MAX_CONTENT:
+		return true
+	case .AUTO, .GROW, .FIXED, .PERCENT, .INHERIT:
+		return false
+	}
+
+	return false
+}
+
+/*
+Returns whether height fills the parent content area (`.AUTO`).
+
+Distinct from `.GROW` free-space flex weight: `.AUTO` takes the parent content
+box as its size (scrollport viewport) without participating in flex grow.
+*/
+length_height_fills_parent :: proc(length: Length) -> bool {
+	return length.kind == .AUTO
 }
 
 /*
@@ -67,15 +107,30 @@ length_is_max_content :: proc(length: Length) -> bool {
 
 /*
 Returns whether a length uses intrinsic content sizing (fit / min / max-content).
-
-These axes stay indefinite for descendants during measure so soft-wrap text
-does not stretch to a provisional parent width.
 */
 length_is_intrinsic :: proc(length: Length) -> bool {
 	switch length.kind {
 	case .FIT, .MIN_CONTENT, .MAX_CONTENT:
 		return true
-	case .AUTO, .FIXED, .PERCENT, .INHERIT, .GROW:
+	case .UNSET, .AUTO, .FIXED, .PERCENT, .INHERIT, .GROW:
+		return false
+	}
+	return false
+}
+
+/*
+Returns whether a length is indefinite for descendant measure.
+
+Intrinsic axes and `.GROW` must not advertise a provisional parent size to
+descendants — theme `wrap = .BALANCE` would otherwise inflate nested text to the
+row width during bottom-up measure, breaking `.FIT` / `.GROW` without an
+explicit `wrap = .NONE`. `.UNSET` and `.AUTO` still forward provisional size.
+*/
+length_is_measure_indefinite :: proc(length: Length) -> bool {
+	switch length.kind {
+	case .FIT, .MIN_CONTENT, .MAX_CONTENT, .GROW:
+		return true
+	case .UNSET, .AUTO, .FIXED, .PERCENT, .INHERIT:
 		return false
 	}
 	return false
@@ -303,6 +358,9 @@ resolve_cfg_space :: proc(
 
 /*
 Converts a Width union to a resolved Length, evaluating proc callbacks when present.
+
+Unset / empty width defaults to `.GROW` so widgets fill free horizontal space
+unless the author opts into `.AUTO`, `.FIT`, or another mode.
 */
 @(private)
 resolve_length_from_width :: proc(
@@ -316,7 +374,7 @@ resolve_length_from_width :: proc(
 
 	switch v in w {
 	case struct{}:
-		return {kind = .AUTO}
+		return {kind = .GROW}
 	case Width_Mode:
 		switch v {
 		case .INHERIT:
@@ -341,15 +399,20 @@ resolve_length_from_width :: proc(
 		if percent > 0 do return {kind = .PERCENT, value = percent}
 		if min_v > 0 do return {kind = .FIXED, value = min_v}
 		if max_v > 0 do return {kind = .FIXED, value = max_v}
-		return {kind = .AUTO}
+		return {kind = .GROW}
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Width:
 		return resolve_length_from_width(v(ui_state, ui_event), parent_w, state, event)
 	}
-	return {kind = .AUTO}
+	return {kind = .GROW}
 }
 
 /*
 Converts a Height union to a resolved Length, evaluating proc callbacks when present.
+
+Unset / empty height stays content-sized (`Length_Kind.UNSET`) so widgets hug
+content. Pass `.AUTO` to fill the parent content area (scrollport viewport),
+`.GROW` to fill free vertical space, or `.FIT` to shrink to content clamped to
+available space.
 */
 @(private)
 resolve_length_from_height :: proc(
@@ -363,7 +426,7 @@ resolve_length_from_height :: proc(
 
 	switch v in h {
 	case struct{}:
-		return {kind = .AUTO}
+		return {kind = .UNSET}
 	case Height_Mode:
 		switch v {
 		case .INHERIT:
@@ -388,11 +451,11 @@ resolve_length_from_height :: proc(
 		if percent > 0 do return {kind = .PERCENT, value = percent}
 		if min_v > 0 do return {kind = .FIXED, value = min_v}
 		if max_v > 0 do return {kind = .FIXED, value = max_v}
-		return {kind = .AUTO}
+		return {kind = .UNSET}
 	case proc(frame_state: Widget_Frame_State, event: Widget_Event(Widget_Frame_State)) -> Height:
 		return resolve_length_from_height(v(ui_state, ui_event), parent_h, state, event)
 	}
-	return {kind = .AUTO}
+	return {kind = .UNSET}
 }
 
 /*
@@ -1410,67 +1473,67 @@ resolve_widget_config :: proc(
 			state,
 			event,
 		),
-		grid_template_rows = resolve_cfg_grid_template_rows(
+		grid_template_rows    = resolve_cfg_grid_template_rows(
 			decl.grid_template_rows,
 			parent.grid_template_rows,
 			theme.grid_template_rows,
 			state,
 			event,
 		),
-		grid_auto_columns = resolve_cfg_grid_auto_track(
+		grid_auto_columns     = resolve_cfg_grid_auto_track(
 			decl.grid_auto_columns,
 			parent.grid_auto_columns,
 			theme.grid_auto_columns,
 			state,
 			event,
 		),
-		grid_auto_rows = resolve_cfg_grid_auto_track(
+		grid_auto_rows        = resolve_cfg_grid_auto_track(
 			decl.grid_auto_rows,
 			parent.grid_auto_rows,
 			theme.grid_auto_rows,
 			state,
 			event,
 		),
-		grid_auto_flow = resolve_cfg_grid_auto_flow(
+		grid_auto_flow        = resolve_cfg_grid_auto_flow(
 			decl.grid_auto_flow,
 			parent.grid_auto_flow,
 			theme.grid_auto_flow,
 		),
-		grid_template_areas = resolve_cfg_grid_string(
+		grid_template_areas   = resolve_cfg_grid_string(
 			decl.grid_template_areas,
 			parent.grid_template_areas,
 		),
-		grid_column_start = resolve_cfg_grid_line(
+		grid_column_start     = resolve_cfg_grid_line(
 			decl.grid_column_start,
 			parent.grid_column_start,
 			theme.grid_column_start,
 			state,
 			event,
 		),
-		grid_column_end = resolve_cfg_grid_line(
+		grid_column_end       = resolve_cfg_grid_line(
 			decl.grid_column_end,
 			parent.grid_column_end,
 			theme.grid_column_end,
 			state,
 			event,
 		),
-		grid_row_start = resolve_cfg_grid_line(
+		grid_row_start        = resolve_cfg_grid_line(
 			decl.grid_row_start,
 			parent.grid_row_start,
 			theme.grid_row_start,
 			state,
 			event,
 		),
-		grid_row_end = resolve_cfg_grid_line(
+		grid_row_end          = resolve_cfg_grid_line(
 			decl.grid_row_end,
 			parent.grid_row_end,
 			theme.grid_row_end,
 			state,
 			event,
 		),
-		grid_column = resolve_cfg_grid_string(decl.grid_column, parent.grid_column),
-		grid_row = resolve_cfg_grid_string(decl.grid_row, parent.grid_row),
-		grid_area = resolve_cfg_grid_string(decl.grid_area, parent.grid_area),
+		grid_column           = resolve_cfg_grid_string(decl.grid_column, parent.grid_column),
+		grid_row              = resolve_cfg_grid_string(decl.grid_row, parent.grid_row),
+		grid_area             = resolve_cfg_grid_string(decl.grid_area, parent.grid_area),
 	}
 
 	grid_apply_line_shorthands(&style)
@@ -1502,11 +1565,11 @@ resolved box (minus insets) — not the parent's provisional content size. That
 keeps `width = 300` sidebars from advertising the full row width to nested
 `.GROW` / `.AUTO` children during bottom-up measure.
 
-Intrinsic axes (`.FIT` / `.MIN_CONTENT` / `.MAX_CONTENT`) are indefinite for
-descendants: children measure intrinsic content instead of stretching to the
-parent's provisional content size. That keeps theme `wrap = .BALANCE` text from
-inflating a fit/min/max-content button to the full row width during bottom-up
-measure.
+Measure-indefinite axes (`.FIT` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.GROW`) are
+indefinite for descendants: children measure intrinsic content instead of
+stretching to the parent's provisional content size. That keeps theme
+`wrap = .BALANCE` text from inflating fit/grow widgets to the full row width
+during bottom-up measure.
 */
 style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 	parent := ui_style_current()
@@ -1536,11 +1599,11 @@ style_child_context :: proc(config: Resolved_Widget_Config) -> Style_Context {
 		}
 	}
 
-	if length_is_intrinsic(config.width) {
+	if length_is_measure_indefinite(config.width) {
 		content_w = 0
 	}
 
-	if length_is_intrinsic(config.height) {
+	if length_is_measure_indefinite(config.height) {
 		content_h = 0
 	}
 
@@ -1587,6 +1650,14 @@ being_children :: proc(layout_id: UI_Id, config: Resolved_Widget_Config) {
 	if ui_pass() == .Layout {
 		layout_push_node(layout_id, config)
 	}
+
+	pushed_draw_space := false
+	if ui_pass() == .Draw && layout_space_is_layer(config.space) {
+		draw_push_space(config.space)
+		pushed_draw_space = true
+	}
+
+	append(&state.ui.draw_children_space_pushed, pushed_draw_space)
 	ui_push_style(style_child_context(config))
 }
 
@@ -1598,6 +1669,18 @@ end_children :: proc() {
 	if ui_pass() == .Layout {
 		layout_pop_node()
 	}
+
+	if len(state.ui.draw_children_space_pushed) > 0 {
+		pushed := state.ui.draw_children_space_pushed[len(state.ui.draw_children_space_pushed) - 1]
+		ordered_remove(
+			&state.ui.draw_children_space_pushed,
+			len(state.ui.draw_children_space_pushed) - 1,
+		)
+		if ui_pass() == .Draw && pushed {
+			draw_pop_space()
+		}
+	}
+
 	ui_pop_scope()
 }
 

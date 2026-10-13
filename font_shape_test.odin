@@ -328,6 +328,41 @@ font_shape_line_build_balance_soft_wraps_under_max_width :: proc(t: ^testing.T) 
 }
 
 @(test)
+font_shape_line_build_balance_does_not_split_unbreakable_word :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, handle, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+
+		text := "Cancel"
+		full := font_shape_line_build(face, handle.id, text, 0, 0, 0, DEFAULT_TAB_SIZE, .BALANCE, .LTR)
+		defer font_shape_lines_release(full)
+		testing.expect_value(t, len(full.lines), 1)
+		testing.expect(t, full.lines[0].width > 2)
+
+		// Force a wrap width shorter than the word; BALANCE must overflow, not mid-word split.
+		tight_w := full.lines[0].width - 1
+		testing.expect(t, tight_w > 0)
+
+		tight := font_shape_line_build(
+			face,
+			handle.id,
+			text,
+			tight_w,
+			0,
+			0,
+			DEFAULT_TAB_SIZE,
+			.BALANCE,
+			.LTR,
+		)
+		defer font_shape_lines_release(tight)
+		testing.expect_value(t, len(tight.lines), 1)
+		expect_close(t, tight.lines[0].width, full.lines[0].width)
+		testing.expect(t, tight.lines[0].width > tight_w)
+	})
+}
+
+@(test)
 font_shape_line_build_balance_zero_max_w_falls_back_to_newlines :: proc(t: ^testing.T) {
 	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
 		_ = pixel

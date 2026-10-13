@@ -17,6 +17,7 @@ widget_draw_box_background :: proc(
 ) {
 	if o.ui_layout_paint_skip(layout_id) do return
 
+	o.draw_set_stack_index(o.ui_layout_stack_index(layout_id))
 	o.Draw_Rectangle(rect, background, radius)
 }
 
@@ -33,5 +34,6 @@ widget_draw_box_border :: proc(
 ) {
 	if o.ui_layout_paint_skip(layout_id) do return
 
+	o.draw_set_stack_index(o.ui_layout_stack_index(layout_id))
 	o.Draw_Rectangle(rect, {}, radius, border, border_color)
 }

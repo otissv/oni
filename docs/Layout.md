@@ -186,17 +186,18 @@ layout_end_space
 ### Main axis
 
 - Definite width/height wins ([`length_resolve`](oni/style.odin) / [`length_is_definite`](oni/style.odin)).
-- Else `flex > 0` or axis `.GROW`: share remaining main space by weight via [`layout_child_main_size`](oni/layout.odin) (`flex_unit * weight`; `.GROW` is weight 1 when `flex` unset).
-- Else `.FIT`: content size clamped to available (CSS `fit-content`) via [`layout_resolve_axis_size`](oni/layout.odin). Descendants see indefinite `content_w`/`content_h` so soft-wrap text measures max-content instead of filling the row.
+- Else `flex > 0` or axis `.GROW`: share remaining main space by weight via [`layout_child_main_size`](oni/layout.odin). Explicit `flex` uses a zero basis (CSS `flex: 1 1 0%`). Axis `.GROW` uses content desired as basis, then adds `flex_unit * weight` (weight 1 when `flex` unset). Unset widget `width` resolves to `.GROW`; unset `height` is content-sized (`Length_Kind.UNSET`).
+- Else height `.AUTO`: fill the parent content area (scrollport viewport; does not expand with content).
+- Else `.FIT`: shrink to content, clamped to available (CSS `fit-content`) via [`layout_resolve_axis_size`](oni/layout.odin). Measure-indefinite axes (`.FIT` / `.GROW` / min/max-content) zero descendant `content_w`/`content_h`. BALANCE text on indefinite widths uses `min(max-content, provisional)` for desired width (soft-wrap height still uses provisional) so width modes do not require `wrap = .NONE`.
 - Else `.MAX_CONTENT`: CSS `max-content` — content size without soft-wrap; never clamps to available or stretches when empty. Intrinsic axes zero descendant content size like `.FIT`.
 - Else `.MIN_CONTENT`: CSS `min-content` — smallest size without avoidable overflow (text: longest unbreakable run; flex: sum/max of child `intrinsic_min`). Stored on [`Layout_Node.intrinsic_min`](oni/layout.odin); never clamps to available.
-- Else desired size from measure (`.AUTO` may stretch to bounds when content is empty).
+- Else desired size from measure (width `.AUTO` may stretch to bounds when content is empty).
 
 `Justify_Align.MAX_CONTENT` / `MIN_CONTENT` are unrelated: they equalize sibling sizes on an axis.
 
 ### Cross axis
 
-[`layout_child_cross_size`](oni/layout.odin): definite size, else stretch (justify STRETCH / `flex` / `.GROW`), else `.FIT` clamp, else `.MIN_CONTENT` / desired. `self` justify can pull a child out of main flow ([`layout_child_in_main_flow`](oni/layout.odin)).
+[`layout_child_cross_size`](oni/layout.odin): definite size, else stretch (justify STRETCH / `flex` / `.GROW` / height `.AUTO`), else `.FIT` clamp, else `.MIN_CONTENT` / desired. `self` justify can pull a child out of main flow ([`layout_child_in_main_flow`](oni/layout.odin)).
 
 ### Justify / gap / order
 

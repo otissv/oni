@@ -512,3 +512,115 @@ rectangle_overflow_scroll_shows_bar_on_port_hover :: proc(t: ^testing.T) {
 		},
 	)
 }
+
+@(private)
+scroll_bar_test_padded_port :: proc(_: Rectangle_State) {
+	ov_scroll: o.Overflow = .SCROLL
+	Rectangle({
+		config = {
+			id = "vp",
+			width = set.Width(f32(160)),
+			height = set.Height(f32(120)),
+			padding = set.Padding(f32(24)),
+			overflow_y = set.Overflow_Y(ov_scroll),
+			direction = set.Direction(.VERTICAL),
+		},
+		child = scroll_bar_test_tall_child,
+	})
+}
+
+@(test)
+rectangle_overflow_padded_port_bar_on_padding_edge :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			bar_size := o.SCROLL_BAR_DEFAULT_SIZE
+
+			widget_test_begin_layout()
+			scroll_bar_test_padded_port({})
+			widget_test_finish_layout()
+			testing.expect(t, scroll_bar_test_find_bar("vp") == nil)
+
+			widget_test_begin_draw()
+			vp_rect := o.ui_layout_rect(o.ui_id("vp"))
+			o.w_ctx.mouse_x = vp_rect.x + vp_rect.w * 0.5
+			o.w_ctx.mouse_y = vp_rect.y + vp_rect.h * 0.5
+			o.layout_resolve_pointer_hit()
+			scroll_bar_test_padded_port({})
+			widget_test_end_frame()
+			testing.expect(t, o.widget_scroll_auto_reveal_get("vp"))
+
+			widget_test_begin_layout()
+			scroll_bar_test_padded_port({})
+			widget_test_finish_layout()
+			o.layout_finalize_stack_order()
+
+			vp, vp_ok := widget_test_layout_node("vp")
+			testing.expect(t, vp_ok)
+			bar := scroll_bar_test_find_bar("vp")
+			testing.expect(t, bar != nil)
+
+			if vp_ok && bar != nil {
+				// Bars sit on the padding-box edge (widget inner edge), not the
+				// content-box edge — padding must not inset chrome.
+				pad := o.layout_padding_box(vp)
+				content := o.layout_clip_box(vp)
+
+				expect_close(t, bar.rect.w, bar_size)
+				expect_close(t, bar.rect.x + bar.rect.w, pad.x + pad.w)
+				testing.expect(t, bar.rect.x + bar.rect.w > content.x + content.w + 1e-3)
+				testing.expect(t, bar.has_clip)
+				testing.expect(t, bar.rect.x >= bar.clip_rect.x - 1e-3)
+				testing.expect(
+					t,
+					bar.rect.x + bar.rect.w <= bar.clip_rect.x + bar.clip_rect.w + 1e-3,
+				)
+			}
+
+			widget_test_end_frame()
+		},
+	)
+}
+
+@(test)
+rectangle_overflow_padded_port_reveal_on_padding_hover :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			widget_test_begin_layout()
+			scroll_bar_test_padded_port({})
+			widget_test_finish_layout()
+			testing.expect(t, scroll_bar_test_find_bar("vp") == nil)
+
+			widget_test_begin_draw()
+			vp, vp_ok := widget_test_layout_node("vp")
+			testing.expect(t, vp_ok)
+			if !vp_ok {
+				widget_test_end_frame()
+				return
+			}
+
+			pad := o.layout_padding_box(vp)
+			content := o.layout_clip_box(vp)
+			// Hover the padding corridor between content and the overlay bar —
+			// reveal must stick so the bar remains reachable to drag.
+			o.w_ctx.mouse_x = content.x + content.w + 8
+			o.w_ctx.mouse_y = pad.y + pad.h * 0.5
+			testing.expect(t, o.w_ctx.mouse_x < pad.x + pad.w)
+			testing.expect(t, o.w_ctx.mouse_x >= content.x + content.w)
+			o.layout_resolve_pointer_hit()
+			testing.expect(t, o.w_ctx.pointer_hit_valid)
+			testing.expect(t, o.w_ctx.pointer_hit_ui_id == vp.ui_id)
+
+			scroll_bar_test_padded_port({})
+			widget_test_end_frame()
+			testing.expect(t, o.widget_scroll_auto_reveal_get("vp"))
+
+			widget_test_begin_layout()
+			scroll_bar_test_padded_port({})
+			widget_test_finish_layout()
+			testing.expect(t, scroll_bar_test_find_bar("vp") != nil)
+			widget_test_end_frame()
+		},
+	)
+}

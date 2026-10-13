@@ -75,6 +75,11 @@ layout_len_grow :: proc() -> Length {
 }
 
 @(private)
+layout_len_auto :: proc() -> Length {
+	return {kind = .AUTO}
+}
+
+@(private)
 layout_len_min_content :: proc() -> Length {
 	return {kind = .MIN_CONTENT}
 }
@@ -121,6 +126,7 @@ with_layout_solve :: proc(t: ^testing.T, body: proc(layout: ^Layout_State, t: ^t
 	saved_state := state
 	saved_theme := theme
 	defer {
+		scroll_shutdown()
 		delete(test_state.ui.style_stack)
 		test_state.ui.style_stack = nil
 		delete(test_state.ui.scope_stack)
@@ -174,6 +180,10 @@ layout_test_append_node :: proc(
 ) -> int {
 	node_config := config
 	node_config.justify = justify
+	// Note: zero-value Length is `.AUTO` (enum discriminant 0). Production unset
+	// height becomes `.GROW` via `resolve_length_from_height`; tests that need
+	// content-sized height must set `layout_len_grow()` explicitly. Do not map
+	// `height == {}` to `.GROW` here — that would overwrite explicit `.AUTO`.
 
 	margin, _ := resolve_margin_value(node_config.margin)
 	padding, _ := resolve_padding_value(node_config.padding)
@@ -1441,9 +1451,28 @@ layout_child_main_size_prefers_fixed_then_flex_then_desired :: proc(t: ^testing.
 		config = {width = layout_len_grow()},
 		desired = {30, 10},
 	}
-	expect_close(t, layout_child_main_size(&grown, true, 40, 200), 40)
-	expect_close(t, layout_child_main_size(&grown, true, 0, 200), 0)
+	// Width `.GROW` keeps content basis, then adds free-space share.
+	expect_close(t, layout_child_main_size(&grown, true, 40, 200), 70)
+	expect_close(t, layout_child_main_size(&grown, true, 0, 200), 30)
 	expect_close(t, layout_child_main_grow_weight(&grown, true), 1)
+	expect_close(t, layout_child_main_grow_basis(&grown, true), 30)
+
+	height_grow := Layout_Node {
+		config = {height = layout_len_grow()},
+		desired = {10, 30},
+	}
+	// Height `.GROW` fills free vertical space (content basis + share).
+	expect_close(t, layout_child_main_size(&height_grow, false, 40, 200), 70)
+	expect_close(t, layout_child_main_grow_weight(&height_grow, false), 1)
+	expect_close(t, layout_child_main_grow_basis(&height_grow, false), 30)
+
+	height_auto := Layout_Node {
+		config = {height = layout_len_auto()},
+		desired = {10, 30},
+	}
+	// Height `.AUTO` fills the parent content area (no flex weight).
+	expect_close(t, layout_child_main_size(&height_auto, false, 40, 200), 200)
+	expect_close(t, layout_child_main_grow_weight(&height_auto, false), 0)
 
 	fit := Layout_Node {
 		config = {width = layout_len_fit()},
@@ -1467,8 +1496,13 @@ layout_resolve_axis_size_fit_grow_auto :: proc(t: ^testing.T) {
 	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 100, 0, 0), 100)
 	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 0, 0, 0), 20)
 
-	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 100, 0, 0), 40)
-	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 0, 100, 0, 0), 100)
+	// Width `.AUTO` is content-sized.
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 100, 0, 0, false), 40)
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 0, 100, 0, 0, false), 100)
+
+	// Height `.AUTO` fills the parent content area.
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 100, 0, 0, true), 100)
+	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 0, 0, 0, true), 40)
 
 	expect_close(t, layout_resolve_axis_size({kind = .MAX_CONTENT}, 80, 50, 0, 0), 80)
 	expect_close(t, layout_resolve_axis_size({kind = .MAX_CONTENT}, 0, 100, 0, 0), 0)
@@ -1524,24 +1558,27 @@ layout_min_content_width_uses_intrinsic_min_not_desired :: proc(t: ^testing.T) {
 
 @(test)
 layout_measure_intrinsic_min_sums_row_children :: proc(t: ^testing.T) {
-	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
-		root := layout_test_append_node(
-			layout,
-			-1,
-			.RECT,
-			{},
-			{},
-			{direction = .HORIZONTAL, gap_x = 10},
-		)
-		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
-		b := layout_test_append_node(layout, root, .RECT, {}, {60, 30})
-		layout.nodes[a].intrinsic_min = {20, 20}
-		layout.nodes[b].intrinsic_min = {25, 30}
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			root := layout_test_append_node(
+				layout,
+				-1,
+				.RECT,
+				{},
+				{},
+				{direction = .HORIZONTAL, gap_x = 10},
+			)
+			a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
+			b := layout_test_append_node(layout, root, .RECT, {}, {60, 30})
+			layout.nodes[a].intrinsic_min = {20, 20}
+			layout.nodes[b].intrinsic_min = {25, 30}
 
-		min_size := layout_measure_intrinsic_min(&layout.nodes[root])
-		expect_close(t, min_size.x, 55) // 20 + 10 + 25
-		expect_close(t, min_size.y, 30)
-	})
+			min_size := layout_measure_intrinsic_min(&layout.nodes[root])
+			expect_close(t, min_size.x, 55) // 20 + 10 + 25
+			expect_close(t, min_size.y, 30)
+		},
+	)
 }
 
 @(test)
@@ -1567,21 +1604,43 @@ layout_child_cross_size_stretches_when_requested :: proc(t: ^testing.T) {
 		desired = {40, 20},
 	}
 	expect_close(t, layout_child_cross_size(&flex_child, true, 100, {}), 100)
+
+	fit_child := Layout_Node {
+		config = {height = {kind = .FIT}},
+		desired = {40, 20},
+	}
+	expect_close(t, layout_child_cross_size(&fit_child, true, 100, {y = .STRETCH}), 20)
+
+	fit_wide := Layout_Node {
+		config = {width = {kind = .FIT}},
+		desired = {80, 20},
+	}
+	expect_close(t, layout_child_cross_size(&fit_wide, false, 100, {x = .STRETCH}), 80)
 }
 
 @(test)
 layout_resolve_node_size_uses_desired_bounds_and_clamps :: proc(t: ^testing.T) {
 	desired := Layout_Node {
+		config = {width = layout_len_auto()},
 		desired = {80, 40},
 	}
 	size := layout_resolve_node_size(&desired, {0, 0, 200, 100})
 	expect_close(t, size.x, 80)
 	expect_close(t, size.y, 40)
 
-	fill := Layout_Node{}
+	fill := Layout_Node {
+		config = {width = layout_len_grow(), height = layout_len_grow()},
+	}
 	filled := layout_resolve_node_size(&fill, {0, 0, 200, 100})
 	expect_close(t, filled.x, 200)
 	expect_close(t, filled.y, 100)
+
+	height_auto := Layout_Node {
+		config = {height = layout_len_auto()},
+		desired = {80, 40},
+	}
+	auto_size := layout_resolve_node_size(&height_auto, {0, 0, 200, 100})
+	expect_close(t, auto_size.y, 100)
 
 	percent := Layout_Node {
 		config = {
@@ -1768,14 +1827,7 @@ layout_margin_offsets_border_box_outside_neighbors :: proc(t: ^testing.T) {
 @(test)
 layout_margin_included_in_parent_intrinsic_measure :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
-		root := layout_test_append_node(
-			layout,
-			-1,
-			.RECT,
-			{},
-			{},
-			{direction = .VERTICAL},
-		)
+		root := layout_test_append_node(layout, -1, .RECT, {}, {}, {direction = .VERTICAL})
 		a := layout_test_append_node(layout, root, .RECT, {}, {40, 20})
 		layout_test_set_insets(layout, a, margin = {t = 5, b = 7, l = 3, r = 9})
 
@@ -1802,13 +1854,7 @@ layout_absolute_margin_insets_from_containing_block :: proc(t: ^testing.T) {
 			.RECT,
 			{},
 			{40, 20},
-			{
-				position = .ABSOLUTE,
-				x = 10,
-				y = 8,
-				x_set = true,
-				y_set = true,
-			},
+			{position = .ABSOLUTE, x = 10, y = 8, x_set = true, y_set = true},
 		)
 		layout_test_set_insets(layout, child, margin = {t = 2, b = 0, l = 4, r = 0})
 
@@ -2032,14 +2078,7 @@ layout_horizontal_content_height_includes_width_grow_child :: proc(t: ^testing.T
 			{},
 			{direction = .VERTICAL, width = layout_len_fixed(300)},
 		)
-		preview := layout_test_append_node(
-			layout,
-			page,
-			.RECT,
-			{},
-			{},
-			{direction = .HORIZONTAL},
-		)
+		preview := layout_test_append_node(layout, page, .RECT, {}, {}, {direction = .HORIZONTAL})
 		child := layout_test_append_node(
 			layout,
 			preview,
@@ -2076,14 +2115,7 @@ layout_horizontal_content_height_includes_width_grow_child :: proc(t: ^testing.T
 @(test)
 layout_width_fit_clamps_to_available_space :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
-		fit := layout_test_append_node(
-			layout,
-			-1,
-			.RECT,
-			{},
-			{80, 20},
-			{width = layout_len_fit()},
-		)
+		fit := layout_test_append_node(layout, -1, .RECT, {}, {80, 20}, {width = layout_len_fit()})
 
 		layout_solve(&layout.nodes[fit], {0, 0, 50, 50})
 		expect_close(t, layout.nodes[fit].rect.w, 50)
@@ -2119,6 +2151,95 @@ layout_width_fit_child_clamps_inside_fixed_parent :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_width_fit_hugs_nested_grow_children_content :: proc(t: ^testing.T) {
+	// Default unset width is `.GROW`. A `.FIT` button/row must still size to the
+	// sum of nested content, not collapse because grow used to be zero-basis.
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		fit := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{},
+			{direction = .HORIZONTAL, width = layout_len_fit(), gap_x = 8},
+		)
+		icon := layout_test_append_node(
+			layout,
+			fit,
+			.RECT,
+			{},
+			{14, 20},
+			{width = layout_len_grow()},
+		)
+		label := layout_test_append_node(
+			layout,
+			fit,
+			.RECT,
+			{},
+			{90, 20},
+			{width = layout_len_grow()},
+		)
+
+		layout.nodes[fit].desired = layout_measure(&layout.nodes[fit])
+		expect_close(t, layout.nodes[fit].desired.x, 14 + 8 + 90)
+
+		layout_solve(&layout.nodes[fit], {0, 0, 400, 50})
+		expect_close(t, layout.nodes[fit].rect.w, 112)
+		expect_close(t, layout.nodes[icon].rect.w, 14)
+		expect_close(t, layout.nodes[label].rect.w, 90)
+	})
+}
+
+@(test)
+layout_width_grow_fills_parent_without_wrap_none :: proc(t: ^testing.T) {
+	// Theme default wrap is BALANCE. GROW must fill free space from content basis
+	// without authors setting wrap = .NONE to avoid provisional-width inflation.
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{300, 80},
+			{direction = .HORIZONTAL, width = layout_len_fixed(300), gap_x = 10},
+		)
+		fixed := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{40, 20},
+			{width = layout_len_fixed(40)},
+		)
+		grown := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{50, 20},
+			{width = layout_len_grow(), wrap = .BALANCE},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 300, 80})
+		expect_rect(t, layout.nodes[fixed].rect, {0, 0, 40, 20})
+		expect_rect(t, layout.nodes[grown].rect, {50, 0, 250, 20})
+	})
+}
+
+@(test)
+layout_style_grow_parent_zeros_descendant_content_w :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		ui_push_style(Style_Context{content_w = 640, content_h = 480})
+		defer ui_pop_style()
+
+		child := style_child_context(
+			Resolved_Widget_Config{style = {width = {kind = .GROW}, wrap = .BALANCE}},
+		)
+		expect_close(t, child.content_w, 0)
+	})
+}
+
+@(test)
 layout_height_grow_fills_cross_axis :: proc(t: ^testing.T) {
 	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
 		root := layout_test_append_node(
@@ -2140,6 +2261,56 @@ layout_height_grow_fills_cross_axis :: proc(t: ^testing.T) {
 
 		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
 		expect_rect(t, layout.nodes[grown].rect, {0, 0, 40, 100})
+	})
+}
+
+@(test)
+layout_height_auto_fills_parent_content_area :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 100},
+			{direction = .HORIZONTAL},
+		)
+		filled := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{40, 20},
+			{width = layout_len_fixed(40), height = layout_len_auto()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 100})
+		expect_rect(t, layout.nodes[filled].rect, {0, 0, 40, 100})
+	})
+}
+
+@(test)
+layout_height_fit_shrinks_to_content :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{200, 40},
+			{direction = .VERTICAL, height = layout_len_fixed(40)},
+		)
+		fit := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{80, 60},
+			{width = layout_len_fixed(80), height = layout_len_fit()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 200, 40})
+		expect_rect(t, layout.nodes[fit].rect, {0, 0, 80, 40})
 	})
 }
 
@@ -3194,7 +3365,152 @@ layout_text_estimate_uses_shape_cache_after_finalize :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_text_estimate_balance_max_content_matches_finalize :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+			state.dpi = {
+				logical_w = 800,
+				logical_h = 600,
+				scale     = 1,
+			}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := font_register_family(
+				"LayoutEstimateBalanceMaxContentTest",
+				{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+			)
+			testing.expect(t, inter_ok)
+			inter = font_with_size(inter, 16)
+
+			node := Layout_Node {
+				measure = {text = "Cancel"},
+				config = {
+					font = inter,
+					font_size = 16,
+					line_height = 1.5,
+					wrap = Text_Wrap_Kind.BALANCE,
+					text_direction = Text_Direction_Kind.LTR,
+					align = Text_Align_Kind.LEFT,
+					space = .SCREEN,
+					text_decoration = Text_Decoration_Lines{},
+					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+				},
+			}
+
+			// FIT parents advertise provisional_w 0; measure must still be HarfBuzz max-content.
+			estimated := layout_text_estimate_size(&node, 0)
+			testing.expect(t, estimated.x > 0)
+			testing.expect(t, estimated.y > 0)
+			expect_close(t, node.measure.measured_wrap_w, 0)
+			testing.expect(t, len(node.text.lines) == 0)
+
+			node.rect = {0, 0, estimated.x, estimated.y}
+			layout_finalize_text_node(&node)
+			defer layout_text_release(&node)
+
+			testing.expect_value(t, len(node.text.lines), 1)
+			expect_close(t, node.text.size.x, estimated.x)
+			expect_close(t, node.text.size.y, estimated.y)
+		},
+	)
+}
+
+@(test)
 layout_text_estimate_balance_soft_wraps_with_provisional_width :: proc(t: ^testing.T) {
+	if !layout_test_font_fixtures_available() {
+		testing.expectf(
+			t,
+			false,
+			"missing font fixtures; expected %s and %s (run from repo root)",
+			LAYOUT_TEST_INTER_FONT,
+			LAYOUT_TEST_INTER_ITALIC_FONT,
+		)
+
+		return
+	}
+
+	with_layout_solve(
+		t,
+		proc(layout: ^Layout_State, t: ^testing.T) {
+			_ = layout
+			state.dpi = {
+				logical_w = 800,
+				logical_h = 600,
+				scale     = 1,
+			}
+
+			testing.expect(t, font_init())
+			defer font_shutdown()
+
+			inter, inter_ok := font_register_family(
+				"LayoutEstimateBalanceTest",
+				{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
+			)
+			testing.expect(t, inter_ok)
+			inter = font_with_size(inter, 16)
+
+			text := "ui.Button lives in the app theme layer. The engine primitive is w.Button from oni/widgets."
+
+			node := Layout_Node {
+				measure = {text = text},
+				config = {
+					font = inter,
+					font_size = 16,
+					line_height = 1.55,
+					wrap = Text_Wrap_Kind.BALANCE,
+					text_direction = Text_Direction_Kind.LTR,
+					align = Text_Align_Kind.LEFT,
+					space = .SCREEN,
+					text_decoration = Text_Decoration_Lines{},
+					text_decoration_style = Text_Decoration_Style_Kind.SOLID,
+				},
+			}
+
+			clear_test_hooks()
+			defer clear_test_hooks()
+
+			narrow := layout_text_estimate_size(&node, 220)
+			testing.expect(t, test_hook_font_shape_call_count >= 1)
+			testing.expect(t, narrow.y > 16 * 1.55 + 1)
+			testing.expect(t, len(node.text.lines) == 0)
+			expect_close(t, node.measure.measured_wrap_w, 220)
+			// Indefinite width: capped by provisional, not forced equal to it when
+			// max-content is smaller — here the line is longer than 220 so width is 220.
+			expect_close(t, narrow.x, 220)
+
+			shape_calls_after_first := test_hook_font_shape_call_count
+			again := layout_text_estimate_size(&node, 220)
+			testing.expect(t, test_hook_font_shape_call_count >= shape_calls_after_first)
+			expect_close(t, again.y, narrow.y)
+
+			wide := layout_text_estimate_size(&node, 2000)
+			testing.expect(t, wide.y < narrow.y)
+			expect_close(t, node.measure.measured_wrap_w, 2000)
+			// Wide provisional: desired width is max-content (shorter than 2000).
+			testing.expect(t, wide.x < 2000)
+			testing.expect(t, wide.x > 220)
+		},
+	)
+}
+
+@(test)
+layout_text_estimate_balance_grow_uses_max_content_width :: proc(t: ^testing.T) {
 	if !layout_test_font_fixtures_available() {
 		testing.expectf(
 			t,
@@ -3219,20 +3535,19 @@ layout_text_estimate_balance_soft_wraps_with_provisional_width :: proc(t: ^testi
 		defer font_shutdown()
 
 		inter, inter_ok := font_register_family(
-			"LayoutEstimateBalanceTest",
+			"LayoutBalanceGrowWidthTest",
 			{{path = LAYOUT_TEST_INTER_FONT, style = .NORMAL, weight = .Normal}},
 		)
 		testing.expect(t, inter_ok)
 		inter = font_with_size(inter, 16)
 
-		text := "ui.Button lives in the app theme layer. The engine primitive is w.Button from oni/widgets."
-
 		node := Layout_Node {
-			measure = {text = text},
+			measure = {text = "Save"},
 			config = {
 				font = inter,
 				font_size = 16,
 				line_height = 1.55,
+				width = layout_len_grow(),
 				wrap = Text_Wrap_Kind.BALANCE,
 				text_direction = Text_Direction_Kind.LTR,
 				align = Text_Align_Kind.LEFT,
@@ -3242,23 +3557,10 @@ layout_text_estimate_balance_soft_wraps_with_provisional_width :: proc(t: ^testi
 			},
 		}
 
-		clear_test_hooks()
-		defer clear_test_hooks()
-
-		narrow := layout_text_estimate_size(&node, 220)
-		testing.expect(t, test_hook_font_shape_call_count >= 1)
-		testing.expect(t, narrow.y > 16 * 1.55 + 1)
-		testing.expect(t, len(node.text.lines) == 0)
-		expect_close(t, node.measure.measured_wrap_w, 220)
-
-		shape_calls_after_first := test_hook_font_shape_call_count
-		again := layout_text_estimate_size(&node, 220)
-		testing.expect_value(t, test_hook_font_shape_call_count, shape_calls_after_first)
-		expect_close(t, again.y, narrow.y)
-
-		wide := layout_text_estimate_size(&node, 2000)
-		testing.expect(t, wide.y < narrow.y)
-		expect_close(t, node.measure.measured_wrap_w, 2000)
+		size := layout_text_estimate_size(&node, 640)
+		testing.expect(t, size.x > 0)
+		testing.expect(t, size.x < 200)
+		expect_close(t, node.measure.measured_wrap_w, 640)
 	})
 }
 

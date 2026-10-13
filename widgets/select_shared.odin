@@ -775,7 +775,7 @@ select_compound_child :: proc(fs: Select_State) {
 }
 
 @(private)
-select_popover_child :: proc(_: Popover_State) {
+select_popover_child :: proc(_: Popover_Content_State) {
 	ctx := select_ctx_top()
 
 	if ctx.user_content != nil {
@@ -784,7 +784,7 @@ select_popover_child :: proc(_: Popover_State) {
 }
 
 @(private)
-select_popover_mouse_enter :: proc(_: Popover_Event) {
+select_popover_mouse_enter :: proc(_: Popover_Content_Event) {
 	select_note_pointer()
 }
 
@@ -857,8 +857,18 @@ select_render_content :: proc(frame_state: Select_State) {
 		return
 	}
 
-	Popover(
-		{config = cfg, child = select_popover_child, on_mouse_enter = select_popover_mouse_enter},
+	popover_panel_anchored(
+		{
+			config = cfg,
+			child = select_popover_child,
+			anchor_id = ctx.trigger_layout_id,
+			gap = SELECT_DROPDOWN_GAP_PX,
+			margin = SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
+			match_width = true,
+			align = .START,
+			on_mouse_enter = select_popover_mouse_enter,
+			content_id = content_id,
+		},
 	)
 
 	if o.ui_pass() == .Layout && ctx.trigger_key != "" {
@@ -868,21 +878,6 @@ select_render_content :: proc(frame_state: Select_State) {
 			.OPTION,
 			SELECT_DROPDOWN_MAX_VISIBLE_ROWS,
 		)
-		o.layout_anchor_popup(
-			ctx.trigger_layout_id,
-			content_layout_id,
-			SELECT_DROPDOWN_GAP_PX,
-			SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
-		)
-	}
-
-	if o.ui_pass() == .Draw {
-		content_layout_id := o.ui_id(content_id != "" ? content_id : o.element_key(cfg.id))
-		content_rect := o.ui_layout_rect(content_layout_id)
-
-		if o.pointer_hits(content_layout_id, content_rect, .POPOVER) {
-			select_note_pointer()
-		}
 	}
 }
 

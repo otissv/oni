@@ -30,6 +30,7 @@ Identifies a draw batch by texture asset, clip, stack index, sampler, and pipeli
 Batch_Key :: struct {
 	texture_id:  Asset_Id,
 	clip:        Rect,
+	draw_space:  Draw_Space,
 	stack_index: u32,
 	nearest:     bool,
 	lcd:         bool,
@@ -52,9 +53,10 @@ Batch_State :: struct {
 	vertices:            [dynamic]UI_Vertex,
 	indices:             [dynamic]u16,
 	segments:            [dynamic]Batch_Segment,
-	clip_stack:          [dynamic]Rect,
-	space_stack:         [dynamic]Draw_Space,
-	opacity_stack:       [dynamic]f32,
+	clip_stack:                  [dynamic]Rect,
+	layer_clip_isolation_stack:  [dynamic][dynamic]Rect,
+	space_stack:                 [dynamic]Draw_Space,
+	opacity_stack:           [dynamic]f32,
 	current_key:         Batch_Key,
 	has_current_key:     bool,
 	current_stack:       u32,
@@ -104,12 +106,17 @@ batch_delete_cpu_arrays :: proc(gpu_state: ^GPU_State) {
 		delete(b.indices)
 		delete(b.segments)
 		delete(b.clip_stack)
+		for &saved in b.layer_clip_isolation_stack {
+			delete(saved)
+		}
+		delete(b.layer_clip_isolation_stack)
 		delete(b.space_stack)
 		delete(b.opacity_stack)
 		b.vertices = nil
 		b.indices = nil
 		b.segments = nil
 		b.clip_stack = nil
+		b.layer_clip_isolation_stack = nil
 		b.space_stack = nil
 		b.opacity_stack = nil
 	}
@@ -203,12 +210,17 @@ batch_destroy :: proc() {
 		delete(b.indices)
 		delete(b.segments)
 		delete(b.clip_stack)
+		for &saved in b.layer_clip_isolation_stack {
+			delete(saved)
+		}
+		delete(b.layer_clip_isolation_stack)
 		delete(b.space_stack)
 		delete(b.opacity_stack)
 		b.vertices = nil
 		b.indices = nil
 		b.segments = nil
 		b.clip_stack = nil
+		b.layer_clip_isolation_stack = nil
 		b.space_stack = nil
 		b.opacity_stack = nil
 
@@ -232,6 +244,10 @@ batch_reset :: proc() {
 	clear(&batch_current().indices)
 	clear(&batch_current().segments)
 	clear(&batch_current().clip_stack)
+	for &saved in batch_current().layer_clip_isolation_stack {
+		delete(saved)
+	}
+	clear(&batch_current().layer_clip_isolation_stack)
 	clear(&batch_current().space_stack)
 	clear(&batch_current().opacity_stack)
 	batch_current().has_current_key = false
@@ -359,6 +375,7 @@ batch_check_key :: proc(
 	key := Batch_Key {
 		texture_id  = texture_id,
 		clip        = clip,
+		draw_space  = draw_current_space(),
 		stack_index = batch_current().current_stack,
 		nearest     = nearest,
 		lcd         = lcd,
@@ -369,6 +386,7 @@ batch_check_key :: proc(
 	   (key.multi_atlas || batch_current().current_key.texture_id == key.texture_id) &&
 	   batch_current().current_key.multi_atlas == key.multi_atlas &&
 	   batch_current().current_key.clip == key.clip &&
+	   batch_current().current_key.draw_space == key.draw_space &&
 	   batch_current().current_key.stack_index == key.stack_index &&
 	   batch_current().current_key.nearest == key.nearest &&
 	   batch_current().current_key.lcd == key.lcd {
@@ -649,11 +667,25 @@ batch_push_atlas_quads :: proc(
 	}
 }
 
-/*
-Finalizes the index count of the last open batch segment, then sorts by stack index.
+@(private)
+batch_segment_key_before :: proc(a, b: Batch_Key) -> bool {
+	if a.draw_space != b.draw_space {
+		return a.draw_space < b.draw_space
+	}
 
-Higher stack_index paints on top. Equal stack keeps submission order (first_index ascending).
-Call before upload or flush when recording is complete.
+	if a.stack_index != b.stack_index {
+		return a.stack_index < b.stack_index
+	}
+
+	return false
+}
+
+/*
+Finalizes the index count of the last open batch segment, then sorts by draw space
+then stack index.
+
+Higher draw_space and stack_index paint on top. Equal keys keep submission order
+(first_index ascending). Call before upload or flush when recording is complete.
 */
 batch_finalize_segments :: proc() {
 	if batch_current().has_current_key && len(batch_current().segments) > 0 {
@@ -675,12 +707,23 @@ batch_finalize_segments :: proc() {
 	for i in 1 ..< n {
 		key := segs[i]
 		j := i - 1
-		for j >= 0 &&
-		    (segs[j].key.stack_index > key.key.stack_index ||
-			    (segs[j].key.stack_index == key.key.stack_index &&
-					    segs[j].first_index > key.first_index)) {
-			segs[j + 1] = segs[j]
-			j -= 1
+		for j >= 0 {
+			prev := segs[j]
+			if batch_segment_key_before(prev.key, key.key) do break
+
+			if batch_segment_key_before(key.key, prev.key) {
+				segs[j + 1] = segs[j]
+				j -= 1
+				continue
+			}
+
+			if prev.first_index > key.first_index {
+				segs[j + 1] = segs[j]
+				j -= 1
+				continue
+			}
+
+			break
 		}
 		segs[j + 1] = key
 	}

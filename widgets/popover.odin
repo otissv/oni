@@ -4,33 +4,42 @@ import o ".."
 import set "../set"
 
 /*
-Popover widget configuration extending Widget_Config.
-
-`space` is always forced to `.POPOVER` by the widget; user overrides are ignored.
+Popover root configuration (shadcn Popover).
 */
 Popover_Config :: o.Widget_Config
 
 /*
-Popover widget per-frame interaction frame_state merged with its fully resolved style config.
+Popover root per-frame state merged with resolved style and open flag.
 */
-Popover_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
+Popover_State :: struct {
+	using frame_state: o.Widget_Frame_State,
+	config:            o.Resolved_Widget_Config,
+	open:              bool,
+	disabled:          bool,
+}
 
 /*
-Popover widget event snapshot with frame_state and optional input metadata.
+Popover root event snapshot.
 */
 Popover_Event :: o.Widget_Event(Popover_State)
 
 /*
-Popover widget props: config, child callback, and input event handlers.
+Popover root props: caller-owned `open`, compound Trigger / Content children.
+
+Pass `open` every frame and update from `on_open_change`. Escape and outside
+pointer press dismiss the content while open.
 */
 Popover_Props :: struct {
 	config:                       Popover_Config,
+	open:                         bool,
+	disabled:                     bool,
+	on_open_change:               proc(open: bool),
 	child:                        proc(frame_state: Popover_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Popover_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Popover_State) -> o.Mount,
-	on_scroll:                     proc(scroll_x, scroll_y: f32),
+	on_scroll:                    proc(scroll_x, scroll_y: f32),
 	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Popover_Event),
 	on_blur:                      proc(event: Popover_Event),
@@ -47,45 +56,93 @@ Popover_Props :: struct {
 	on_key_released:              proc(event: Popover_Event),
 }
 
-/*
-Returns the default popover theme config; always uses `.POPOVER` space.
-*/
-popover_theme_base :: proc(frame_state: ^Popover_State) -> Popover_Config {
+@(private)
+popover_root_theme_base :: proc(frame_state: ^Popover_State) -> Popover_Config {
 	_ = frame_state
-	return Popover_Config{kind = .RECT, space = set.Space(.POPOVER)}
+
+	return Popover_Config {
+		kind = .POPOVER,
+		direction = set.Direction(.VERTICAL),
+		gap_y = set.Gap_Y(u16(0)),
+	}
+}
+
+@(private)
+popover_root_refresh_merged :: proc(props: Popover_Props, frame_state: ^Popover_State) -> Popover_Event {
+	event := widget_event(frame_state^)
+	base := popover_root_theme_base(frame_state)
+	frame_state.config = o.resolve_widget_config(base, props.config, frame_state, event)
+
+	return widget_event(frame_state^)
+}
+
+@(private)
+popover_root_refresh_merged_if_interaction_changed :: proc(
+	props: Popover_Props,
+	frame_state: ^Popover_State,
+	prev_fp: u8,
+) -> (
+	event: Popover_Event,
+	fp: u8,
+) {
+	fp = widget_style_interaction_fp(frame_state)
+
+	if fp == prev_fp {
+		return widget_event(frame_state^), fp
+	}
+
+	return popover_root_refresh_merged(props, frame_state), fp
 }
 
 /*
-Renders a styled popover container that always lays out/draws in `.POPOVER` space.
+Renders a composable popover root.
 
-Runs layout on the layout pass and draws chrome plus children on the draw pass.
+`Popover_Trigger` and `Popover_Content` must be descendants. Content paints in
+`.POPOVER` space and anchors to the trigger while open.
 */
 Popover :: proc(props: Popover_Props) {
-	props := props
-	props.config.space = set.Space(.POPOVER)
 	cfg := props.config
 	key := o.element_key(cfg.id)
-
-	was_focused := widget_is_focused(key)
-
-	frame_state := Popover_State {
-		is_disabled = o.cfg_style_bool(cfg.disabled),
-		is_focused  = was_focused,
-	}
-
-	event := widget_refresh_merged(props, &frame_state, popover_theme_base)
-	style_fp := widget_style_interaction_fp(&frame_state)
-	config := frame_state.config
-	child := props.child
-	handlers := widget_lifecycle_handlers(props, Popover_State)
-	should_auto_focus := widget_should_auto_focus(config, key)
-
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
-	layout_rect := o.ui_layout_rect(layout_id)
-	rect := layout_rect
+
+	was_focused := widget_is_focused(key)
+	open := props.open
+	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+
+	if disabled {
+		cfg.disabled = set.Disabled(true)
+	}
+
+	frame_state := Popover_State {
+		is_disabled = disabled,
+		is_focused  = was_focused,
+		open        = open,
+		disabled    = disabled,
+	}
+
+	props_resolved := props
+	props_resolved.config = cfg
+
+	event := popover_root_refresh_merged(props_resolved, &frame_state)
+	style_fp := widget_style_interaction_fp(&frame_state)
+	config := frame_state.config
+	handlers := widget_lifecycle_handlers(props_resolved, Popover_State)
+	should_auto_focus := widget_should_auto_focus(config, key)
+
+	popover_ctx_push(
+		{
+			popover_key = key,
+			open = open,
+			disabled = disabled,
+			on_open_change = props.on_open_change,
+		},
+	)
+	defer popover_ctx_pop()
 
 	if o.ui_pass() == .Layout {
+		popover_ctx_top().pointer_owned = false
+
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -95,19 +152,31 @@ Popover :: proc(props: Popover_Props) {
 		)
 
 		if ran_unmount {
-			event = widget_refresh_merged(props, &frame_state, popover_theme_base)
+			event = popover_root_refresh_merged(props_resolved, &frame_state)
 			config = frame_state.config
 			should_auto_focus = widget_should_auto_focus(config, key)
 		}
 
 		if !skip_layout {
 			can_interact := widget_can_interact(handlers, &frame_state)
+
 			if can_interact && should_auto_focus {
 				widget_apply_auto_focus(key, true)
 				frame_state.is_focused = true
 			}
+
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+			widget_children(
+				props.child,
+				layout_id,
+				config,
+				frame_state,
+				key,
+				props_resolved.config,
+				props.on_scroll,
+				props.scroll_bar,
+				frame_state.is_hovered,
+			)
 		}
 
 		return
@@ -116,9 +185,10 @@ Popover :: proc(props: Popover_Props) {
 	if !widget_prepare_draw(handlers, layout_id, &frame_state) do return
 
 	frame_state.is_focused = widget_is_focused(key)
+	rect := o.ui_layout_rect(layout_id)
 
 	widget_handle_interaction(
-		props,
+		props_resolved,
 		&frame_state,
 		handlers,
 		key,
@@ -128,25 +198,19 @@ Popover :: proc(props: Popover_Props) {
 		rect,
 		config,
 	)
-	widget_handle_scroll_wheel(
-		layout_id,
-		config,
-		frame_state.is_hovered,
-		key,
-		props.on_scroll,
-	)
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y
 	frame_state.config = config
 
-	event, _ = widget_refresh_merged_if_interaction_changed(
-		props,
+	event, _ = popover_root_refresh_merged_if_interaction_changed(
+		props_resolved,
 		&frame_state,
-		popover_theme_base,
 		style_fp,
 	)
 	config = frame_state.config
+	frame_state.open = popover_ctx_top().open
 
 	if widget_can_interact(handlers, &frame_state) {
 		if widget_got_tab_focus(key) && props.on_focus != nil {
@@ -165,69 +229,33 @@ Popover :: proc(props: Popover_Props) {
 		props.on_focus(event)
 	}
 
-	draw_widget_popover(
-		{
-			frame_state = &frame_state,
-			event = event,
-			rect = rect,
-			child = child,
-			layout_id = layout_id,
-			element_id = key,
-			author = props.config,
-			on_scroll = props.on_scroll,
-			scroll_bar = props.scroll_bar,
-		},
-	)
-
-	widget_dispatch_events(props, &frame_state, handlers, event, key, was_focused)
-}
-
-@(private)
-Draw_Widget_Popover :: struct {
-	frame_state: ^Popover_State,
-	event:       Popover_Event,
-	rect:        o.Rect,
-	child:       proc(frame_state: Popover_State),
-	layout_id:   o.UI_Id,
-	element_id:  string,
-	author:      o.Widget_Config,
-	on_scroll:   proc(scroll_x, scroll_y: f32),
-	scroll_bar:  Scroll_Bar_Style,
-}
-
-@(private)
-draw_widget_popover :: proc(props: Draw_Widget_Popover) {
-	child := props.child
-	event := props.event
-	frame_state := props.frame_state
-	layout_id := props.layout_id
-	rect := props.rect
-
-	config := frame_state.config
-
 	background: o.RGBA
-	if resolved_background, background_ok := o.style_background_rgba(config, frame_state, event);
+
+	if resolved_background, background_ok := o.style_background_rgba(config, &frame_state, event);
 	   background_ok {
 		background = resolved_background
 	}
 
 	border: o.Bd_px
-	if resolved_border, border_ok := o.resolve_border(config.border, frame_state, event);
+
+	if resolved_border, border_ok := o.resolve_border(config.border, &frame_state, event);
 	   border_ok {
 		border = resolved_border
 	}
 
 	border_color: o.RGBA
+
 	if resolved_border_color, border_color_ok := o.style_border_color_rgba(
 		config,
-		frame_state,
+		&frame_state,
 		event,
 	); border_color_ok {
 		border_color = resolved_border_color
 	}
 
 	radius: o.Radius_px
-	if resolved_radius, ok := o.resolve_radius(config.radius, frame_state, event); ok {
+
+	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
 		radius = resolved_radius
 	}
 
@@ -236,7 +264,21 @@ draw_widget_popover :: proc(props: Draw_Widget_Popover) {
 
 	widget_draw_box_background(layout_id, rect, background, radius)
 
-	widget_children(child, layout_id, config, frame_state^, props.element_id, props.author, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+	widget_children(
+		props.child,
+		layout_id,
+		config,
+		frame_state,
+		key,
+		props_resolved.config,
+		props.on_scroll,
+		props.scroll_bar,
+		frame_state.is_hovered,
+	)
+
+	popover_handle_dismiss(key)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
+
+	widget_dispatch_events(props_resolved, &frame_state, handlers, event, key, was_focused)
 }

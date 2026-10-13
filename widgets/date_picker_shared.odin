@@ -587,7 +587,7 @@ date_picker_default_content :: proc(fs: Date_Picker_State) {
 }
 
 @(private)
-date_picker_popover_child :: proc(_: Popover_State) {
+date_picker_popover_child :: proc(_: Popover_Content_State) {
 	ctx := date_picker_ctx_top()
 
 	if ctx.user_content != nil {
@@ -598,7 +598,7 @@ date_picker_popover_child :: proc(_: Popover_State) {
 }
 
 @(private)
-date_picker_popover_mouse_enter :: proc(_: Popover_Event) {
+date_picker_popover_mouse_enter :: proc(_: Popover_Content_Event) {
 	date_picker_note_pointer()
 }
 
@@ -625,32 +625,19 @@ date_picker_render_content :: proc(frame_state: Date_Picker_State) {
 
 	ctx.content_frame = frame_state
 
-	Popover(
+	popover_panel_anchored(
 		{
 			config = cfg,
 			child = date_picker_popover_child,
+			anchor_id = ctx.trigger_layout_id,
+			gap = DATE_PICKER_POPOVER_GAP_PX,
+			margin = DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
+			match_width = false,
+			align = .START,
 			on_mouse_enter = date_picker_popover_mouse_enter,
+			content_id = content_id,
 		},
 	)
-
-	if o.ui_pass() == .Layout && ctx.trigger_key != "" {
-		content_layout_id := o.ui_id(content_id)
-		o.layout_anchor_popup(
-			ctx.trigger_layout_id,
-			content_layout_id,
-			DATE_PICKER_POPOVER_GAP_PX,
-			DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
-		)
-	}
-
-	if o.ui_pass() == .Draw {
-		content_layout_id := o.ui_id(content_id != "" ? content_id : o.element_key(cfg.id))
-		content_rect := o.ui_layout_rect(content_layout_id)
-
-		if o.pointer_hits(content_layout_id, content_rect, .POPOVER) {
-			date_picker_note_pointer()
-		}
-	}
 }
 
 @(private)

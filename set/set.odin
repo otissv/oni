@@ -163,8 +163,15 @@ Gap_Y :: proc(value: oni.Gap_Y) -> oni.Cfg(oni.Gap_Y) {return cfg_value(value)}
 /*
 Sets a height widget config field to an explicit value.
 
+Unset height is content-sized. Pass `.GROW` to fill free vertical space,
+`.AUTO` to fill the parent content area (scrollport viewport), or `.FIT` to
+shrink to content clamped to available space.
+
 Example:
 `Height(f32(48))`
+`Height(.GROW)`
+`Height(.AUTO)`
+`Height(.FIT)`
 */
 Height :: proc(value: oni.Height) -> oni.Height {return oni.Height(value)}
 
@@ -459,8 +466,11 @@ Bottom :: F32
 /*
 Sets a width widget config field to an explicit value.
 
+Unset width resolves to `.GROW`. Pass `.FIT` / `.AUTO` / a fixed size to opt out.
+
 Example:
 `Width(f32(320))`
+`Width(.FIT)`
 */
 Width :: proc(value: oni.Width) -> oni.Width {return oni.Width(value)}
 

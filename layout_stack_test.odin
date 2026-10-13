@@ -671,11 +671,54 @@ layout_overflow_clip_excludes_outside_hits :: proc(t: ^testing.T) {
 
 			child_i := state.ui.layout.id_to_node[UI_Id(2)]
 			testing.expect(t, state.ui.layout.nodes[child_i].has_clip)
+			testing.expect(t, state.ui.layout.nodes[child_i].has_hit_clip)
 
 			w_ctx.mouse_x = 80
 			w_ctx.mouse_y = 25
 			layout_resolve_pointer_hit()
 			testing.expect(t, !w_ctx.pointer_hit_valid || w_ctx.pointer_hit_ui_id != UI_Id(2))
+		},
+	)
+}
+
+@(test)
+layout_overflow_port_padding_remains_hittable :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			port := layout_push_node(
+				UI_Id(1),
+				{kind = .RECT, width = layout_len_fixed(100), height = layout_len_fixed(100)},
+			)
+			port.config.overflow_x = layout_stack_ov_hidden()
+			port.config.overflow_y = layout_stack_ov_hidden()
+			port.padding = {t = 24, b = 24, l = 24, r = 24}
+			layout_pop_node()
+			layout_end_space()
+			layout_finalize_stack_order()
+
+			port_i := state.ui.layout.id_to_node[UI_Id(1)]
+			port_node := &state.ui.layout.nodes[port_i]
+			testing.expect(t, port_node.has_clip)
+			// Own content-box paint clip must not become the hit clip.
+			testing.expect(t, !port_node.has_hit_clip)
+
+			pad := layout_padding_box(port_node)
+			content := layout_clip_box(port_node)
+			// Pointer in the right padding ring (outside content, inside border box).
+			w_ctx.mouse_x = content.x + content.w + 8
+			w_ctx.mouse_y = pad.y + pad.h * 0.5
+			testing.expect(t, w_ctx.mouse_x < pad.x + pad.w)
+			testing.expect(t, w_ctx.mouse_x >= content.x + content.w)
+
+			layout_resolve_pointer_hit()
+			testing.expect(t, w_ctx.pointer_hit_valid)
+			testing.expect(t, w_ctx.pointer_hit_ui_id == UI_Id(1))
 		},
 	)
 }
@@ -835,6 +878,58 @@ layout_child_z_cannot_beat_uncle :: proc(t: ^testing.T) {
 				state.ui.layout.nodes[nephew_i].stack_index <
 					state.ui.layout.nodes[uncle_i].stack_index,
 			)
+		},
+	)
+}
+
+@(test)
+layout_layer_subtree_root_fixed_covers_viewport_when_nested :: proc(t: ^testing.T) {
+	with_ui_env(
+		t,
+		proc(t: ^testing.T) {
+			ui_begin_frame()
+			ui_push_style(style_root(.SCREEN, {0, 0, 800, 600}))
+			defer ui_pop_style()
+
+			layout_begin_space(.SCREEN)
+			parent := layout_push_node(
+				UI_Id(1),
+				{
+					kind = .RECT,
+					width = layout_len_fixed(400),
+					height = layout_len_fixed(300),
+				},
+			)
+			layout_set_measure_size(parent, {400, 300})
+			parent.rect = {x = 40, y = 120, w = 400, h = 300}
+			overlay := layout_push_node(
+				UI_Id(2),
+				{
+					kind = .RECT,
+					space = .POPOVER,
+					position = layout_stack_fixed(),
+				},
+			)
+			overlay.config.x = 0
+			overlay.config.x_set = true
+			overlay.config.y = 0
+			overlay.config.y_set = true
+			overlay.config.right = 0
+			overlay.config.right_set = true
+			overlay.config.bottom = 0
+			overlay.config.bottom_set = true
+			layout_set_measure_size(overlay, {800, 600})
+			layout_pop_node()
+			layout_pop_node()
+			layout_end_space()
+			layout_solve_layer_subtree_roots()
+
+			overlay_i := state.ui.layout.id_to_node[UI_Id(2)]
+			r := state.ui.layout.nodes[overlay_i].rect
+			testing.expect(t, r.x == 0)
+			testing.expect(t, r.y == 0)
+			testing.expect(t, r.w == 800)
+			testing.expect(t, r.h == 600)
 		},
 	)
 }

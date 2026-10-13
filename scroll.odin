@@ -1,6 +1,6 @@
 package oni
 
-SCROLL_BAR_DEFAULT_SIZE :: f32(12)
+SCROLL_BAR_DEFAULT_SIZE :: f32(4)
 SCROLL_BAR_MIN_THUMB :: f32(24)
 SCROLL_WHEEL_SCALE :: f32(40)
 
@@ -93,7 +93,41 @@ layout_offset_subtree :: proc(node_index: int, dx, dy: f32) {
 }
 
 /*
-Measures unscrolled content size from non-scrollbar children relative to content origin.
+Unions a layout subtree's boxes into scroll content extent (skips scrollbar chrome).
+*/
+@(private)
+layout_measure_scroll_content_subtree :: proc(
+	node: ^Layout_Node,
+	content: Rect,
+	extent_w, extent_h: ^f32,
+) {
+	if node == nil || extent_w == nil || extent_h == nil do return
+	if !layout_child_is_scroll_content(node) do return
+
+	extent_w^ = max(extent_w^, node.rect.x + node.rect.w - content.x)
+	extent_h^ = max(extent_h^, node.rect.y + node.rect.h - content.y)
+
+	if layout_node_has_text(node) && (node.text.size.x > 0 || node.text.size.y > 0) {
+		extent_w^ = max(extent_w^, node.text.size.x)
+		extent_h^ = max(extent_h^, node.text.size.y)
+	}
+
+	if node.image.active {
+		extent_w^ = max(extent_w^, node.image.dst.x + node.image.dst.w - content.x)
+		extent_h^ = max(extent_h^, node.image.dst.y + node.image.dst.h - content.y)
+	}
+
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+		layout_measure_scroll_content_subtree(child, content, extent_w, extent_h)
+	}
+}
+
+/*
+Measures unscrolled content size from the scroll-content subtree relative to content origin.
+
+Walks descendants so nested soft-wrap / content-sized boxes that paint past a
+short direct child still extend max_scroll to the true painted bottom.
 */
 layout_measure_scroll_content :: proc(node: ^Layout_Node, content: Rect) -> Vec2 {
 	extent_w := content.w
@@ -101,9 +135,7 @@ layout_measure_scroll_content :: proc(node: ^Layout_Node, content: Rect) -> Vec2
 
 	for child_index in node.child_indices {
 		child := &state.ui.layout.nodes[child_index]
-		if !layout_child_is_scroll_content(child) do continue
-		extent_w = max(extent_w, child.rect.x + child.rect.w - content.x)
-		extent_h = max(extent_h, child.rect.y + child.rect.h - content.y)
+		layout_measure_scroll_content_subtree(child, content, &extent_w, &extent_h)
 	}
 
 	if layout_node_has_text(node) && (node.text.size.x > 0 || node.text.size.y > 0) {
@@ -131,10 +163,7 @@ layout_finalize_scrollport :: proc(node: ^Layout_Node, content: Rect) {
 
 	content_size := layout_measure_scroll_content(node, content)
 	viewport := Vec2{content.w, content.h}
-	max_scroll := Vec2 {
-		max(0, content_size.x - viewport.x),
-		max(0, content_size.y - viewport.y),
-	}
+	max_scroll := Vec2{max(0, content_size.x - viewport.x), max(0, content_size.y - viewport.y)}
 
 	scroll_x := node.config.scroll_x
 	scroll_y := node.config.scroll_y

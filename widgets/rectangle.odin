@@ -63,6 +63,17 @@ Renders a styled rectangle container with full pointer and keyboard interaction.
 Runs layout on the layout pass and draws chrome plus children on the draw pass.
 */
 Rectangle :: proc(props: Rectangle_Props) {
+	rectangle_with_theme(props, rect_theme_base)
+}
+
+/*
+Rectangle implementation with a custom theme base (shared by compound widgets).
+*/
+@(private)
+rectangle_with_theme :: proc(
+	props: Rectangle_Props,
+	theme_base: proc(frame_state: ^Rectangle_State) -> Rectangle_Config,
+) {
 	cfg := props.config
 	key := o.element_key(cfg.id)
 
@@ -73,7 +84,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		is_focused  = was_focused,
 	}
 
-	event := widget_refresh_merged(props, &frame_state, rect_theme_base)
+	event := widget_refresh_merged(props, &frame_state, theme_base)
 	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child
@@ -95,7 +106,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 		)
 
 		if ran_unmount {
-			event = widget_refresh_merged(props, &frame_state, rect_theme_base)
+			event = widget_refresh_merged(props, &frame_state, theme_base)
 			config = frame_state.config
 			should_auto_focus = widget_should_auto_focus(config, key)
 		}
@@ -143,7 +154,7 @@ Rectangle :: proc(props: Rectangle_Props) {
 	event, _ = widget_refresh_merged_if_interaction_changed(
 		props,
 		&frame_state,
-		rect_theme_base,
+		theme_base,
 		style_fp,
 	)
 	config = frame_state.config

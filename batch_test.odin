@@ -457,6 +457,55 @@ batch_check_key_splits_on_lcd_change :: proc(t: ^testing.T) {
 }
 
 @(test)
+draw_layer_space_clears_ancestor_clip_on_draw_pass :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			state.ui.pass = .Draw
+			draw_push_clip({40, 40, 200, 200})
+			narrow := batch_current_clip()
+			testing.expect_value(t, narrow.w, 200)
+			testing.expect_value(t, narrow.h, 200)
+
+			draw_push_space(.OVERLAY)
+			viewport := batch_current_clip()
+			testing.expect_value(t, viewport.x, 0)
+			testing.expect_value(t, viewport.y, 0)
+			testing.expect_value(t, viewport.w, 800)
+			testing.expect_value(t, viewport.h, 600)
+
+			draw_pop_space()
+			restored := batch_current_clip()
+			testing.expect_value(t, restored.w, 200)
+			testing.expect_value(t, restored.h, 200)
+		},
+	)
+}
+
+@(test)
+batch_finalize_segments_sorts_draw_space_before_stack_index :: proc(t: ^testing.T) {
+	with_batch_cpu_env(
+		t,
+		proc(t: ^testing.T) {
+			draw_push_space(.SCREEN)
+			batch_set_stack_index(100)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(0)
+
+			draw_push_space(.OVERLAY)
+			batch_set_stack_index(0)
+			batch_check_key(TEXTURE_WHITE_ID)
+			batch_push_indices(4)
+
+			batch_finalize_segments()
+			testing.expect_value(t, len(batch_current().segments), 2)
+			testing.expect_value(t, batch_current().segments[0].key.draw_space, Draw_Space.SCREEN)
+			testing.expect_value(t, batch_current().segments[1].key.draw_space, Draw_Space.OVERLAY)
+		},
+	)
+}
+
+@(test)
 batch_finalize_segments_sorts_by_stack_index :: proc(t: ^testing.T) {
 	with_batch_cpu_env(
 		t,

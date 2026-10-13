@@ -1329,7 +1329,8 @@ Shapes text and splits it into lines according to wrap mode, width, and spacing.
 NONE: single line (newlines omitted).
 NEWLINES: hard breaks only.
 PRESERVE: hard breaks with CRLF normalization and tab expansion.
-BALANCE: soft-wrap at max_w, then rebalance line lengths.
+BALANCE: soft-wrap at break opportunities within max_w, then rebalance.
+Unbreakable runs wider than max_w overflow; they are never split mid-word.
 
 On cache hit (and after insert on miss), returns a borrow of the persistent cache
 entry. Otherwise returns frame-arena or heap-owned lines. Release with
@@ -1792,6 +1793,9 @@ font_shape_min_wrap_width :: proc(text: string, shaped: []Shaped_Glyph, letter_s
 
 /*
 Greedy soft-wrap at max_w, honoring newlines and letter-spacing in width checks.
+
+Breaks only at `font_is_break_cluster` opportunities (space/tab). Unbreakable
+runs wider than `max_w` overflow on one line — never mid-word glyph splits.
 */
 @(private)
 font_shape_lines_soft_wrap :: proc(
@@ -1834,11 +1838,8 @@ font_shape_lines_soft_wrap :: proc(
 		spacing := line_glyphs > 0 ? letter_spacing : 0
 		next_width := line_width + spacing + glyph.x_advance
 
-		if i > line_start && next_width > max_w {
-			break_at := last_break > line_start ? last_break : i
-			if break_at <= line_start {
-				break_at = i
-			}
+		if i > line_start && next_width > max_w && last_break > line_start {
+			break_at := last_break
 
 			append(
 				&lines,

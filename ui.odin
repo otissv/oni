@@ -50,6 +50,9 @@ ui_shutdown :: proc() {
 	delete(state.ui.scope_stack)
 	state.ui.scope_stack = nil
 
+	delete(state.ui.draw_children_space_pushed)
+	state.ui.draw_children_space_pushed = nil
+
 	delete(state.ui.style_stack)
 	state.ui.style_stack = nil
 
@@ -97,6 +100,7 @@ ui_begin_frame :: proc() {
 		state.ui.layout_ids_prev[id] = true
 	}
 	clear(&state.ui.scope_stack)
+	clear(&state.ui.draw_children_space_pushed)
 	clear(&state.ui.style_stack)
 	layout_reset()
 
@@ -150,6 +154,7 @@ ui_end_layout_pass :: proc() {
 		state.ui.layout_ids_snapshot[id] = true
 	}
 
+	layout_solve_layer_subtree_roots()
 	layout_resolve_anchors()
 	layout_finalize_stack_order()
 	layout_resolve_pointer_hit()

@@ -35,7 +35,7 @@ active_layout_option: Sidebar_Layout_options = .LAYOUT_HORIZONTAL
 
 direction: o.Direction_Layout = .HORIZONTAL
 layout_width: o.Width = .AUTO
-layout_height: o.Height = .AUTO
+layout_height: o.Height
 content_align_x: o.Justify_Align = .MAX_CONTENT
 content_align_y: o.Justify_Align = .START
 
@@ -93,7 +93,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_HORIZONTAL
 			direction = .HORIZONTAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal"}})
@@ -109,7 +109,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_HORIZONTAL_REVERSE
 			direction = .HORIZONTAL_REVERSE
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Reverse"}})
@@ -125,7 +125,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_HORIZONTAL_WRAP
 			direction = .HORIZONTAL_WRAP
 			layout_width = 400
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap"}})
@@ -141,7 +141,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_HORIZONTAL_WRAP_REVERSE
 			direction = .HORIZONTAL_WRAP_REVERSE
 			layout_width = 400
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Horizontal Wrap Reverse"}})
@@ -157,7 +157,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_VERTICAL
 			direction = .VERTICAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical"}})
@@ -173,7 +173,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			active_layout_option = .LAYOUT_VERTICAL_REVERSE
 			direction = .VERTICAL_REVERSE
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Vertical Reverse"}})
@@ -223,7 +223,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			content_align_y = .START
 			direction = .HORIZONTAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Max Content X"}})
@@ -241,7 +241,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			content_align_y = .START
 			direction = .HORIZONTAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Min Content X"}})
@@ -259,7 +259,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			content_align_y = .MAX_CONTENT
 			direction = .VERTICAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Max Content Y"}})
@@ -277,7 +277,7 @@ layout_sidebar := proc(state: w.Rectangle_State) {
 			content_align_y = .MIN_CONTENT
 			direction = .VERTICAL
 			layout_width = .AUTO
-			layout_height = .AUTO
+			layout_height = {}
 		},
 		child = proc(_: ui.Button_state) {
 			w.Text({config = {id = "artboard-nav-button", text = "Min Content Y"}})

@@ -958,6 +958,20 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .TABS_TRIGGER, true
 	case "tabs-content":
 		return .TABS_CONTENT, true
+	case "popover":
+		return .POPOVER, true
+	case "popover-trigger":
+		return .POPOVER_TRIGGER, true
+	case "popover-content":
+		return .POPOVER_CONTENT, true
+	case "dialog":
+		return .DIALOG, true
+	case "dialog-trigger":
+		return .DIALOG_TRIGGER, true
+	case "dialog-scrim":
+		return .DIALOG_SCRIM, true
+	case "dialog-content":
+		return .DIALOG_CONTENT, true
 	}
 	return .RECT, false
 }

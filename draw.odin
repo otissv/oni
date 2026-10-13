@@ -145,12 +145,51 @@ draw_current_space :: proc() -> Draw_Space {
 	return batch_current().space_stack[len(batch_current().space_stack) - 1]
 }
 
+@(private)
+draw_layer_clip_isolate_begin :: proc() {
+	saved := make([dynamic]Rect)
+
+	for r in batch_current().clip_stack {
+		append(&saved, r)
+	}
+
+	append(&batch_current().layer_clip_isolation_stack, saved)
+	clear(&batch_current().clip_stack)
+	batch_invalidate_clip_cache()
+}
+
+@(private)
+draw_layer_clip_isolate_end :: proc() {
+	if len(batch_current().layer_clip_isolation_stack) == 0 do return
+
+	saved :=
+		batch_current().layer_clip_isolation_stack[len(batch_current().layer_clip_isolation_stack) -
+		1]
+	ordered_remove(
+		&batch_current().layer_clip_isolation_stack,
+		len(batch_current().layer_clip_isolation_stack) - 1,
+	)
+	delete(batch_current().clip_stack)
+	batch_current().clip_stack = saved
+	batch_invalidate_clip_cache()
+}
+
 /*
 Pushes a draw coordinate space onto the batch space stack.
 
 Used to switch between screen, artboard, and popover coordinate transforms.
+Popover and overlay spaces drop ancestor overflow clips during the draw pass so
+modals paint across the logical viewport (see layout_resolve_clips).
 */
 draw_push_space :: proc(space: Draw_Space) {
+	if state != nil && ui_pass() == .Draw && layout_space_is_layer(space) {
+		parent := draw_current_space()
+
+		if !layout_space_is_layer(parent) {
+			draw_layer_clip_isolate_begin()
+		}
+	}
+
 	append(&batch_current().space_stack, space)
 	batch_invalidate_view_cache()
 }
@@ -162,11 +201,20 @@ No-op when the space stack is empty.
 */
 draw_pop_space :: proc() {
 	if len(batch_current().space_stack) > 0 {
+		popped := batch_current().space_stack[len(batch_current().space_stack) - 1]
 		ordered_remove(
 			&batch_current().space_stack,
 			len(batch_current().space_stack) - 1,
 		)
 		batch_invalidate_view_cache()
+
+		if state != nil && ui_pass() == .Draw && layout_space_is_layer(popped) {
+			current := draw_current_space()
+
+			if !layout_space_is_layer(current) {
+				draw_layer_clip_isolate_end()
+			}
+		}
 	}
 }
 

@@ -168,6 +168,8 @@ Shutdown :: proc() {
 	color_picker_shutdown()
 	calendar_shutdown()
 	date_picker_shutdown()
+	popover_shutdown()
+	dialog_shutdown()
 	o.widget_ctx_shutdown()
 }
 

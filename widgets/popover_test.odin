@@ -19,22 +19,45 @@ popover_focuses: int
 @(private)
 popover_blurs: int
 
+@(private)
+popover_test_panel :: proc(props: Popover_Content_Panel_Props) {
+	popover_panel(props)
+}
+
+@(private)
+popover_test_open_root :: proc(child: proc(frame_state: Popover_State)) {
+	Popover({
+		config = {id = "root-open"},
+		open = true,
+		child = child,
+	})
+}
+
 @(test)
-popover_theme_base_sets_kind_and_popover_space :: proc(t: ^testing.T) {
-	frame := Popover_State{}
-	base := popover_theme_base(&frame)
+popover_panel_theme_base_sets_kind_and_popover_space :: proc(t: ^testing.T) {
+	frame := Popover_Content_State{}
+	base := popover_panel_theme_base(&frame)
 	testing.expect(t, base.kind == .RECT)
 	testing.expect(t, base.space.mode == .Value)
 	testing.expect(t, base.space.value.(o.Draw_Space) == .POPOVER)
 }
 
 @(test)
-popover_forces_popover_space_over_user_override :: proc(t: ^testing.T) {
+popover_panel_forces_popover_space_over_user_override :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({config = {id = "popover-forced-space", space = set.Space(.SCREEN), width = set.Width(f32(80)), height = set.Height(f32(40))}})
+		popover_test_panel(
+			{
+				config = {
+					id = "popover-forced-space",
+					space = set.Space(.SCREEN),
+					width = set.Width(f32(80)),
+					height = set.Height(f32(40)),
+				},
+			},
+		)
 		widget_test_finish_layout()
 
 		node, ok := widget_test_layout_node("popover-forced-space")
@@ -47,12 +70,12 @@ popover_forces_popover_space_over_user_override :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_layout_registers_node_id_and_kind :: proc(t: ^testing.T) {
+popover_panel_layout_registers_node_id_and_kind :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover(
+		popover_test_panel(
 			{
 				config = {
 					id = "popover-1",
@@ -69,13 +92,15 @@ popover_layout_registers_node_id_and_kind :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_joins_paint_list_popover :: proc(t: ^testing.T) {
+popover_panel_joins_paint_list_popover :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
 		Rectangle({config = {id = "screen-under", width = set.Width(f32(100)), height = set.Height(f32(100))}})
-		Popover({config = {id = "popover-paint", width = set.Width(f32(100)), height = set.Height(f32(100))}})
+		popover_test_panel(
+			{config = {id = "popover-paint", width = set.Width(f32(100)), height = set.Height(f32(100))}},
+		)
 		widget_test_finish_layout()
 		widget_test_begin_draw()
 
@@ -95,12 +120,12 @@ popover_joins_paint_list_popover :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_tabbable_registers_in_tab_order :: proc(t: ^testing.T) {
+popover_panel_tabbable_registers_in_tab_order :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover(
+		popover_test_panel(
 			{
 				config = {
 					id = "popover-tab",
@@ -116,12 +141,12 @@ popover_tabbable_registers_in_tab_order :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_disabled_skips_tab_order :: proc(t: ^testing.T) {
+popover_panel_disabled_skips_tab_order :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover(
+		popover_test_panel(
 			{
 				config = {
 					id = "popover-disabled",
@@ -138,20 +163,20 @@ popover_disabled_skips_tab_order :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_unmount_skips_layout_node :: proc(t: ^testing.T) {
+popover_panel_unmount_skips_layout_node :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
 		popover_unmounts = 0
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-gone",
 				width = set.Width(f32(40)),
 				height = set.Height(f32(20)),
 			},
 			unmount = true,
-			on_unmount = proc(frame_state: Popover_State) -> o.Mount {
+			on_unmount = proc(frame_state: Popover_Content_State) -> o.Mount {
 				_ = frame_state
 				popover_unmounts += 1
 				return .COMPLETED
@@ -165,19 +190,19 @@ popover_unmount_skips_layout_node :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_draw_skips_without_layout_node :: proc(t: ^testing.T) {
+popover_panel_draw_skips_without_layout_node :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-draw-gone",
 				width = set.Width(f32(40)),
 				height = set.Height(f32(20)),
 			},
 			unmount = true,
-			on_unmount = proc(frame_state: Popover_State) -> o.Mount {
+			on_unmount = proc(frame_state: Popover_Content_State) -> o.Mount {
 				_ = frame_state
 				return .COMPLETED
 			},
@@ -186,14 +211,14 @@ popover_draw_skips_without_layout_node :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 
 		popover_clicks = 0
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-draw-gone",
 				width = set.Width(f32(40)),
 				height = set.Height(f32(20)),
 			},
 			unmount = true,
-			on_click = proc(event: Popover_Event) {
+			on_click = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_clicks += 1
 			},
@@ -203,17 +228,23 @@ popover_draw_skips_without_layout_node :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_visibility_none_excludes_from_flex :: proc(t: ^testing.T) {
+popover_panel_visibility_none_excludes_from_flex :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
-			config = {id = "none-row", direction = set.Direction(.HORIZONTAL), gap_x = set.Gap_X(u16(10)), width = set.Width(f32(400)), height = set.Height(f32(50))},
-			child = proc(_: Popover_State) {
-				Popover({config = {id = "none-a", width = set.Width(f32(100)), height = set.Height(f32(50))}})
-				Popover({config = {id = "none-mid", visibility = set.Visibility(.NONE), width = set.Width(f32(100)), height = set.Height(f32(50))}})
-				Popover({config = {id = "none-b", width = set.Width(f32(100)), height = set.Height(f32(50))}})
+		popover_test_panel({
+			config = {
+				id = "none-row",
+				direction = set.Direction(.HORIZONTAL),
+				gap_x = set.Gap_X(u16(10)),
+				width = set.Width(f32(400)),
+				height = set.Height(f32(50)),
+			},
+			child = proc(_: Popover_Content_State) {
+				popover_test_panel({config = {id = "none-a", width = set.Width(f32(100)), height = set.Height(f32(50))}})
+				popover_test_panel({config = {id = "none-mid", visibility = set.Visibility(.NONE), width = set.Width(f32(100)), height = set.Height(f32(50))}})
+				popover_test_panel({config = {id = "none-b", width = set.Width(f32(100)), height = set.Height(f32(50))}})
 			},
 		})
 		widget_test_finish_layout()
@@ -233,14 +264,14 @@ popover_visibility_none_excludes_from_flex :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_children_inherit_popover_space :: proc(t: ^testing.T) {
+popover_panel_children_inherit_popover_space :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-parent", width = set.Width(f32(120)), height = set.Height(f32(80))},
-			child = proc(_: Popover_State) {
+			child = proc(_: Popover_Content_State) {
 				Rectangle({config = {id = "popover-child", width = set.Width(f32(40)), height = set.Height(f32(20))}})
 			},
 		})
@@ -259,14 +290,14 @@ popover_children_inherit_popover_space :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_draw_runs_chrome_and_child :: proc(t: ^testing.T) {
+popover_panel_draw_runs_chrome_and_child :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		popover_child_seen = 0
 
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-draw",
 				width = set.Width(f32(100)),
@@ -277,14 +308,14 @@ popover_draw_runs_chrome_and_child :: proc(t: ^testing.T) {
 				radius = set.Radius(8),
 				opacity = set.F32(0.9),
 			},
-			child = proc(_: Popover_State) {
+			child = proc(_: Popover_Content_State) {
 				popover_child_seen += 1
 			},
 		})
 		widget_test_finish_layout()
 		widget_test_begin_draw()
 
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-draw",
 				width = set.Width(f32(100)),
@@ -295,7 +326,7 @@ popover_draw_runs_chrome_and_child :: proc(t: ^testing.T) {
 				radius = set.Radius(8),
 				opacity = set.F32(0.9),
 			},
-			child = proc(_: Popover_State) {
+			child = proc(_: Popover_Content_State) {
 				popover_child_seen += 1
 			},
 		})
@@ -305,16 +336,16 @@ popover_draw_runs_chrome_and_child :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_draw_skips_rectangle_when_paint_skip :: proc(t: ^testing.T) {
+popover_panel_draw_skips_rectangle_when_paint_skip :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		popover_child_seen = 0
 
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-paint-skip", width = set.Width(f32(50)), height = set.Height(f32(30)), background = set.Background(o.Color.PRIMARY)},
-			child = proc(_: Popover_State) {
+			child = proc(_: Popover_Content_State) {
 				popover_child_seen += 1
 			},
 		})
@@ -326,9 +357,9 @@ popover_draw_skips_rectangle_when_paint_skip :: proc(t: ^testing.T) {
 		node.paint_skip = true
 
 		widget_test_begin_draw()
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-paint-skip", width = set.Width(f32(50)), height = set.Height(f32(30)), background = set.Background(o.Color.PRIMARY)},
-			child = proc(_: Popover_State) {
+			child = proc(_: Popover_Content_State) {
 				popover_child_seen += 1
 			},
 		})
@@ -337,12 +368,12 @@ popover_draw_skips_rectangle_when_paint_skip :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_auto_focus_applies_focus :: proc(t: ^testing.T) {
+popover_panel_auto_focus_applies_focus :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover(
+		popover_test_panel(
 			{
 				config = {
 					id = "popover-af",
@@ -365,7 +396,7 @@ popover_auto_focus_applies_focus :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_click_interaction_on_draw :: proc(t: ^testing.T) {
+popover_panel_click_interaction_on_draw :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		popover_clicks = 0
 		popover_enters = 0
@@ -373,7 +404,7 @@ popover_click_interaction_on_draw :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		popover_draw_interactive()
+		popover_draw_interactive_panel()
 		widget_test_finish_layout()
 
 		node, ok := widget_test_layout_node("popover-click")
@@ -387,12 +418,12 @@ popover_click_interaction_on_draw :: proc(t: ^testing.T) {
 
 		o.w_ctx.left_mouse.pressed = true
 		o.w_ctx.left_mouse.down = true
-		popover_draw_interactive()
+		popover_draw_interactive_panel()
 
 		o.w_ctx.left_mouse.pressed = false
 		o.w_ctx.left_mouse.down = false
 		o.w_ctx.left_mouse.released = true
-		popover_draw_interactive()
+		popover_draw_interactive_panel()
 
 		testing.expect(t, popover_enters >= 1)
 		testing.expect_value(t, popover_clicks, 1)
@@ -400,14 +431,14 @@ popover_click_interaction_on_draw :: proc(t: ^testing.T) {
 }
 
 @(private)
-popover_draw_interactive :: proc() {
-	Popover({
+popover_draw_interactive_panel :: proc() {
+	popover_test_panel({
 		config = {id = "popover-click", width = set.Width(f32(80)), height = set.Height(f32(40))},
-		on_mouse_enter = proc(event: Popover_Event) {
+		on_mouse_enter = proc(event: Popover_Content_Event) {
 			_ = event
 			popover_enters += 1
 		},
-		on_click = proc(event: Popover_Event) {
+		on_click = proc(event: Popover_Content_Event) {
 			_ = event
 			popover_clicks += 1
 		},
@@ -415,13 +446,13 @@ popover_draw_interactive :: proc() {
 }
 
 @(test)
-popover_hits_above_screen_sibling :: proc(t: ^testing.T) {
+popover_panel_hits_above_screen_sibling :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
 		Rectangle({config = {id = "hit-screen", width = set.Width(f32(100)), height = set.Height(f32(100))}})
-		Popover({config = {id = "hit-popover", width = set.Width(f32(100)), height = set.Height(f32(100))}})
+		popover_test_panel({config = {id = "hit-popover", width = set.Width(f32(100)), height = set.Height(f32(100))}})
 		widget_test_finish_layout()
 
 		screen, screen_ok := widget_test_layout_node("hit-screen")
@@ -441,20 +472,20 @@ popover_hits_above_screen_sibling :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_mount_lifecycle :: proc(t: ^testing.T) {
+popover_panel_mount_lifecycle :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		popover_mounts = 0
 
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {
 				id = "popover-mount",
 				width = set.Width(f32(40)),
 				height = set.Height(f32(20)),
 			},
-			on_mount = proc(frame_state: Popover_State) -> o.Mount {
+			on_mount = proc(frame_state: Popover_Content_State) -> o.Mount {
 				_ = frame_state
 				popover_mounts += 1
 				return .COMPLETED
@@ -467,13 +498,13 @@ popover_mount_lifecycle :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_empty_id_still_layouts :: proc(t: ^testing.T) {
+popover_panel_empty_id_still_layouts :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
 		before := len(o.state.ui.layout.nodes)
-		Popover({config = {width = set.Width(f32(40)), height = set.Height(f32(20))}})
+		popover_test_panel({config = {width = set.Width(f32(40)), height = set.Height(f32(20))}})
 		widget_test_finish_layout()
 		testing.expect(t, len(o.state.ui.layout.nodes) > before)
 
@@ -489,9 +520,9 @@ popover_empty_id_still_layouts :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_config_override_keeps_kind :: proc(t: ^testing.T) {
+popover_panel_config_override_keeps_kind :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
-		props := Popover_Props {
+		props := Popover_Content_Panel_Props {
 			config = {
 				id = "popover-styled",
 				background = set.Background(o.Color.PRIMARY),
@@ -499,8 +530,8 @@ popover_config_override_keeps_kind :: proc(t: ^testing.T) {
 			},
 		}
 		props.config.space = set.Space(.POPOVER)
-		frame := Popover_State{}
-		config := widget_config(props, &frame, popover_theme_base)
+		frame := Popover_Content_State{}
+		config := widget_config(props, &frame, popover_panel_theme_base)
 		testing.expect(t, config.kind == .RECT)
 		testing.expect(t, config.space == .POPOVER)
 		testing.expect_value(t, config.id, "popover-styled")
@@ -508,7 +539,7 @@ popover_config_override_keeps_kind :: proc(t: ^testing.T) {
 }
 
 @(test)
-popover_tab_focus_and_blur_handlers :: proc(t: ^testing.T) {
+popover_panel_tab_focus_and_blur_handlers :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		popover_focuses = 0
 		popover_blurs = 0
@@ -516,13 +547,13 @@ popover_tab_focus_and_blur_handlers :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-tab-focus", tabbable = set.Bool(true), width = set.Width(f32(60)), height = set.Height(f32(30))},
-			on_focus = proc(event: Popover_Event) {
+			on_focus = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_focuses += 1
 			},
-			on_blur = proc(event: Popover_Event) {
+			on_blur = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_blurs += 1
 			},
@@ -538,13 +569,13 @@ popover_tab_focus_and_blur_handlers :: proc(t: ^testing.T) {
 		o.w_ctx.focused_id = key
 		o.w_ctx.tab_focus_previous_id = "other"
 
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-tab-focus", tabbable = set.Bool(true), width = set.Width(f32(60)), height = set.Height(f32(30))},
-			on_focus = proc(event: Popover_Event) {
+			on_focus = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_focuses += 1
 			},
-			on_blur = proc(event: Popover_Event) {
+			on_blur = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_blurs += 1
 			},
@@ -555,17 +586,65 @@ popover_tab_focus_and_blur_handlers :: proc(t: ^testing.T) {
 		o.w_ctx.focused_id = "other"
 		o.w_ctx.tab_focus_previous_id = key
 
-		Popover({
+		popover_test_panel({
 			config = {id = "popover-tab-focus", tabbable = set.Bool(true), width = set.Width(f32(60)), height = set.Height(f32(30))},
-			on_focus = proc(event: Popover_Event) {
+			on_focus = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_focuses += 1
 			},
-			on_blur = proc(event: Popover_Event) {
+			on_blur = proc(event: Popover_Content_Event) {
 				_ = event
 				popover_blurs += 1
 			},
 		})
 		testing.expect_value(t, popover_blurs, 1)
+	})
+}
+
+@(test)
+popover_content_skips_layout_when_closed :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Popover({
+			config = {id = "root-closed"},
+			open = false,
+			child = proc(_: Popover_State) {
+				Popover_Content({
+					config = {id = "popover-content-closed", width = set.Width(f32(80)), height = set.Height(f32(40))},
+				})
+			},
+		})
+		widget_test_finish_layout()
+
+		_, ok := widget_test_layout_node("popover-content-closed")
+		testing.expect(t, !ok)
+	})
+}
+
+@(test)
+popover_compound_content_layouts_when_open :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		popover_test_open_root(proc(_: Popover_State) {
+			Popover_Trigger({config = {id = "popover-trigger"}})
+			Popover_Content({
+				config = {width = set.Width(f32(120)), height = set.Height(f32(60))},
+				child = proc(_: Popover_Content_Props_State) {},
+			})
+		})
+		widget_test_finish_layout()
+
+		found := false
+		for &n in o.state.ui.layout.nodes {
+			if n.space == .POPOVER && n.kind == .RECT {
+				found = true
+				break
+			}
+		}
+		testing.expect(t, found)
 	})
 }

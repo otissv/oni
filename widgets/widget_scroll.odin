@@ -9,17 +9,18 @@ WIDGET_SCROLL_STACK_MAX :: 16
 
 @(private)
 Widget_Scroll_Ctx :: struct {
-	layout_id:  o.UI_Id,
-	parent_id:  string,
-	element_id: string,
-	overflow_x: o.Overflow,
-	overflow_y: o.Overflow,
-	scroll:     ^o.Vec2,
-	style:      Scroll_Bar_Style,
-	hovered:    bool,
-	on_scroll:  proc(scroll_x, scroll_y: f32),
-	user_fn:    proc(data: rawptr),
-	user_data:  rawptr,
+	layout_id:           o.UI_Id,
+	parent_id:           string,
+	element_id:          string,
+	overflow_x:          o.Overflow,
+	overflow_y:          o.Overflow,
+	scroll:              ^o.Vec2,
+	style:               Scroll_Bar_Style,
+	hovered:             bool,
+	content_clip_active: bool,
+	on_scroll:           proc(scroll_x, scroll_y: f32),
+	user_fn:             proc(data: rawptr),
+	user_data:           rawptr,
 }
 
 @(private)
@@ -152,21 +153,16 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 
 	metrics, _ := o.Scrollport_Metrics_Get(ctx.layout_id)
 	auto_reveal := o.widget_scroll_auto_reveal_get(ctx.element_id)
-	show_y := widget_scroll_overflow_shows_bar(
-		ctx.overflow_y,
-		metrics.max_scroll.y,
-		auto_reveal,
-	)
-	show_x := widget_scroll_overflow_shows_bar(
-		ctx.overflow_x,
-		metrics.max_scroll.x,
-		auto_reveal,
-	)
+	show_y := widget_scroll_overflow_shows_bar(ctx.overflow_y, metrics.max_scroll.y, auto_reveal)
+	show_x := widget_scroll_overflow_shows_bar(ctx.overflow_x, metrics.max_scroll.x, auto_reveal)
 
 	bar_size := scroll_bar_style_size(ctx.style)
 	bar_y_id := widget_scroll_bar_id(ctx.parent_id, "scroll-bar-y")
 	bar_x_id := widget_scroll_bar_id(ctx.parent_id, "scroll-bar-x")
 
+	// `right = 0` + `width = bar_size` pins the bar's right edge to the padding
+	// box (widget inner edge); the track extends left by bar_size into view.
+	// Content-box overflow clip is popped before emit so padding does not hide it.
 	if show_y {
 		bottom_inset := show_x ? bar_size : f32(0)
 		bar_cfg := Scroll_Bar_Config {
@@ -296,7 +292,7 @@ widget_children :: proc(
 	o.widget_scroll_apply(element_id, author, &resolved)
 
 	Binder :: struct {
-		child: proc(S),
+		child: proc(_: S),
 		state: S,
 	}
 	binder := Binder {
@@ -332,24 +328,38 @@ widget_children :: proc(
 	)
 	defer widget_scroll_pop()
 
-	clipped := false
-	if o.ui_pass() == .Draw {
-		clipped = o.Draw_Push_Layout_Clip(layout_id)
+	if !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
+		o.Children(child, layout_id, resolved, frame_state)
+
+		return
 	}
-	defer if clipped do o.Draw_Pop_Clip()
+
+	// Content clips to the content box; overlay bars need the padding-box edge,
+	// so pop that clip before emitting chrome (still inside Children).
+	if o.ui_pass() == .Draw {
+		widget_scroll_top().content_clip_active = o.Draw_Push_Layout_Clip(layout_id)
+	}
 
 	build :: proc(fs: S) {
 		_ = fs
 		ctx := widget_scroll_top()
+
 		if ctx.user_fn != nil {
 			ctx.user_fn(ctx.user_data)
 		}
+
+		if o.ui_pass() == .Draw && ctx.content_clip_active {
+			o.Draw_Pop_Clip()
+			ctx.content_clip_active = false
+		}
+
 		widget_emit_scroll_bars(ctx^)
 	}
 
-	if o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
-		o.Children(build, layout_id, resolved, frame_state)
-	} else {
-		o.Children(child, layout_id, resolved, frame_state)
+	o.Children(build, layout_id, resolved, frame_state)
+
+	if widget_scroll_top().content_clip_active {
+		o.Draw_Pop_Clip()
+		widget_scroll_top().content_clip_active = false
 	}
 }

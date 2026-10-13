@@ -173,6 +173,7 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 		avail_w,
 		child.config.min_w,
 		child.config.max_w,
+		false,
 	)
 	height := layout_resolve_axis_size(
 		child.config.height,
@@ -180,6 +181,7 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 		avail_h,
 		child.config.min_h,
 		child.config.max_h,
+		true,
 	)
 
 	if left_set && right_set {
@@ -220,7 +222,12 @@ layout_place_against_containing_block :: proc(child: ^Layout_Node, cb: Rect) {
 		y = cb.y + m.t
 	}
 
-	child.rect = {x = x, y = y, w = width, h = height}
+	child.rect = {
+		x = x,
+		y = y,
+		w = width,
+		h = height,
+	}
 	layout_finalize_after_rect(child)
 }
 
@@ -240,11 +247,19 @@ layout_place_out_of_flow :: proc(child: ^Layout_Node, parent: ^Layout_Node) {
 
 /*
 Resolves cumulative clip rects for a subtree after geometry is known.
+
+Paint clip (`clip_rect`) includes this node's own overflow content-box inset.
+Hit clip (`hit_clip_rect`) is only ancestor clips so the node's padding/border
+box stays hittable — matching CSS, and required for overlay scrollbars that sit
+on the padding-box edge.
 */
 layout_resolve_clips :: proc(node_index: int, parent_clip: Rect, parent_has_clip: bool) {
 	node := &state.ui.layout.nodes[node_index]
 	clip := parent_clip
 	has_clip := parent_has_clip
+
+	node.hit_clip_rect = parent_clip
+	node.has_hit_clip = parent_has_clip
 
 	if layout_overflow_clips(node.config.overflow_x) ||
 	   layout_overflow_clips(node.config.overflow_y) {
@@ -277,6 +292,27 @@ layout_resolve_clips :: proc(node_index: int, parent_clip: Rect, parent_has_clip
 			layout_resolve_clips(child_index, {}, false)
 			continue
 		}
+
+		child := &state.ui.layout.nodes[child_index]
+
+		// Overlay scrollbars sit on the padding-box edge; do not inherit this
+		// scrollport's content-box clip (padding would make them unhittable).
+		if child.kind == .SCROLL_BAR && layout_node_is_scrollport(node) {
+			bar_clip := parent_clip
+			bar_has_clip := parent_has_clip
+			pad := layout_padding_box(node)
+
+			if bar_has_clip {
+				bar_clip = rect_intersect(bar_clip, pad)
+			} else {
+				bar_clip = pad
+				bar_has_clip = true
+			}
+
+			layout_resolve_clips(child_index, bar_clip, bar_has_clip)
+			continue
+		}
+
 		layout_resolve_clips(child_index, clip, has_clip)
 	}
 }
@@ -381,6 +417,25 @@ layout_assign_stack :: proc(node_index: int, paint_list: ^[dynamic]int, ancestor
 }
 
 /*
+Re-solves popover/overlay subtree roots against their draw-space viewport.
+
+Nested under screen content they are first positioned in the parent chain; layer
+roots must use viewport bounds so modals (Dialog_Scrim, dialog content) cover the
+window, not the embedding scrollport.
+*/
+layout_solve_layer_subtree_roots :: proc() {
+	if state == nil || state.ui.pass != .Layout do return
+
+	for node_index in 0 ..< len(state.ui.layout.nodes) {
+		if !layout_is_layer_subtree_root(node_index) do continue
+
+		node := &state.ui.layout.nodes[node_index]
+		bounds := layout_space_bounds(node.space)
+		layout_solve(node, bounds)
+	}
+}
+
+/*
 Finalizes global stack ordering: artboard (back), screen, popover, overlay (front).
 
 Each popover/overlay subtree root is its own stacking context; z_index sorts within
@@ -467,9 +522,17 @@ layout_hit_point_in_node :: proc(node: ^Layout_Node, mouse: Vec2) -> bool {
 	if node.rect.w <= 0 || node.rect.h <= 0 do return false
 	if mouse.x < node.rect.x || mouse.x >= node.rect.x + node.rect.w do return false
 	if mouse.y < node.rect.y || mouse.y >= node.rect.y + node.rect.h do return false
-	if node.has_clip {
-		if mouse.x < node.clip_rect.x || mouse.x >= node.clip_rect.x + node.clip_rect.w do return false
-		if mouse.y < node.clip_rect.y || mouse.y >= node.clip_rect.y + node.clip_rect.h do return false
+	// Constrain by ancestor overflow only — own content-box paint clip must not
+	// punch a hole through the node's padding (overlay scrollbar hit corridor).
+	if node.has_hit_clip {
+		if mouse.x < node.hit_clip_rect.x ||
+		   mouse.x >= node.hit_clip_rect.x + node.hit_clip_rect.w {
+			return false
+		}
+		if mouse.y < node.hit_clip_rect.y ||
+		   mouse.y >= node.hit_clip_rect.y + node.hit_clip_rect.h {
+			return false
+		}
 	}
 	return true
 }
