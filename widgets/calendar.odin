@@ -949,6 +949,7 @@ calendar_theme_base :: proc(frame_state: ^Calendar_State) -> Calendar_Config {
 		padding = set.Padding(o.Pd_struct{x = 0, y = 0}),
 		radius = set.Radius(f32(8)),
 		background = set.Background(o.Color.CARD),
+		border_color = set.Border_color(border),
 		color = set.Colors(o.Color.FOREGROUND),
 		opacity = set.F32(opacity),
 		overflow_x = set.Overflow_X(.HIDDEN),

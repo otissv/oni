@@ -49,6 +49,7 @@ Cross-frame date picker runtime for input draft text while editing.
 @(private)
 Date_Picker_Runtime :: struct {
 	input_text:    string,
+	input_format:  string,
 	input_editing: bool,
 }
 
@@ -97,8 +98,6 @@ Date_Picker_Ctx :: struct {
 	content_frame:      Date_Picker_State,
 	trigger_user_click: proc(event: Date_Picker_Trigger_Event),
 	value_child:        proc(frame_state: Date_Picker_Value_State),
-	input_user_change:  proc(event: Date_Picker_Input_Event, text: string),
-	input_user_submit:  proc(event: Date_Picker_Input_Event),
 }
 
 @(private)
@@ -126,6 +125,10 @@ date_picker_shutdown :: proc() {
 	for key, &rt in date_picker_runtimes {
 		if rt.input_text != "" {
 			delete(rt.input_text)
+		}
+
+		if rt.input_format != "" {
+			delete(rt.input_format)
 		}
 
 		delete(key)
@@ -168,6 +171,10 @@ date_picker_runtime_clear :: proc(key: string) {
 
 	if rt.input_text != "" {
 		delete(rt.input_text)
+	}
+
+	if rt.input_format != "" {
+		delete(rt.input_format)
 	}
 
 	for k in date_picker_runtimes {
@@ -508,16 +515,14 @@ date_picker_apply_selection :: proc(selection: Calendar_Selection) {
 		label := ""
 
 		if mode == .SINGLE && sel.has_single {
-			label = Calendar_Format_ISO(sel.single, context.temp_allocator)
+			format := date_picker_input_runtime_format(ctx.picker_key)
+			label = date_picker_input_format_date(sel.single, format)
 		} else if date_picker_selection_has_value(sel) {
 			label = date_picker_format_selection_default(sel, context.temp_allocator)
 		}
 
 		date_picker_runtime_set_string(&rt.input_text, label)
-
-		if mode == .SINGLE && rt.input_editing && rt.input_text == label {
-			rt.input_editing = false
-		}
+		rt.input_editing = false
 	}
 
 	if date_picker_should_close_after_select(ctx, sel) {

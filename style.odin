@@ -736,6 +736,10 @@ merge_widget_config :: proc(base, override: Widget_Config) -> Widget_Config {
 	result := base
 
 	if override.id != "" do result.id = override.id
+
+	// Author/composed kinds override theme defaults. Zero value `.RECT` means unset.
+	if override.kind != .RECT do result.kind = override.kind
+
 	merge_cfg(Text_Align, &result.align, override.align)
 	merge_cfg(Style_Bool, &result.auto_focus, override.auto_focus)
 	merge_cfg(Style_Bool, &result.tabbable, override.tabbable)

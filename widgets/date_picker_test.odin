@@ -63,23 +63,22 @@ date_picker_test_on_trigger_click :: proc(_: Date_Picker_Trigger_Event) {
 
 @(private)
 date_picker_test_trigger_child :: proc(_: Date_Picker_Trigger_State) {
-	Date_Picker_Value({
-		config = {id = "dp-value"},
-		placeholder = "Pick a date",
-	})
+	Date_Picker_Value({config = {id = "dp-value"}, placeholder = "Pick a date"})
 }
 
 @(private)
 date_picker_test_child :: proc(_: Date_Picker_State) {
-	Date_Picker_Trigger({
-		config = {
-			id = "dp-trigger",
-			width = set.Width(f32(220)),
-			height = set.Height(f32(36)),
+	Date_Picker_Trigger(
+		{
+			config = {
+				id = "dp-trigger",
+				width = set.Width(f32(220)),
+				height = set.Height(f32(36)),
+			},
+			child = date_picker_test_trigger_child,
+			on_click = date_picker_test_on_trigger_click,
 		},
-		child = date_picker_test_trigger_child,
-		on_click = date_picker_test_on_trigger_click,
-	})
+	)
 }
 
 @(test)
@@ -122,12 +121,7 @@ date_picker_format_selection_covers_modes :: proc(t: ^testing.T) {
 	range := date_picker_format_selection_default(
 		{
 			mode = .RANGE,
-			range = {
-				from = {2024, 1, 20},
-				to = {2024, 2, 9},
-				has_from = true,
-				has_to = true,
-			},
+			range = {from = {2024, 1, 20}, to = {2024, 2, 9}, has_from = true, has_to = true},
 		},
 		context.temp_allocator,
 	)
@@ -201,20 +195,22 @@ date_picker_content_anchors_below_trigger :: proc(t: ^testing.T) {
 			widget_test_end_frame()
 		}
 
-		Date_Picker({
-			config = {
-				id = "dp-anchor",
-				x = set.F32(35),
-				y = set.F32(60),
-				width = set.Width(f32(240)),
+		Date_Picker(
+			{
+				config = {
+					id = "dp-anchor",
+					x = set.F32(35),
+					y = set.F32(60),
+					width = set.Width(f32(240)),
+				},
+				mode = .SINGLE,
+				open = true,
+				on_open_change = date_picker_test_on_open,
+				month = {2024, 6, 1},
+				today = {2024, 6, 5},
+				child = date_picker_test_child,
 			},
-			mode = .SINGLE,
-			open = true,
-			on_open_change = date_picker_test_on_open,
-			month = {2024, 6, 1},
-			today = {2024, 6, 5},
-			child = date_picker_test_child,
-		})
+		)
 		widget_test_finish_layout()
 
 		root, root_ok := widget_test_layout_node("dp-anchor")
@@ -238,7 +234,11 @@ date_picker_content_anchors_below_trigger :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 
 		expect_close(t, content.rect.x, trigger.rect.x)
-		expect_close(t, content.rect.y, trigger.rect.y + trigger.rect.h + DATE_PICKER_POPOVER_GAP_PX)
+		expect_close(
+			t,
+			content.rect.y,
+			trigger.rect.y + trigger.rect.h + DATE_PICKER_POPOVER_GAP_PX,
+		)
 		testing.expect(t, content.rect.w > 0)
 		testing.expect(t, content.rect.w < f32(o.state.dpi.logical_w) * 0.5)
 		testing.expect(t, content.rect.w + 0.5 >= DATE_PICKER_DEFAULT_CALENDAR_WIDTH)
@@ -255,21 +255,23 @@ date_picker_range_two_months_sizes_panel :: proc(t: ^testing.T) {
 			widget_test_end_frame()
 		}
 
-		Date_Picker({
-			config = {
-				id = "dp-range-2m",
-				x = set.F32(20),
-				y = set.F32(40),
-				width = set.Width(f32(280)),
+		Date_Picker(
+			{
+				config = {
+					id = "dp-range-2m",
+					x = set.F32(20),
+					y = set.F32(40),
+					width = set.Width(f32(280)),
+				},
+				mode = .RANGE,
+				open = true,
+				number_of_months = 2,
+				on_open_change = date_picker_test_on_open,
+				month = {2024, 6, 1},
+				today = {2024, 6, 5},
+				child = date_picker_test_child,
 			},
-			mode = .RANGE,
-			open = true,
-			number_of_months = 2,
-			on_open_change = date_picker_test_on_open,
-			month = {2024, 6, 1},
-			today = {2024, 6, 5},
-			child = date_picker_test_child,
-		})
+		)
 		widget_test_finish_layout()
 
 		root, root_ok := widget_test_layout_node("dp-range-2m")
@@ -338,20 +340,19 @@ date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Date_Picker({
-			config = {
-				id = "dp",
-				width = set.Width(f32(240)),
+		Date_Picker(
+			{
+				config = {id = "dp", width = set.Width(f32(240))},
+				mode = .SINGLE,
+				open = true,
+				on_open_change = date_picker_test_on_open,
+				selected = {2024, 6, 5},
+				has_selected = true,
+				month = {2024, 6, 1},
+				today = {2024, 6, 5},
+				child = date_picker_test_child,
 			},
-			mode = .SINGLE,
-			open = true,
-			on_open_change = date_picker_test_on_open,
-			selected = {2024, 6, 5},
-			has_selected = true,
-			month = {2024, 6, 1},
-			today = {2024, 6, 5},
-			child = date_picker_test_child,
-		})
+		)
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "dp")
@@ -457,9 +458,7 @@ date_picker_select_single_closes_and_notifies :: proc(t: ^testing.T) {
 		)
 		defer date_picker_ctx_pop()
 
-		Date_Picker_Notify_Select(
-			{mode = .SINGLE, single = {2024, 6, 5}, has_single = true},
-		)
+		Date_Picker_Notify_Select({mode = .SINGLE, single = {2024, 6, 5}, has_single = true})
 		testing.expect_value(t, date_picker_test_select_count, 1)
 		testing.expect(t, date_picker_test_has_selected)
 		testing.expect(t, Calendar_Date_Equal(date_picker_test_selected, {2024, 6, 5}))
@@ -483,23 +482,13 @@ date_picker_select_range_closes_when_complete :: proc(t: ^testing.T) {
 		)
 		defer date_picker_ctx_pop()
 
-		Date_Picker_Notify_Select(
-			{
-				mode = .RANGE,
-				range = {from = {2024, 1, 20}, has_from = true},
-			},
-		)
+		Date_Picker_Notify_Select({mode = .RANGE, range = {from = {2024, 1, 20}, has_from = true}})
 		testing.expect(t, Date_Picker_Is_Open())
 
 		Date_Picker_Notify_Select(
 			{
 				mode = .RANGE,
-				range = {
-					from = {2024, 1, 20},
-					to = {2024, 2, 9},
-					has_from = true,
-					has_to = true,
-				},
+				range = {from = {2024, 1, 20}, to = {2024, 2, 9}, has_from = true, has_to = true},
 			},
 		)
 		testing.expect(t, !Date_Picker_Is_Open())
@@ -524,9 +513,7 @@ date_picker_keep_open_prevents_close_on_select :: proc(t: ^testing.T) {
 		)
 		defer date_picker_ctx_pop()
 
-		Date_Picker_Notify_Select(
-			{mode = .SINGLE, single = {2024, 6, 5}, has_single = true},
-		)
+		Date_Picker_Notify_Select({mode = .SINGLE, single = {2024, 6, 5}, has_single = true})
 		testing.expect(t, Date_Picker_Is_Open())
 	})
 }
@@ -593,7 +580,10 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 		)
 		defer date_picker_ctx_pop()
 
-		o.w_ctx.keys[int(o.Scancode.ESCAPE)] = {pressed = true, down = true}
+		o.w_ctx.keys[int(o.Scancode.ESCAPE)] = {
+			pressed = true,
+			down    = true,
+		}
 		date_picker_handle_keys()
 		testing.expect(t, !date_picker_test_open)
 	})
@@ -602,25 +592,14 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 @(test)
 date_picker_value_shows_placeholder_and_selection :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
-		date_picker_ctx_push(
-			{
-				picker_key = "val",
-				mode = .SINGLE,
-				has_selected = false,
-			},
-		)
+		date_picker_ctx_push({picker_key = "val", mode = .SINGLE, has_selected = false})
 		text, has := date_picker_resolve_value_text("Pick a date")
 		testing.expect(t, !has)
 		testing.expect(t, text == "Pick a date")
 		date_picker_ctx_pop()
 
 		date_picker_ctx_push(
-			{
-				picker_key = "val2",
-				mode = .SINGLE,
-				selected = {2024, 6, 5},
-				has_selected = true,
-			},
+			{picker_key = "val2", mode = .SINGLE, selected = {2024, 6, 5}, has_selected = true},
 		)
 		text, has = date_picker_resolve_value_text("Pick a date")
 		testing.expect(t, has)
@@ -645,6 +624,8 @@ date_picker_input_parses_iso_on_commit :: proc(t: ^testing.T) {
 		)
 		defer date_picker_ctx_pop()
 
+		date_picker_input_sync_runtime_format("input", "YYYY-MM-DD")
+
 		ok := date_picker_input_commit_text("2024-06-05")
 		testing.expect(t, ok)
 		testing.expect(t, date_picker_test_has_selected)
@@ -652,6 +633,166 @@ date_picker_input_parses_iso_on_commit :: proc(t: ^testing.T) {
 
 		ok = date_picker_input_commit_text("not-a-date")
 		testing.expect(t, !ok)
+	})
+}
+
+@(test)
+date_picker_input_format_parses_all_orders_and_separators :: proc(t: ^testing.T) {
+	cases := [?]string {
+		"YYYY-MM-DD",
+		"YYYY/MM/DD",
+		"DD-MM-YYYY",
+		"DD/MM/YYYY",
+		"MM-DD-YYYY",
+		"MM/DD/YYYY",
+		"YYYY-DD-MM",
+		"yyyy/dd/MM",
+		"dd-YYYY-MM",
+		"MM/YYYY/DD",
+	}
+
+	for format in cases {
+		parsed := date_picker_input_parse_format(format)
+		testing.expect(t, parsed.ok)
+		testing.expect(t, parsed.pattern != "")
+	}
+
+	testing.expect(t, !date_picker_input_parse_format("YYYY.MM.DD").ok)
+	testing.expect(t, !date_picker_input_parse_format("YYYY-MM").ok)
+	testing.expect(t, !date_picker_input_parse_format("YYYY-MM-DD-HH").ok)
+	testing.expect(t, !date_picker_input_parse_format("YYYY-MM/DD").ok)
+}
+
+@(test)
+date_picker_input_sanitize_rejects_letters_and_keeps_structure :: proc(t: ^testing.T) {
+	iso := date_picker_input_resolve_format("YYYY-MM-DD")
+	testing.expect(t, date_picker_input_sanitize_text("hello", iso) == "")
+	testing.expect(t, date_picker_input_sanitize_text("20ab24", iso) == "2024")
+	testing.expect(t, date_picker_input_sanitize_text("2024-06-05", iso) == "2024-06-05")
+	testing.expect(t, date_picker_input_sanitize_text("20240605", iso) == "2024-06-05")
+
+	slash := date_picker_input_resolve_format("DD/MM/YYYY")
+	testing.expect(t, date_picker_input_sanitize_text("05/06/2024", slash) == "05/06/2024")
+	testing.expect(t, date_picker_input_sanitize_text("05-06-2024", slash) == "05/06/2024")
+	testing.expect(t, date_picker_input_sanitize_text("xyz", slash) == "")
+}
+
+@(test)
+date_picker_input_format_and_parse_round_trip :: proc(t: ^testing.T) {
+	date := Calendar_Date{2024, 6, 5}
+
+	iso := date_picker_input_resolve_format("YYYY-MM-DD")
+	iso_text := date_picker_input_format_date(date, iso)
+	testing.expect(t, iso_text == "2024-06-05")
+	parsed, ok := date_picker_input_parse_date(iso_text, iso)
+	testing.expect(t, ok)
+	testing.expect(t, Calendar_Date_Equal(parsed, date))
+
+	eu := date_picker_input_resolve_format("DD/MM/YYYY")
+	eu_text := date_picker_input_format_date(date, eu)
+	testing.expect(t, eu_text == "05/06/2024")
+	parsed, ok = date_picker_input_parse_date(eu_text, eu)
+	testing.expect(t, ok)
+	testing.expect(t, Calendar_Date_Equal(parsed, date))
+
+	_, bad := date_picker_input_parse_date("2024-13-01", iso)
+	testing.expect(t, !bad)
+}
+
+@(test)
+date_picker_input_calendar_select_updates_formatted_text :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		date_picker_test_reset()
+		defer date_picker_shutdown()
+
+		date_picker_ctx_push(
+			{
+				picker_key = "input-fmt",
+				mode = .SINGLE,
+				open = true,
+				on_select = date_picker_test_on_select,
+			},
+		)
+		defer date_picker_ctx_pop()
+
+		date_picker_input_sync_runtime_format("input-fmt", "DD/MM/YYYY")
+		rt := date_picker_runtime_ensure("input-fmt")
+		testing.expect(t, rt != nil)
+
+		if rt == nil {
+			return
+		}
+
+		rt.input_editing = true
+		date_picker_runtime_set_string(&rt.input_text, "hello")
+
+		date_picker_on_calendar_select({mode = .SINGLE, single = {2024, 6, 5}, has_single = true})
+
+		testing.expect(t, !rt.input_editing)
+		testing.expect(t, rt.input_text == "05/06/2024")
+		testing.expect(t, date_picker_test_has_selected)
+		testing.expect(t, Calendar_Date_Equal(date_picker_test_selected, {2024, 6, 5}))
+	})
+}
+
+@(private)
+date_picker_test_input_child :: proc(_: Date_Picker_State) {
+	Date_Picker_Input(
+		{config = {id = "dpi-press-input", width = set.Width(f32(220)), format = "YYYY-MM-DD"}},
+	)
+}
+
+@(test)
+date_picker_input_content_press_does_not_dismiss :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		date_picker_test_reset()
+		defer date_picker_shutdown()
+
+		date_picker_test_open = true
+		props := Date_Picker_Props {
+			config = {id = "dpi-press"},
+			mode = .SINGLE,
+			open = true,
+			month = {2024, 6, 1},
+			today = {2024, 6, 5},
+			on_open_change = date_picker_test_on_open,
+			on_select = date_picker_test_on_select,
+			child = date_picker_test_input_child,
+		}
+
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+		Date_Picker(props)
+		widget_test_finish_layout()
+
+		day: ^o.Layout_Node
+
+		for i in 0 ..< len(o.state.ui.layout.nodes) {
+			node := &o.state.ui.layout.nodes[i]
+
+			if node.kind == .BUTTON && node.space == .POPOVER {
+				day = node
+
+				break
+			}
+		}
+
+		testing.expect(t, day != nil)
+
+		if day == nil {
+			return
+		}
+
+		widget_test_begin_draw()
+		o.w_ctx.mouse_x = day.rect.x + day.rect.w / 2
+		o.w_ctx.mouse_y = day.rect.y + day.rect.h / 2
+		o.w_ctx.left_mouse = {
+			pressed = true,
+		}
+		o.layout_resolve_pointer_hit()
+		Date_Picker(props)
+
+		testing.expect(t, date_picker_test_open)
 	})
 }
 
@@ -669,10 +810,15 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 			month = {2024, 6, 1},
 			today = {2024, 6, 5},
 			child = proc(_: Date_Picker_State) {
-				Date_Picker_Input({
-					config = {id = "dpi-input", width = set.Width(f32(220))},
-					placeholder = "YYYY-MM-DD",
-				})
+				Date_Picker_Input(
+					{
+						config = {
+							id = "dpi-input",
+							width = set.Width(f32(220)),
+							placeholder = "YYYY-MM-DD",
+						},
+					},
+				)
 			},
 		})
 		widget_test_finish_layout()
@@ -680,7 +826,6 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 		expect_registered_id(t, "dpi")
 		expect_layout_kind(t, "dpi", .DATE_PICKER)
 		expect_registered_id(t, "dpi-input")
-		expect_registered_id(t, "dpi-input/field")
 		expect_registered_id(t, "dpi/__date_picker_popover")
 		expect_registered_id(t, "dpi/__date_picker_popover/__popover_content")
 
