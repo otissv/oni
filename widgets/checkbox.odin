@@ -50,7 +50,6 @@ Checkbox_Props :: struct {
 	on_mount:                     proc(frame_state: Checkbox_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Checkbox_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Checkbox_Event),
 	on_blur:                      proc(event: Checkbox_Event),
 	on_mouse_enter:               proc(event: Checkbox_Event),
@@ -89,7 +88,7 @@ checkbox_value_normalize :: proc(value: Checkbox_Value) -> Checkbox_Value {
 /*
 Returns the value produced by user activation.
 
-An indeterminate checkbox becomes checked, matching Radix checkbox behavior.
+An indeterminate checkbox becomes checked.
 */
 Checkbox_Next_Value :: proc(value: Checkbox_Value) -> Checkbox_Value {
 	switch checkbox_value_normalize(value) {
@@ -190,12 +189,7 @@ checkbox_draw_indicator :: proc(
 
 	if checked == .INDETERMINATE {
 		y := rect.y + rect.h * 0.5
-		o.Draw_Line(
-			{rect.x + rect.w * 0.25, y},
-			{rect.x + rect.w * 0.75, y},
-			color,
-			thickness,
-		)
+		o.Draw_Line({rect.x + rect.w * 0.25, y}, {rect.x + rect.w * 0.75, y}, color, thickness)
 
 		return
 	}
@@ -257,9 +251,9 @@ Checkbox :: proc(props: Checkbox_Props) {
 
 	previous_action_context := checkbox_action_context
 	checkbox_action_context = {
-		active = true,
+		active            = true,
 		on_checked_change = props.on_checked_change,
-		on_click = props.on_click,
+		on_click          = props.on_click,
 	}
 	defer checkbox_action_context = previous_action_context
 
@@ -302,7 +296,6 @@ Checkbox :: proc(props: Checkbox_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -391,7 +384,6 @@ Checkbox :: proc(props: Checkbox_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
@@ -401,12 +393,5 @@ Checkbox :: proc(props: Checkbox_Props) {
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
-	widget_dispatch_events(
-		props_with_toggle,
-		&frame_state,
-		handlers,
-		event,
-		key,
-		was_focused,
-	)
+	widget_dispatch_events(props_with_toggle, &frame_state, handlers, event, key, was_focused)
 }

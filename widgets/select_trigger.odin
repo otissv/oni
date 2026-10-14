@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Select trigger configuration (Radix Select.Trigger).
+Select trigger configuration.
 */
 Select_Trigger_Config :: o.Widget_Config
 
@@ -29,7 +29,6 @@ Select_Trigger_Props :: struct {
 	on_mount:                     proc(frame_state: Select_Trigger_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Select_Trigger_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Select_Trigger_Event),
 	on_blur:                      proc(event: Select_Trigger_Event),
 	on_mouse_enter:               proc(event: Select_Trigger_Event),
@@ -139,7 +138,6 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -252,7 +250,6 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

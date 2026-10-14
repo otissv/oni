@@ -6,7 +6,7 @@ import set "../set"
 /*
 Arrow-key wrapping for a radio group.
 
-`.ON` is the zero value and matches Radix `loop`: focus wraps from the last
+`.ON` is the zero value: focus wraps from the last
 enabled item to the first. `.OFF` stops at the ends.
 */
 Radio_Loop :: enum {
@@ -27,7 +27,7 @@ Radio_Orientation :: enum {
 }
 
 /*
-Radio group configuration (Radix RadioGroup.Root).
+Radio group configuration.
 */
 Radio_Group_Config :: o.Widget_Config
 
@@ -75,7 +75,6 @@ Radio_Group_Props :: struct {
 	on_mount:                     proc(frame_state: Radio_Group_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Radio_Group_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Radio_Group_Event),
 	on_blur:                      proc(event: Radio_Group_Event),
 	on_mouse_enter:               proc(event: Radio_Group_Event),
@@ -120,16 +119,16 @@ Radio_Item_Entry :: struct {
 
 @(private)
 Radio_Ctx :: struct {
-	key:              string,
-	value:            string,
-	name:             string,
-	required:         bool,
-	disabled:         bool,
-	loop:             bool,
-	orientation:      Radio_Orientation,
-	on_value_change:  proc(value: string),
-	items:            [RADIO_ITEMS_MAX]Radio_Item_Entry,
-	item_count:       int,
+	key:             string,
+	value:           string,
+	name:            string,
+	required:        bool,
+	disabled:        bool,
+	loop:            bool,
+	orientation:     Radio_Orientation,
+	on_value_change: proc(value: string),
+	items:           [RADIO_ITEMS_MAX]Radio_Item_Entry,
+	item_count:      int,
 }
 
 @(private)
@@ -860,7 +859,10 @@ radio_note_drawn :: proc(element_id: string, state: Radio_State) {
 		return
 	}
 
-	radio_drawn[radio_drawn_count] = {element_id = element_id, state = state}
+	radio_drawn[radio_drawn_count] = {
+		element_id = element_id,
+		state      = state,
+	}
 	radio_drawn_count += 1
 }
 
@@ -905,10 +907,10 @@ radio_flush_arrow_focus :: proc(group_key: string) {
 	}
 
 	state := Radio_State {
-		is_focused = true,
+		is_focused  = true,
 		is_disabled = snap.items[idx].disabled,
-		value = snap.items[idx].value,
-		checked = true,
+		value       = snap.items[idx].value,
+		checked     = true,
 	}
 
 	if drawn, found := radio_drawn_find(target); found {
@@ -983,11 +985,11 @@ Radio_Group :: proc(props: Radio_Group_Props) {
 
 	frame_state := Radio_Group_State {
 		is_disabled = disabled,
-		is_focused = was_focused,
-		value = props.value,
-		name = props.name,
-		required = props.required,
-		loop = loop,
+		is_focused  = was_focused,
+		value       = props.value,
+		name        = props.name,
+		required    = props.required,
+		loop        = loop,
 		orientation = orientation,
 	}
 
@@ -1054,7 +1056,6 @@ Radio_Group :: proc(props: Radio_Group_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -1148,7 +1149,6 @@ Radio_Group :: proc(props: Radio_Group_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

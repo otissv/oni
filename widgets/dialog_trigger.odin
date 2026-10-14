@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Dialog trigger configuration (shadcn DialogTrigger).
+Dialog trigger configuration.
 */
 Dialog_Trigger_Config :: o.Widget_Config
 
@@ -29,7 +29,6 @@ Dialog_Trigger_Props :: struct {
 	on_mount:                     proc(frame_state: Dialog_Trigger_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_Trigger_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Dialog_Trigger_Event),
 	on_blur:                      proc(event: Dialog_Trigger_Event),
 	on_mouse_enter:               proc(event: Dialog_Trigger_Event),
@@ -49,10 +48,7 @@ Dialog_Trigger_Props :: struct {
 dialog_trigger_theme_base :: proc(frame_state: ^Dialog_Trigger_State) -> Dialog_Trigger_Config {
 	_ = frame_state
 
-	return Dialog_Trigger_Config {
-		kind = .DIALOG_TRIGGER,
-		tabbable = set.Tabbable(true),
-	}
+	return Dialog_Trigger_Config{kind = .DIALOG_TRIGGER, tabbable = set.Tabbable(true)}
 }
 
 @(private)
@@ -161,7 +157,6 @@ Dialog_Trigger :: proc(props: Dialog_Trigger_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -265,7 +260,6 @@ Dialog_Trigger :: proc(props: Dialog_Trigger_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

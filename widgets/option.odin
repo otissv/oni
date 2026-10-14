@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Option configuration (Radix Select.Item).
+Option configuration.
 */
 Option_Config :: o.Widget_Config
 
@@ -41,7 +41,6 @@ Option_Props :: struct {
 	on_mount:                     proc(frame_state: Option_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Option_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Option_Event),
 	on_blur:                      proc(event: Option_Event),
 	on_mouse_enter:               proc(event: Option_Event),
@@ -182,7 +181,6 @@ Option :: proc(props: Option_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -289,7 +287,6 @@ Option :: proc(props: Option_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

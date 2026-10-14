@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Tabs root configuration (shadcn / Base UI Tabs.Root).
+Tabs root configuration.
 */
 Tabs_Config :: o.Widget_Config
 
@@ -47,7 +47,6 @@ Tabs_Props :: struct {
 	on_mount:                     proc(frame_state: Tabs_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Tabs_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Tabs_Event),
 	on_blur:                      proc(event: Tabs_Event),
 	on_mouse_enter:               proc(event: Tabs_Event),
@@ -74,7 +73,7 @@ tabs_theme_base :: proc(frame_state: ^Tabs_State) -> Tabs_Config {
 		opacity = 0.5
 	}
 
-	// Vertical orientation places the list beside panels (shadcn vertical).
+	// Vertical orientation places the list beside panels.
 	if frame_state.orientation == .VERTICAL {
 		direction = .HORIZONTAL
 		gap_x = 0
@@ -197,7 +196,6 @@ Tabs :: proc(props: Tabs_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -291,7 +289,6 @@ Tabs :: proc(props: Tabs_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

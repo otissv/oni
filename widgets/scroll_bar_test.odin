@@ -240,41 +240,35 @@ scroll_bar_writes_parent_scroll_y_on_track_press :: proc(t: ^testing.T) {
 }
 
 @(test)
-rectangle_scroll_bar_style_sets_size_and_track_background :: proc(t: ^testing.T) {
+scroll_bar_config_sets_track_background :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
 		proc(t: ^testing.T) {
-			ov_scroll: o.Overflow = .SCROLL
-
-			// Seed previous-frame metrics so overlay emit can size the bar.
+			scroll_x: f32 = 0
+			scroll_y: f32 = 0
 			widget_test_begin_layout()
-			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
-			widget_test_finish_layout()
-			widget_test_end_frame()
-
-			o.widget_scroll_auto_reveal_set("vp", true)
-
-			widget_test_begin_layout()
-			Rectangle({
-				config = {
-					id = "vp",
-					width = set.Width(f32(120)),
-					height = set.Height(f32(100)),
-					overflow_y = set.Overflow_Y(ov_scroll),
-					direction = set.Direction(.VERTICAL),
+			Scroll_Bar(
+				{
+					config = {
+						id = "bar",
+						width = set.Width(f32(20)),
+						height = set.Height(f32(100)),
+						background = set.Colors(o.Color.ACCENT),
+						radius = set.Radius(f32(8)),
+					},
+					axis = .Y,
+					parent_scroll_x = &scroll_x,
+					parent_scroll_y = &scroll_y,
+					viewport = 50,
+					content = 200,
 				},
-				scroll_bar = {
-					size = set.F32(20),
-					background = set.Colors(o.Color.ACCENT),
-					radius = set.Radius(f32(8)),
-				},
-				child = scroll_bar_test_tall_child,
-			})
+			)
 			widget_test_finish_layout()
 
-			bar := scroll_bar_test_find_bar("vp")
-			testing.expect(t, bar != nil)
-			if bar != nil {
+			bar, ok := widget_test_layout_node("bar")
+			testing.expect(t, ok)
+
+			if ok {
 				expect_close(t, bar.rect.w, 20)
 				#partial switch v in bar.config.background {
 				case o.Color:
@@ -285,17 +279,17 @@ rectangle_scroll_bar_style_sets_size_and_track_background :: proc(t: ^testing.T)
 					testing.expectf(t, false, "expected ACCENT background, got %v", bar.config.background)
 				}
 			}
+
 			widget_test_end_frame()
 		},
 	)
 }
 
 @(test)
-rectangle_scroll_bar_style_visible_false_skips_bars :: proc(t: ^testing.T) {
+rectangle_auto_scroll_bar_uses_default_size :: proc(t: ^testing.T) {
 	with_widget_env(
 		t,
 		proc(t: ^testing.T) {
-			// Seed metrics, then force reveal so visible=false is the only suppressant.
 			widget_test_begin_layout()
 			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
 			widget_test_finish_layout()
@@ -304,37 +298,94 @@ rectangle_scroll_bar_style_visible_false_skips_bars :: proc(t: ^testing.T) {
 			o.widget_scroll_auto_reveal_set("vp", true)
 
 			widget_test_begin_layout()
-			ov_scroll: o.Overflow = .SCROLL
-			Rectangle({
-				config = {
-					id = "vp",
-					width = set.Width(f32(120)),
-					height = set.Height(f32(100)),
-					overflow_y = set.Overflow_Y(ov_scroll),
-					direction = set.Direction(.VERTICAL),
-				},
-				scroll_bar = {
-					visible = set.Bool(false),
-				},
-				child = scroll_bar_test_tall_child,
-			})
+			scroll_bar_test_scroll_port(scroll_bar_test_tall_child)
 			widget_test_finish_layout()
 
-			vp, ok := widget_test_layout_node("vp")
-			testing.expect(t, ok)
-			for child_index in vp.child_indices {
-				child := &o.state.ui.layout.nodes[child_index]
-				testing.expect(t, child.kind != .SCROLL_BAR)
+			bar := scroll_bar_test_find_bar("vp")
+			testing.expect(t, bar != nil)
+
+			if bar != nil {
+				expect_close(t, bar.rect.w, o.SCROLL_BAR_DEFAULT_SIZE)
 			}
+
 			widget_test_end_frame()
 		},
 	)
 }
 
 @(test)
-scroll_bar_style_min_thumb_floors_geometry :: proc(t: ^testing.T) {
+scroll_bar_min_thumb_floors_geometry :: proc(t: ^testing.T) {
 	thumb_len, _ := o.scroll_bar_thumb_geometry(100, 10, 1000, 0, 40)
 	expect_close(t, thumb_len, 40)
+
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			scroll_x: f32 = 0
+			scroll_y: f32 = 0
+			widget_test_begin_layout()
+			Scroll_Bar(
+				{
+					config = {
+						id = "bar-min-thumb",
+						width = set.Width(f32(10)),
+						height = set.Height(f32(100)),
+					},
+					min_thumb = set.F32(f32(40)),
+					axis = .Y,
+					parent_scroll_x = &scroll_x,
+					parent_scroll_y = &scroll_y,
+					viewport = 10,
+					content = 1000,
+					child = proc(_: Scroll_Bar_State) {
+						Scroll_Bar_Thumb(
+							{
+								config = {
+									background = set.Colors(o.Color.PRIMARY),
+									radius = set.Radius(f32(6)),
+								},
+							},
+						)
+					},
+				},
+			)
+			widget_test_finish_layout()
+
+			chrome := o.layout_scroll_bar_result(o.ui_id("bar-min-thumb"))
+			testing.expect(t, chrome != nil)
+
+			if chrome != nil {
+				expect_close(t, chrome.thumb.h, 40)
+			}
+
+			Scroll_Bar(
+				{
+					config = {
+						id = "bar-min-thumb",
+						width = set.Width(f32(10)),
+						height = set.Height(f32(100)),
+					},
+					min_thumb = set.F32(f32(40)),
+					axis = .Y,
+					parent_scroll_x = &scroll_x,
+					parent_scroll_y = &scroll_y,
+					viewport = 10,
+					content = 1000,
+					child = proc(_: Scroll_Bar_State) {
+						Scroll_Bar_Thumb(
+							{
+								config = {
+									background = set.Colors(o.Color.PRIMARY),
+									radius = set.Radius(f32(6)),
+								},
+							},
+						)
+					},
+				},
+			)
+			widget_test_end_frame()
+		},
+	)
 }
 
 @(private)

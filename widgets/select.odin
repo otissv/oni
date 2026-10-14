@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Select root configuration (Radix Select.Root).
+Select root configuration.
 */
 Select_Config :: o.Widget_Config
 
@@ -34,7 +34,7 @@ Select_Event :: o.Widget_Event(Select_State)
 /*
 Select root props: caller-owned value/open, compound children, and handlers.
 
-`child` builds the trigger tree. `content` is the options panel (Radix Content);
+`child` builds the trigger tree. `content` is the options panel;
 when open it is laid out by a nested composable Popover beside the trigger.
 
 Pass `value` / `values` and `open` every frame; update them from
@@ -68,7 +68,6 @@ Select_Props :: struct {
 	on_mount:                     proc(frame_state: Select_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Select_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Select_Event),
 	on_blur:                      proc(event: Select_Event),
 	on_mouse_enter:               proc(event: Select_Event),
@@ -146,7 +145,7 @@ select_resolve_open_value :: proc(
 }
 
 /*
-Renders a Radix-style Select root.
+Renders a Select root.
 
 Push compound context for Trigger / Value / Option parts. Optional `content` is
 shown via composable `Popover` / `Popover_Content` while open, or inline when
@@ -265,7 +264,6 @@ Select :: proc(props: Select_Props) {
 				key,
 				props_resolved.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -361,7 +359,6 @@ Select :: proc(props: Select_Props) {
 		key,
 		props_resolved.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

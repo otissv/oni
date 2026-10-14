@@ -24,7 +24,6 @@ Image_Props :: struct {
 	on_mount:                     proc(frame_state: Image_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Image_State) -> o.Mount,
 	on_scroll:                     proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Image_Event),
 	on_blur:                      proc(event: Image_Event),
 	on_mouse_enter:               proc(event: Image_Event),
@@ -256,7 +255,6 @@ Image :: proc(props: Image_Props) {
 					overflow_x = config.overflow_x,
 					overflow_y = config.overflow_y,
 					scroll = entry,
-					style = props.scroll_bar,
 					hovered = frame_state.is_hovered,
 					on_scroll = props.on_scroll,
 				},
@@ -370,7 +368,7 @@ Image :: proc(props: Image_Props) {
 		}
 	}
 
-	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

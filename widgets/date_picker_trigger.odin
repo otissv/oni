@@ -29,7 +29,6 @@ Date_Picker_Trigger_Props :: struct {
 	on_mount:                     proc(frame_state: Date_Picker_Trigger_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Date_Picker_Trigger_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Date_Picker_Trigger_Event),
 	on_blur:                      proc(event: Date_Picker_Trigger_Event),
 	on_mouse_enter:               proc(event: Date_Picker_Trigger_Event),
@@ -107,7 +106,9 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
-		date_picker_set_trigger(key, layout_id, {})
+		if popover_ctx_ok() {
+			popover_set_trigger(key, layout_id, {})
+		}
 
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
@@ -140,7 +141,6 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -154,7 +154,10 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
-	date_picker_set_trigger(key, layout_id, rect)
+
+	if popover_ctx_ok() {
+		popover_set_trigger(key, layout_id, rect)
+	}
 
 	widget_handle_interaction(
 		props_with_toggle,
@@ -250,7 +253,6 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

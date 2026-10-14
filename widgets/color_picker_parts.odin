@@ -66,46 +66,58 @@ Color_Picker_Web_Only_Props :: struct {
 
 @(private)
 color_picker_field_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config {
-	ctx := color_picker_ctx_top()
-	size := color_picker_style_f32(ctx.style.field_size, o.COLOR_PICKER_DEFAULT_FIELD_SIZE)
+	size := o.COLOR_PICKER_DEFAULT_FIELD_SIZE
 
 	return color_picker_surface_theme(frame_state, size, size)
 }
 
 @(private)
 color_picker_slider_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config {
-	ctx := color_picker_ctx_top()
-	w := color_picker_style_f32(ctx.style.slider_width, o.COLOR_PICKER_DEFAULT_SLIDER_WIDTH)
-	h := color_picker_style_f32(ctx.style.field_size, o.COLOR_PICKER_DEFAULT_FIELD_SIZE)
+	base := color_picker_surface_theme(
+		frame_state,
+		o.COLOR_PICKER_DEFAULT_SLIDER_WIDTH,
+		o.COLOR_PICKER_DEFAULT_FIELD_SIZE,
+	)
+	base.color = set.Colors(o.Color.FOREGROUND)
 
-	return color_picker_surface_theme(frame_state, w, h)
+	return base
 }
 
 @(private)
 color_picker_alpha_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config {
-	ctx := color_picker_ctx_top()
-	h := color_picker_style_f32(ctx.style.alpha_height, o.COLOR_PICKER_DEFAULT_ALPHA_HEIGHT)
-
-	return color_picker_surface_theme(frame_state, f32(220), max(h, f32(10)))
+	return color_picker_surface_theme(
+		frame_state,
+		o.COLOR_PICKER_DEFAULT_ALPHA_WIDTH,
+		max(o.COLOR_PICKER_DEFAULT_ALPHA_HEIGHT, f32(10)),
+	)
 }
 
 @(private)
 color_picker_swatch_theme :: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config {
-	ctx := color_picker_ctx_top()
-	h := color_picker_style_f32(ctx.style.swatch_height, f32(28))
+	base := color_picker_surface_theme(
+		frame_state,
+		o.COLOR_PICKER_DEFAULT_SWATCH_WIDTH,
+		o.COLOR_PICKER_DEFAULT_SWATCH_HEIGHT,
+	)
+	base.border = set.Border(f32(1))
+	base.border_color = set.Border_color(o.Color.BORDER)
 
-	return color_picker_surface_theme(frame_state, COLOR_PICKER_SWATCH_W, h)
+	return base
 }
 
 @(private)
-color_picker_field_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
+color_picker_field_draw :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	ctx := color_picker_ctx_top()
 
 	if !ctx.active {
 		return
 	}
 
-	color_picker_draw_field(layout_id, rect, ctx.hsva, ctx.value, ctx.channel)
+	color_picker_draw_field(layout_id, rect, ctx.hsva, ctx.value, ctx.channel, chrome)
 }
 
 @(private)
@@ -120,14 +132,18 @@ color_picker_field_pointer :: proc(
 }
 
 @(private)
-color_picker_slider_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
+color_picker_slider_draw :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	ctx := color_picker_ctx_top()
 
 	if !ctx.active {
 		return
 	}
 
-	color_picker_draw_slider(layout_id, rect, ctx.hsva, ctx.value, ctx.channel)
+	color_picker_draw_slider(layout_id, rect, ctx.hsva, ctx.value, ctx.channel, chrome)
 }
 
 @(private)
@@ -142,14 +158,18 @@ color_picker_slider_pointer :: proc(
 }
 
 @(private)
-color_picker_alpha_draw :: proc(layout_id: o.UI_Id, rect: o.Rect) {
+color_picker_alpha_draw :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	ctx := color_picker_ctx_top()
 
 	if !ctx.active {
 		return
 	}
 
-	color_picker_draw_alpha(layout_id, rect, ctx.value)
+	color_picker_draw_alpha(layout_id, rect, ctx.value, chrome)
 }
 
 @(private)
@@ -167,7 +187,11 @@ color_picker_alpha_pointer :: proc(
 color_picker_swatch_role: Color_Picker_Swatch_Role
 
 @(private)
-color_picker_swatch_draw_active :: proc(layout_id: o.UI_Id, rect: o.Rect) {
+color_picker_swatch_draw_active :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	ctx := color_picker_ctx_top()
 
 	if !ctx.active {
@@ -180,7 +204,7 @@ color_picker_swatch_draw_active :: proc(layout_id: o.UI_Id, rect: o.Rect) {
 		color = ctx.previous
 	}
 
-	color_picker_draw_swatch(layout_id, rect, color)
+	color_picker_draw_swatch(layout_id, rect, color, chrome)
 }
 
 @(private)
@@ -252,26 +276,10 @@ color_picker_channels_emit_labels :: proc(layout_id: o.UI_Id, panel_w: f32) {
 Two-dimensional saturation/value (or channel) field for the active picker channel.
 */
 Color_Picker_Field :: proc(props: Color_Picker_Field_Props) {
-	if !color_picker_ctx_ok() {
-		return
-	}
-
-	ctx := color_picker_ctx_top()
-	size := color_picker_style_f32(ctx.style.field_size, o.COLOR_PICKER_DEFAULT_FIELD_SIZE)
-	cfg := props.config
-
-	if _, is_auto := cfg.width.(struct{}); is_auto {
-		cfg.width = set.Width(size)
-	}
-
-	if _, is_auto := cfg.height.(struct{}); is_auto {
-		cfg.height = set.Height(size)
-	}
-
 	color_picker_surface(
-		cfg,
-		size,
-		size,
+		props.config,
+		o.COLOR_PICKER_DEFAULT_FIELD_SIZE,
+		o.COLOR_PICKER_DEFAULT_FIELD_SIZE,
 		color_picker_field_theme,
 		color_picker_field_draw,
 		color_picker_field_pointer,
@@ -298,7 +306,7 @@ Horizontal alpha strip.
 Color_Picker_Alpha :: proc(props: Color_Picker_Alpha_Props) {
 	color_picker_surface(
 		props.config,
-		f32(220),
+		o.COLOR_PICKER_DEFAULT_ALPHA_WIDTH,
 		o.COLOR_PICKER_DEFAULT_ALPHA_HEIGHT,
 		color_picker_alpha_theme,
 		color_picker_alpha_draw,
@@ -314,8 +322,8 @@ Color_Picker_Swatch :: proc(props: Color_Picker_Swatch_Props) {
 
 	color_picker_surface(
 		props.config,
-		COLOR_PICKER_SWATCH_W,
-		f32(28),
+		o.COLOR_PICKER_DEFAULT_SWATCH_WIDTH,
+		o.COLOR_PICKER_DEFAULT_SWATCH_HEIGHT,
 		color_picker_swatch_theme,
 		color_picker_swatch_draw_active,
 		color_picker_swatch_pointer_active,
@@ -335,7 +343,7 @@ color_picker_channels_overlay :: proc(rs: Rectangle_State) {
 
 	layout_label := rs.config.id != "" ? rs.config.id : o.element_key(rs.config.id)
 	layout_id := o.ui_id(layout_label)
-	panel_w: f32 = 120
+	panel_w := o.COLOR_PICKER_DEFAULT_CHANNELS_WIDTH
 
 	if o.length_is_definite(rs.config.width) {
 		panel_w = o.length_resolve(rs.config.width, 0)
@@ -348,7 +356,8 @@ color_picker_channels_overlay :: proc(rs: Rectangle_State) {
 		return
 	}
 
-	color_picker_draw_channels(layout_id, ctx.channel)
+	state := rs
+	color_picker_draw_channels(layout_id, ctx.channel, &state)
 	color_picker_channels_emit_labels(layout_id, panel_w)
 }
 
@@ -392,7 +401,7 @@ Color_Picker_Channels :: proc(props: Color_Picker_Channels_Props) {
 	}
 
 	if _, is_auto := cfg.width.(struct{}); is_auto {
-		cfg.width = set.Width(f32(120))
+		cfg.width = set.Width(o.COLOR_PICKER_DEFAULT_CHANNELS_WIDTH)
 	}
 
 	if _, is_auto := cfg.height.(struct{}); is_auto {
@@ -430,16 +439,27 @@ Color_Picker_Hex :: proc(props: Color_Picker_Hex_Props) {
 		)
 	}
 
+	cfg := props.config
+
+	if cfg.direction.mode == .UNSET {
+		cfg.direction = set.Direction(.HORIZONTAL)
+	}
+
+	if cfg.gap_x.mode == .UNSET {
+		cfg.gap_x = set.Gap_X(u16(6))
+	}
+
+	if cfg.align.mode == .UNSET {
+		cfg.align = set.Align(.CENTER)
+	}
+
+	if _, is_auto := cfg.height.(struct{}); is_auto {
+		cfg.height = set.Height(COLOR_PICKER_HEX_ROW_H)
+	}
+
 	Rectangle(
 		{
-			config = {
-				id = props.config.id,
-				direction = set.Direction(.HORIZONTAL),
-				gap_x = set.Gap_X(u16(6)),
-				align = set.Align(.CENTER),
-				width = props.config.width,
-				height = set.Height(COLOR_PICKER_HEX_ROW_H),
-			},
+			config = cfg,
 			child = color_picker_hex_row_child,
 		},
 	)
@@ -505,16 +525,27 @@ Color_Picker_Type :: proc(props: Color_Picker_Type_Props) {
 
 	color_picker_type_row_props = props
 	row_w := color_picker_type_row_width(props.color_type)
+	cfg := props.config
+
+	if cfg.direction.mode == .UNSET {
+		cfg.direction = set.Direction(.HORIZONTAL)
+	}
+
+	if cfg.gap_x.mode == .UNSET {
+		cfg.gap_x = set.Gap_X(u16(COLOR_PICKER_TYPE_FIELD_GAP))
+	}
+
+	if _, is_auto := cfg.width.(struct{}); is_auto {
+		cfg.width = set.Width(row_w)
+	}
+
+	if _, is_auto := cfg.height.(struct{}); is_auto {
+		cfg.height = set.Height(COLOR_PICKER_INPUT_ROW_H)
+	}
 
 	Rectangle(
 		{
-			config = {
-				id = props.config.id,
-				direction = set.Direction(.HORIZONTAL),
-				gap_x = set.Gap_X(u16(COLOR_PICKER_TYPE_FIELD_GAP)),
-				width = set.Width(row_w),
-				height = set.Height(COLOR_PICKER_INPUT_ROW_H),
-			},
+			config = cfg,
 			child = color_picker_type_row_child,
 		},
 	)
@@ -602,17 +633,32 @@ Color_Picker_Web_Only :: proc(props: Color_Picker_Web_Only_Props) {
 	}
 
 	color_picker_web_only_props = props
+	cfg := props.config
+	cfg.id = fmt.tprintf("%s-row", props.config.id)
+
+	if cfg.direction.mode == .UNSET {
+		cfg.direction = set.Direction(.HORIZONTAL)
+	}
+
+	if cfg.gap_x.mode == .UNSET {
+		cfg.gap_x = set.Gap_X(u16(8))
+	}
+
+	if cfg.align.mode == .UNSET {
+		cfg.align = set.Align(.CENTER)
+	}
+
+	if _, is_auto := cfg.height.(struct{}); is_auto {
+		cfg.height = set.Height(COLOR_PICKER_INPUT_ROW_H)
+	}
+
+	if cfg.justify.mode == .UNSET {
+		cfg.justify = set.Justify(o.Justify_Pos{x = .START, y = .CENTER})
+	}
 
 	Rectangle(
 		{
-			config = {
-				id = fmt.tprintf("%s-row", props.config.id),
-				direction = set.Direction(.HORIZONTAL),
-				gap_x = set.Gap_X(u16(8)),
-				align = set.Align(.CENTER),
-				height = set.Height(COLOR_PICKER_INPUT_ROW_H),
-				justify = set.Justify(o.Justify_Pos{x = .START, y = .CENTER}),
-			},
+			config = cfg,
 			child = color_picker_web_only_child,
 		},
 	)

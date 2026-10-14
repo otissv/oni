@@ -79,6 +79,55 @@ calendar_test_month_child :: proc(_: Calendar_State) {
 	Calendar_Month({config = {id = "calendar-test/month"}, month_index = 0})
 }
 
+@(private)
+calendar_test_last_state: Calendar_State
+
+@(private)
+calendar_test_first_child_rect :: proc(root_id: string) -> (rect: o.Rect, ok: bool) {
+	root, root_ok := o.layout_node_by_id(o.ui_id(root_id))
+
+	if !root_ok || len(root.child_indices) < 1 {
+		return {}, false
+	}
+
+	child := o.state.ui.layout.nodes[root.child_indices[0]]
+
+	return child.rect, true
+}
+
+@(private)
+calendar_test_day_rect_in_month :: proc(
+	month: o.Rect,
+	day_index: int,
+	show_week_numbers: bool,
+) -> o.Rect {
+	day_size := CALENDAR_DEFAULT_DAY_SIZE
+	gap := CALENDAR_DEFAULT_GAP
+	week_w := show_week_numbers ? CALENDAR_WEEK_NUM_WIDTH + gap : 0
+	row := day_index / CALENDAR_WEEK_DAYS
+	col := day_index % CALENDAR_WEEK_DAYS
+	x := month.x + week_w + f32(col) * (day_size + gap)
+	y :=
+		month.y +
+		CALENDAR_NAV_HEIGHT +
+		gap +
+		CALENDAR_WEEKDAY_HEIGHT +
+		gap +
+		f32(row) * (day_size + gap)
+
+	return {x = x, y = y, w = day_size, h = day_size}
+}
+
+@(private)
+calendar_test_nav_next_rect :: proc(month: o.Rect) -> o.Rect {
+	return {
+		x = month.x + month.w - CALENDAR_NAV_HEIGHT,
+		y = month.y,
+		w = CALENDAR_NAV_HEIGHT,
+		h = CALENDAR_NAV_HEIGHT,
+	}
+}
+
 @(test)
 calendar_part_outside_context_noop :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
@@ -108,7 +157,7 @@ calendar_composable_registers_day_labels :: proc(t: ^testing.T) {
 		})
 		widget_test_finish_layout()
 
-		expect_registered_id(t, "calendar-parts/day-0-2024-06-01")
+		expect_registered_id(t, "calendar-parts/month/day-0-2024-06-01")
 	})
 }
 
@@ -236,6 +285,36 @@ calendar_clamp_and_navigate_bounds :: proc(t: ^testing.T) {
 	testing.expect(t, Calendar_Date_Equal(clamped, {2024, 12, 1}))
 	testing.expect(t, !Calendar_Can_Navigate({2024, 12, 1}, 1, start, end))
 	testing.expect(t, Calendar_Can_Navigate({2024, 11, 1}, 1, start, end))
+
+	// Multi-month span: next disabled when last visible month would leave end.
+	testing.expect(t, Calendar_Can_Navigate({2024, 10, 1}, 1, start, end, 2))
+	testing.expect(t, !Calendar_Can_Navigate({2024, 11, 1}, 1, start, end, 2))
+	testing.expect(
+		t,
+		Calendar_Date_Equal(Calendar_Clamp_Month({2024, 12, 1}, start, end, 2), {2024, 11, 1}),
+	)
+}
+
+@(test)
+calendar_resolve_nav_bounds_from_dates :: proc(t: ^testing.T) {
+	start, end := Calendar_Resolve_Nav_Bounds({}, {}, {2024, 6, 10}, {2024, 6, 20})
+	testing.expect(t, Calendar_Date_Equal(start, {2024, 6, 1}))
+	testing.expect(t, Calendar_Date_Equal(end, {2024, 6, 1}))
+	testing.expect(t, !Calendar_Can_Navigate(start, -1, start, end))
+	testing.expect(t, !Calendar_Can_Navigate(start, 1, start, end))
+
+	// Tighter date window wins over looser month bounds.
+	start, end = Calendar_Resolve_Nav_Bounds(
+		{2024, 1, 1},
+		{2024, 12, 1},
+		{2024, 6, 10},
+		{2024, 8, 5},
+	)
+	testing.expect(t, Calendar_Date_Equal(start, {2024, 6, 1}))
+	testing.expect(t, Calendar_Date_Equal(end, {2024, 8, 1}))
+	testing.expect(t, !Calendar_Can_Navigate(start, -1, start, end))
+	testing.expect(t, Calendar_Can_Navigate(start, 1, start, end))
+	testing.expect(t, !Calendar_Can_Navigate({2024, 8, 1}, 1, start, end))
 }
 
 @(test)
@@ -451,36 +530,33 @@ calendar_pointer_selects_day :: proc(t: ^testing.T) {
 			}
 			Calendar(props)
 			widget_test_finish_layout()
-			widget_test_begin_draw()
 
-			// Rebuild once so layout rects exist, then click June 15 cell.
-			Calendar(props)
-			root := o.ui_layout_rect(o.ui_id("calendar-pointer"))
-			origin := calendar_month_origin(
-				root,
-				0,
-				1,
-				CALENDAR_DEFAULT_DAY_SIZE,
-				CALENDAR_DEFAULT_GAP,
-				false,
-			)
+			// Nested ui_ids are parent-scoped; resolve the month from the calendar child list.
+			month_rect, month_ok := calendar_test_first_child_rect("calendar-pointer")
+			testing.expect(t, month_ok && month_rect.w > 0 && month_rect.h > 0)
+
 			// June 15 2024 is grid index 20 when week starts Sunday.
-			day_rect := calendar_day_rect(
-				origin,
-				20,
-				CALENDAR_DEFAULT_DAY_SIZE,
-				CALENDAR_DEFAULT_GAP,
-				false,
-			)
+			day_rect := calendar_test_day_rect_in_month(month_rect, 20, false)
+
+			widget_test_begin_draw()
 
 			o.w_ctx.mouse_x = day_rect.x + day_rect.w * 0.5
 			o.w_ctx.mouse_y = day_rect.y + day_rect.h * 0.5
+			o.w_ctx.pointer_hit_valid = false
+			o.widget_set_focused_id("calendar-pointer")
+
 			o.w_ctx.left_mouse = {
 				pressed = true,
 				down    = true,
 			}
-			o.widget_set_focused_id("calendar-pointer")
+			Calendar(props)
+			testing.expect_value(t, calendar_test_select_count, 0)
 
+			o.w_ctx.left_mouse = {
+				pressed  = false,
+				down     = false,
+				released = true,
+			}
 			Calendar(props)
 
 			testing.expect(t, calendar_test_day_click_count >= 1)
@@ -514,18 +590,13 @@ calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
 			}
 			Calendar(props)
 			widget_test_finish_layout()
+
+			month_rect, month_ok := calendar_test_first_child_rect("calendar-nav-click")
+			testing.expect(t, month_ok && month_rect.w > 0 && month_rect.h > 0)
+			next_r := calendar_test_nav_next_rect(month_rect)
+
 			widget_test_begin_draw()
 
-			Calendar(props)
-			chrome := o.layout_calendar_result(o.ui_id("calendar-nav-click"))
-			testing.expect(t, chrome != nil)
-			testing.expect(t, chrome != nil && len(chrome.months) >= 1)
-
-			if chrome == nil || len(chrome.months) < 1 {
-				return
-			}
-
-			next_r := chrome.months[0].next
 			o.w_ctx.mouse_x = next_r.x + next_r.w * 0.5
 			o.w_ctx.mouse_y = next_r.y + next_r.h * 0.5
 			o.w_ctx.pointer_hit_valid = false
@@ -695,6 +766,47 @@ calendar_start_end_date_blocks_select :: proc(t: ^testing.T) {
 	})
 }
 
+@(private)
+calendar_test_nav_bounds_child :: proc(state: Calendar_State) {
+	calendar_test_last_state = state
+	Calendar_Month({config = {id = "calendar-test/month"}, month_index = 0})
+
+	// Handlers must no-op while can_go_* is false (same path as disabled nav buttons).
+	calendar_nav_prev({})
+	calendar_nav_next({})
+}
+
+@(test)
+calendar_start_end_date_disables_month_nav :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		calendar_test_reset()
+		defer calendar_test_reset()
+		calendar_test_last_state = {}
+
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		props := Calendar_Props {
+			config = {id = "calendar-nav-bounds"},
+			mode = .SINGLE,
+			month = {2024, 6, 1},
+			today = calendar_test_fixed_today(),
+			start_date = {2024, 6, 10},
+			end_date = {2024, 6, 20},
+			on_month_change = calendar_test_on_month,
+			child = calendar_test_nav_bounds_child,
+		}
+		Calendar(props)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		Calendar(props)
+
+		testing.expect(t, !calendar_test_last_state.can_go_prev)
+		testing.expect(t, !calendar_test_last_state.can_go_next)
+		testing.expect_value(t, calendar_test_month_count, 0)
+	})
+}
+
 @(test)
 calendar_matchers :: proc(t: ^testing.T) {
 	testing.expect(t, Calendar_Match_Before({2024, 6, 1}, {2024, 6, 2}))
@@ -705,34 +817,333 @@ calendar_matchers :: proc(t: ^testing.T) {
 }
 
 @(test)
-calendar_config_disabled_blocks_interaction :: proc(t: ^testing.T) {
+calendar_default_child_registers_months :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Calendar({
+			config = {id = "calendar-default-child"},
+			mode = .SINGLE,
+			month = {2024, 6, 1},
+			today = calendar_test_fixed_today(),
+		})
+		widget_test_finish_layout()
+
+		expect_registered_id(t, "calendar-default-child/month_0/day-0-2024-06-01")
+		expect_registered_id(t, "calendar-default-child/month_0/nav/prev")
+		expect_registered_id(t, "calendar-default-child/month_0/nav/next")
+	})
+}
+
+@(test)
+calendar_part_config_ids :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Calendar({
+			config = {id = "calendar-ids"},
+			mode = .SINGLE,
+			month = {2024, 6, 1},
+			today = calendar_test_fixed_today(),
+			child = proc(_: Calendar_State) {
+				Calendar_Navigation({config = {id = "calendar-ids/custom-nav"}})
+				Calendar_Grid({config = {id = "calendar-ids/custom-grid"}, month_index = 0})
+			},
+		})
+		widget_test_finish_layout()
+
+		expect_registered_id(t, "calendar-ids/custom-nav/prev")
+		expect_registered_id(t, "calendar-ids/custom-nav/next")
+		expect_registered_id(t, "calendar-ids/custom-grid/day-0-2024-06-01")
+	})
+}
+
+@(private)
+calendar_test_day_builder_calls: int
+
+@(private)
+calendar_test_custom_day :: proc(state: Calendar_Day_State) {
+	calendar_test_day_builder_calls += 1
+	Calendar_Day(
+		{
+			config = {id = state.id},
+			month_index = state.month_index,
+			day_index = state.day_index,
+		},
+	)
+}
+
+@(test)
+calendar_day_slot_replaces_grid_cells :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		calendar_test_reset()
+		calendar_test_day_builder_calls = 0
 		defer calendar_test_reset()
 
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		props := Calendar_Props {
-			config = {id = "calendar-config-disabled", disabled = set.Disabled(true)},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
-			on_select = calendar_test_on_select,
-			child = calendar_test_month_child,
-		}
-		Calendar(props)
-		expect_in_tab_order(t, "calendar-config-disabled", false)
+		Calendar(
+			{
+				config = {id = "calendar-day-slot"},
+				mode = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+				hide_outside_days = true,
+				day = calendar_test_custom_day,
+				child = calendar_test_month_child,
+			},
+		)
+		widget_test_finish_layout()
+
+		testing.expect(t, calendar_test_day_builder_calls == 30)
+		expect_registered_id(t, "calendar-test/month/day-0-2024-06-01")
+	})
+}
+
+@(private)
+calendar_test_disabled_child :: proc(state: Calendar_State) {
+	calendar_test_last_state = state
+	Calendar_Month({config = {id = "calendar-config-disabled/month"}, month_index = 0})
+}
+
+@(test)
+calendar_config_disabled_blocks_interaction :: proc(t: ^testing.T) {
+	with_widget_env(
+		t,
+		proc(t: ^testing.T) {
+			calendar_test_reset()
+			defer calendar_test_reset()
+			calendar_test_last_state = {}
+
+			widget_test_begin_layout()
+			defer widget_test_end_frame()
+
+			props := Calendar_Props {
+				config = {id = "calendar-config-disabled", disabled = set.Disabled(true)},
+				mode = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+				on_select = calendar_test_on_select,
+				on_month_change = calendar_test_on_month,
+				on_day_click = calendar_test_on_day_click,
+				child = calendar_test_disabled_child,
+			}
+			Calendar(props)
+			expect_in_tab_order(t, "calendar-config-disabled", false)
+			testing.expect(t, calendar_test_last_state.is_disabled)
+			testing.expect(t, !calendar_test_last_state.can_go_prev)
+			testing.expect(t, !calendar_test_last_state.can_go_next)
+			widget_test_finish_layout()
+
+			month_rect, month_ok := calendar_test_first_child_rect("calendar-config-disabled")
+			testing.expect(t, month_ok && month_rect.w > 0 && month_rect.h > 0)
+			day_rect := calendar_test_day_rect_in_month(month_rect, 20, false)
+			next_r := calendar_test_nav_next_rect(month_rect)
+
+			widget_test_begin_draw()
+
+			o.widget_set_focused_id("calendar-config-disabled")
+			o.w_ctx.keys[int(sdl.Scancode.SPACE)] = {
+				down    = true,
+				pressed = true,
+			}
+			Calendar(props)
+			testing.expect_value(t, calendar_test_select_count, 0)
+			testing.expect_value(t, calendar_test_day_click_count, 0)
+
+			o.state.shortcuts.consumed_keys = {}
+			o.w_ctx.keys[int(sdl.Scancode.SPACE)] = {}
+			o.w_ctx.mouse_x = day_rect.x + day_rect.w * 0.5
+			o.w_ctx.mouse_y = day_rect.y + day_rect.h * 0.5
+			o.w_ctx.pointer_hit_valid = false
+			o.w_ctx.left_mouse = {
+				pressed = true,
+				down    = true,
+			}
+			Calendar(props)
+			o.w_ctx.left_mouse = {
+				pressed  = false,
+				down     = false,
+				released = true,
+			}
+			Calendar(props)
+			testing.expect_value(t, calendar_test_select_count, 0)
+			testing.expect_value(t, calendar_test_day_click_count, 0)
+
+			o.w_ctx.mouse_x = next_r.x + next_r.w * 0.5
+			o.w_ctx.mouse_y = next_r.y + next_r.h * 0.5
+			o.w_ctx.pointer_hit_valid = false
+			o.w_ctx.left_mouse = {
+				pressed = true,
+				down    = true,
+			}
+			Calendar(props)
+			o.w_ctx.left_mouse = {
+				pressed  = false,
+				down     = false,
+				released = true,
+			}
+			Calendar(props)
+			testing.expect_value(t, calendar_test_month_count, 0)
+			testing.expect(t, calendar_test_last_state.is_disabled)
+			testing.expect(t, !calendar_test_last_state.can_go_prev)
+			testing.expect(t, !calendar_test_last_state.can_go_next)
+		},
+	)
+}
+
+@(test)
+calendar_today_ring_matches_selection_focus_ring_width :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Rectangle(
+			{
+				config = {
+					id = "cal-ring-host",
+					width = set.Width(40),
+					height = set.Height(40),
+				},
+			},
+		)
 		widget_test_finish_layout()
 		widget_test_begin_draw()
 
-		o.widget_set_focused_id("calendar-config-disabled")
-		o.w_ctx.keys[int(sdl.Scancode.SPACE)] = {
-			down    = true,
-			pressed = true,
+		layout_id := o.ui_id("cal-ring-host")
+		frame := Calendar_State {
+			is_focused = true,
 		}
-		Calendar(props)
+		event := widget_event(frame)
+		rect := o.Rect {
+			w = 36,
+			h = 36,
+		}
 
-		testing.expect_value(t, calendar_test_select_count, 0)
+		clear(&o.batch_current().vertices)
+		calendar_draw_day_cell(
+			layout_id,
+			rect,
+			{today = true},
+			&frame,
+			event,
+			{},
+			false,
+		)
+		testing.expect(t, len(o.batch_current().vertices) >= 4)
+
+		if len(o.batch_current().vertices) < 4 {
+			return
+		}
+
+		today_border := o.batch_current().vertices[0].border
+		expect_close(t, today_border[0], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, today_border[1], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, today_border[2], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, today_border[3], CALENDAR_DAY_RING_WIDTH)
+
+		clear(&o.batch_current().vertices)
+		calendar_draw_day_cell(
+			layout_id,
+			rect,
+			{selected = true, focused = true},
+			&frame,
+			event,
+			{},
+			false,
+		)
+		testing.expect(t, len(o.batch_current().vertices) >= 4)
+
+		if len(o.batch_current().vertices) < 4 {
+			return
+		}
+
+		// Selected fill is first; focus ring follows with the shared border width.
+		focus_border := o.batch_current().vertices[4].border
+		expect_close(t, focus_border[0], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, focus_border[1], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, focus_border[2], CALENDAR_DAY_RING_WIDTH)
+		expect_close(t, focus_border[3], CALENDAR_DAY_RING_WIDTH)
+		testing.expect_value(t, focus_border, today_border)
+	})
+}
+
+@(test)
+calendar_disabled_theme_keeps_neutral_border :: proc(t: ^testing.T) {
+	focused := Calendar_State {
+		is_focused = true,
+	}
+	focused_base := calendar_theme_base(&focused)
+	testing.expect(t, o.cfg_style_bool(focused_base.tabbable))
+	testing.expect(t, focused_base.border_color.mode == .Value)
+	testing.expect(t, focused_base.border_color.value == o.Colors(o.Color.RING))
+
+	disabled := Calendar_State {
+		is_disabled = true,
+		is_focused  = true,
+	}
+	disabled_base := calendar_theme_base(&disabled)
+	testing.expect(t, !o.cfg_style_bool(disabled_base.tabbable))
+	testing.expect(t, disabled_base.border_color.mode == .Value)
+	testing.expect(t, disabled_base.border_color.value == o.Colors(o.Color.BORDER))
+}
+
+@(test)
+calendar_disabled_day_chrome_skips_hover_and_rings :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Rectangle(
+			{
+				config = {
+					id = "cal-disabled-chrome",
+					width = set.Width(40),
+					height = set.Height(40),
+				},
+			},
+		)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+
+		layout_id := o.ui_id("cal-disabled-chrome")
+		frame := Calendar_State {
+			is_disabled = true,
+			is_focused  = true,
+		}
+		event := widget_event(frame)
+		rect := o.Rect {
+			w = 36,
+			h = 36,
+		}
+
+		clear(&o.batch_current().vertices)
+		calendar_draw_day_cell(
+			layout_id,
+			rect,
+			{today = true, focused = true},
+			&frame,
+			event,
+			{},
+			true,
+		)
+		testing.expect_value(t, len(o.batch_current().vertices), 0)
+
+		clear(&o.batch_current().vertices)
+		calendar_draw_day_cell(
+			layout_id,
+			rect,
+			{selected = true, focused = true},
+			&frame,
+			event,
+			{},
+			true,
+		)
+		// Selection fill remains; no hover/focus/today rings.
+		testing.expect(t, len(o.batch_current().vertices) >= 4)
+		testing.expect(t, len(o.batch_current().vertices) < 8)
 	})
 }

@@ -4,7 +4,7 @@ import o ".."
 import "core:fmt"
 
 /*
-Popover content configuration (shadcn PopoverContent).
+Popover content configuration.
 */
 Popover_Content_Props_Config :: o.Widget_Config
 
@@ -25,7 +25,7 @@ Popover_Content_Props_Event :: o.Widget_Event(Popover_Content_Props_State)
 /*
 Popover content props: floating panel anchored to the trigger while open.
 
-`align` controls horizontal alignment relative to the trigger width (shadcn
+`align` controls horizontal alignment relative to the trigger width.
 `align`). `match_trigger_width` mirrors the trigger width when true.
 */
 Popover_Content_Props :: struct {
@@ -40,7 +40,6 @@ Popover_Content_Props :: struct {
 	on_mount:                     proc(frame_state: Popover_Content_Props_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Popover_Content_Props_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Popover_Content_Props_Event),
 	on_blur:                      proc(event: Popover_Content_Props_Event),
 	on_mouse_enter:               proc(event: Popover_Content_Props_Event),

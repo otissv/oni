@@ -141,6 +141,196 @@ date_picker_format_selection_covers_modes :: proc(t: ^testing.T) {
 	testing.expect(t, multi == "2 selected")
 }
 
+@(private)
+date_picker_test_find_trigger_and_popover_content :: proc(
+	root: ^o.Layout_Node,
+) -> (
+	trigger: ^o.Layout_Node,
+	content: ^o.Layout_Node,
+) {
+	if root == nil {
+		return
+	}
+
+	stack: [64]int
+	depth := 0
+
+	for child_index in root.child_indices {
+		if depth >= len(stack) {
+			break
+		}
+
+		stack[depth] = child_index
+		depth += 1
+	}
+
+	for depth > 0 {
+		depth -= 1
+		node := &o.state.ui.layout.nodes[stack[depth]]
+
+		if node.kind == .DATE_PICKER_TRIGGER {
+			trigger = node
+		} else if node.space == .POPOVER &&
+		   node.kind == .RECT &&
+		   node.config.position == .ABSOLUTE {
+			// Prefer the popover panel itself; nested calendar chrome also inherits
+			// POPOVER space after flex composition.
+			content = node
+		}
+
+		for child_index in node.child_indices {
+			if depth >= len(stack) {
+				break
+			}
+
+			stack[depth] = child_index
+			depth += 1
+		}
+	}
+
+	return
+}
+
+@(test)
+date_picker_content_anchors_below_trigger :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		date_picker_test_reset()
+		widget_test_begin_layout()
+		defer {
+			date_picker_shutdown()
+			widget_test_end_frame()
+		}
+
+		Date_Picker({
+			config = {
+				id = "dp-anchor",
+				x = set.F32(35),
+				y = set.F32(60),
+				width = set.Width(f32(240)),
+			},
+			mode = .SINGLE,
+			open = true,
+			on_open_change = date_picker_test_on_open,
+			month = {2024, 6, 1},
+			today = {2024, 6, 5},
+			child = date_picker_test_child,
+		})
+		widget_test_finish_layout()
+
+		root, root_ok := widget_test_layout_node("dp-anchor")
+		testing.expect(t, root_ok)
+
+		if !root_ok {
+			return
+		}
+
+		trigger, content := date_picker_test_find_trigger_and_popover_content(root)
+		testing.expect(t, trigger != nil)
+		testing.expect(t, content != nil)
+
+		if trigger == nil || content == nil {
+			return
+		}
+
+		testing.expect(t, content.space == .POPOVER)
+		testing.expect(t, content.config.position == .ABSOLUTE)
+
+		widget_test_begin_draw()
+
+		expect_close(t, content.rect.x, trigger.rect.x)
+		expect_close(t, content.rect.y, trigger.rect.y + trigger.rect.h + DATE_PICKER_POPOVER_GAP_PX)
+		testing.expect(t, content.rect.w > 0)
+		testing.expect(t, content.rect.w < f32(o.state.dpi.logical_w) * 0.5)
+		testing.expect(t, content.rect.w + 0.5 >= DATE_PICKER_DEFAULT_CALENDAR_WIDTH)
+	})
+}
+
+@(test)
+date_picker_range_two_months_sizes_panel :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		date_picker_test_reset()
+		widget_test_begin_layout()
+		defer {
+			date_picker_shutdown()
+			widget_test_end_frame()
+		}
+
+		Date_Picker({
+			config = {
+				id = "dp-range-2m",
+				x = set.F32(20),
+				y = set.F32(40),
+				width = set.Width(f32(280)),
+			},
+			mode = .RANGE,
+			open = true,
+			number_of_months = 2,
+			on_open_change = date_picker_test_on_open,
+			month = {2024, 6, 1},
+			today = {2024, 6, 5},
+			child = date_picker_test_child,
+		})
+		widget_test_finish_layout()
+
+		root, root_ok := widget_test_layout_node("dp-range-2m")
+		testing.expect(t, root_ok)
+
+		if !root_ok {
+			return
+		}
+
+		_, content := date_picker_test_find_trigger_and_popover_content(root)
+		testing.expect(t, content != nil)
+
+		if content == nil {
+			return
+		}
+
+		widget_test_begin_draw()
+
+		calendar: ^o.Layout_Node
+
+		for &node in o.state.ui.layout.nodes {
+			if node.kind == .CALENDAR {
+				calendar = &node
+
+				break
+			}
+		}
+
+		testing.expect(t, calendar != nil)
+
+		if calendar == nil {
+			return
+		}
+
+		expected_w := date_picker_default_calendar_width(2, {}, {}, false)
+		testing.expect(t, expected_w > DATE_PICKER_DEFAULT_CALENDAR_WIDTH)
+		expect_close(t, calendar.rect.w, expected_w)
+		testing.expect(t, content.rect.w + 0.5 >= expected_w)
+
+		chrome := o.layout_calendar_result(calendar.ui_id)
+		testing.expect(t, chrome != nil)
+
+		if chrome == nil {
+			return
+		}
+
+		testing.expect(t, len(chrome.months) == 2)
+
+		if len(chrome.months) < 2 {
+			return
+		}
+
+		testing.expect(t, chrome.months[1].origin.x > chrome.months[0].origin.x)
+		testing.expect(
+			t,
+			chrome.months[1].origin.x + CALENDAR_DEFAULT_DAY_SIZE <=
+			calendar.rect.x + calendar.rect.w + 0.5,
+		)
+	})
+}
+
 @(test)
 date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
@@ -168,8 +358,11 @@ date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 		expect_layout_kind(t, "dp", .DATE_PICKER)
 		expect_registered_id(t, "dp-trigger")
 		expect_registered_id(t, "dp-value")
-		expect_registered_id(t, "dp/__date_picker_content")
+		expect_registered_id(t, "dp/__date_picker_popover")
+		expect_registered_id(t, "dp/__date_picker_popover/__popover_content")
 		expect_registered_id(t, "dp/calendar")
+		expect_registered_id(t, "dp/calendar/month_0/nav/prev")
+		expect_registered_id(t, "dp/calendar/month_0/day-0-2024-06-01")
 
 		root, root_ok := widget_test_layout_node("dp")
 		testing.expect(t, root_ok)
@@ -184,8 +377,22 @@ date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 			return
 		}
 
-		trigger := &o.state.ui.layout.nodes[root.child_indices[0]]
-		testing.expect(t, trigger.kind == .DATE_PICKER_TRIGGER)
+		popover := &o.state.ui.layout.nodes[root.child_indices[0]]
+		testing.expect(t, popover.kind == .POPOVER)
+
+		trigger_ok := false
+
+		for child_index in popover.child_indices {
+			child := &o.state.ui.layout.nodes[child_index]
+
+			if child.kind == .DATE_PICKER_TRIGGER {
+				trigger_ok = true
+
+				break
+			}
+		}
+
+		testing.expect(t, trigger_ok)
 	})
 }
 
@@ -474,7 +681,8 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 		expect_layout_kind(t, "dpi", .DATE_PICKER)
 		expect_registered_id(t, "dpi-input")
 		expect_registered_id(t, "dpi-input/field")
-		expect_registered_id(t, "dpi/__date_picker_content")
+		expect_registered_id(t, "dpi/__date_picker_popover")
+		expect_registered_id(t, "dpi/__date_picker_popover/__popover_content")
 
 		root, root_ok := widget_test_layout_node("dpi")
 		testing.expect(t, root_ok)
@@ -489,8 +697,22 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 			return
 		}
 
-		input := &o.state.ui.layout.nodes[root.child_indices[0]]
-		testing.expect(t, input.kind == .DATE_PICKER_INPUT)
+		popover := &o.state.ui.layout.nodes[root.child_indices[0]]
+		testing.expect(t, popover.kind == .POPOVER)
+
+		input_ok := false
+
+		for child_index in popover.child_indices {
+			child := &o.state.ui.layout.nodes[child_index]
+
+			if child.kind == .DATE_PICKER_INPUT {
+				input_ok = true
+
+				break
+			}
+		}
+
+		testing.expect(t, input_ok)
 	})
 }
 

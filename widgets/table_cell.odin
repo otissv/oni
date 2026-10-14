@@ -30,7 +30,6 @@ Table_Cell_Props :: struct {
 	on_mount:                     proc(frame_state: Table_Cell_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Table_Cell_State) -> o.Mount,
 	on_scroll:                     proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Table_Cell_Event),
 	on_blur:                      proc(event: Table_Cell_Event),
 	on_mouse_enter:               proc(event: Table_Cell_Event),
@@ -111,7 +110,7 @@ Table_Cell :: proc(props: Table_Cell_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
 		}
 
 		return
@@ -176,7 +175,7 @@ Table_Cell :: proc(props: Table_Cell_Props) {
 
 	table_widget_draw_chrome(layout_id, .TABLE_CELL, rect, config, &frame_state, event, .BACKGROUND)
 
-	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
 
 	table_widget_draw_chrome(layout_id, .TABLE_CELL, rect, config, &frame_state, event, .BORDER)
 

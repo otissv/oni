@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Option group configuration (Radix Select.Group).
+Option group configuration.
 */
 Option_Group_Config :: o.Widget_Config
 
@@ -29,7 +29,6 @@ Option_Group_Props :: struct {
 	on_mount:                     proc(frame_state: Option_Group_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Option_Group_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Option_Group_Event),
 	on_blur:                      proc(event: Option_Group_Event),
 	on_mouse_enter:               proc(event: Option_Group_Event),
@@ -111,7 +110,6 @@ Option_Group :: proc(props: Option_Group_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -214,7 +212,6 @@ Option_Group :: proc(props: Option_Group_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

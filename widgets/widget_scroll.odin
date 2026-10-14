@@ -15,7 +15,6 @@ Widget_Scroll_Ctx :: struct {
 	overflow_x:          o.Overflow,
 	overflow_y:          o.Overflow,
 	scroll:              ^o.Vec2,
-	style:               Scroll_Bar_Style,
 	hovered:             bool,
 	content_clip_active: bool,
 	on_scroll:           proc(scroll_x, scroll_y: f32),
@@ -46,6 +45,7 @@ widget_scroll_pop :: proc() {
 @(private)
 widget_scroll_top :: proc() -> ^Widget_Scroll_Ctx {
 	assert(widget_scroll_depth > 0)
+
 	return &widget_scroll_stack[widget_scroll_depth - 1]
 }
 
@@ -63,6 +63,7 @@ widget_scroll_overflow_shows_bar :: proc(
 ) -> bool {
 	scroll: o.Overflow = .SCROLL
 	auto: o.Overflow = .AUTO
+
 	if overflow == scroll || overflow == auto {
 		return max_scroll > 0 && auto_reveal
 	}
@@ -72,16 +73,21 @@ widget_scroll_overflow_shows_bar :: proc(
 
 @(private)
 widget_scroll_bar_id :: proc(parent_id, suffix: string) -> string {
-	if parent_id == "" do return ""
+	if parent_id == "" {
+		return ""
+	}
+
 	return fmt.tprintf("%s/%s", parent_id, suffix)
 }
 
 @(private)
 widget_scroll_notify :: proc(scroll_x, scroll_y: f32) {
 	ctx := widget_scroll_top()
+
 	if ctx.scroll != nil {
 		ctx.scroll^ = {scroll_x, scroll_y}
 	}
+
 	if ctx.on_scroll != nil {
 		ctx.on_scroll(scroll_x, scroll_y)
 	}
@@ -92,17 +98,21 @@ Widget_Scrollport_Frame :: struct {
 	element_id: string,
 	parent_id:  string,
 	config:     o.Resolved_Widget_Config,
-	scroll_bar: Scroll_Bar_Style,
 	hovered:    bool,
 	on_scroll:  proc(scroll_x, scroll_y: f32),
 }
 
 @(private)
 widget_scrollport_frame_begin :: proc(frame: Widget_Scrollport_Frame) -> bool {
-	if !o.style_is_scrollport(frame.config.overflow_x, frame.config.overflow_y) do return false
+	if !o.style_is_scrollport(frame.config.overflow_x, frame.config.overflow_y) {
+		return false
+	}
 
 	entry := o.widget_scroll_ensure(frame.element_id)
-	if entry == nil do return false
+
+	if entry == nil {
+		return false
+	}
 
 	widget_scroll_push(
 		{
@@ -112,7 +122,6 @@ widget_scrollport_frame_begin :: proc(frame: Widget_Scrollport_Frame) -> bool {
 			overflow_x = frame.config.overflow_x,
 			overflow_y = frame.config.overflow_y,
 			scroll = entry,
-			style = frame.scroll_bar,
 			hovered = frame.hovered,
 			on_scroll = frame.on_scroll,
 		},
@@ -123,7 +132,9 @@ widget_scrollport_frame_begin :: proc(frame: Widget_Scrollport_Frame) -> bool {
 
 @(private)
 widget_scrollport_frame_end :: proc(active: bool, emit_bars: bool) {
-	if !active do return
+	if !active {
+		return
+	}
 
 	if emit_bars {
 		widget_emit_scroll_bars(widget_scroll_top()^)
@@ -134,29 +145,41 @@ widget_scrollport_frame_end :: proc(active: bool, emit_bars: bool) {
 
 @(private)
 widget_scroll_bar_hot_or_dragging :: proc(bar_id: string) -> bool {
-	if bar_id == "" do return false
-	if o.w_ctx != nil && o.w_ctx.element_was_hovered != nil {
-		if o.w_ctx.element_was_hovered[bar_id] do return true
+	if bar_id == "" {
+		return false
 	}
+
+	if o.w_ctx != nil && o.w_ctx.element_was_hovered != nil {
+		if o.w_ctx.element_was_hovered[bar_id] {
+			return true
+		}
+	}
+
 	layout_id := o.ui_id(bar_id)
+
 	if drag := o.scroll_bar_drag_entry(layout_id); drag != nil && drag.active {
 		return true
 	}
+
 	return false
 }
 
 @(private)
 widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
-	if !o.style_is_scrollport(ctx.overflow_x, ctx.overflow_y) do return
-	if ctx.scroll == nil do return
-	if !scroll_bar_style_visible(ctx.style) do return
+	if !o.style_is_scrollport(ctx.overflow_x, ctx.overflow_y) {
+		return
+	}
+
+	if ctx.scroll == nil {
+		return
+	}
 
 	metrics, _ := o.Scrollport_Metrics_Get(ctx.layout_id)
 	auto_reveal := o.widget_scroll_auto_reveal_get(ctx.element_id)
 	show_y := widget_scroll_overflow_shows_bar(ctx.overflow_y, metrics.max_scroll.y, auto_reveal)
 	show_x := widget_scroll_overflow_shows_bar(ctx.overflow_x, metrics.max_scroll.x, auto_reveal)
 
-	bar_size := scroll_bar_style_size(ctx.style)
+	bar_size := o.SCROLL_BAR_DEFAULT_SIZE
 	bar_y_id := widget_scroll_bar_id(ctx.parent_id, "scroll-bar-y")
 	bar_x_id := widget_scroll_bar_id(ctx.parent_id, "scroll-bar-x")
 
@@ -174,17 +197,17 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 			width = set.Width(bar_size),
 			z_index = set.Z_Index(f32(1)),
 		}
-		scroll_bar_apply_style_config(&bar_cfg, ctx.style)
-		Scroll_Bar({
-			config = bar_cfg,
-			style = ctx.style,
-			axis = .Y,
-			parent_scroll_x = &ctx.scroll.x,
-			parent_scroll_y = &ctx.scroll.y,
-			viewport = metrics.viewport_size.y,
-			content = metrics.content_size.y,
-			on_scroll = widget_scroll_notify,
-		})
+		Scroll_Bar(
+			{
+				config = bar_cfg,
+				axis = .Y,
+				parent_scroll_x = &ctx.scroll.x,
+				parent_scroll_y = &ctx.scroll.y,
+				viewport = metrics.viewport_size.y,
+				content = metrics.content_size.y,
+				on_scroll = widget_scroll_notify,
+			},
+		)
 	}
 
 	if show_x {
@@ -198,23 +221,24 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 			height = set.Height(bar_size),
 			z_index = set.Z_Index(f32(1)),
 		}
-		scroll_bar_apply_style_config(&bar_cfg, ctx.style)
-		Scroll_Bar({
-			config = bar_cfg,
-			style = ctx.style,
-			axis = .X,
-			parent_scroll_x = &ctx.scroll.x,
-			parent_scroll_y = &ctx.scroll.y,
-			viewport = metrics.viewport_size.x,
-			content = metrics.content_size.x,
-			on_scroll = widget_scroll_notify,
-		})
+		Scroll_Bar(
+			{
+				config = bar_cfg,
+				axis = .X,
+				parent_scroll_x = &ctx.scroll.x,
+				parent_scroll_y = &ctx.scroll.y,
+				viewport = metrics.viewport_size.x,
+				content = metrics.content_size.x,
+				on_scroll = widget_scroll_notify,
+			},
+		)
 	}
 
 	if o.ui_pass() == .Draw {
 		needs_reveal :=
 			(o.layout_node_scrolls_axis(ctx.overflow_y) && metrics.max_scroll.y > 0) ||
 			(o.layout_node_scrolls_axis(ctx.overflow_x) && metrics.max_scroll.x > 0)
+
 		if needs_reveal {
 			bar_hot :=
 				widget_scroll_bar_hot_or_dragging(bar_y_id) ||
@@ -238,18 +262,33 @@ widget_handle_scroll_wheel :: proc(
 	element_id: string,
 	on_scroll: proc(scroll_x, scroll_y: f32) = nil,
 ) {
-	if !hovered do return
-	if !o.style_is_scrollport(config.overflow_x, config.overflow_y) do return
-	if o.Shortcut_Wheel_Consumed() do return
+	if !hovered {
+		return
+	}
+
+	if !o.style_is_scrollport(config.overflow_x, config.overflow_y) {
+		return
+	}
+
+	if o.Shortcut_Wheel_Consumed() {
+		return
+	}
 
 	wheel_x := o.state.input.mouse_wheel_x
 	wheel_y := o.state.input.mouse_wheel_y
-	if wheel_x == 0 && wheel_y == 0 do return
+
+	if wheel_x == 0 && wheel_y == 0 {
+		return
+	}
 
 	entry := o.widget_scroll_ensure(element_id)
-	if entry == nil do return
+
+	if entry == nil {
+		return
+	}
 
 	metrics, _ := o.Scrollport_Metrics_Get(layout_id)
+
 	if o.scroll_apply_wheel(
 		&entry.x,
 		&entry.y,
@@ -262,6 +301,7 @@ widget_handle_scroll_wheel :: proc(
 		if on_scroll != nil {
 			on_scroll(entry.x, entry.y)
 		}
+
 		o.Shortcut_Consume_Wheel()
 		o.Stop_Propagation()
 	}
@@ -274,7 +314,6 @@ Scroll position lives in widget context (keyed by element id). Optional
 `author.scroll_x` / `scroll_y` overwrite context for that frame. Wheel and
 scrollbar updates write context automatically; `on_scroll` is notification only.
 
-`scroll_bar` customizes auto-emitted scrollbar chrome for this scrollport.
 `hovered` drives overlay bar reveal for .SCROLL/.AUTO (sticky into the next frame).
 */
 widget_children :: proc(
@@ -285,7 +324,6 @@ widget_children :: proc(
 	element_id: string,
 	author: o.Widget_Config,
 	on_scroll: proc(scroll_x, scroll_y: f32) = nil,
-	scroll_bar: Scroll_Bar_Style = {},
 	hovered: bool = false,
 ) {
 	resolved := config
@@ -302,15 +340,18 @@ widget_children :: proc(
 
 	invoke := proc(data: rawptr) {
 		b := cast(^Binder)data
+
 		if b.child != nil {
 			b.child(b.state)
 		}
 	}
 
 	entry: ^o.Vec2
+
 	if o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
 		entry = o.widget_scroll_ensure(element_id)
 	}
+
 	widget_scroll_push(
 		{
 			layout_id = layout_id,
@@ -319,7 +360,6 @@ widget_children :: proc(
 			overflow_x = resolved.overflow_x,
 			overflow_y = resolved.overflow_y,
 			scroll = entry,
-			style = scroll_bar,
 			hovered = hovered,
 			on_scroll = on_scroll,
 			user_fn = invoke,

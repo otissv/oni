@@ -803,13 +803,70 @@ Calendar_Apply_Single_Click :: proc(
 	return date, true, true
 }
 
+@(private)
+calendar_month_bound_set :: proc(month: Calendar_Date) -> bool {
+	return month.year != 0 || month.month != 0
+}
+
 /*
-Clamps a displayed month into optional start/end month bounds.
+Merges explicit month bounds with `start_date` / `end_date`.
+
+Selectable-day windows also limit which months can be displayed: the month of
+`start_date` / `end_date` becomes a navigation bound when tighter than
+`start_month` / `end_month`.
+*/
+Calendar_Resolve_Nav_Bounds :: proc(
+	start_month: Calendar_Date,
+	end_month: Calendar_Date,
+	start_date: Calendar_Date,
+	end_date: Calendar_Date,
+) -> (
+	start: Calendar_Date,
+	end: Calendar_Date,
+) {
+	if calendar_month_bound_set(start_month) {
+		start = Calendar_Start_Of_Month(start_month)
+	}
+
+	if Calendar_Date_Valid(start_date) {
+		from_date := Calendar_Start_Of_Month(start_date)
+
+		if !calendar_month_bound_set(start) || Calendar_Date_After(from_date, start) {
+			start = from_date
+		}
+	}
+
+	if calendar_month_bound_set(end_month) {
+		end = Calendar_Start_Of_Month(end_month)
+	}
+
+	if Calendar_Date_Valid(end_date) {
+		to_date := Calendar_Start_Of_Month(end_date)
+
+		if !calendar_month_bound_set(end) || Calendar_Date_Before(to_date, end) {
+			end = to_date
+		}
+	}
+
+	if calendar_month_bound_set(start) &&
+	   calendar_month_bound_set(end) &&
+	   Calendar_Date_After(start, end) {
+		end = start
+	}
+
+	return
+}
+
+/*
+Clamps a displayed first-month into optional start/end month bounds.
+
+`number_of_months` keeps the full visible span inside `end_month` when > 1.
 */
 Calendar_Clamp_Month :: proc(
 	month: Calendar_Date,
 	start_month: Calendar_Date,
 	end_month: Calendar_Date,
+	number_of_months := 1,
 ) -> Calendar_Date {
 	m := Calendar_Start_Of_Month(month)
 
@@ -817,7 +874,9 @@ Calendar_Clamp_Month :: proc(
 		return m
 	}
 
-	if start_month.year != 0 || start_month.month != 0 {
+	months := max(1, number_of_months)
+
+	if calendar_month_bound_set(start_month) {
 		start := Calendar_Start_Of_Month(start_month)
 
 		if start.year != 0 && Calendar_Date_Before(m, start) {
@@ -825,11 +884,23 @@ Calendar_Clamp_Month :: proc(
 		}
 	}
 
-	if end_month.year != 0 || end_month.month != 0 {
+	if calendar_month_bound_set(end_month) {
 		end := Calendar_Start_Of_Month(end_month)
 
-		if end.year != 0 && Calendar_Date_After(m, end) {
-			m = end
+		if end.year != 0 {
+			max_first := Calendar_Date_Add_Months(end, -(months - 1))
+
+			if calendar_month_bound_set(start_month) {
+				start := Calendar_Start_Of_Month(start_month)
+
+				if start.year != 0 && Calendar_Date_Before(max_first, start) {
+					max_first = start
+				}
+			}
+
+			if Calendar_Date_After(m, max_first) {
+				m = max_first
+			}
 		}
 	}
 
@@ -838,15 +909,19 @@ Calendar_Clamp_Month :: proc(
 
 /*
 Returns whether navigating from `month` by `delta_months` is allowed.
+
+`number_of_months` must match the visible span so next/prev stay disabled when
+the last visible month would leave `end_month`.
 */
 Calendar_Can_Navigate :: proc(
 	month: Calendar_Date,
 	delta_months: int,
 	start_month: Calendar_Date,
 	end_month: Calendar_Date,
+	number_of_months := 1,
 ) -> bool {
 	next := Calendar_Date_Add_Months(Calendar_Start_Of_Month(month), delta_months)
-	clamped := Calendar_Clamp_Month(next, start_month, end_month)
+	clamped := Calendar_Clamp_Month(next, start_month, end_month, number_of_months)
 
 	return Calendar_Date_Equal(Calendar_Start_Of_Month(next), clamped)
 }

@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Tabs trigger configuration (shadcn TabsTrigger / Base UI Tabs.Tab).
+Tabs trigger configuration.
 */
 Tabs_Trigger_Config :: o.Widget_Config
 
@@ -46,7 +46,6 @@ Tabs_Trigger_Props :: struct {
 	on_mount:                     proc(frame_state: Tabs_Trigger_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Tabs_Trigger_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Tabs_Trigger_Event),
 	on_blur:                      proc(event: Tabs_Trigger_Event),
 	on_mouse_enter:               proc(event: Tabs_Trigger_Event),
@@ -300,7 +299,6 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -390,7 +388,6 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

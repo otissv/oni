@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Horizontal alignment of popover content relative to the trigger (shadcn `align`).
+Horizontal alignment of popover content relative to the trigger.
 */
 Popover_Align :: o.Layout_Popup_Align
 
@@ -32,8 +32,8 @@ Popover_Ctx :: struct {
 	has_trigger:        bool,
 	pointer_owned:      bool,
 	trigger_user_click: proc(event: Popover_Trigger_Event),
-	content_child:    proc(frame_state: Popover_Content_Props_State),
-	content_frame:    Popover_Content_Props_State,
+	content_child:      proc(frame_state: Popover_Content_Props_State),
+	content_frame:      Popover_Content_Props_State,
 }
 
 @(private)
@@ -214,7 +214,6 @@ Popover_Content_Panel_Props :: struct {
 	on_mount:                     proc(frame_state: Popover_Content_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Popover_Content_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Popover_Content_Event),
 	on_blur:                      proc(event: Popover_Content_Event),
 	on_mouse_enter:               proc(event: Popover_Content_Event),
@@ -298,7 +297,6 @@ popover_panel :: proc(props: Popover_Content_Panel_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -321,13 +319,7 @@ popover_panel :: proc(props: Popover_Content_Panel_Props) {
 		rect,
 		config,
 	)
-	widget_handle_scroll_wheel(
-		layout_id,
-		config,
-		frame_state.is_hovered,
-		key,
-		props.on_scroll,
-	)
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y
@@ -368,7 +360,6 @@ popover_panel :: proc(props: Popover_Content_Panel_Props) {
 			element_id = key,
 			author = props.config,
 			on_scroll = props.on_scroll,
-			scroll_bar = props.scroll_bar,
 		},
 	)
 
@@ -385,7 +376,6 @@ Draw_Popover_Panel :: struct {
 	element_id:  string,
 	author:      o.Widget_Config,
 	on_scroll:   proc(scroll_x, scroll_y: f32),
-	scroll_bar:  Scroll_Bar_Style,
 }
 
 @(private)
@@ -447,7 +437,6 @@ popover_draw_panel :: proc(props: Draw_Popover_Panel) {
 		props.element_id,
 		props.author,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
@@ -483,15 +472,17 @@ popover_panel_anchored :: proc(params: Popover_Panel_Anchored_Params) {
 	}
 
 	panel_props := Popover_Content_Panel_Props {
-		config = cfg,
-		child = params.child,
+		config         = cfg,
+		child          = params.child,
 		on_mouse_enter = params.on_mouse_enter,
 	}
 
 	popover_panel(panel_props)
 
 	if o.ui_pass() == .Layout && params.anchor_id != 0 {
-		content_layout_id := o.ui_id(params.content_id != "" ? params.content_id : o.element_key(cfg.id))
+		content_layout_id := o.ui_id(
+			params.content_id != "" ? params.content_id : o.element_key(cfg.id),
+		)
 		o.layout_anchor_popup(
 			params.anchor_id,
 			content_layout_id,
@@ -503,10 +494,13 @@ popover_panel_anchored :: proc(params: Popover_Panel_Anchored_Params) {
 	}
 
 	if o.ui_pass() == .Draw {
-		content_layout_id := o.ui_id(params.content_id != "" ? params.content_id : o.element_key(cfg.id))
+		content_layout_id := o.ui_id(
+			params.content_id != "" ? params.content_id : o.element_key(cfg.id),
+		)
 		content_rect := o.ui_layout_rect(content_layout_id)
 
-		if o.pointer_hits(content_layout_id, content_rect, .POPOVER) && params.on_mouse_enter != nil {
+		if o.pointer_hits(content_layout_id, content_rect, .POPOVER) &&
+		   params.on_mouse_enter != nil {
 			params.on_mouse_enter({})
 		}
 	}

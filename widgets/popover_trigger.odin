@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Popover trigger configuration (shadcn PopoverTrigger).
+Popover trigger configuration.
 */
 Popover_Trigger_Config :: o.Widget_Config
 
@@ -29,7 +29,6 @@ Popover_Trigger_Props :: struct {
 	on_mount:                     proc(frame_state: Popover_Trigger_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Popover_Trigger_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Popover_Trigger_Event),
 	on_blur:                      proc(event: Popover_Trigger_Event),
 	on_mouse_enter:               proc(event: Popover_Trigger_Event),
@@ -49,10 +48,7 @@ Popover_Trigger_Props :: struct {
 popover_trigger_theme_base :: proc(frame_state: ^Popover_Trigger_State) -> Popover_Trigger_Config {
 	_ = frame_state
 
-	return Popover_Trigger_Config {
-		kind = .POPOVER_TRIGGER,
-		tabbable = set.Tabbable(true),
-	}
+	return Popover_Trigger_Config{kind = .POPOVER_TRIGGER, tabbable = set.Tabbable(true)}
 }
 
 @(private)
@@ -139,7 +135,6 @@ Popover_Trigger :: proc(props: Popover_Trigger_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -243,7 +238,6 @@ Popover_Trigger :: proc(props: Popover_Trigger_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

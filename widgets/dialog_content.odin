@@ -5,7 +5,7 @@ import set "../set"
 import "core:fmt"
 
 /*
-Dialog content configuration (shadcn DialogContent).
+Dialog content configuration.
 */
 Dialog_Content_Props_Config :: o.Widget_Config
 
@@ -34,7 +34,6 @@ Dialog_Content_Props :: struct {
 	on_mount:                     proc(frame_state: Dialog_Content_Props_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_Content_Props_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Dialog_Content_Props_Event),
 	on_blur:                      proc(event: Dialog_Content_Props_Event),
 	on_mouse_enter:               proc(event: Dialog_Content_Props_Event),
@@ -73,7 +72,6 @@ Dialog_Overlay_Panel_Props :: struct {
 	on_mount:                     proc(frame_state: Dialog_Overlay_Panel_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_Overlay_Panel_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Dialog_Overlay_Panel_Event),
 	on_blur:                      proc(event: Dialog_Overlay_Panel_Event),
 	on_mouse_enter:               proc(event: Dialog_Overlay_Panel_Event),
@@ -184,7 +182,6 @@ Draw_Dialog_Overlay_Panel :: struct {
 	element_id:  string,
 	author:      o.Widget_Config,
 	on_scroll:   proc(scroll_x, scroll_y: f32),
-	scroll_bar:  Scroll_Bar_Style,
 }
 
 @(private)
@@ -245,7 +242,6 @@ dialog_overlay_draw_panel :: proc(props: Draw_Dialog_Overlay_Panel) {
 		props.element_id,
 		props.author,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
@@ -313,7 +309,6 @@ dialog_overlay_panel_with_theme :: proc(
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -342,13 +337,7 @@ dialog_overlay_panel_with_theme :: proc(
 		dialog_note_pointer()
 	}
 
-	widget_handle_scroll_wheel(
-		layout_id,
-		config,
-		frame_state.is_hovered,
-		key,
-		props.on_scroll,
-	)
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y
@@ -389,7 +378,6 @@ dialog_overlay_panel_with_theme :: proc(
 			element_id = key,
 			author = props.config,
 			on_scroll = props.on_scroll,
-			scroll_bar = props.scroll_bar,
 		},
 	)
 
@@ -476,12 +464,7 @@ Dialog_Content :: proc(props: Dialog_Content_Props) {
 	o.Begin_Overlay()
 	defer o.End_Overlay()
 
-	dialog_overlay_panel(
-		{
-			config = host_cfg,
-			child = dialog_content_host_child,
-		},
-	)
+	dialog_overlay_panel({config = host_cfg, child = dialog_content_host_child})
 
 	ctx.content_child = nil
 	ctx.content_panel_author = {}

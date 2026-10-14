@@ -161,6 +161,55 @@ widget_handle_interaction_sets_hover_and_click_flags :: proc(t: ^testing.T) {
 	})
 }
 
+@(test)
+widget_handle_interaction_clears_pointer_flags_when_disabled :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		props := Rectangle_Props{}
+		frame := Rectangle_State {
+			is_disabled = true,
+		}
+		handlers := widget_lifecycle_handlers(props, Rectangle_State)
+		config := o.Resolved_Widget_Config {
+			space    = .SCREEN,
+			tabbable = true,
+		}
+		layout_id := o.UI_Id(1)
+		rect := o.Rect{0, 0, 40, 40}
+
+		widget_test_begin_layout()
+		_ = o.layout_push_node(layout_id, {kind = .RECT, space = .SCREEN})
+		o.layout_pop_node()
+		idx := o.state.ui.layout.id_to_node[layout_id]
+		o.state.ui.layout.nodes[idx].rect = rect
+		o.layout_finalize_stack_order()
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+
+		o.w_ctx.mouse_x = 15
+		o.w_ctx.mouse_y = 15
+		o.w_ctx.left_mouse.pressed = true
+		o.w_ctx.left_mouse.down = true
+		o.layout_resolve_pointer_hit()
+
+		_, _ = widget_handle_interaction(
+			props,
+			&frame,
+			handlers,
+			"hit-disabled",
+			false,
+			true,
+			layout_id,
+			rect,
+			config,
+		)
+		testing.expect(t, !frame.is_hovered)
+		testing.expect(t, !frame.is_pointer_target)
+		testing.expect(t, !frame.is_left_clicked)
+		testing.expect(t, !frame.is_Pressed)
+		testing.expect(t, !frame.is_focused)
+	})
+}
+
 @(private)
 bubble_parent_clicks: int
 @(private)

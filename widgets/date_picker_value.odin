@@ -38,7 +38,6 @@ Date_Picker_Value_Props :: struct {
 	on_mount:                     proc(frame_state: Date_Picker_Value_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Date_Picker_Value_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Date_Picker_Value_Event),
 	on_blur:                      proc(event: Date_Picker_Value_Event),
 	on_mouse_enter:               proc(event: Date_Picker_Value_Event),
@@ -144,7 +143,6 @@ Date_Picker_Value :: proc(props: Date_Picker_Value_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -243,7 +241,6 @@ Date_Picker_Value :: proc(props: Date_Picker_Value_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

@@ -33,12 +33,13 @@ Date_Picker_Event :: o.Widget_Event(Date_Picker_State)
 Date picker root props: caller-owned selection, open, and month; compound
 Trigger / Value / Input children; optional calendar content panel.
 
-Composition (shadcn-style):
+Composition:
 ```
 Date_Picker
-├── Date_Picker_Trigger
-│   └── Date_Picker_Value
-└── Popover content → Calendar (default) or custom `content`
+└── Popover (internal)
+    ├── child → Date_Picker_Trigger → Date_Picker_Value | Input
+    └── Popover_Content → Calendar + Calendar_Default_Months
+         (or custom `content`)
 ```
 
 Selection, open, and month are caller-owned: pass them every frame and update
@@ -77,7 +78,9 @@ Date_Picker_Props :: struct {
 	number_of_months:             int,
 	today:                        Calendar_Date,
 	disabled:                     bool,
-	calendar_style:               Calendar_Style,
+	day_size:                     o.Cfg(o.Style_F32),
+	gap:                          o.Cfg(o.Style_F32),
+	day:                          proc(frame_state: Calendar_Day_State),
 	format_month:                 proc(date: Calendar_Date) -> string,
 	format_weekday:               proc(weekday: Calendar_Weekday) -> string,
 	format_day:                   proc(date: Calendar_Date) -> string,
@@ -89,7 +92,6 @@ Date_Picker_Props :: struct {
 	on_mount:                     proc(frame_state: Date_Picker_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Date_Picker_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Date_Picker_Event),
 	on_blur:                      proc(event: Date_Picker_Event),
 	on_mouse_enter:               proc(event: Date_Picker_Event),
@@ -113,6 +115,7 @@ date_picker_theme_base :: proc(frame_state: ^Date_Picker_State) -> Date_Picker_C
 		kind = .DATE_PICKER,
 		direction = set.Direction(.VERTICAL),
 		gap_y = set.Gap_Y(u16(0)),
+		background = set.Background(o.Color.TRANSPARENT),
 	}
 }
 
@@ -148,11 +151,12 @@ date_picker_refresh_merged_if_interaction_changed :: proc(
 }
 
 /*
-Renders a composable date picker root (Popover + Calendar).
+Renders a composable date picker root (nested Popover + Calendar).
 
 Push compound context for Trigger / Value / Input parts. When open, `content`
-(or a default Calendar) is laid out in a viewport-aware popover beside the trigger.
-Escape and outside pointer press dismiss the popover.
+(or a default Calendar) is shown via composable `Popover` / `Popover_Content`
+beside the trigger. Dropdown dismiss (Escape / outside press) is owned by the
+nested Popover.
 */
 Date_Picker :: proc(props: Date_Picker_Props) {
 	cfg := props.config
@@ -222,7 +226,9 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 			week_starts_on = props.week_starts_on,
 			number_of_months = props.number_of_months,
 			today = props.today,
-			calendar_style = props.calendar_style,
+			day_size = props.day_size,
+			gap = props.gap,
+			day = props.day,
 			format_month = props.format_month,
 			format_weekday = props.format_weekday,
 			format_day = props.format_day,
@@ -270,7 +276,6 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 			key,
 			props_resolved.config,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -373,36 +378,18 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 		key,
 		props_resolved.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
-	ctx := date_picker_ctx_top()
+	trigger_focused := false
 
-	if ctx.open {
-		trigger_focused := ctx.trigger_key != "" && widget_is_focused(ctx.trigger_key)
-		root_focused := widget_is_focused(key)
+	if popover_ctx_ok() {
+		tkey := popover_ctx_top().trigger_key
+		trigger_focused = tkey != "" && widget_is_focused(tkey)
+	}
 
-		if trigger_focused || root_focused {
-			date_picker_handle_keys()
-		} else {
-			esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-			if esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-				date_picker_set_open(false)
-				o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-			}
-		}
-
-		if o.w_ctx.left_mouse.pressed && !ctx.pointer_owned {
-			date_picker_set_open(false)
-		}
-	} else {
-		trigger_focused := ctx.trigger_key != "" && widget_is_focused(ctx.trigger_key)
-
-		if trigger_focused || widget_is_focused(key) {
-			date_picker_handle_keys()
-		}
+	if trigger_focused || widget_is_focused(key) {
+		date_picker_handle_keys()
 	}
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)

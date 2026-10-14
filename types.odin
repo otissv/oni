@@ -536,13 +536,13 @@ Widget_Kind :: enum {
 	TABS_TRIGGER,
 	// Tab panel content.
 	TABS_CONTENT,
-	// Popover root (shadcn Popover).
+	// Popover root.
 	POPOVER,
 	// Popover trigger.
 	POPOVER_TRIGGER,
 	// Popover floating content panel.
 	POPOVER_CONTENT,
-	// Modal dialog root (shadcn Dialog).
+	// Modal dialog root.
 	DIALOG,
 	// Dialog trigger.
 	DIALOG_TRIGGER,

@@ -16,7 +16,6 @@ Grid_Props :: struct {
 	on_mount:                     proc(frame_state: Grid_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Grid_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Grid_Event),
 	on_blur:                      proc(event: Grid_Event),
 	on_mouse_enter:               proc(event: Grid_Event),
@@ -94,7 +93,6 @@ Grid :: proc(props: Grid_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -164,7 +162,6 @@ Grid :: proc(props: Grid_Props) {
 			element_id = key,
 			author = props.config,
 			on_scroll = props.on_scroll,
-			scroll_bar = props.scroll_bar,
 		},
 	)
 
@@ -181,7 +178,6 @@ Draw_Widget_Grid :: struct {
 	element_id:  string,
 	author:      o.Widget_Config,
 	on_scroll:   proc(scroll_x, scroll_y: f32),
-	scroll_bar:  Scroll_Bar_Style,
 }
 
 @(private)
@@ -233,7 +229,6 @@ draw_widget_grid :: proc(props: Draw_Widget_Grid) {
 		props.element_id,
 		props.author,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

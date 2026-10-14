@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Radio item configuration (Radix RadioGroup.Item).
+Radio item configuration.
 */
 Radio_Config :: o.Widget_Config
 
@@ -46,7 +46,6 @@ Radio_Props :: struct {
 	on_mount:                     proc(frame_state: Radio_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Radio_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Radio_Event),
 	on_blur:                      proc(event: Radio_Event),
 	on_mouse_enter:               proc(event: Radio_Event),
@@ -64,11 +63,11 @@ Radio_Props :: struct {
 
 @(private)
 Radio_Action :: struct {
-	active:           bool,
-	registered:       bool,
-	checked:          bool,
-	value:            string,
-	on_click:         proc(event: Radio_Event),
+	active:     bool,
+	registered: bool,
+	checked:    bool,
+	value:      string,
+	on_click:   proc(event: Radio_Event),
 }
 
 @(private)
@@ -192,7 +191,12 @@ radio_draw_indicator :: proc(layout_id: o.UI_Id, rect: o.Rect, color: o.RGBA) {
 		w = dot,
 		h = dot,
 	}
-	radius := o.Radius_px{tl = dot, tr = dot, bl = dot, br = dot}
+	radius := o.Radius_px {
+		tl = dot,
+		tr = dot,
+		bl = dot,
+		br = dot,
+	}
 	o.Draw_Rectangle(dot_rect, color, radius)
 }
 
@@ -229,9 +233,9 @@ Radio :: proc(props: Radio_Props) {
 
 	was_focused := widget_is_focused(key)
 	frame_state := Radio_State {
-		is_disabled = own_disabled || group_disabled || !in_group,
-		is_focused = was_focused,
-		value = props.value,
+		is_disabled    = own_disabled || group_disabled || !in_group,
+		is_focused     = was_focused,
+		value          = props.value,
 		group_disabled = group_disabled,
 	}
 	registered := false
@@ -262,8 +266,8 @@ Radio :: proc(props: Radio_Props) {
 
 	previous_action := radio_action
 	radio_action = {
-		active = true,
-		value = props.value,
+		active   = true,
+		value    = props.value,
 		on_click = props.on_click,
 	}
 	defer radio_action = previous_action
@@ -311,7 +315,8 @@ Radio :: proc(props: Radio_Props) {
 			frame_state.checked = radio_checked_now(props.value, true)
 		}
 
-		disabled_changed := frame_state.is_disabled != (own_disabled || group_disabled || !in_group)
+		disabled_changed :=
+			frame_state.is_disabled != (own_disabled || group_disabled || !in_group)
 
 		if frame_state.checked != checked_fp || disabled_changed {
 			event = radio_refresh_merged(resolved_props, &frame_state)
@@ -330,7 +335,6 @@ Radio :: proc(props: Radio_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -432,7 +436,6 @@ Radio :: proc(props: Radio_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

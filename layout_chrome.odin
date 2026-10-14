@@ -88,12 +88,12 @@ Layout_Calendar_Input :: struct {
 One month of layout-owned calendar chrome rects.
 */
 Layout_Calendar_Month :: struct {
-	origin:   Vec2,
-	prev:     Rect,
-	label:    Rect,
-	next:     Rect,
-	weekdays: [LAYOUT_CALENDAR_WEEK_DAYS]Rect,
-	days:     [LAYOUT_CALENDAR_GRID_DAYS]Rect,
+	origin:    Vec2,
+	prev:      Rect,
+	label:     Rect,
+	next:      Rect,
+	weekdays:  [LAYOUT_CALENDAR_WEEK_DAYS]Rect,
+	days:      [LAYOUT_CALENDAR_GRID_DAYS]Rect,
 	week_nums: [LAYOUT_CALENDAR_WEEK_ROWS]Rect,
 }
 
@@ -265,7 +265,7 @@ layout_slider_range_rect :: proc(
 
 	if count == 1 {
 		// Single thumb: fill from the track origin to the thumb center
-		// (Radix/shadcn). Do not inset by half a virtual thumb at t=0.
+		// Do not inset by half a virtual thumb at t=0.
 		end_t := slider_t_from_value(values[0], min_v, max_v, inverted)
 		start = 0
 		end = slider_thumb_pos_from_t(track_len, size, end_t) + size * 0.5
@@ -351,7 +351,11 @@ layout_calendar_month_width :: proc(
 ) -> f32 {
 	week_w := show_week_numbers ? week_num_width + gap : 0
 
-	return week_w + f32(LAYOUT_CALENDAR_WEEK_DAYS) * day_size + f32(LAYOUT_CALENDAR_WEEK_DAYS - 1) * gap
+	return(
+		week_w +
+		f32(LAYOUT_CALENDAR_WEEK_DAYS) * day_size +
+		f32(LAYOUT_CALENDAR_WEEK_DAYS - 1) * gap \
+	)
 }
 
 @(private)
@@ -422,13 +426,7 @@ layout_calendar_day_rect :: proc(
 	col := index % LAYOUT_CALENDAR_WEEK_DAYS
 	week_w := show_week_numbers ? week_num_width + gap : 0
 	x := origin.x + week_w + f32(col) * (day_size + gap)
-	y :=
-		origin.y +
-		nav_height +
-		gap +
-		weekday_height +
-		gap +
-		f32(row) * (day_size + gap)
+	y := origin.y + nav_height + gap + weekday_height + gap + f32(row) * (day_size + gap)
 
 	return {x = x, y = y, w = day_size, h = day_size}
 }
@@ -439,13 +437,7 @@ layout_calendar_week_num_rect :: proc(
 	row: int,
 	day_size, gap, nav_height, weekday_height, week_num_width: f32,
 ) -> Rect {
-	y :=
-		origin.y +
-		nav_height +
-		gap +
-		weekday_height +
-		gap +
-		f32(row) * (day_size + gap)
+	y := origin.y + nav_height + gap + weekday_height + gap + f32(row) * (day_size + gap)
 
 	return {x = origin.x, y = y, w = week_num_width, h = day_size}
 }

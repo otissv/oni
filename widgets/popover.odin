@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Popover root configuration (shadcn Popover).
+Popover root configuration.
 */
 Popover_Config :: o.Widget_Config
 
@@ -40,7 +40,6 @@ Popover_Props :: struct {
 	on_mount:                     proc(frame_state: Popover_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Popover_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Popover_Event),
 	on_blur:                      proc(event: Popover_Event),
 	on_mouse_enter:               proc(event: Popover_Event),
@@ -69,7 +68,10 @@ popover_root_theme_base :: proc(frame_state: ^Popover_State) -> Popover_Config {
 }
 
 @(private)
-popover_root_refresh_merged :: proc(props: Popover_Props, frame_state: ^Popover_State) -> Popover_Event {
+popover_root_refresh_merged :: proc(
+	props: Popover_Props,
+	frame_state: ^Popover_State,
+) -> Popover_Event {
 	event := widget_event(frame_state^)
 	base := popover_root_theme_base(frame_state)
 	frame_state.config = o.resolve_widget_config(base, props.config, frame_state, event)
@@ -175,7 +177,6 @@ Popover :: proc(props: Popover_Props) {
 				key,
 				props_resolved.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -273,7 +274,6 @@ Popover :: proc(props: Popover_Props) {
 		key,
 		props_resolved.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

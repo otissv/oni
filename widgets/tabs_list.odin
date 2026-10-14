@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Tabs list configuration (shadcn TabsList / Base UI Tabs.List).
+Tabs list configuration.
 */
 Tabs_List_Config :: o.Widget_Config
 
@@ -41,7 +41,6 @@ Tabs_List_Props :: struct {
 	on_mount:                     proc(frame_state: Tabs_List_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Tabs_List_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Tabs_List_Event),
 	on_blur:                      proc(event: Tabs_List_Event),
 	on_mouse_enter:               proc(event: Tabs_List_Event),
@@ -195,7 +194,6 @@ Tabs_List :: proc(props: Tabs_List_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -276,7 +274,6 @@ Tabs_List :: proc(props: Tabs_List_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

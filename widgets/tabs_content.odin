@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Tabs content configuration (shadcn TabsContent / Base UI Tabs.Panel).
+Tabs content configuration.
 */
 Tabs_Content_Config :: o.Widget_Config
 
@@ -42,7 +42,6 @@ Tabs_Content_Props :: struct {
 	on_mount:                     proc(frame_state: Tabs_Content_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Tabs_Content_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Tabs_Content_Event),
 	on_blur:                      proc(event: Tabs_Content_Event),
 	on_mouse_enter:               proc(event: Tabs_Content_Event),
@@ -165,7 +164,6 @@ Tabs_Content :: proc(props: Tabs_Content_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 
@@ -258,7 +256,6 @@ Tabs_Content :: proc(props: Tabs_Content_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)

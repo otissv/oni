@@ -121,7 +121,19 @@ widget_handle_interaction :: proc(
 	frame_state.is_right_released = frame_state.is_hovered && o.w_ctx.right_mouse.released
 	frame_state.is_Pressed = frame_state.is_hovered && o.w_ctx.left_mouse.down
 
-	if !widget_can_interact(handlers, frame_state) do return
+	if !widget_can_interact(handlers, frame_state) {
+		// Disabled / non-interactive widgets must not keep hover or pressed chrome.
+		frame_state.is_hovered = false
+		frame_state.is_pointer_target = false
+		frame_state.is_left_clicked = false
+		frame_state.is_right_clicked = false
+		frame_state.is_middle_clicked = false
+		frame_state.is_left_released = false
+		frame_state.is_right_released = false
+		frame_state.is_Pressed = false
+
+		return
+	}
 
 	return widget_handle_pointer_focus(
 		key,

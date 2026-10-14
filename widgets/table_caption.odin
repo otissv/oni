@@ -29,7 +29,6 @@ Table_Caption_Props :: struct {
 	on_mount:                     proc(frame_state: Table_Caption_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Table_Caption_State) -> o.Mount,
 	on_scroll:                     proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Table_Caption_Event),
 	on_blur:                      proc(event: Table_Caption_Event),
 	on_mouse_enter:               proc(event: Table_Caption_Event),
@@ -106,7 +105,7 @@ Table_Caption :: proc(props: Table_Caption_Props) {
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
 		}
 
 		return
@@ -171,7 +170,7 @@ Table_Caption :: proc(props: Table_Caption_Props) {
 
 	table_widget_draw_chrome(layout_id, .TABLE_CAPTION, rect, config, &frame_state, event, .BACKGROUND)
 
-	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, props.scroll_bar, frame_state.is_hovered)
+	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
 
 	table_widget_draw_chrome(layout_id, .TABLE_CAPTION, rect, config, &frame_state, event, .BORDER)
 

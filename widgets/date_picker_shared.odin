@@ -18,6 +18,32 @@ DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX :: f32(8)
 DATE_PICKER_DEFAULT_CALENDAR_WIDTH :: f32(320)
 
 /*
+Default calendar panel width for the composed Date_Picker content.
+
+Uses calendar measure for `number_of_months` so multi-month range pickers get a
+panel wide enough for every month column. Single-month keeps at least
+`DATE_PICKER_DEFAULT_CALENDAR_WIDTH`.
+*/
+@(private)
+date_picker_default_calendar_width :: proc(
+	number_of_months: int,
+	day_size_cfg: o.Cfg(o.Style_F32),
+	gap_cfg: o.Cfg(o.Style_F32),
+	show_week_numbers: bool,
+) -> f32 {
+	day_size := calendar_cfg_f32(day_size_cfg, CALENDAR_DEFAULT_DAY_SIZE)
+	gap := calendar_cfg_f32(gap_cfg, CALENDAR_DEFAULT_GAP)
+	months := calendar_resolve_months(number_of_months)
+	content_w, _ := calendar_measure(months, day_size, gap, show_week_numbers)
+
+	if content_w < DATE_PICKER_DEFAULT_CALENDAR_WIDTH {
+		return DATE_PICKER_DEFAULT_CALENDAR_WIDTH
+	}
+
+	return content_w
+}
+
+/*
 Cross-frame date picker runtime for input draft text while editing.
 */
 @(private)
@@ -59,16 +85,13 @@ Date_Picker_Ctx :: struct {
 	week_starts_on:       Calendar_Weekday,
 	number_of_months:     int,
 	today:                Calendar_Date,
-	calendar_style:       Calendar_Style,
+	day_size:             o.Cfg(o.Style_F32),
+	gap:                  o.Cfg(o.Style_F32),
+	day:                  proc(frame_state: Calendar_Day_State),
 	format_month:         proc(date: Calendar_Date) -> string,
 	format_weekday:       proc(weekday: Calendar_Weekday) -> string,
 	format_day:           proc(date: Calendar_Date) -> string,
 	format_value:         proc(selection: Calendar_Selection) -> string,
-	trigger_key:          string,
-	trigger_layout_id:    o.UI_Id,
-	trigger_rect:         o.Rect,
-	has_trigger:          bool,
-	pointer_owned:        bool,
 	user_child:           proc(frame_state: Date_Picker_State),
 	user_content:         proc(frame_state: Date_Picker_State),
 	content_frame:        Date_Picker_State,
@@ -379,7 +402,7 @@ date_picker_should_close_after_select :: proc(
 }
 
 @(private)
-date_picker_set_open :: proc(open: bool) {
+date_picker_on_popover_open_change :: proc(open: bool) {
 	if !date_picker_ctx_ok() {
 		return
 	}
@@ -402,8 +425,45 @@ date_picker_set_open :: proc(open: bool) {
 }
 
 @(private)
+date_picker_set_open :: proc(open: bool) {
+	if !date_picker_ctx_ok() {
+		return
+	}
+
+	ctx := date_picker_ctx_top()
+
+	if ctx.disabled {
+		return
+	}
+
+	if ctx.open == open {
+		return
+	}
+
+	ctx.open = open
+
+	if popover_ctx_ok() {
+		pctx := popover_ctx_top()
+
+		if pctx.open != open {
+			pctx.open = open
+		}
+	}
+
+	if ctx.on_open_change != nil {
+		ctx.on_open_change(open)
+	}
+}
+
+@(private)
 date_picker_toggle_open :: proc() {
 	if !date_picker_ctx_ok() {
+		return
+	}
+
+	if popover_ctx_ok() {
+		popover_toggle_open()
+
 		return
 	}
 
@@ -470,31 +530,19 @@ date_picker_on_calendar_select :: proc(selection: Calendar_Selection) {
 	date_picker_apply_selection(selection)
 }
 
+/*
+Marks the nested Popover pointer as owned so calendar / content hits do not dismiss.
+*/
 @(private)
 date_picker_note_pointer :: proc() {
-	if !date_picker_ctx_ok() {
-		return
+	if popover_ctx_ok() {
+		popover_note_pointer()
 	}
-
-	date_picker_ctx_top().pointer_owned = true
 }
 
 @(private)
-date_picker_set_trigger :: proc(key: string, layout_id: o.UI_Id, rect: o.Rect) {
-	if !date_picker_ctx_ok() {
-		return
-	}
-
-	ctx := date_picker_ctx_top()
-	ctx.trigger_key = key
-	ctx.trigger_layout_id = layout_id
-	ctx.trigger_rect = rect
-	ctx.has_trigger = true
-}
-
-@(private)
-fmt_date_picker_content_id :: proc(picker_key: string) -> string {
-	return fmt.tprintf("%s/__date_picker_content", picker_key)
+fmt_date_picker_popover_id :: proc(picker_key: string) -> string {
+	return fmt.tprintf("%s/__date_picker_popover", picker_key)
 }
 
 @(private)
@@ -503,13 +551,12 @@ fmt_date_picker_calendar_id :: proc(picker_key: string) -> string {
 }
 
 @(private)
-date_picker_content_theme_config :: proc(trigger_rect: o.Rect) -> o.Widget_Config {
+date_picker_popover_content_config :: proc() -> o.Widget_Config {
 	return o.Widget_Config {
-		kind = .RECT,
-		space = set.Space(.POPOVER),
-		position = set.Position(.ABSOLUTE),
-		x = set.F32(trigger_rect.x),
-		y = set.F32(trigger_rect.y + trigger_rect.h + DATE_PICKER_POPOVER_GAP_PX),
+		// Must be sized (FIT or explicit). Unset width stretches to the viewport
+		// as a POPOVER layer root; layout_resolve_anchors then clamps x off-screen.
+		width = set.Width(.FIT),
+		height = set.Height(.FIT),
 		overflow_y = set.Overflow_Y(.HIDDEN),
 		direction = set.Direction(.VERTICAL),
 		padding = set.Padding(f32(0)),
@@ -517,26 +564,6 @@ date_picker_content_theme_config :: proc(trigger_rect: o.Rect) -> o.Widget_Confi
 		border = set.Border(f32(1)),
 		border_color = set.Border_color(o.Color.BORDER),
 		radius = set.Radius(f32(8)),
-		z_index = set.Z_Index(f32(50)),
-	}
-}
-
-@(private)
-date_picker_default_calendar_months :: proc(_: Calendar_State) {
-	ctx := date_picker_ctx_top()
-	count := ctx.number_of_months
-
-	if count < 1 {
-		count = 1
-	}
-
-	if count > CALENDAR_MAX_MONTHS {
-		count = CALENDAR_MAX_MONTHS
-	}
-
-	for i in 0 ..< count {
-		month_id := fmt.tprintf("%s/calendar/month_%d", ctx.picker_key, i)
-		Calendar_Month({config = {id = month_id}, month_index = i})
 	}
 }
 
@@ -546,12 +573,18 @@ date_picker_default_content :: proc(fs: Date_Picker_State) {
 	ctx := date_picker_ctx_top()
 	mode := date_picker_effective_mode(ctx.mode)
 	cal_id := fmt_date_picker_calendar_id(ctx.picker_key)
+	cal_w := date_picker_default_calendar_width(
+		ctx.number_of_months,
+		ctx.day_size,
+		ctx.gap,
+		ctx.show_week_numbers,
+	)
 
 	Calendar(
 		{
 			config = {
 				id = cal_id,
-				width = set.Width(DATE_PICKER_DEFAULT_CALENDAR_WIDTH),
+				width = set.Width(cal_w),
 			},
 			mode = mode,
 			selected = ctx.selected,
@@ -577,65 +610,13 @@ date_picker_default_content :: proc(fs: Date_Picker_State) {
 			number_of_months = ctx.number_of_months,
 			today = ctx.today,
 			disabled = ctx.disabled,
-			style = ctx.calendar_style,
+			day_size = ctx.day_size,
+			gap = ctx.gap,
+			day = ctx.day,
 			format_month = ctx.format_month,
 			format_weekday = ctx.format_weekday,
 			format_day = ctx.format_day,
-			child = date_picker_default_calendar_months,
-		},
-	)
-}
-
-@(private)
-date_picker_popover_child :: proc(_: Popover_Content_State) {
-	ctx := date_picker_ctx_top()
-
-	if ctx.user_content != nil {
-		ctx.user_content(ctx.content_frame)
-	} else {
-		date_picker_default_content(ctx.content_frame)
-	}
-}
-
-@(private)
-date_picker_popover_mouse_enter :: proc(_: Popover_Content_Event) {
-	date_picker_note_pointer()
-}
-
-@(private)
-date_picker_render_content :: proc(frame_state: Date_Picker_State) {
-	ctx := date_picker_ctx_top()
-
-	if !ctx.open {
-		return
-	}
-
-	trigger_rect := ctx.trigger_rect
-
-	if !ctx.has_trigger {
-		trigger_rect = {}
-	}
-
-	cfg := date_picker_content_theme_config(trigger_rect)
-	content_id := ctx.picker_key != "" ? fmt_date_picker_content_id(ctx.picker_key) : ""
-
-	if content_id != "" {
-		cfg.id = content_id
-	}
-
-	ctx.content_frame = frame_state
-
-	popover_panel_anchored(
-		{
-			config = cfg,
-			child = date_picker_popover_child,
-			anchor_id = ctx.trigger_layout_id,
-			gap = DATE_PICKER_POPOVER_GAP_PX,
-			margin = DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
-			match_width = false,
-			align = .START,
-			on_mouse_enter = date_picker_popover_mouse_enter,
-			content_id = content_id,
+			child = Calendar_Default_Months,
 		},
 	)
 }
@@ -643,12 +624,53 @@ date_picker_render_content :: proc(frame_state: Date_Picker_State) {
 @(private)
 date_picker_compound_child :: proc(fs: Date_Picker_State) {
 	ctx := date_picker_ctx_top()
+	ctx.content_frame = fs
+	popover_id := ctx.picker_key != "" ? fmt_date_picker_popover_id(ctx.picker_key) : ""
+
+	Popover(
+		{
+			config = {
+				id = popover_id,
+				direction = set.Direction(.VERTICAL),
+				gap_y = set.Gap_Y(u16(0)),
+			},
+			open = ctx.open,
+			disabled = ctx.disabled,
+			on_open_change = date_picker_on_popover_open_change,
+			child = date_picker_popover_child,
+		},
+	)
+}
+
+@(private)
+date_picker_popover_child :: proc(_: Popover_State) {
+	ctx := date_picker_ctx_top()
 
 	if ctx.user_child != nil {
-		ctx.user_child(fs)
+		ctx.user_child(ctx.content_frame)
 	}
 
-	date_picker_render_content(fs)
+	Popover_Content(
+		{
+			config = date_picker_popover_content_config(),
+			align = .START,
+			match_trigger_width = false,
+			gap = DATE_PICKER_POPOVER_GAP_PX,
+			side_margin = DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
+			child = date_picker_popover_content_child,
+		},
+	)
+}
+
+@(private)
+date_picker_popover_content_child :: proc(_: Popover_Content_Props_State) {
+	ctx := date_picker_ctx_top()
+
+	if ctx.user_content != nil {
+		ctx.user_content(ctx.content_frame)
+	} else {
+		date_picker_default_content(ctx.content_frame)
+	}
 }
 
 @(private)

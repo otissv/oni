@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Dialog scrim configuration (shadcn DialogOverlay).
+Dialog scrim configuration.
 
 Viewport-fixed rectangle in `.OVERLAY` space; defaults to a semi-transparent fill.
 */
@@ -31,7 +31,6 @@ Dialog_Scrim_Props :: struct {
 	on_mount:                     proc(frame_state: Dialog_Scrim_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_Scrim_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Dialog_Scrim_Event),
 	on_blur:                      proc(event: Dialog_Scrim_Event),
 	on_mouse_enter:               proc(event: Dialog_Scrim_Event),
@@ -221,7 +220,6 @@ dialog_scrim_rectangle_props :: proc(props: Dialog_Scrim_Props) -> Rectangle_Pro
 		on_mount = dialog_scrim_rect_on_mount,
 		on_unmount = dialog_scrim_rect_on_unmount,
 		on_scroll = props.on_scroll,
-		scroll_bar = props.scroll_bar,
 		on_focus = dialog_scrim_rect_on_focus,
 		on_blur = dialog_scrim_rect_on_blur,
 		on_mouse_enter = dialog_scrim_rect_on_mouse_enter,

@@ -73,6 +73,34 @@ slider_test_custom_thumb :: proc(frame_state: Slider_Thumb_State) {
 }
 
 @(private)
+slider_test_custom_child :: proc(frame_state: Slider_State) {
+	Slider_Track({
+		config = {
+			id = "slider-custom/track",
+			background = set.Background(o.Color.SECONDARY),
+		},
+	})
+	Slider_Range({
+		config = {
+			id = "slider-custom/range",
+			background = set.Background(o.Color.PRIMARY),
+		},
+	})
+
+	for i in 0 ..< frame_state.value_count {
+		Slider_Thumb({
+			config = {
+				id = fmt.tprintf("slider-custom/thumb-%d", i),
+				background = set.Background(o.Color.BACKGROUND),
+				border_color = set.Border_color(o.Color.PRIMARY),
+			},
+			index = i,
+			child = slider_test_custom_thumb,
+		})
+	}
+}
+
+@(private)
 slider_test_reset :: proc() {
 	slider_test_values = {}
 	slider_test_count = 0
@@ -560,13 +588,13 @@ slider_ui_shutdown_releases_drag_map :: proc(t: ^testing.T) {
 }
 
 @(test)
-slider_custom_thumb_runs_once_per_thumb :: proc(t: ^testing.T) {
+slider_composable_parts_run_once_per_thumb :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [2]f32{20, 80}
 		props := Slider_Props {
 			config = {
-				id = "slider-custom-thumb",
+				id = "slider-custom",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
 			},
@@ -574,7 +602,7 @@ slider_custom_thumb_runs_once_per_thumb :: proc(t: ^testing.T) {
 			min = 0,
 			max = 100,
 			step = 1,
-			thumb = slider_test_custom_thumb,
+			child = slider_test_custom_child,
 		}
 
 		widget_test_begin_layout()
@@ -591,22 +619,24 @@ slider_custom_thumb_runs_once_per_thumb :: proc(t: ^testing.T) {
 		expect_close(t, slider_test_thumb_values[0], 20)
 		expect_close(t, slider_test_thumb_values[1], 80)
 
-		expect_registered_id(t, "slider-custom-thumb/thumb-0")
-		expect_registered_id(t, "slider-custom-thumb/thumb-1")
+		expect_registered_id(t, "slider-custom/track")
+		expect_registered_id(t, "slider-custom/range")
+		expect_registered_id(t, "slider-custom/thumb-0")
+		expect_registered_id(t, "slider-custom/thumb-1")
 		widget_test_end_frame()
 	})
 }
 
 @(test)
-slider_without_custom_thumb_skips_thumb_hosts :: proc(t: ^testing.T) {
+slider_default_child_registers_parts :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
-		values := [1]f32{40}
+		values := [2]f32{30, 70}
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
 		Slider({
 			config = {
-				id = "slider-default-thumb",
+				id = "slider-default",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
 			},
@@ -614,7 +644,55 @@ slider_without_custom_thumb_skips_thumb_hosts :: proc(t: ^testing.T) {
 		})
 		widget_test_finish_layout()
 
-		_, ok := GetElementById("slider-default-thumb/thumb-0")
-		testing.expect(t, !ok)
+		expect_registered_id(t, "slider-default/track")
+		expect_registered_id(t, "slider-default/range")
+
+		// Default thumbs paint without layout hosts; custom thumbs register via child.
+		_, thumb_ok := GetElementById("slider-default/thumb-0")
+		testing.expect(t, !thumb_ok)
+	})
+}
+
+@(test)
+slider_layout_metrics_props :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		values := [1]f32{50}
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Slider({
+			config = {
+				id = "slider-metrics",
+				width = set.Width(f32(200)),
+				height = set.Height(f32(24)),
+			},
+			values = values[:],
+			thumb_size = set.F32(f32(20)),
+			track_thickness = set.F32(f32(8)),
+		})
+		widget_test_finish_layout()
+
+		chrome := o.layout_slider_result(o.ui_id("slider-metrics"))
+		testing.expect(t, chrome != nil)
+
+		if chrome != nil {
+			expect_close(t, chrome.track.h, 8)
+			expect_close(t, chrome.thumbs[0].w, 20)
+			expect_close(t, chrome.thumbs[0].h, 20)
+		}
+	})
+}
+
+@(test)
+slider_parts_outside_context_noop :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		Slider_Track({config = {id = "orphan-slider-track"}})
+		Slider_Range({config = {id = "orphan-slider-range"}})
+		Slider_Thumb({config = {id = "orphan-slider-thumb"}, index = 0})
+		Slider_Default_Parts({})
+		widget_test_finish_layout()
 	})
 }

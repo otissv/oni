@@ -4,7 +4,7 @@ import o "../../oni"
 import set "../set"
 
 /*
-Dialog action button configuration (shadcn AlertDialogAction-style).
+Dialog action button configuration.
 
 Renders via `Button`; does not dismiss the parent dialog.
 */
@@ -28,7 +28,7 @@ Use `on_click` for the primary action; close the dialog from app state when done
 Dialog_Action_Props :: Button_Props
 
 /*
-Dialog cancel button configuration (shadcn AlertDialogCancel-style).
+Dialog cancel button configuration.
 
 Renders via `Button`. Default click closes the parent dialog; pass `on_click` to
 replace that behavior entirely.

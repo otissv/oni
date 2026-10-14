@@ -375,16 +375,6 @@ color_picker_text_input_on_change_adopts_owned_strings :: proc(t: ^testing.T) {
 }
 
 @(test)
-color_picker_style_defaults_from_unset :: proc(t: ^testing.T) {
-	style: Color_Picker_Style
-	testing.expect_value(
-		t,
-		color_picker_style_f32(style.field_size, o.COLOR_PICKER_DEFAULT_FIELD_SIZE),
-		o.COLOR_PICKER_DEFAULT_FIELD_SIZE,
-	)
-}
-
-@(test)
 color_picker_replace_string_skips_equal_value :: proc(t: ^testing.T) {
 	owned := strings.clone("#ff0000")
 	defer {
@@ -418,5 +408,59 @@ color_picker_sync_runtime_texts_keeps_stable_hex :: proc(t: ^testing.T) {
 		color_picker_sync_runtime_texts(rt, hsva, rgba)
 		testing.expect_value(t, rt.hex, "#ff0000")
 		testing.expect(t, raw_data(rt.hex) == before)
+	})
+}
+
+@(test)
+color_picker_part_config_sizing_overrides :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		Color_Picker({
+			config = {
+				id = "color-picker-part-sizing",
+				width = set.Width(f32(480)),
+				height = set.Height(f32(560)),
+			},
+			value = color_picker_test_value,
+			channel = .H,
+			previous = color_picker_test_previous,
+			child = proc(_: Color_Picker_State) {
+				Color_Picker_Field({
+					config = {
+						id = "color-picker-part-sizing-field",
+						width = set.Width(f32(160)),
+						height = set.Height(f32(140)),
+					},
+				})
+				Color_Picker_Slider({
+					config = {
+						id = "color-picker-part-sizing-slider",
+						width = set.Width(f32(28)),
+						height = set.Height(f32(140)),
+					},
+				})
+				Color_Picker_Alpha({
+					config = {
+						id = "color-picker-part-sizing-alpha",
+						width = set.Width(f32(180)),
+						height = set.Height(f32(22)),
+					},
+				})
+				Color_Picker_Swatch({
+					config = {
+						id = "color-picker-part-sizing-swatch",
+						width = set.Width(f32(64)),
+						height = set.Height(f32(36)),
+					},
+					role = .CURRENT,
+				})
+			},
+		})
+		widget_test_finish_layout()
+
+		testing.expect(t, widget_test_has_layout_size(160, 140, 2))
+		testing.expect(t, widget_test_has_layout_size(28, 140, 2))
+		testing.expect(t, widget_test_has_layout_size(180, 22, 2))
+		testing.expect(t, widget_test_has_layout_size(64, 36, 2))
 	})
 }

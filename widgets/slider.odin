@@ -5,24 +5,24 @@ import set "../set"
 import "core:fmt"
 
 /*
-Author-time style overrides for slider track, range fill, and thumbs.
-
-Unset Cfg fields keep the slider theme defaults.
-*/
-Slider_Style :: struct {
-	track:           o.Cfg(o.Colors),
-	range:           o.Cfg(o.Colors),
-	thumb:           o.Cfg(o.Colors),
-	thumb_border:    o.Cfg(o.Colors),
-	thumb_size:      o.Cfg(o.Style_F32),
-	track_thickness: o.Cfg(o.Style_F32),
-	radius:          o.Cfg(o.Radius),
-}
-
-/*
-Slider configuration.
+Slider root configuration.
 */
 Slider_Config :: o.Widget_Config
+
+/*
+Slider track part configuration.
+*/
+Slider_Track_Config :: o.Widget_Config
+
+/*
+Slider range fill part configuration.
+*/
+Slider_Range_Config :: o.Widget_Config
+
+/*
+Slider thumb part configuration.
+*/
+Slider_Thumb_Config :: o.Widget_Config
 
 /*
 Slider per-frame state, including the active working values.
@@ -32,6 +32,7 @@ Slider_State :: struct {
 	config:            o.Resolved_Widget_Config,
 	values:            [o.SLIDER_MAX_THUMBS]f32,
 	value_count:       int,
+	active_thumb:      int,
 	min:               f32,
 	max:               f32,
 	step:              f32,
@@ -40,7 +41,7 @@ Slider_State :: struct {
 }
 
 /*
-Per-thumb state passed to an optional custom `thumb` builder.
+Per-thumb state passed to `Slider_Thumb.child`.
 
 `index` is 0 for a single thumb, or 0/1 for a range. `is_active` is true for the
 thumb currently targeted by pointer drag or keyboard stepping.
@@ -58,16 +59,52 @@ Slider event snapshot.
 Slider_Event :: o.Widget_Event(Slider_State)
 
 /*
-Slider props.
+Slider thumb event snapshot.
+*/
+Slider_Thumb_Event :: o.Widget_Event(Slider_Thumb_State)
+
+/*
+Props for `Slider_Track`.
+*/
+Slider_Track_Props :: struct {
+	config: Slider_Track_Config,
+	child:  proc(frame_state: Slider_State),
+}
+
+/*
+Props for `Slider_Range`.
+*/
+Slider_Range_Props :: struct {
+	config: Slider_Range_Config,
+}
+
+/*
+Props for `Slider_Thumb`.
+
+`index` selects which thumb in `values` (`0 ..< value_count`) this part renders.
+Optional `child` renders inside an absolutely positioned host matching the thumb
+hit rect.
+*/
+Slider_Thumb_Props :: struct {
+	config: Slider_Thumb_Config,
+	index:  int,
+	child:  proc(frame_state: Slider_Thumb_State),
+}
+
+/*
+Slider root props.
 
 `values` is owned by the caller and must be passed every frame with length 1
 (single thumb) or 2 (range). Pointer and keyboard interaction report updates
 through `on_value_change` only — the widget never mutates the caller's slice.
 `on_value_commit` fires once when an active pointer drag ends.
 
-When `thumb` is set it replaces the built-in thumb chrome for every thumb; the
-callback runs once per thumb inside an absolutely positioned host matching the
-thumb hit rect. Track and range fill still use the default painter.
+Compose chrome with `Slider_Track`, `Slider_Range`, and `Slider_Thumb` inside
+`child`. When `child` is nil, `Slider_Default_Parts` renders track, range fill,
+and one thumb per value using each part's theme defaults.
+
+`thumb_size` and `track_thickness` are layout metrics (unset `Cfg` keeps
+`SLIDER_DEFAULT_THUMB_SIZE` and `SLIDER_DEFAULT_TRACK_THICKNESS`).
 */
 Slider_Props :: struct {
 	config:                       Slider_Config,
@@ -79,8 +116,9 @@ Slider_Props :: struct {
 	orientation:                  o.Slider_Orientation,
 	inverted:                     bool,
 	disabled:                     bool,
-	style:                        Slider_Style,
-	thumb:                        proc(frame_state: Slider_Thumb_State),
+	thumb_size:                   o.Cfg(o.Style_F32),
+	track_thickness:              o.Cfg(o.Style_F32),
+	child:                        proc(frame_state: Slider_State),
 	on_value_change:              proc(values: []f32),
 	on_value_commit:              proc(values: []f32),
 	unmount:                      bool,
@@ -88,7 +126,6 @@ Slider_Props :: struct {
 	on_mount:                     proc(frame_state: Slider_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Slider_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Slider_Event),
 	on_blur:                      proc(event: Slider_Event),
 	on_mouse_enter:               proc(event: Slider_Event),
@@ -103,6 +140,9 @@ Slider_Props :: struct {
 	on_key_down:                  proc(event: Slider_Event),
 	on_key_released:              proc(event: Slider_Event),
 }
+
+@(private)
+SLIDER_CTX_MAX :: 8
 
 @(private)
 Slider_Action_Context :: struct {
@@ -120,7 +160,13 @@ Slider_Action_Context :: struct {
 	thumb_size:               f32,
 	track_thickness:          f32,
 	active_thumb:             int,
-	thumb:                    proc(frame_state: Slider_Thumb_State),
+	frame_state:              Slider_State,
+	track:                    o.Rect,
+	range_rect:               o.Rect,
+	thumbs:                   [o.SLIDER_MAX_THUMBS]o.Rect,
+	rel_thumbs:               [o.SLIDER_MAX_THUMBS]o.Rect,
+	pending_thumb_state:      Slider_Thumb_State,
+	pending_thumb_child:      proc(frame_state: Slider_Thumb_State),
 	on_value_change:          proc(values: []f32),
 	on_value_commit:          proc(values: []f32),
 	on_key_down:              proc(event: Slider_Event),
@@ -129,16 +175,58 @@ Slider_Action_Context :: struct {
 }
 
 @(private)
-slider_action_context: Slider_Action_Context
+slider_ctx_stack: [SLIDER_CTX_MAX]Slider_Action_Context
 
 @(private)
-slider_style_thumb_size :: proc(style: Slider_Style) -> f32 {
-	return o.cfg_style_f32(style.thumb_size, o.SLIDER_DEFAULT_THUMB_SIZE)
+slider_ctx_depth: int
+
+@(private)
+slider_ctx_dummy: Slider_Action_Context
+
+@(private)
+slider_ctx_ok :: proc() -> bool {
+	return slider_ctx_depth > 0 && slider_ctx_stack[slider_ctx_depth - 1].active
 }
 
 @(private)
-slider_style_track_thickness :: proc(style: Slider_Style) -> f32 {
-	return o.cfg_style_f32(style.track_thickness, o.SLIDER_DEFAULT_TRACK_THICKNESS)
+slider_ctx_top :: proc() -> ^Slider_Action_Context {
+	if !slider_ctx_ok() {
+		return &slider_ctx_dummy
+	}
+
+	return &slider_ctx_stack[slider_ctx_depth - 1]
+}
+
+@(private)
+slider_ctx_push :: proc(ctx: Slider_Action_Context) -> bool {
+	if slider_ctx_depth >= SLIDER_CTX_MAX {
+		return false
+	}
+
+	slider_ctx_stack[slider_ctx_depth] = ctx
+	slider_ctx_depth += 1
+
+	return true
+}
+
+@(private)
+slider_ctx_pop :: proc() {
+	if slider_ctx_depth <= 0 {
+		return
+	}
+
+	slider_ctx_depth -= 1
+	slider_ctx_stack[slider_ctx_depth] = {}
+}
+
+@(private)
+slider_resolve_thumb_size :: proc(props: Slider_Props) -> f32 {
+	return o.cfg_style_f32(props.thumb_size, o.SLIDER_DEFAULT_THUMB_SIZE)
+}
+
+@(private)
+slider_resolve_track_thickness :: proc(props: Slider_Props) -> f32 {
+	return o.cfg_style_f32(props.track_thickness, o.SLIDER_DEFAULT_TRACK_THICKNESS)
 }
 
 @(private)
@@ -186,6 +274,62 @@ slider_theme_base :: proc(frame_state: ^Slider_State) -> Slider_Config {
 		opacity = set.F32(opacity),
 		overflow_x = set.Overflow_X(.HIDDEN),
 		overflow_y = set.Overflow_Y(.HIDDEN),
+	}
+}
+
+@(private)
+slider_track_theme_base :: proc(
+	frame_state: ^Slider_State,
+	track_thickness: f32,
+) -> Slider_Track_Config {
+	_ = frame_state
+	half := track_thickness * 0.5
+
+	return Slider_Track_Config {
+		kind = .RECT,
+		background = set.Background(o.Color.MUTED),
+		radius = set.Radius(half),
+		tabbable = set.Tabbable(false),
+	}
+}
+
+@(private)
+slider_range_theme_base :: proc(
+	frame_state: ^Slider_State,
+	track_thickness: f32,
+) -> Slider_Range_Config {
+	_ = frame_state
+	half := track_thickness * 0.5
+
+	return Slider_Range_Config {
+		kind = .RECT,
+		background = set.Background(o.Color.PRIMARY),
+		radius = set.Radius(half),
+		tabbable = set.Tabbable(false),
+	}
+}
+
+@(private)
+slider_thumb_theme_base :: proc(
+	frame_state: ^Slider_Thumb_State,
+	thumb_size: f32,
+) -> Slider_Thumb_Config {
+	border_color := o.Colors(o.Color.PRIMARY)
+
+	if frame_state.is_focused && frame_state.is_active {
+		border_color = o.Color.RING
+	}
+
+	half := thumb_size * 0.5
+
+	return Slider_Thumb_Config {
+		kind = .RECT,
+		background = set.Background(o.Color.BACKGROUND),
+		border = set.Border(f32(1)),
+		border_color = set.Border_color(border_color),
+		radius = set.Radius(half),
+		justify = set.Justify(o.Justify_Align.CENTER),
+		tabbable = set.Tabbable(false),
 	}
 }
 
@@ -239,11 +383,14 @@ slider_consume_key :: proc(code: o.Scancode) {
 
 @(private)
 slider_handle_keyboard :: proc(frame_state: ^Slider_State) -> bool {
-	ctx := &slider_action_context
-
-	if !ctx.active || frame_state == nil || !frame_state.is_focused || frame_state.is_disabled {
+	if !slider_ctx_ok() ||
+	   frame_state == nil ||
+	   !frame_state.is_focused ||
+	   frame_state.is_disabled {
 		return false
 	}
+
+	ctx := slider_ctx_top()
 
 	if ctx.count <= 0 {
 		return false
@@ -364,11 +511,11 @@ slider_handle_keyboard :: proc(frame_state: ^Slider_State) -> bool {
 
 @(private)
 slider_on_key_down :: proc(event: Slider_Event) {
-	ctx := &slider_action_context
-
-	if !ctx.active {
+	if !slider_ctx_ok() {
 		return
 	}
+
+	ctx := slider_ctx_top()
 
 	if ctx.on_key_down != nil {
 		ctx.on_key_down(event)
@@ -377,11 +524,11 @@ slider_on_key_down :: proc(event: Slider_Event) {
 
 @(private)
 slider_on_key_pressed :: proc(event: Slider_Event) {
-	ctx := &slider_action_context
-
-	if !ctx.active {
+	if !slider_ctx_ok() {
 		return
 	}
+
+	ctx := slider_ctx_top()
 
 	if ctx.on_key_pressed != nil {
 		ctx.on_key_pressed(event)
@@ -390,11 +537,11 @@ slider_on_key_pressed :: proc(event: Slider_Event) {
 
 @(private)
 slider_on_key_released :: proc(event: Slider_Event) {
-	ctx := &slider_action_context
-
-	if !ctx.active {
+	if !slider_ctx_ok() {
 		return
 	}
+
+	ctx := slider_ctx_top()
 
 	if ctx.on_key_released != nil {
 		ctx.on_key_released(event)
@@ -448,12 +595,11 @@ slider_handle_drag :: proc(
 	hovered: bool,
 	interactive: bool,
 ) {
-	ctx := &slider_action_context
-
-	if !ctx.active || frame_state == nil {
+	if !slider_ctx_ok() || frame_state == nil {
 		return
 	}
 
+	ctx := slider_ctx_top()
 	drag := o.slider_drag_get(ctx.layout_id)
 
 	if drag != nil && drag.active && (frame_state.is_disabled || ctx.count <= 0 || !interactive) {
@@ -579,8 +725,7 @@ slider_handle_drag :: proc(
 
 	ended :=
 		drag.active &&
-		(o.w_ctx.left_mouse.released ||
-			(!o.w_ctx.left_mouse.down && !o.w_ctx.left_mouse.pressed))
+		(o.w_ctx.left_mouse.released || (!o.w_ctx.left_mouse.down && !o.w_ctx.left_mouse.pressed))
 
 	if ended {
 		frame_state.values = ctx.values
@@ -592,100 +737,46 @@ slider_handle_drag :: proc(
 }
 
 @(private)
-slider_resolve_color :: proc(
-	cfg: o.Cfg(o.Colors),
-	fallback: o.Colors,
-	frame_state: ^Slider_State,
-	event: Slider_Event,
-) -> o.RGBA {
-	if cfg.mode != .UNSET {
-		if rgba, ok := o.to_rgba(cfg.value, frame_state, event); ok {
-			return rgba
-		}
-	}
-
-	rgba: o.RGBA
-
-	if resolved, ok := o.to_rgba(fallback, frame_state, event); ok {
-		rgba = resolved
-	}
-
-	return rgba
-}
-
-@(private)
-slider_draw_chrome :: proc(
+slider_draw_part_box :: proc(
 	layout_id: o.UI_Id,
-	track: o.Rect,
-	range_rect: o.Rect,
-	thumbs: [o.SLIDER_MAX_THUMBS]o.Rect,
-	count: int,
-	active_thumb: int,
-	style: Slider_Style,
-	frame_state: ^Slider_State,
-	event: Slider_Event,
-	radius: o.Radius_px,
-	paint_default_thumbs: bool,
+	rect: o.Rect,
+	config: o.Resolved_Widget_Config,
+	frame_state: ^$S,
+	event: o.Widget_Event(S),
 ) {
-	if o.ui_layout_paint_skip(layout_id) {
+	if o.ui_layout_paint_skip(layout_id) || rect.w <= 0 || rect.h <= 0 {
 		return
 	}
 
-	track_bg := slider_resolve_color(style.track, o.Color.MUTED, frame_state, event)
-	range_bg := slider_resolve_color(style.range, o.Color.PRIMARY, frame_state, event)
+	background: o.RGBA
 
-	o.Draw_Rectangle(track, track_bg, radius, {}, {})
-
-	if range_rect.w > 0 && range_rect.h > 0 {
-		o.Draw_Rectangle(range_rect, range_bg, radius, {}, {})
+	if resolved_bg, ok := o.style_background_rgba(config, frame_state, event); ok {
+		background = resolved_bg
 	}
 
-	if !paint_default_thumbs {
-		return
+	border: o.Bd_px
+
+	if resolved_border, ok := o.resolve_border(config.border, frame_state, event); ok {
+		border = resolved_border
 	}
 
-	thumb_bg := slider_resolve_color(style.thumb, o.Color.BACKGROUND, frame_state, event)
-	thumb_border := slider_resolve_color(style.thumb_border, o.Color.PRIMARY, frame_state, event)
+	border_color: o.RGBA
 
-	if frame_state.is_focused {
-		thumb_border = slider_resolve_color(style.thumb_border, o.Color.RING, frame_state, event)
+	if resolved_bc, ok := o.style_border_color_rgba(config, frame_state, event); ok {
+		border_color = resolved_bc
 	}
 
-	border := o.Bd_px {
-		t = 1,
-		b = 1,
-		l = 1,
-		r = 1,
+	radius: o.Radius_px
+
+	if resolved_radius, ok := o.resolve_radius(config.radius, frame_state, event); ok {
+		radius = resolved_radius
 	}
 
-	for i in 0 ..< count {
-		border_color := thumb_border
+	o.Draw_Push_Opacity(config.opacity)
+	defer o.Draw_Pop_Opacity()
 
-		if frame_state.is_focused && i == active_thumb {
-			border_color = slider_resolve_color(
-				style.thumb_border,
-				o.Color.RING,
-				frame_state,
-				event,
-			)
-		} else if !frame_state.is_focused {
-			border_color = slider_resolve_color(
-				style.thumb_border,
-				o.Color.PRIMARY,
-				frame_state,
-				event,
-			)
-		}
-
-		thumb_radius := radius
-
-		if style.radius.mode == .UNSET {
-			half := min(thumbs[i].w, thumbs[i].h) * 0.5
-			thumb_radius = {tl = half, tr = half, bl = half, br = half}
-		}
-
-		o.Draw_Rectangle(thumbs[i], thumb_bg, thumb_radius, border, border_color)
-	}
+	widget_draw_box_background(layout_id, rect, background, radius)
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 }
 
 @(private)
@@ -722,10 +813,13 @@ slider_root_size_for_thumbs :: proc(
 }
 
 @(private)
-slider_thumb_build_index: int
+slider_part_id :: proc(parent_key, suffix: string) -> string {
+	if parent_key == "" {
+		return fmt.tprintf("slider-%s", suffix)
+	}
 
-@(private)
-slider_thumb_build_parent: Slider_State
+	return fmt.tprintf("%s/%s", parent_key, suffix)
+}
 
 @(private)
 slider_thumb_host_id :: proc(parent_key: string, index: int) -> string {
@@ -738,33 +832,17 @@ slider_thumb_host_id :: proc(parent_key: string, index: int) -> string {
 
 @(private)
 slider_thumb_host_child :: proc(_: Rectangle_State) {
-	ctx := &slider_action_context
-
-	if !ctx.active || ctx.thumb == nil {
+	if !slider_ctx_ok() {
 		return
 	}
 
-	i := slider_thumb_build_index
+	ctx := slider_ctx_top()
 
-	if i < 0 || i >= ctx.count {
+	if ctx.pending_thumb_child == nil {
 		return
 	}
 
-	thumb_state := Slider_Thumb_State {
-		slider    = slider_thumb_build_parent,
-		index     = i,
-		value     = ctx.values[i],
-		is_active = i == ctx.active_thumb,
-	}
-	thumb_state.values = ctx.values
-	thumb_state.value_count = ctx.count
-	thumb_state.min = ctx.min
-	thumb_state.max = ctx.max
-	thumb_state.step = ctx.step
-	thumb_state.orientation = ctx.orientation
-	thumb_state.inverted = ctx.inverted
-
-	ctx.thumb(thumb_state)
+	ctx.pending_thumb_child(ctx.pending_thumb_state)
 }
 
 @(private)
@@ -808,85 +886,304 @@ slider_paint_thumbs_from_track :: proc(
 	return thumbs, range_rect
 }
 
-@(private)
-slider_emit_custom_thumbs :: proc(frame_state: Slider_State) {
-	ctx := &slider_action_context
+/*
+Track bar part for the enclosing `Slider`.
 
-	if !ctx.active || ctx.thumb == nil || ctx.count <= 0 {
+Paints the slider track using theme `Color.MUTED` and pill corners by default,
+merged with `props.config`. Optional `child` runs inside the slider context
+(for example to nest `Slider_Range`).
+*/
+Slider_Track :: proc(props: Slider_Track_Props) {
+	if !slider_ctx_ok() {
 		return
 	}
 
-	track: o.Rect
+	ctx := slider_ctx_top()
+	cfg := props.config
 
-	if o.ui_pass() == .Draw {
-		// Draw hosts paint from the layout-owned track; map current values only.
-		chrome := o.layout_slider_result(ctx.layout_id)
+	if cfg.id == "" {
+		cfg.id = slider_part_id(ctx.parent_key, "track")
+	}
 
-		if chrome == nil {
-			return
+	_ = o.element_key(cfg.id)
+
+	if o.ui_pass() == .Layout {
+		if props.child != nil {
+			props.child(ctx.frame_state)
 		}
 
-		track = chrome.track
-	} else {
-		root_w, root_h := slider_root_size_for_thumbs(
-			ctx.layout_id,
-			frame_state.config,
-			ctx.orientation,
-		)
-		root := o.Rect {
-			w = root_w,
-			h = root_h,
+		return
+	}
+
+	parent_state := ctx.frame_state
+	event := widget_event(parent_state)
+	base := slider_track_theme_base(&parent_state, ctx.track_thickness)
+	resolved := o.resolve_widget_config(base, cfg, &parent_state, event)
+
+	if !o.ui_layout_paint_skip(ctx.layout_id) && ctx.track.w > 0 && ctx.track.h > 0 {
+		background: o.RGBA
+
+		if resolved_bg, ok := o.style_background_rgba(resolved, &parent_state, event); ok {
+			background = resolved_bg
 		}
-		track = o.layout_slider_track_rect(root, ctx.orientation, ctx.track_thickness)
+
+		border: o.Bd_px
+
+		if resolved_border, ok := o.resolve_border(resolved.border, &parent_state, event); ok {
+			border = resolved_border
+		}
+
+		border_color: o.RGBA
+
+		if resolved_bc, ok := o.style_border_color_rgba(resolved, &parent_state, event); ok {
+			border_color = resolved_bc
+		}
+
+		radius: o.Radius_px
+
+		if resolved_radius, ok := o.resolve_radius(resolved.radius, &parent_state, event); ok {
+			radius = resolved_radius
+		}
+
+		o.Draw_Push_Opacity(resolved.opacity)
+		defer o.Draw_Pop_Opacity()
+
+		widget_draw_box_background(ctx.layout_id, ctx.track, background, radius)
+
+		if props.child != nil {
+			props.child(parent_state)
+		}
+
+		widget_draw_box_border(ctx.layout_id, ctx.track, radius, border, border_color)
+
+		return
 	}
 
-	thumbs, _ := slider_paint_thumbs_from_track(
-		track,
-		ctx.orientation,
-		ctx.values,
-		ctx.count,
-		ctx.min,
-		ctx.max,
-		ctx.inverted,
-		ctx.thumb_size,
-	)
-	previous_parent := slider_thumb_build_parent
-	previous_index := slider_thumb_build_index
-	slider_thumb_build_parent = frame_state
-	defer {
-		slider_thumb_build_parent = previous_parent
-		slider_thumb_build_index = previous_index
+	if props.child != nil {
+		props.child(parent_state)
 	}
-
-	for i in 0 ..< ctx.count {
-		thumb_rect := thumbs[i]
-		slider_thumb_build_index = i
-		Rectangle({
-			config = {
-				id = slider_thumb_host_id(ctx.parent_key, i),
-				position = set.Position(.ABSOLUTE),
-				x = set.F32(thumb_rect.x),
-				y = set.F32(thumb_rect.y),
-				width = set.Width(thumb_rect.w),
-				height = set.Height(thumb_rect.h),
-				justify = set.Justify(o.Justify_Align.CENTER),
-				tabbable = set.Tabbable(false),
-			},
-			child = slider_thumb_host_child,
-		})
-	}
-}
-
-@(private)
-slider_children_body :: proc(frame_state: Slider_State) {
-	slider_emit_custom_thumbs(frame_state)
 }
 
 /*
-Renders a production Radix/shadcn-style slider.
+Active range fill part for the enclosing `Slider`.
 
-Layout binds and finalizes track/thumb chrome; draw paints from the
-layout-owned track and maps current values onto that track only.
+Paints the filled span along the track using theme `Color.PRIMARY` and pill
+corners by default, merged with `props.config`.
+*/
+Slider_Range :: proc(props: Slider_Range_Props) {
+	if !slider_ctx_ok() {
+		return
+	}
+
+	ctx := slider_ctx_top()
+	cfg := props.config
+
+	if cfg.id == "" {
+		cfg.id = slider_part_id(ctx.parent_key, "range")
+	}
+
+	_ = o.element_key(cfg.id)
+
+	if o.ui_pass() == .Layout {
+		return
+	}
+
+	parent_state := ctx.frame_state
+	event := widget_event(parent_state)
+	base := slider_range_theme_base(&parent_state, ctx.track_thickness)
+	resolved := o.resolve_widget_config(base, cfg, &parent_state, event)
+
+	slider_draw_part_box(ctx.layout_id, ctx.range_rect, resolved, &parent_state, event)
+}
+
+/*
+Thumb handle part for one value index (`0 ..< value_count`) of the enclosing `Slider`.
+
+Paints the thumb using `Color.BACKGROUND` fill, `Color.PRIMARY` border (`Color.RING`
+when focused and active), and circular radius by default, merged with
+`props.config`. When `child` is provided, it runs inside an absolutely
+positioned host matching the thumb hit rect.
+*/
+Slider_Thumb :: proc(props: Slider_Thumb_Props) {
+	if !slider_ctx_ok() {
+		return
+	}
+
+	ctx := slider_ctx_top()
+	i := props.index
+
+	if i < 0 || i >= ctx.count {
+		return
+	}
+
+	cfg := props.config
+
+	if cfg.id == "" {
+		cfg.id = slider_thumb_host_id(ctx.parent_key, i)
+	}
+
+	thumb_state := Slider_Thumb_State {
+		slider    = ctx.frame_state,
+		index     = i,
+		value     = ctx.values[i],
+		is_active = i == ctx.active_thumb,
+	}
+	thumb_state.values = ctx.values
+	thumb_state.value_count = ctx.count
+	thumb_state.active_thumb = ctx.active_thumb
+	thumb_state.min = ctx.min
+	thumb_state.max = ctx.max
+	thumb_state.step = ctx.step
+	thumb_state.orientation = ctx.orientation
+	thumb_state.inverted = ctx.inverted
+
+	if o.ui_pass() == .Draw {
+		mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
+
+		if !thumb_state.is_disabled && slider_point_in_rect(mouse, ctx.thumbs[i]) {
+			thumb_state.is_hovered = true
+		}
+	}
+
+	event := widget_event(thumb_state)
+	base := slider_thumb_theme_base(&thumb_state, ctx.thumb_size)
+	resolved := o.resolve_widget_config(base, cfg, &thumb_state, event)
+	thumb_state.config = resolved
+
+	if o.ui_pass() == .Layout {
+		if props.child == nil {
+			return
+		}
+
+		rel_rect := ctx.rel_thumbs[i]
+		prev_state := ctx.pending_thumb_state
+		prev_child := ctx.pending_thumb_child
+		ctx.pending_thumb_state = thumb_state
+		ctx.pending_thumb_child = props.child
+		defer {
+			ctx.pending_thumb_state = prev_state
+			ctx.pending_thumb_child = prev_child
+		}
+
+		Rectangle(
+			{
+				config = {
+					id = cfg.id,
+					position = set.Position(.ABSOLUTE),
+					x = set.F32(rel_rect.x),
+					y = set.F32(rel_rect.y),
+					width = set.Width(rel_rect.w),
+					height = set.Height(rel_rect.h),
+					justify = set.Justify(resolved.justify),
+					background = set.Background(o.Color.TRANSPARENT),
+					border_color = set.Border_color(o.Color.TRANSPARENT),
+					tabbable = set.Tabbable(false),
+				},
+				child = slider_thumb_host_child,
+			},
+		)
+
+		return
+	}
+
+	thumb_rect := ctx.thumbs[i]
+
+	if props.child == nil {
+		slider_draw_part_box(ctx.layout_id, thumb_rect, resolved, &thumb_state, event)
+
+		return
+	}
+
+	background: o.RGBA
+
+	if resolved_bg, ok := o.style_background_rgba(resolved, &thumb_state, event); ok {
+		background = resolved_bg
+	}
+
+	border: o.Bd_px
+
+	if resolved_border, ok := o.resolve_border(resolved.border, &thumb_state, event); ok {
+		border = resolved_border
+	}
+
+	border_color: o.RGBA
+
+	if resolved_bc, ok := o.style_border_color_rgba(resolved, &thumb_state, event); ok {
+		border_color = resolved_bc
+	}
+
+	radius: o.Radius_px
+
+	if resolved_radius, ok := o.resolve_radius(resolved.radius, &thumb_state, event); ok {
+		radius = resolved_radius
+	}
+
+	o.Draw_Push_Opacity(resolved.opacity)
+	defer o.Draw_Pop_Opacity()
+
+	if thumb_rect.w > 0 && thumb_rect.h > 0 {
+		widget_draw_box_background(ctx.layout_id, thumb_rect, background, radius)
+	}
+
+	rel_rect := ctx.rel_thumbs[i]
+	prev_state := ctx.pending_thumb_state
+	prev_child := ctx.pending_thumb_child
+	ctx.pending_thumb_state = thumb_state
+	ctx.pending_thumb_child = props.child
+	defer {
+		ctx.pending_thumb_state = prev_state
+		ctx.pending_thumb_child = prev_child
+	}
+
+	Rectangle(
+		{
+			config = {
+				id = cfg.id,
+				position = set.Position(.ABSOLUTE),
+				x = set.F32(rel_rect.x),
+				y = set.F32(rel_rect.y),
+				width = set.Width(rel_rect.w),
+				height = set.Height(rel_rect.h),
+				justify = set.Justify(resolved.justify),
+				background = set.Background(o.Color.TRANSPARENT),
+				border_color = set.Border_color(o.Color.TRANSPARENT),
+				tabbable = set.Tabbable(false),
+			},
+			child = slider_thumb_host_child,
+		},
+	)
+
+	if thumb_rect.w > 0 && thumb_rect.h > 0 {
+		widget_draw_box_border(ctx.layout_id, thumb_rect, radius, border, border_color)
+	}
+}
+
+/*
+Default slider composition: track, range fill, and one thumb per value.
+
+Used when `Slider.child` is nil.
+*/
+Slider_Default_Parts :: proc(frame_state: Slider_State) {
+	if !slider_ctx_ok() {
+		return
+	}
+
+	ctx := slider_ctx_top()
+
+	Slider_Track({config = {id = slider_part_id(ctx.parent_key, "track")}})
+	Slider_Range({config = {id = slider_part_id(ctx.parent_key, "range")}})
+
+	for i in 0 ..< frame_state.value_count {
+		Slider_Thumb({config = {id = slider_thumb_host_id(ctx.parent_key, i)}, index = i})
+	}
+}
+
+/*
+Renders a composable slider.
+
+Layout binds and finalizes track/thumb geometry; draw maps current values onto
+the layout-owned track and delegates chrome rendering to `child` (or
+`Slider_Default_Parts` when `child` is nil).
 
 `values` is caller-owned (length 1 or 2). Pointer drag, track press, and
 keyboard arrows / Home / End / PageUp / PageDown report updates via
@@ -913,16 +1210,25 @@ Slider :: proc(props: Slider_Props) {
 		props.min_steps_between_thumbs,
 	)
 
+	active_thumb := 0
+
+	if drag := o.slider_drag_get(layout_id); drag != nil {
+		if drag.thumb_index >= 0 && drag.thumb_index < count {
+			active_thumb = drag.thumb_index
+		}
+	}
+
 	frame_state := Slider_State {
-		is_disabled = disabled,
-		is_focused  = was_focused,
-		values      = working,
-		value_count = count,
-		min         = min_v,
-		max         = max_v,
-		step        = step,
-		orientation = props.orientation,
-		inverted    = props.inverted,
+		is_disabled  = disabled,
+		is_focused   = was_focused,
+		values       = working,
+		value_count  = count,
+		active_thumb = active_thumb,
+		min          = min_v,
+		max          = max_v,
+		step         = step,
+		orientation  = props.orientation,
+		inverted     = props.inverted,
 	}
 
 	if disabled {
@@ -937,46 +1243,59 @@ Slider :: proc(props: Slider_Props) {
 	config := frame_state.config
 	handlers := widget_lifecycle_handlers(resolved_props, Slider_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
-	thumb_size := slider_style_thumb_size(props.style)
-	track_thickness := slider_style_track_thickness(props.style)
-	child: proc(frame_state: Slider_State)
+	thumb_size := slider_resolve_thumb_size(props)
+	track_thickness := slider_resolve_track_thickness(props)
+	child := props.child
 
-	if props.thumb != nil {
-		child = slider_children_body
+	if child == nil {
+		child = Slider_Default_Parts
 	}
 
-	active_thumb := 0
-
-	if drag := o.slider_drag_get(layout_id); drag != nil {
-		if drag.thumb_index >= 0 && drag.thumb_index < count {
-			active_thumb = drag.thumb_index
-		}
+	root_w, root_h := slider_root_size_for_thumbs(layout_id, config, props.orientation)
+	provisional_root := o.Rect {
+		w = root_w,
+		h = root_h,
 	}
+	rel_track := o.layout_slider_track_rect(provisional_root, props.orientation, track_thickness)
+	rel_thumbs, _ := slider_paint_thumbs_from_track(
+		rel_track,
+		props.orientation,
+		working,
+		count,
+		min_v,
+		max_v,
+		props.inverted,
+		thumb_size,
+	)
 
-	previous_action_context := slider_action_context
-	slider_action_context = {
-		active                   = true,
-		values                   = working,
-		count                    = count,
-		min                      = min_v,
-		max                      = max_v,
-		step                     = step,
-		min_steps_between_thumbs = props.min_steps_between_thumbs,
-		orientation              = props.orientation,
-		inverted                 = props.inverted,
-		layout_id                = layout_id,
-		parent_key               = key,
-		thumb_size               = thumb_size,
-		track_thickness          = track_thickness,
-		active_thumb             = active_thumb,
-		thumb                    = props.thumb,
-		on_value_change          = props.on_value_change,
-		on_value_commit          = props.on_value_commit,
-		on_key_down              = props.on_key_down,
-		on_key_pressed           = props.on_key_pressed,
-		on_key_released          = props.on_key_released,
+	pushed := slider_ctx_push(
+		{
+			active = true,
+			values = working,
+			count = count,
+			min = min_v,
+			max = max_v,
+			step = step,
+			min_steps_between_thumbs = props.min_steps_between_thumbs,
+			orientation = props.orientation,
+			inverted = props.inverted,
+			layout_id = layout_id,
+			parent_key = key,
+			thumb_size = thumb_size,
+			track_thickness = track_thickness,
+			active_thumb = active_thumb,
+			frame_state = frame_state,
+			rel_thumbs = rel_thumbs,
+			on_value_change = props.on_value_change,
+			on_value_commit = props.on_value_commit,
+			on_key_down = props.on_key_down,
+			on_key_pressed = props.on_key_pressed,
+			on_key_released = props.on_key_released,
+		},
+	)
+	defer if pushed {
+		slider_ctx_pop()
 	}
-	defer slider_action_context = previous_action_context
 
 	props_with_keys := resolved_props
 	props_with_keys.on_key_down = slider_on_key_down
@@ -1012,6 +1331,10 @@ Slider :: proc(props: Slider_Props) {
 			frame_state.is_focused = true
 		}
 
+		if pushed {
+			slider_ctx_top().frame_state = frame_state
+		}
+
 		widget_register_tab_order(key, config.tabbable, can_interact)
 
 		widget_children(
@@ -1022,7 +1345,6 @@ Slider :: proc(props: Slider_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 		slider_bind_layout_chrome(
@@ -1101,18 +1423,23 @@ Slider :: proc(props: Slider_Props) {
 
 	if can_interact {
 		slider_handle_keyboard(&frame_state)
-		slider_action_context.values = frame_state.values
-		slider_action_context.count = frame_state.value_count
+
+		if pushed {
+			ctx := slider_ctx_top()
+			ctx.values = frame_state.values
+			ctx.count = frame_state.value_count
+		}
 	}
 
 	// Map values onto the layout-owned track for hit-test and paint. Do not
 	// re-finalize layout chrome during draw.
-	if chrome != nil {
+	if chrome != nil && pushed {
+		ctx := slider_ctx_top()
 		thumbs, range_rect = slider_paint_thumbs_from_track(
 			track,
 			props.orientation,
-			slider_action_context.values,
-			slider_action_context.count,
+			ctx.values,
+			ctx.count,
 			min_v,
 			max_v,
 			props.inverted,
@@ -1131,12 +1458,13 @@ Slider :: proc(props: Slider_Props) {
 		can_interact,
 	)
 
-	if chrome != nil {
+	if chrome != nil && pushed {
+		ctx := slider_ctx_top()
 		thumbs, range_rect = slider_paint_thumbs_from_track(
 			track,
 			props.orientation,
-			slider_action_context.values,
-			slider_action_context.count,
+			ctx.values,
+			ctx.count,
 			min_v,
 			max_v,
 			props.inverted,
@@ -1144,45 +1472,55 @@ Slider :: proc(props: Slider_Props) {
 		)
 	}
 
-	radius: o.Radius_px
-
-	if props.style.radius.mode != .UNSET {
-		if resolved_radius, ok := o.resolve_radius(props.style.radius.value, &frame_state, event);
-		   ok {
-			radius = resolved_radius
-		}
-	} else {
-		half := track_thickness * 0.5
-		radius = {tl = half, tr = half, bl = half, br = half}
-	}
-
 	if drag := o.slider_drag_get(layout_id); drag != nil {
 		if drag.thumb_index >= 0 && drag.thumb_index < frame_state.value_count {
 			active_thumb = drag.thumb_index
-			slider_action_context.active_thumb = active_thumb
 		}
 	}
 
-	slider_action_context.values = frame_state.values
-	slider_action_context.count = frame_state.value_count
+	frame_state.active_thumb = active_thumb
+
+	if pushed {
+		ctx := slider_ctx_top()
+		ctx.values = frame_state.values
+		ctx.count = frame_state.value_count
+		ctx.active_thumb = active_thumb
+		ctx.frame_state = frame_state
+		ctx.track = track
+		ctx.range_rect = range_rect
+		ctx.thumbs = thumbs
+	}
+
 	o.slider_root_rect_store(layout_id, rect)
+
+	background: o.RGBA
+
+	if resolved_bg, ok := o.style_background_rgba(config, &frame_state, event); ok {
+		background = resolved_bg
+	}
+
+	border: o.Bd_px
+
+	if resolved_border, ok := o.resolve_border(config.border, &frame_state, event); ok {
+		border = resolved_border
+	}
+
+	border_color: o.RGBA
+
+	if resolved_bc, ok := o.style_border_color_rgba(config, &frame_state, event); ok {
+		border_color = resolved_bc
+	}
+
+	radius: o.Radius_px
+
+	if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
+		radius = resolved_radius
+	}
 
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
-	slider_draw_chrome(
-		layout_id,
-		track,
-		range_rect,
-		thumbs,
-		frame_state.value_count,
-		active_thumb,
-		props.style,
-		&frame_state,
-		event,
-		radius,
-		props.thumb == nil,
-	)
+	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
 		child,
@@ -1192,16 +1530,10 @@ Slider :: proc(props: Slider_Props) {
 		key,
 		cfg,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
-	widget_dispatch_events(
-		props_with_keys,
-		&frame_state,
-		handlers,
-		event,
-		key,
-		was_focused,
-	)
+	widget_draw_box_border(layout_id, rect, radius, border, border_color)
+
+	widget_dispatch_events(props_with_keys, &frame_state, handlers, event, key, was_focused)
 }

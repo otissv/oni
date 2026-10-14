@@ -4,7 +4,7 @@ import o ".."
 import set "../set"
 
 /*
-Dialog root configuration (shadcn Dialog).
+Dialog root configuration.
 */
 Dialog_Config :: o.Widget_Config
 
@@ -40,7 +40,6 @@ Dialog_Props :: struct {
 	on_mount:                     proc(frame_state: Dialog_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Dialog_Event),
 	on_blur:                      proc(event: Dialog_Event),
 	on_mouse_enter:               proc(event: Dialog_Event),
@@ -68,7 +67,10 @@ dialog_root_theme_base :: proc(frame_state: ^Dialog_State) -> Dialog_Config {
 }
 
 @(private)
-dialog_root_refresh_merged :: proc(props: Dialog_Props, frame_state: ^Dialog_State) -> Dialog_Event {
+dialog_root_refresh_merged :: proc(
+	props: Dialog_Props,
+	frame_state: ^Dialog_State,
+) -> Dialog_Event {
 	event := widget_event(frame_state^)
 	base := dialog_root_theme_base(frame_state)
 	frame_state.config = o.resolve_widget_config(base, props.config, frame_state, event)
@@ -175,7 +177,6 @@ Dialog :: proc(props: Dialog_Props) {
 				key,
 				props_resolved.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -273,7 +274,6 @@ Dialog :: proc(props: Dialog_Props) {
 		key,
 		props_resolved.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 

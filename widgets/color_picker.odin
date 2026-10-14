@@ -15,20 +15,14 @@ COLOR_PICKER_TYPE_INPUT_W :: f32(52)
 COLOR_PICKER_TYPE_FIELD_GAP :: f32(6)
 COLOR_PICKER_CHANNEL_ROW_H :: f32(22)
 COLOR_PICKER_CHANNEL_LABEL_W :: f32(20)
-COLOR_PICKER_SWATCH_W :: f32(56)
-
-/*
-Author-time style overrides for color picker chrome.
-*/
-Color_Picker_Style :: struct {
-	field_size:    o.Cfg(o.Style_F32),
-	slider_width:  o.Cfg(o.Style_F32),
-	alpha_height:  o.Cfg(o.Style_F32),
-	swatch_height: o.Cfg(o.Style_F32),
-	radius:        o.Cfg(o.Radius),
-	marker:        o.Cfg(o.Colors),
-	border:        o.Cfg(o.Colors),
-}
+COLOR_PICKER_SWATCH_W :: o.COLOR_PICKER_DEFAULT_SWATCH_WIDTH
+COLOR_PICKER_DEFAULT_FIELD_SIZE :: o.COLOR_PICKER_DEFAULT_FIELD_SIZE
+COLOR_PICKER_DEFAULT_SLIDER_WIDTH :: o.COLOR_PICKER_DEFAULT_SLIDER_WIDTH
+COLOR_PICKER_DEFAULT_ALPHA_WIDTH :: o.COLOR_PICKER_DEFAULT_ALPHA_WIDTH
+COLOR_PICKER_DEFAULT_ALPHA_HEIGHT :: o.COLOR_PICKER_DEFAULT_ALPHA_HEIGHT
+COLOR_PICKER_DEFAULT_SWATCH_WIDTH :: o.COLOR_PICKER_DEFAULT_SWATCH_WIDTH
+COLOR_PICKER_DEFAULT_SWATCH_HEIGHT :: o.COLOR_PICKER_DEFAULT_SWATCH_HEIGHT
+COLOR_PICKER_DEFAULT_CHANNELS_WIDTH :: o.COLOR_PICKER_DEFAULT_CHANNELS_WIDTH
 
 Color_Picker_Config :: o.Widget_Config
 
@@ -45,7 +39,7 @@ Color_Picker_State :: struct {
 Color_Picker_Event :: o.Widget_Event(Color_Picker_State)
 
 /*
-Color picker root props (Radix-style).
+Color picker root props.
 
 `value`, `channel`, `previous`, and `web_only` are caller-owned and must be
 passed every frame. Parts such as `Color_Picker_Field` must be descendants of
@@ -59,7 +53,6 @@ Color_Picker_Props :: struct {
 	previous:                     o.RGBA,
 	web_only:                     bool,
 	disabled:                     bool,
-	style:                        Color_Picker_Style,
 	child:                        proc(frame_state: Color_Picker_State),
 	on_value_change:              proc(value: o.RGBA),
 	on_value_commit:              proc(value: o.RGBA),
@@ -70,7 +63,6 @@ Color_Picker_Props :: struct {
 	on_mount:                     proc(frame_state: Color_Picker_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Color_Picker_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Color_Picker_Event),
 	on_blur:                      proc(event: Color_Picker_Event),
 	on_mouse_enter:               proc(event: Color_Picker_Event),
@@ -105,19 +97,18 @@ Color_Picker_Runtime :: struct {
 
 @(private)
 Color_Picker_Ctx :: struct {
-	active:            bool,
-	key:               string,
-	root_layout_id:    o.UI_Id,
-	runtime:           ^Color_Picker_Runtime,
-	value:             o.RGBA,
-	previous:          o.RGBA,
-	hsva:              o.HSVA,
-	channel:           o.Color_Picker_Channel,
-	web_only:          bool,
-	has_web_type:      bool,
-	hex_include_alpha: bool,
-	disabled:          bool,
-	style:             Color_Picker_Style,
+	active:             bool,
+	key:                string,
+	root_layout_id:     o.UI_Id,
+	runtime:            ^Color_Picker_Runtime,
+	value:              o.RGBA,
+	previous:           o.RGBA,
+	hsva:               o.HSVA,
+	channel:            o.Color_Picker_Channel,
+	web_only:           bool,
+	has_web_type:       bool,
+	hex_include_alpha:  bool,
+	disabled:           bool,
 	on_value_change:    proc(value: o.RGBA),
 	on_value_commit:    proc(value: o.RGBA),
 	on_channel_change:  proc(channel: o.Color_Picker_Channel),
@@ -342,11 +333,6 @@ color_picker_adopt_string :: proc(dst: ^string, value: string) {
 	}
 
 	dst^ = value
-}
-
-@(private)
-color_picker_style_f32 :: proc(cfg: o.Cfg(o.Style_F32), fallback: f32) -> f32 {
-	return o.cfg_style_f32(cfg, fallback)
 }
 
 @(private)
@@ -764,10 +750,7 @@ color_picker_sync_runtime_texts :: proc(rt: ^Color_Picker_Runtime, hsva: o.HSVA,
 	}
 
 	if !rt.hex_editing {
-		color_picker_replace_string(
-			&rt.hex,
-			o.hex_format(rgba, false, context.temp_allocator),
-		)
+		color_picker_replace_string(&rt.hex, o.hex_format(rgba, false, context.temp_allocator))
 	}
 
 	color_picker_sync_type_drafts(rt, hsva, rgba)
@@ -903,17 +886,13 @@ color_picker_bind_channel_chrome :: proc(layout_id: o.UI_Id) {
 		return
 	}
 
-	o.layout_set_color_picker_channels(
-		node,
-		{
-			row_h = COLOR_PICKER_CHANNEL_ROW_H,
-			active = true,
-		},
-	)
+	o.layout_set_color_picker_channels(node, {row_h = COLOR_PICKER_CHANNEL_ROW_H, active = true})
 }
 
 @(private)
-color_picker_channel_hits :: proc(layout_id: o.UI_Id) -> (
+color_picker_channel_hits :: proc(
+	layout_id: o.UI_Id,
+) -> (
 	hits: [o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT]o.Rect,
 	ok: bool,
 ) {
@@ -1118,15 +1097,30 @@ color_picker_on_key_released :: proc(event: Color_Picker_Event) {
 }
 
 @(private)
+Color_Picker_Surface_Chrome :: struct {
+	radius:         o.Radius_px,
+	border:         o.Bd_px,
+	border_color:   o.RGBA,
+	background:     o.RGBA,
+	background_set: bool,
+	marker_color:   o.RGBA,
+}
+
+@(private)
 color_picker_draw_field :: proc(
 	layout_id: o.UI_Id,
 	rect: o.Rect,
 	hsva: o.HSVA,
 	rgba: o.RGBA,
 	channel: o.Color_Picker_Channel,
+	chrome: Color_Picker_Surface_Chrome,
 ) {
 	if o.ui_layout_paint_skip(layout_id) || rect.w <= 0 || rect.h <= 0 {
 		return
+	}
+
+	if chrome.background_set {
+		widget_draw_box_background(layout_id, rect, chrome.background, chrome.radius)
 	}
 
 	o.Draw_Push_Clip(rect)
@@ -1168,21 +1162,22 @@ color_picker_draw_field :: proc(
 		br = 9999,
 		bl = 9999,
 	}
-	o.Draw_Rectangle(marker, {}, round, {t = 2, b = 2, l = 2, r = 2}, {255, 255, 255, 255})
+	o.Draw_Rectangle(marker, {}, round, {t = 2, b = 2, l = 2, r = 2}, chrome.marker_color)
 	o.Draw_Rectangle(
 		{x = marker.x + 1, y = marker.y + 1, w = marker.w - 2, h = marker.h - 2},
 		{},
 		round,
 		{t = 1, b = 1, l = 1, r = 1},
-		{0, 0, 0, 220},
+		chrome.border_color,
 	)
+
+	widget_draw_box_border(layout_id, rect, chrome.radius, chrome.border, chrome.border_color)
 }
 
 @(private)
-color_picker_draw_slider_triangle :: proc(tip_x, center_y: f32, point_right: bool) {
+color_picker_draw_slider_triangle :: proc(tip_x, center_y: f32, point_right: bool, fill: o.RGBA) {
 	tri_w := o.COLOR_PICKER_SLIDER_TRIANGLE_W
 	half_h :: f32(6)
-	fill := o.RGBA{0, 0, 0, 255}
 	rows := int(half_h * 2) + 1
 
 	for row in 0 ..< rows {
@@ -1207,9 +1202,14 @@ color_picker_draw_slider :: proc(
 	hsva: o.HSVA,
 	rgba: o.RGBA,
 	channel: o.Color_Picker_Channel,
+	chrome: Color_Picker_Surface_Chrome,
 ) {
 	if o.ui_layout_paint_skip(layout_id) || rect.w <= 0 || rect.h <= 0 {
 		return
+	}
+
+	if chrome.background_set {
+		widget_draw_box_background(layout_id, rect, chrome.background, chrome.radius)
 	}
 
 	o.Draw_Push_Clip(rect)
@@ -1233,14 +1233,25 @@ color_picker_draw_slider :: proc(
 
 	unit := o.color_picker_channel_unit(hsva, rgba, channel)
 	y := rect.y + o.color_picker_y_from_slider_t(unit) * rect.h
-	color_picker_draw_slider_triangle(rect.x - 1, y, true)
-	color_picker_draw_slider_triangle(rect.x + rect.w + 1, y, false)
+	color_picker_draw_slider_triangle(rect.x - 1, y, true, chrome.marker_color)
+	color_picker_draw_slider_triangle(rect.x + rect.w + 1, y, false, chrome.marker_color)
+
+	widget_draw_box_border(layout_id, rect, chrome.radius, chrome.border, chrome.border_color)
 }
 
 @(private)
-color_picker_draw_alpha :: proc(layout_id: o.UI_Id, rect: o.Rect, rgba: o.RGBA) {
+color_picker_draw_alpha :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	rgba: o.RGBA,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	if o.ui_layout_paint_skip(layout_id) || rect.w <= 0 || rect.h <= 0 {
 		return
+	}
+
+	if chrome.background_set {
+		widget_draw_box_background(layout_id, rect, chrome.background, chrome.radius)
 	}
 
 	checker := o.COLOR_PICKER_CHECKER_SIZE
@@ -1284,7 +1295,15 @@ color_picker_draw_alpha :: proc(layout_id: o.UI_Id, rect: o.Rect, rgba: o.RGBA) 
 		w = 4,
 		h = rect.h + 4,
 	}
-	o.Draw_Rectangle(thumb, {255, 255, 255, 255}, {}, {t = 1, b = 1, l = 1, r = 1}, {0, 0, 0, 220})
+	o.Draw_Rectangle(
+		thumb,
+		chrome.marker_color,
+		{},
+		{t = 1, b = 1, l = 1, r = 1},
+		chrome.border_color,
+	)
+
+	widget_draw_box_border(layout_id, rect, chrome.radius, chrome.border, chrome.border_color)
 }
 
 @(private)
@@ -1299,18 +1318,30 @@ math_ceil :: proc(v: f32) -> f32 {
 }
 
 @(private)
-color_picker_draw_swatch :: proc(layout_id: o.UI_Id, rect: o.Rect, color: o.RGBA) {
+color_picker_draw_swatch :: proc(
+	layout_id: o.UI_Id,
+	rect: o.Rect,
+	color: o.RGBA,
+	chrome: Color_Picker_Surface_Chrome,
+) {
 	if o.ui_layout_paint_skip(layout_id) || rect.w <= 0 || rect.h <= 0 {
 		return
 	}
 
-	o.Draw_Rectangle(rect, color, {}, {t = 1, b = 1, l = 1, r = 1}, {0, 0, 0, 80})
+	fill := color
+
+	if chrome.background_set {
+		fill = chrome.background
+	}
+
+	o.Draw_Rectangle(rect, fill, chrome.radius, chrome.border, chrome.border_color)
 }
 
 @(private)
 color_picker_draw_channels :: proc(
 	layout_id: o.UI_Id,
 	channel: o.Color_Picker_Channel,
+	rs: ^Rectangle_State,
 ) {
 	if o.ui_layout_paint_skip(layout_id) {
 		return
@@ -1322,12 +1353,19 @@ color_picker_draw_channels :: proc(
 		return
 	}
 
+	active_bg := o.RGBA{0, 0, 0, 40}
+	event := widget_event(rs^)
+
+	if resolved, resolved_ok := o.to_rgba(o.Colors(o.Color.ACCENT), rs, event); resolved_ok {
+		active_bg = resolved
+	}
+
 	for i in 0 ..< o.LAYOUT_COLOR_PICKER_CHANNEL_COUNT {
 		ch := color_picker_comp_channel(i)
 		active := ch == channel
 
 		if active {
-			o.Draw_Rectangle(hits[i], {0, 0, 0, 40}, {tl = 4, tr = 4, br = 4, bl = 4})
+			o.Draw_Rectangle(hits[i], active_bg, {tl = 4, tr = 4, br = 4, bl = 4})
 		}
 	}
 }
@@ -1541,6 +1579,11 @@ color_picker_surface_theme :: proc(
 		tabbable = set.Tabbable(false),
 		width = set.Width(size_w),
 		height = set.Height(size_h),
+		background = set.Background(o.Color.TRANSPARENT),
+		border = set.Border(f32(0)),
+		border_color = set.Border_color(o.Color.BORDER),
+		radius = set.Radius(f32(0)),
+		color = set.Colors(o.Color.PRIMARY_FOREGROUND),
 		overflow_x = set.Overflow_X(.HIDDEN),
 		overflow_y = set.Overflow_Y(.HIDDEN),
 		opacity = set.F32(opacity),
@@ -1552,7 +1595,7 @@ color_picker_surface :: proc(
 	cfg: o.Widget_Config,
 	default_w, default_h: f32,
 	theme: proc(frame_state: ^Color_Picker_Surface_State) -> o.Widget_Config,
-	draw: proc(layout_id: o.UI_Id, rect: o.Rect),
+	draw: proc(layout_id: o.UI_Id, rect: o.Rect, chrome: Color_Picker_Surface_Chrome),
 	pointer: proc(
 		layout_id: o.UI_Id,
 		rect: o.Rect,
@@ -1642,7 +1685,40 @@ color_picker_surface :: proc(
 	}
 
 	if draw != nil {
-		draw(layout_id, rect)
+		chrome := Color_Picker_Surface_Chrome {
+			border_color = {0, 0, 0, 220},
+			marker_color = {255, 255, 255, 255},
+		}
+
+		if resolved_radius, ok := o.resolve_radius(config.radius, &frame_state, event); ok {
+			chrome.radius = resolved_radius
+		}
+
+		if resolved_border, ok := o.resolve_border(config.border, &frame_state, event); ok {
+			chrome.border = resolved_border
+		}
+
+		if resolved_border_color, ok := o.style_border_color_rgba(config, &frame_state, event);
+		   ok {
+			chrome.border_color = resolved_border_color
+		}
+
+		if cfg.background.mode != .UNSET {
+			if resolved_background, ok := o.style_background_rgba(config, &frame_state, event);
+			   ok {
+				chrome.background = resolved_background
+				chrome.background_set = true
+			}
+		}
+
+		if resolved_color, ok := o.style_color_rgba(config, &frame_state, event); ok {
+			chrome.marker_color = resolved_color
+		}
+
+		o.Draw_Push_Opacity(config.opacity)
+		defer o.Draw_Pop_Opacity()
+
+		draw(layout_id, rect, chrome)
 	}
 }
 
@@ -1706,7 +1782,6 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 			has_web_type = false,
 			hex_include_alpha = false,
 			disabled = disabled,
-			style = props.style,
 			on_value_change = props.on_value_change,
 			on_value_commit = props.on_value_commit,
 			on_channel_change = props.on_channel_change,
@@ -1767,7 +1842,6 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 				key,
 				cfg,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -1866,7 +1940,6 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 			key,
 			cfg,
 			props.on_scroll,
-			props.scroll_bar,
 			frame_state.is_hovered,
 		)
 	}

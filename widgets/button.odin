@@ -30,7 +30,6 @@ Button_Props :: struct {
 	on_mount:                     proc(frame_state: Button_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Button_State) -> o.Mount,
 	on_scroll:                    proc(scroll_x, scroll_y: f32),
-	scroll_bar:                   Scroll_Bar_Style,
 	on_focus:                     proc(event: Button_Event),
 	on_blur:                      proc(event: Button_Event),
 	on_mouse_enter:               proc(event: Button_Event),
@@ -118,7 +117,6 @@ Button :: proc(props: Button_Props) {
 				key,
 				props.config,
 				props.on_scroll,
-				props.scroll_bar,
 				frame_state.is_hovered,
 			)
 		}
@@ -213,7 +211,6 @@ Button :: proc(props: Button_Props) {
 		key,
 		props.config,
 		props.on_scroll,
-		props.scroll_bar,
 		frame_state.is_hovered,
 	)
 
