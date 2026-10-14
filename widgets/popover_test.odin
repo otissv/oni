@@ -649,6 +649,97 @@ popover_compound_content_layouts_when_open :: proc(t: ^testing.T) {
 	})
 }
 
+@(private)
+popover_test_find_trigger_and_content :: proc(
+	root: ^o.Layout_Node,
+) -> (
+	trigger: ^o.Layout_Node,
+	content: ^o.Layout_Node,
+) {
+	if root == nil {
+		return
+	}
+
+	stack: [64]int
+	depth := 0
+
+	for child_index in root.child_indices {
+		if depth >= len(stack) {
+			break
+		}
+
+		stack[depth] = child_index
+		depth += 1
+	}
+
+	for depth > 0 {
+		depth -= 1
+		node := &o.state.ui.layout.nodes[stack[depth]]
+
+		if node.kind == .POPOVER_TRIGGER {
+			trigger = node
+		} else if node.space == .POPOVER && node.kind == .RECT {
+			content = node
+		}
+
+		for child_index in node.child_indices {
+			if depth >= len(stack) {
+				break
+			}
+
+			stack[depth] = child_index
+			depth += 1
+		}
+	}
+
+	return
+}
+
+@(test)
+popover_content_align_end_anchors_to_trigger_end :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		popover_test_open_root(proc(_: Popover_State) {
+			Popover_Trigger({
+				config = {
+					id = "popover-align-trigger",
+					width = set.Width(f32(200)),
+					height = set.Height(f32(40)),
+				},
+			})
+			Popover_Content({
+				config = {width = set.Width(f32(80)), height = set.Height(f32(40))},
+				align = .END,
+				child = proc(_: Popover_Content_Props_State) {},
+			})
+		})
+		widget_test_finish_layout()
+
+		root, root_ok := widget_test_layout_node("root-open")
+		testing.expect(t, root_ok)
+
+		if !root_ok {
+			return
+		}
+
+		trigger, content := popover_test_find_trigger_and_content(root)
+		testing.expect(t, trigger != nil)
+		testing.expect(t, content != nil)
+
+		if trigger == nil || content == nil {
+			return
+		}
+
+		widget_test_begin_draw()
+
+		want_x := trigger.rect.x + trigger.rect.w - content.rect.w
+		expect_close(t, content.rect.w, 80)
+		expect_close(t, content.rect.x, want_x)
+	})
+}
+
 @(test)
 popover_panel_chrome_records_in_popover_draw_space :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
