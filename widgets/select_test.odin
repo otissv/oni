@@ -34,6 +34,52 @@ select_test_replace_values :: proc(values: []string) {
 }
 
 @(private)
+select_test_find_trigger_and_popover_content :: proc(
+	root: ^o.Layout_Node,
+) -> (
+	trigger: ^o.Layout_Node,
+	content: ^o.Layout_Node,
+) {
+	if root == nil {
+		return
+	}
+
+	stack: [64]int
+	depth := 0
+
+	for child_index in root.child_indices {
+		if depth >= len(stack) {
+			break
+		}
+
+		stack[depth] = child_index
+		depth += 1
+	}
+
+	for depth > 0 {
+		depth -= 1
+		node := &o.state.ui.layout.nodes[stack[depth]]
+
+		if node.kind == .SELECT_TRIGGER {
+			trigger = node
+		} else if node.space == .POPOVER && node.kind == .RECT {
+			content = node
+		}
+
+		for child_index in node.child_indices {
+			if depth >= len(stack) {
+				break
+			}
+
+			stack[depth] = child_index
+			depth += 1
+		}
+	}
+
+	return
+}
+
+@(private)
 select_test_anchor_trigger_child :: proc(_: Select_Trigger_State) {
 	Select_Value({config = {id = "anchor-value"}, placeholder = "Pick"})
 }
@@ -187,6 +233,7 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 
 		expect_registered_id(t, "fruit")
 		expect_layout_kind(t, "fruit", .SELECT)
+		expect_registered_id(t, "fruit/__select_popover")
 		expect_registered_id(t, "fruit-trigger")
 		expect_registered_id(t, "fruit-value")
 		expect_registered_id(t, "fruit-group")
@@ -199,8 +246,22 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 		testing.expect(t, len(root.child_indices) >= 1)
 		if len(root.child_indices) < 1 do return
 
-		trigger := &o.state.ui.layout.nodes[root.child_indices[0]]
-		testing.expect(t, trigger.kind == .SELECT_TRIGGER)
+		popover := &o.state.ui.layout.nodes[root.child_indices[0]]
+		testing.expect(t, popover.kind == .POPOVER)
+
+		trigger_ok := false
+
+		for child_index in popover.child_indices {
+			child := &o.state.ui.layout.nodes[child_index]
+
+			if child.kind == .SELECT_TRIGGER {
+				trigger_ok = true
+
+				break
+			}
+		}
+
+		testing.expect(t, trigger_ok)
 	})
 }
 
@@ -363,6 +424,45 @@ select_is_listbox_for_multiple_or_size :: proc(t: ^testing.T) {
 }
 
 @(test)
+select_open_dropdown_height_hugs_options_not_viewport :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer {
+			select_shutdown()
+			widget_test_end_frame()
+		}
+
+		Select(
+			{
+				config = {id = "hug-select", x = set.F32(40), y = set.F32(80)},
+				open = true,
+				child = select_test_anchor_child,
+				content = select_test_anchor_content,
+			},
+		)
+		widget_test_finish_layout()
+
+		root, root_ok := widget_test_layout_node("hug-select")
+		testing.expect(t, root_ok)
+
+		if !root_ok do return
+
+		trigger, content := select_test_find_trigger_and_popover_content(root)
+		testing.expect(t, trigger != nil)
+		testing.expect(t, content != nil)
+
+		if trigger == nil || content == nil do return
+
+		widget_test_begin_draw()
+
+		viewport_h := f32(o.state.dpi.logical_h)
+		testing.expect(t, content.rect.h > 0)
+		testing.expect(t, content.rect.h < viewport_h * 0.5)
+		testing.expect(t, content.rect.y + content.rect.h < trigger.rect.y + trigger.rect.h + 200)
+	})
+}
+
+@(test)
 select_content_anchors_below_trigger_and_trigger_clips_children :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		widget_test_begin_layout()
@@ -375,25 +475,14 @@ select_content_anchors_below_trigger_and_trigger_clips_children :: proc(t: ^test
 		widget_test_finish_layout()
 
 		root, root_ok := widget_test_layout_node("anchor-select")
-		trigger: ^o.Layout_Node
-		content: ^o.Layout_Node
+		testing.expect(t, root_ok)
 
-		if root_ok {
-			for child_index in root.child_indices {
-				child := &o.state.ui.layout.nodes[child_index]
+		if !root_ok do return
 
-				if child.kind == .SELECT_TRIGGER {
-					trigger = child
-				} else if child.space == .POPOVER {
-					content = child
-				}
-			}
-		}
-
+		trigger, content := select_test_find_trigger_and_popover_content(root)
 		trigger_ok := trigger != nil
 		content_ok := content != nil
 		testing.expect(t, trigger_ok)
-		testing.expect(t, root_ok)
 		testing.expect(t, content_ok)
 
 		if !trigger_ok || !content_ok do return
@@ -432,24 +521,13 @@ select_dropdown_measures_options_and_flips_above_viewport_edge :: proc(t: ^testi
 			widget_test_finish_layout()
 
 			root, root_ok := widget_test_layout_node("sized-select")
-			trigger: ^o.Layout_Node
-			content: ^o.Layout_Node
+			testing.expect(t, root_ok)
 
-			if root_ok {
-				for child_index in root.child_indices {
-					child := &o.state.ui.layout.nodes[child_index]
+			if !root_ok do return
 
-					if child.kind == .SELECT_TRIGGER {
-						trigger = child
-					} else if child.space == .POPOVER {
-						content = child
-					}
-				}
-			}
-
+			trigger, content := select_test_find_trigger_and_popover_content(root)
 			trigger_ok := trigger != nil
 			content_ok := content != nil
-			testing.expect(t, root_ok)
 			testing.expect(t, trigger_ok)
 			testing.expect(t, content_ok)
 

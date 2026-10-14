@@ -64,6 +64,7 @@ popover_root_theme_base :: proc(frame_state: ^Popover_State) -> Popover_Config {
 		kind = .POPOVER,
 		direction = set.Direction(.VERTICAL),
 		gap_y = set.Gap_Y(u16(0)),
+		background = set.Background(o.Color.TRANSPARENT),
 	}
 }
 

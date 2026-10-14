@@ -4602,7 +4602,10 @@ layout_resolve_anchors :: proc() {
 		above_bottom := anchor.rect.y - relation.gap
 		available_below := max(0, bottom - below_y)
 		available_above := max(0, above_bottom - top)
-		preferred_h := rect.h
+		// Prefer measured content height. Layer roots are re-solved against the
+		// full viewport; unset/auto height can stretch `rect.h` to the viewport
+		// and would otherwise paint a huge blank panel over screen UI.
+		preferred_h := floating.desired.y > 0 ? floating.desired.y : rect.h
 		place_below :=
 			preferred_h <= available_below ||
 			(preferred_h > available_above && available_below >= available_above)

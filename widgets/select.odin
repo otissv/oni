@@ -35,7 +35,7 @@ Select_Event :: o.Widget_Event(Select_State)
 Select root props: caller-owned value/open, compound children, and handlers.
 
 `child` builds the trigger tree. `content` is the options panel (Radix Content);
-when open it is laid out in a viewport-aware popover beside the trigger.
+when open it is laid out by a nested composable Popover beside the trigger.
 
 Pass `value` / `values` and `open` every frame; update them from
 `on_value_change` / `on_values_change` and `on_open_change`. The widget does
@@ -92,6 +92,7 @@ select_theme_base :: proc(frame_state: ^Select_State) -> Select_Config {
 		kind = .SELECT,
 		direction = set.Direction(.VERTICAL),
 		gap_y = set.Gap_Y(u16(0)),
+		background = set.Background(o.Color.TRANSPARENT),
 	}
 }
 
@@ -148,8 +149,9 @@ select_resolve_open_value :: proc(
 Renders a Radix-style Select root.
 
 Push compound context for Trigger / Value / Option parts. Optional `content` is
-shown in a popover while open, or inline when `multiple` / `size > 1` (listbox).
-Escape and outside pointer press dismiss dropdowns.
+shown via composable `Popover` / `Popover_Content` while open, or inline when
+`multiple` / `size > 1` (listbox). Dropdown dismiss (Escape / outside press)
+is owned by the nested Popover.
 */
 Select :: proc(props: Select_Props) {
 	cfg := props.config
@@ -366,15 +368,17 @@ Select :: proc(props: Select_Props) {
 	ctx = select_ctx_top()
 
 	if select_content_is_active(ctx) {
-		trigger_focused := ctx.trigger_key != "" && widget_is_focused(ctx.trigger_key)
+		trigger_focused := false
+
+		if popover_ctx_ok() {
+			tkey := popover_ctx_top().trigger_key
+			trigger_focused = tkey != "" && widget_is_focused(tkey)
+		}
+
 		root_focused := widget_is_focused(key)
 
 		if trigger_focused || root_focused || ctx.listbox {
 			select_handle_typing_keys()
-		}
-
-		if !ctx.listbox && o.w_ctx.left_mouse.pressed && !ctx.pointer_owned {
-			select_set_open(false)
 		}
 	}
 

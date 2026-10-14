@@ -230,6 +230,11 @@ dialog_overlay_draw_panel :: proc(props: Draw_Dialog_Overlay_Panel) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
+	// Same as popover panels: chrome must record in the layer space, not the
+	// parent SCREEN batch (high stack_index would cover page content).
+	o.Draw_Push_Space(.OVERLAY)
+	defer o.Draw_Pop_Space()
+
 	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(

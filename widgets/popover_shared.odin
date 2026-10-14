@@ -431,6 +431,12 @@ popover_draw_panel :: proc(props: Draw_Popover_Panel) {
 	o.Draw_Push_Opacity(config.opacity)
 	defer o.Draw_Pop_Opacity()
 
+	// Chrome must record in `.POPOVER`. `being_children` only pushes layer space
+	// around the child callback — background/border drawn outside that would use
+	// the parent SCREEN batch with this node's high stack_index and cover page UI.
+	o.Draw_Push_Space(.POPOVER)
+	defer o.Draw_Pop_Space()
+
 	widget_draw_box_background(layout_id, rect, background, radius)
 
 	widget_children(
@@ -514,6 +520,7 @@ popover_content_theme_for_trigger :: proc(trigger_rect: o.Rect, gap: f32) -> o.W
 		position = set.Position(.ABSOLUTE),
 		x = set.F32(trigger_rect.x),
 		y = set.F32(trigger_rect.y + trigger_rect.h + gap),
+		height = set.Height(o.Height_Mode.FIT),
 		direction = set.Direction(.VERTICAL),
 		padding = set.Padding(f32(12)),
 		background = set.Background(o.Color.BACKGROUND),

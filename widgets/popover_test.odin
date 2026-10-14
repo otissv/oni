@@ -648,3 +648,39 @@ popover_compound_content_layouts_when_open :: proc(t: ^testing.T) {
 		testing.expect(t, found)
 	})
 }
+
+@(test)
+popover_panel_chrome_records_in_popover_draw_space :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		defer widget_test_end_frame()
+
+		popover_test_panel(
+			{
+				config = {
+					id = "popover-chrome-space",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(60)),
+					background = set.Background(o.Color.BACKGROUND),
+				},
+			},
+		)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+
+		o.batch_reset()
+		popover_test_panel(
+			{
+				config = {
+					id = "popover-chrome-space",
+					width = set.Width(f32(120)),
+					height = set.Height(f32(60)),
+					background = set.Background(o.Color.BACKGROUND),
+				},
+			},
+		)
+
+		testing.expect(t, o.batch_current().has_current_key)
+		testing.expect(t, o.batch_current().current_key.draw_space == .POPOVER)
+	})
+}

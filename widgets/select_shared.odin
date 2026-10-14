@@ -76,11 +76,7 @@ Select_Ctx :: struct {
 	options:            [SELECT_OPTIONS_MAX]Select_Option_Entry,
 	option_count:       int,
 	highlight:          int,
-	trigger_key:        string,
-	trigger_layout_id:  o.UI_Id,
-	trigger_rect:       o.Rect,
-	has_trigger:        bool,
-	pointer_owned:      bool,
+	trigger_w:          f32,
 	user_child:         proc(frame_state: Select_State),
 	user_content:       proc(frame_state: Select_State),
 	content_frame:      Select_State,
@@ -272,22 +268,23 @@ select_visible_rows :: proc(multiple: bool, size: u8) -> u8 {
 	return 1
 }
 
+/*
+Marks the nested Popover pointer as owned so option / content hits do not dismiss.
+*/
 @(private)
 select_note_pointer :: proc() {
-	if !select_ctx_ok() do return
-
-	select_ctx_top().pointer_owned = true
+	if popover_ctx_ok() {
+		popover_note_pointer()
+	}
 }
 
 @(private)
-select_set_trigger :: proc(key: string, layout_id: o.UI_Id, rect: o.Rect) {
-	if !select_ctx_ok() do return
+select_note_trigger_width :: proc(width: f32) {
+	if !select_ctx_ok() {
+		return
+	}
 
-	ctx := select_ctx_top()
-	ctx.trigger_key = key
-	ctx.trigger_layout_id = layout_id
-	ctx.trigger_rect = rect
-	ctx.has_trigger = true
+	select_ctx_top().trigger_w = width
 }
 
 @(private)
@@ -482,15 +479,7 @@ select_runtime_sync_multi_labels :: proc(ctx: ^Select_Ctx) {
 }
 
 @(private)
-select_set_open :: proc(open: bool) {
-	if !select_ctx_ok() do return
-
-	ctx := select_ctx_top()
-
-	if ctx.disabled || ctx.listbox do return
-
-	if ctx.open == open do return
-
+select_apply_open_state :: proc(ctx: ^Select_Ctx, open: bool) {
 	ctx.open = open
 
 	if !open {
@@ -506,6 +495,44 @@ select_set_open :: proc(open: bool) {
 	if rt != nil {
 		rt.highlight = ctx.highlight
 	}
+}
+
+@(private)
+select_on_popover_open_change :: proc(open: bool) {
+	if !select_ctx_ok() do return
+
+	ctx := select_ctx_top()
+
+	if ctx.disabled || ctx.listbox do return
+
+	if ctx.open == open do return
+
+	select_apply_open_state(ctx, open)
+
+	if ctx.on_open_change != nil {
+		ctx.on_open_change(open)
+	}
+}
+
+@(private)
+select_set_open :: proc(open: bool) {
+	if !select_ctx_ok() do return
+
+	ctx := select_ctx_top()
+
+	if ctx.disabled || ctx.listbox do return
+
+	if ctx.open == open do return
+
+	select_apply_open_state(ctx, open)
+
+	if popover_ctx_ok() {
+		pctx := popover_ctx_top()
+
+		if pctx.open != open {
+			pctx.open = open
+		}
+	}
 
 	if ctx.on_open_change != nil {
 		ctx.on_open_change(open)
@@ -519,6 +546,12 @@ select_toggle_open :: proc() {
 	ctx := select_ctx_top()
 
 	if ctx.listbox do return
+
+	if popover_ctx_ok() {
+		popover_toggle_open()
+
+		return
+	}
 
 	select_set_open(!ctx.open)
 }
@@ -728,29 +761,26 @@ select_handle_typing_keys :: proc() {
 }
 
 @(private)
-select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool) -> o.Widget_Config {
-	if listbox {
-		return o.Widget_Config {
-			kind = .RECT,
-			direction = set.Direction(.VERTICAL),
-			gap_y = set.Gap_Y(u16(2)),
-			padding = set.Padding(f32(4)),
-			width = set.Width(max(trigger_rect.w, f32(240))),
-			overflow_y = set.Overflow_Y(.SCROLL),
-			background = set.Background(o.Color.BACKGROUND),
-			border = set.Border(f32(1)),
-			border_color = set.Border_color(o.Color.BORDER),
-			radius = set.Radius(f32(6)),
-		}
-	}
-
+select_listbox_theme_config :: proc(trigger_w: f32) -> o.Widget_Config {
 	return o.Widget_Config {
 		kind = .RECT,
-		space = set.Space(.POPOVER),
-		position = set.Position(.ABSOLUTE),
-		x = set.F32(trigger_rect.x),
-		y = set.F32(trigger_rect.y + trigger_rect.h + SELECT_DROPDOWN_GAP_PX),
-		width = set.Width(max(trigger_rect.w, f32(120))),
+		direction = set.Direction(.VERTICAL),
+		gap_y = set.Gap_Y(u16(2)),
+		padding = set.Padding(f32(4)),
+		width = set.Width(max(trigger_w, f32(240))),
+		overflow_y = set.Overflow_Y(.SCROLL),
+		background = set.Background(o.Color.BACKGROUND),
+		border = set.Border(f32(1)),
+		border_color = set.Border_color(o.Color.BORDER),
+		radius = set.Radius(f32(6)),
+	}
+}
+
+@(private)
+select_dropdown_content_config :: proc() -> o.Widget_Config {
+	return o.Widget_Config {
+		width = set.Width(f32(120)),
+		height = set.Height(o.Height_Mode.FIT),
 		overflow_y = set.Overflow_Y(.SCROLL),
 		direction = set.Direction(.VERTICAL),
 		gap_y = set.Gap_Y(u16(2)),
@@ -759,33 +789,94 @@ select_content_theme_config :: proc(trigger_rect: o.Rect, listbox: bool) -> o.Wi
 		border = set.Border(f32(1)),
 		border_color = set.Border_color(o.Color.BORDER),
 		radius = set.Radius(f32(6)),
-		z_index = set.Z_Index(f32(50)),
 	}
+}
+
+@(private)
+fmt_select_popover_id :: proc(select_key: string) -> string {
+	return fmt.tprintf("%s/__select_popover", select_key)
+}
+
+@(private)
+fmt_select_listbox_id :: proc(select_key: string) -> string {
+	return fmt.tprintf("%s/__select_content", select_key)
 }
 
 @(private)
 select_compound_child :: proc(fs: Select_State) {
 	ctx := select_ctx_top()
+	ctx.content_frame = fs
 
-	if ctx.user_child != nil {
-		ctx.user_child(fs)
+	if ctx.listbox {
+		if ctx.user_child != nil {
+			ctx.user_child(fs)
+		}
+
+		select_render_listbox()
+
+		return
 	}
 
-	select_render_content(fs)
+	popover_id := ctx.select_key != "" ? fmt_select_popover_id(ctx.select_key) : ""
+
+	Popover(
+		{
+			config = {
+				id = popover_id,
+				direction = set.Direction(.VERTICAL),
+				gap_y = set.Gap_Y(u16(0)),
+			},
+			open = ctx.open,
+			disabled = ctx.disabled,
+			on_open_change = select_on_popover_open_change,
+			child = select_dropdown_popover_child,
+		},
+	)
 }
 
 @(private)
-select_popover_child :: proc(_: Popover_Content_State) {
+select_dropdown_popover_child :: proc(_: Popover_State) {
+	ctx := select_ctx_top()
+
+	if ctx.user_child != nil {
+		ctx.user_child(ctx.content_frame)
+	}
+
+	if ctx.user_content == nil {
+		return
+	}
+
+	Popover_Content(
+		{
+			config = select_dropdown_content_config(),
+			align = .START,
+			match_trigger_width = true,
+			gap = SELECT_DROPDOWN_GAP_PX,
+			side_margin = SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
+			child = select_popover_content_child,
+		},
+	)
+
+	if o.ui_pass() == .Layout && popover_ctx_ok() {
+		pkey := popover_ctx_top().popover_key
+
+		if pkey != "" {
+			o.layout_constrain_visible_items(
+				o.ui_id(fmt_popover_content_id(pkey)),
+				.OPTION,
+				SELECT_DROPDOWN_MAX_VISIBLE_ROWS,
+			)
+		}
+	}
+}
+
+@(private)
+select_popover_content_child :: proc(_: Popover_Content_Props_State) {
 	ctx := select_ctx_top()
 
 	if ctx.user_content != nil {
 		ctx.user_content(ctx.content_frame)
 	}
-}
-
-@(private)
-select_popover_mouse_enter :: proc(_: Popover_Content_Event) {
-	select_note_pointer()
 }
 
 @(private)
@@ -798,92 +889,32 @@ select_listbox_child :: proc(_: Rectangle_State) {
 }
 
 @(private)
-select_listbox_mouse_enter :: proc(_: Rectangle_Event) {
-	select_note_pointer()
-}
-
-@(private)
-select_render_content :: proc(frame_state: Select_State) {
+select_render_listbox :: proc() {
 	ctx := select_ctx_top()
 
-	if ctx.user_content == nil do return
-
-	if !select_content_is_active(ctx) do return
-
-	trigger_rect := ctx.trigger_rect
-
-	if !ctx.has_trigger {
-		trigger_rect = {}
+	if ctx.user_content == nil {
+		return
 	}
 
 	rows := select_visible_rows(ctx.multiple, ctx.size)
-	cfg := select_content_theme_config(trigger_rect, ctx.listbox)
-	content_id := ctx.select_key != "" ? fmt_select_content_id(ctx.select_key) : ""
+	cfg := select_listbox_theme_config(ctx.trigger_w)
+	content_id := ctx.select_key != "" ? fmt_select_listbox_id(ctx.select_key) : ""
 
 	if content_id != "" {
 		cfg.id = content_id
 	}
 
-	ctx.content_frame = frame_state
+	Rectangle({config = cfg, child = select_listbox_child})
 
-	if ctx.listbox {
-		Rectangle(
-			{
-				config = cfg,
-				child = select_listbox_child,
-				on_mouse_enter = select_listbox_mouse_enter,
-			},
-		)
-
-		if o.ui_pass() == .Layout {
-			o.layout_constrain_visible_items(
-				o.ui_id(content_id),
-				.OPTION,
-				int(rows),
-				true,
-				SELECT_OPTION_FALLBACK_ROW_PX,
-			)
-		}
-
-		if o.ui_pass() == .Draw {
-			content_layout_id := o.ui_id(content_id != "" ? content_id : o.element_key(cfg.id))
-			content_rect := o.ui_layout_rect(content_layout_id)
-
-			if o.pointer_hits(content_layout_id, content_rect, .SCREEN) {
-				select_note_pointer()
-			}
-		}
-
-		return
-	}
-
-	popover_panel_anchored(
-		{
-			config = cfg,
-			child = select_popover_child,
-			anchor_id = ctx.trigger_layout_id,
-			gap = SELECT_DROPDOWN_GAP_PX,
-			margin = SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
-			match_width = true,
-			align = .START,
-			on_mouse_enter = select_popover_mouse_enter,
-			content_id = content_id,
-		},
-	)
-
-	if o.ui_pass() == .Layout && ctx.trigger_key != "" {
-		content_layout_id := o.ui_id(content_id)
+	if o.ui_pass() == .Layout && content_id != "" {
 		o.layout_constrain_visible_items(
-			content_layout_id,
+			o.ui_id(content_id),
 			.OPTION,
-			SELECT_DROPDOWN_MAX_VISIBLE_ROWS,
+			int(rows),
+			true,
+			SELECT_OPTION_FALLBACK_ROW_PX,
 		)
 	}
-}
-
-@(private)
-fmt_select_content_id :: proc(select_key: string) -> string {
-	return fmt.tprintf("%s/__select_content", select_key)
 }
 
 @(private)

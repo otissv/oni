@@ -69,6 +69,7 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 	calendar_shutdown()
 	date_picker_shutdown()
 	select_shutdown()
+	popover_shutdown()
 	o.ui_init()
 	defer {
 		radio_shutdown()
@@ -77,6 +78,7 @@ with_widget_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 		calendar_shutdown()
 		date_picker_shutdown()
 		select_shutdown()
+		popover_shutdown()
 		drain_style_stack()
 		o.ui_shutdown()
 		o.shortcut_shutdown()
