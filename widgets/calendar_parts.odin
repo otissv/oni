@@ -693,16 +693,16 @@ Calendar_Day :: proc(props: Calendar_Day_Props) {
 
 	cfg := o.merge_widget_config(
 		Calendar_Day_Config {
-			width = set.Width(ctx.day_size),
-			height = set.Height(ctx.day_size),
-			tabbable = set.Tabbable(false),
-			disabled = set.Disabled(state.disabled),
-			justify = set.Justify(o.Justify_Align.CENTER),
-			radius = set.Radius(f32(0)),
-			background = set.Background(o.Color.TRANSPARENT),
+			width        = set.Width(ctx.day_size),
+			height       = set.Height(ctx.day_size),
+			tabbable     = set.Tabbable(false),
+			disabled     = set.Disabled(state.disabled),
+			justify      = set.Justify(o.Justify_Align.CENTER),
+			radius       = set.Radius(f32(0)),
+			background   = set.Background(o.Color.TRANSPARENT),
 			border_color = set.Border_color(o.Color.TRANSPARENT),
 			// Per-day matcher/bounds mute; widget-level disable uses root opacity.
-			opacity = set.F32(cell.disabled ? 0.45 : 1),
+			opacity      = set.F32(cell.disabled ? 0.45 : 1),
 		},
 		props.config,
 	)
@@ -786,9 +786,7 @@ calendar_grid_child :: proc(_: Rectangle_State) {
 			continue
 		}
 
-		Calendar_Day(
-			{config = {id = day_id}, month_index = build.month_index, day_index = i},
-		)
+		Calendar_Day({config = {id = day_id}, month_index = build.month_index, day_index = i})
 	}
 }
 
@@ -826,10 +824,8 @@ Calendar_Grid :: proc(props: Calendar_Grid_Props) {
 	}
 
 	gap := calendar_gap_u16(ctx.gap)
-	grid_w :=
-		f32(CALENDAR_WEEK_DAYS) * ctx.day_size + f32(CALENDAR_WEEK_DAYS - 1) * ctx.gap
-	grid_h :=
-		f32(CALENDAR_WEEK_ROWS) * ctx.day_size + f32(CALENDAR_WEEK_ROWS - 1) * ctx.gap
+	grid_w := f32(CALENDAR_WEEK_DAYS) * ctx.day_size + f32(CALENDAR_WEEK_DAYS - 1) * ctx.gap
+	grid_h := f32(CALENDAR_WEEK_ROWS) * ctx.day_size + f32(CALENDAR_WEEK_ROWS - 1) * ctx.gap
 	cfg := o.merge_widget_config(
 		Calendar_Grid_Config {
 			direction = set.Direction(.HORIZONTAL_WRAP),
@@ -868,13 +864,7 @@ calendar_month_body_child :: proc(_: Rectangle_State) {
 			month_index = build.month_index,
 		},
 	)
-	Calendar_Grid(
-		{
-			config = {id = build.prefix},
-			month_index = build.month_index,
-			day = build.day,
-		},
-	)
+	Calendar_Grid({config = {id = build.prefix}, month_index = build.month_index, day = build.day})
 }
 
 @(private)
@@ -909,10 +899,7 @@ calendar_month_header_child :: proc(_: Rectangle_State) {
 	}
 
 	Calendar_Caption(
-		{
-			config = {id = fmt.tprintf("%s/caption", build.prefix)},
-			month_index = build.month_index,
-		},
+		{config = {id = fmt.tprintf("%s/caption", build.prefix)}, month_index = build.month_index},
 	)
 
 	if build.month_index == 0 {
@@ -976,11 +963,7 @@ calendar_month_child :: proc(_: Rectangle_State) {
 		)
 	} else {
 		Calendar_Grid(
-			{
-				config = {id = build.prefix},
-				month_index = build.month_index,
-				day = build.day,
-			},
+			{config = {id = build.prefix}, month_index = build.month_index, day = build.day},
 		)
 	}
 }
@@ -1070,12 +1053,7 @@ Calendar_Default_Months :: proc(state: Calendar_State) {
 
 	calendar_default_months_count = count
 
-	months_w, months_h := calendar_measure(
-		count,
-		ctx.day_size,
-		ctx.gap,
-		ctx.show_week_numbers,
-	)
+	months_w, months_h := calendar_measure(count, ctx.day_size, ctx.gap, ctx.show_week_numbers)
 
 	Rectangle(
 		{

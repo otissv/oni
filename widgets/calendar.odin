@@ -941,27 +941,12 @@ calendar_theme_base :: proc(frame_state: ^Calendar_State) -> Calendar_Config {
 		border = o.Color.RING
 	}
 
-	w := frame_state.content_width
-
-	if w <= 0 {
-		w = f32(280)
-	}
-
-	h := frame_state.content_height
-
-	if h <= 0 {
-		h = f32(320)
-	}
 
 	return Calendar_Config {
 		kind = .CALENDAR,
 		tabbable = set.Tabbable(tabbable),
 		direction = set.Direction(o.Direction_Layout.VERTICAL),
-		width = set.Width(w),
-		height = set.Height(h),
 		padding = set.Padding(o.Pd_struct{x = 0, y = 0}),
-		border = set.Border(f32(1)),
-		border_color = set.Border_color(border),
 		radius = set.Radius(f32(8)),
 		background = set.Background(o.Color.CARD),
 		color = set.Colors(o.Color.FOREGROUND),
@@ -1385,22 +1370,10 @@ Calendar :: proc(props: Calendar_Props) {
 		frame_state.selection = ctx.selection
 		frame_state.can_go_prev =
 			!disabled &&
-			Calendar_Can_Navigate(
-				frame_state.month,
-				-1,
-				nav_start,
-				nav_end,
-				number_of_months,
-			)
+			Calendar_Can_Navigate(frame_state.month, -1, nav_start, nav_end, number_of_months)
 		frame_state.can_go_next =
 			!disabled &&
-			Calendar_Can_Navigate(
-				frame_state.month,
-				1,
-				nav_start,
-				nav_end,
-				number_of_months,
-			)
+			Calendar_Can_Navigate(frame_state.month, 1, nav_start, nav_end, number_of_months)
 		ctx.can_go_prev = frame_state.can_go_prev
 		ctx.can_go_next = frame_state.can_go_next
 	}

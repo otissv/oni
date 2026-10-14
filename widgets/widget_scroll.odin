@@ -329,6 +329,13 @@ widget_children :: proc(
 	resolved := config
 	o.widget_scroll_apply(element_id, author, &resolved)
 
+	// Scroll stack is for nested scrollports only — not every widget_children call.
+	if !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
+		o.Children(child, layout_id, resolved, frame_state)
+
+		return
+	}
+
 	Binder :: struct {
 		child: proc(_: S),
 		state: S,
@@ -346,11 +353,7 @@ widget_children :: proc(
 		}
 	}
 
-	entry: ^o.Vec2
-
-	if o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
-		entry = o.widget_scroll_ensure(element_id)
-	}
+	entry := o.widget_scroll_ensure(element_id)
 
 	widget_scroll_push(
 		{
@@ -367,12 +370,6 @@ widget_children :: proc(
 		},
 	)
 	defer widget_scroll_pop()
-
-	if !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
-		o.Children(child, layout_id, resolved, frame_state)
-
-		return
-	}
 
 	// Content clips to the content box; overlay bars need the padding-box edge,
 	// so pop that clip before emitting chrome (still inside Children).

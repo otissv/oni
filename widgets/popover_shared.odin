@@ -518,9 +518,6 @@ popover_content_theme_for_trigger :: proc(trigger_rect: o.Rect, gap: f32) -> o.W
 		direction = set.Direction(.VERTICAL),
 		padding = set.Padding(f32(12)),
 		background = set.Background(o.Color.BACKGROUND),
-		border = set.Border(f32(1)),
-		border_color = set.Border_color(o.Color.BORDER),
-		radius = set.Radius(f32(8)),
 		z_index = set.Z_Index(f32(50)),
 	}
 }
