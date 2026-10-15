@@ -59,8 +59,10 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [ ] **Menu bar** (app chrome; arrow + Enter navigation across menus)
 - [x] **Dialog** (`Dialog` / Trigger / Scrim / Content / Actions; Escape + outside dismiss on `.OVERLAY`)
 - [~] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
-- [x] Select
-- [~] **Dropdown**: Select / Popover / Context_Menu share overlay paths; keep one shared popup API — no second overlay system
+- [~] **Dropdown**: keep one shared popup API — no second overlay system
+- [x] Select 
+- [x] Popover 
+- [x] Context_Menu 
 - [x] Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`)
 - [x] **Progress** (`Progress` / Label / Value / Track / Indicator; determinate + indeterminate)
 - [x] **Collapsible** (`Collapsible` / Trigger / Content; in-flow expand/collapse)
@@ -70,7 +72,7 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 
 - [ ] `aspect_ratio` on `Widget_Style` (listed in attributes; not modeled yet)
 - [~] Overflow scrollports work; harden edge cases (nested scroll, sticky + scroll)
-- [ ] Flex shrink / basis beyond grow (document or implement)
+- [x] Flex sizing: axis `.SHRINK` (content basis; share deficit; ignore leftover) shipped; CSS-style `flex-shrink` / `flex-basis` fields still open
 - [ ] `theme_light` / `theme_dark` presets + runtime switch demo
 - [ ] Optional Noto Arabic / CJK fixtures + demo routes (RTL / mixed / CJK wrap)
 
