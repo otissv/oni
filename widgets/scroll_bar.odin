@@ -6,7 +6,15 @@ import set "../set"
 /*
 Scrollbar widget configuration extending Widget_Config.
 */
-Scroll_Bar_Config :: o.Widget_Config
+Scroll_Bar_Config :: struct {
+	using _:           o.Widget_Config,
+	min_thumb:         o.Cfg(o.Style_F32),
+	axis:              o.Scroll_Axis,
+	parent_scroll_x:   ^f32,
+	parent_scroll_y:   ^f32,
+	viewport:          f32,
+	content:           f32,
+}
 
 /*
 Scrollbar widget per-frame state merged with its resolved style config.
@@ -45,12 +53,6 @@ Track chrome (`background`, `radius`, `border`, `border_color`, `opacity`) comes
 */
 Scroll_Bar_Props :: struct {
 	config:                       Scroll_Bar_Config,
-	min_thumb:                    o.Cfg(o.Style_F32),
-	axis:                         o.Scroll_Axis,
-	parent_scroll_x:              ^f32,
-	parent_scroll_y:              ^f32,
-	viewport:                     f32,
-	content:                      f32,
 	child:                        proc(frame_state: Scroll_Bar_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -129,20 +131,52 @@ scroll_bar_theme_base :: proc(frame_state: ^Scroll_Bar_State) -> Scroll_Bar_Conf
 }
 
 @(private)
+scroll_bar_refresh_merged :: proc(
+	props: Scroll_Bar_Props,
+	frame_state: ^Scroll_Bar_State,
+) -> Scroll_Bar_Event {
+	event := widget_event(frame_state^)
+	base := scroll_bar_theme_base(frame_state)
+	frame_state.config = o.resolve_widget_config(base, props.config, frame_state, event)
+
+	return widget_event(frame_state^)
+}
+
+@(private)
+scroll_bar_refresh_merged_if_interaction_changed :: proc(
+	props: Scroll_Bar_Props,
+	frame_state: ^Scroll_Bar_State,
+	prev_fp: u8,
+) -> (
+	event: Scroll_Bar_Event,
+	fp: u8,
+) {
+	fp = widget_style_interaction_fp(frame_state)
+
+	if fp == prev_fp {
+		return widget_event(frame_state^), fp
+	}
+
+	return scroll_bar_refresh_merged(props, frame_state), fp
+}
+
+@(private)
 scroll_bar_resolve_min_thumb :: proc(props: Scroll_Bar_Props) -> f32 {
-	return o.cfg_style_f32(props.min_thumb, o.SCROLL_BAR_MIN_THUMB)
+	return o.cfg_style_f32(props.config.min_thumb, o.SCROLL_BAR_MIN_THUMB)
 }
 
 @(private)
 scroll_bar_parent_scroll :: proc(props: Scroll_Bar_Props) -> f32 {
-	switch props.axis {
+	cfg := props.config
+
+	switch cfg.axis {
 	case .X:
-		if props.parent_scroll_x != nil {
-			return props.parent_scroll_x^
+		if cfg.parent_scroll_x != nil {
+			return cfg.parent_scroll_x^
 		}
 	case .Y:
-		if props.parent_scroll_y != nil {
-			return props.parent_scroll_y^
+		if cfg.parent_scroll_y != nil {
+			return cfg.parent_scroll_y^
 		}
 	}
 
@@ -151,14 +185,16 @@ scroll_bar_parent_scroll :: proc(props: Scroll_Bar_Props) -> f32 {
 
 @(private)
 scroll_bar_set_parent_scroll :: proc(props: Scroll_Bar_Props, value: f32) {
-	switch props.axis {
+	cfg := props.config
+
+	switch cfg.axis {
 	case .X:
-		if props.parent_scroll_x != nil {
-			props.parent_scroll_x^ = value
+		if cfg.parent_scroll_x != nil {
+			cfg.parent_scroll_x^ = value
 		}
 	case .Y:
-		if props.parent_scroll_y != nil {
-			props.parent_scroll_y^ = value
+		if cfg.parent_scroll_y != nil {
+			cfg.parent_scroll_y^ = value
 		}
 	}
 
@@ -166,12 +202,12 @@ scroll_bar_set_parent_scroll :: proc(props: Scroll_Bar_Props, value: f32) {
 		sx: f32
 		sy: f32
 
-		if props.parent_scroll_x != nil {
-			sx = props.parent_scroll_x^
+		if cfg.parent_scroll_x != nil {
+			sx = cfg.parent_scroll_x^
 		}
 
-		if props.parent_scroll_y != nil {
-			sy = props.parent_scroll_y^
+		if cfg.parent_scroll_y != nil {
+			sy = cfg.parent_scroll_y^
 		}
 
 		props.on_scroll(sx, sy)
@@ -211,13 +247,14 @@ scroll_bar_handle_drag :: proc(
 	thumb: o.Rect,
 	hovered: bool,
 ) {
+	cfg := props.config
 	drag := o.scroll_bar_drag_entry(layout_id)
 
 	if drag == nil {
 		return
 	}
 
-	max_scroll := max(0, props.content - props.viewport)
+	max_scroll := max(0, cfg.content - cfg.viewport)
 	mouse := o.Vec2{o.w_ctx.mouse_x, o.w_ctx.mouse_y}
 
 	if o.w_ctx.left_mouse.pressed && hovered {
@@ -228,7 +265,7 @@ scroll_bar_handle_drag :: proc(
 			mouse.y < thumb.y + thumb.h
 		drag.active = true
 
-		if props.axis == .X {
+		if cfg.axis == .X {
 			if on_thumb {
 				drag.grab_offset = mouse.x - thumb.x
 			} else {
@@ -266,7 +303,7 @@ scroll_bar_handle_drag :: proc(
 	if drag.active && o.w_ctx.left_mouse.down {
 		next: f32
 
-		if props.axis == .X {
+		if cfg.axis == .X {
 			next = o.scroll_bar_scroll_from_pointer(
 				mouse.x,
 				track.x,
@@ -417,7 +454,7 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 		is_focused  = was_focused,
 	}
 
-	event := widget_refresh_merged(props, &frame_state, scroll_bar_theme_base)
+	event := scroll_bar_refresh_merged(props, &frame_state)
 	style_fp := widget_style_interaction_fp(&frame_state)
 	config := frame_state.config
 	child := props.child != nil ? props.child : scroll_bar_default_child
@@ -435,7 +472,7 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 		)
 
 		if ran_unmount {
-			event = widget_refresh_merged(props, &frame_state, scroll_bar_theme_base)
+			event = scroll_bar_refresh_merged(props, &frame_state)
 			config = frame_state.config
 			should_auto_focus = widget_should_auto_focus(config, key)
 		}
@@ -463,9 +500,9 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 			o.Children(child, layout_id, config, frame_state)
 			scroll_bar_bind_layout_chrome(
 				layout_id,
-				props.axis,
-				props.viewport,
-				props.content,
+				cfg.axis,
+				cfg.viewport,
+				cfg.content,
 				scroll_bar_parent_scroll(props),
 				min_thumb,
 			)
@@ -493,10 +530,9 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 		config,
 	)
 
-	event, _ = widget_refresh_merged_if_interaction_changed(
+	event, _ = scroll_bar_refresh_merged_if_interaction_changed(
 		props,
 		&frame_state,
-		scroll_bar_theme_base,
 		style_fp,
 	)
 	config = frame_state.config
@@ -523,9 +559,9 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 	// re-finalize layout chrome during draw.
 	thumb := o.layout_scroll_bar_thumb_rect(
 		rect,
-		props.axis,
-		props.viewport,
-		props.content,
+		cfg.axis,
+		cfg.viewport,
+		cfg.content,
 		scroll,
 		min_thumb,
 	)
@@ -535,9 +571,9 @@ Scroll_Bar :: proc(props: Scroll_Bar_Props) {
 		scroll = scroll_bar_parent_scroll(props)
 		thumb = o.layout_scroll_bar_thumb_rect(
 			rect,
-			props.axis,
-			props.viewport,
-			props.content,
+			cfg.axis,
+			cfg.viewport,
+			cfg.content,
 			scroll,
 			min_thumb,
 		)

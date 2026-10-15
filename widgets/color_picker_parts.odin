@@ -15,10 +15,20 @@ Color_Picker_Swatch_Role :: enum {
 Color_Picker_Field_Config :: o.Widget_Config
 Color_Picker_Slider_Config :: o.Widget_Config
 Color_Picker_Alpha_Config :: o.Widget_Config
-Color_Picker_Swatch_Config :: o.Widget_Config
+Color_Picker_Swatch_Config :: struct {
+	using _: o.Widget_Config,
+	role:    Color_Picker_Swatch_Role,
+}
 Color_Picker_Channels_Config :: o.Widget_Config
-Color_Picker_Hex_Config :: o.Widget_Config
-Color_Picker_Type_Config :: o.Widget_Config
+Color_Picker_Hex_Config :: struct {
+	using _:       o.Widget_Config,
+	include_alpha: bool,
+}
+
+Color_Picker_Type_Config :: struct {
+	using _:     o.Widget_Config,
+	color_type: o.Color_Picker_Color_Type,
+}
 Color_Picker_Web_Only_Config :: o.Widget_Config
 
 Color_Picker_Field_Props :: struct {
@@ -35,7 +45,6 @@ Color_Picker_Alpha_Props :: struct {
 
 Color_Picker_Swatch_Props :: struct {
 	config: Color_Picker_Swatch_Config,
-	role:   Color_Picker_Swatch_Role,
 }
 
 Color_Picker_Channels_Props :: struct {
@@ -48,16 +57,14 @@ Hex input for the enclosing `Color_Picker`.
 `include_alpha` controls whether parsed hex may replace the alpha channel.
 */
 Color_Picker_Hex_Props :: struct {
-	config:        Color_Picker_Hex_Config,
-	include_alpha: bool,
+	config: Color_Picker_Hex_Config,
 }
 
 /*
 One numeric row (RGB, HSB, HSL, LAB, CMYK, or WEB) for the enclosing picker.
 */
 Color_Picker_Type_Props :: struct {
-	config:     Color_Picker_Type_Config,
-	color_type: o.Color_Picker_Color_Type,
+	config: Color_Picker_Type_Config,
 }
 
 Color_Picker_Web_Only_Props :: struct {
@@ -318,7 +325,7 @@ Color_Picker_Alpha :: proc(props: Color_Picker_Alpha_Props) {
 Current or previous color swatch. Clicking the previous swatch restores that color.
 */
 Color_Picker_Swatch :: proc(props: Color_Picker_Swatch_Props) {
-	color_picker_swatch_role = props.role
+	color_picker_swatch_role = props.config.role
 
 	color_picker_surface(
 		props.config,
@@ -427,14 +434,14 @@ Color_Picker_Hex :: proc(props: Color_Picker_Hex_Props) {
 		return
 	}
 
-	ctx.hex_include_alpha = props.include_alpha
+	ctx.hex_include_alpha = props.config.include_alpha
 	color_picker_hex_row_props = props
 	color_picker_hex_row_text = ctx.runtime.hex
 
 	if color_picker_hex_row_text == "" {
 		color_picker_hex_row_text = o.hex_format(
 			ctx.value,
-			props.include_alpha,
+			props.config.include_alpha,
 			context.temp_allocator,
 		)
 	}
@@ -489,8 +496,8 @@ color_picker_hex_row_child :: proc(_: Rectangle_State) {
 			config = {
 				id = fmt.tprintf("%s/input", props.config.id),
 				text = color_picker_hex_row_text,
-				placeholder = props.include_alpha ? "rrggbbaa" : "rrggbb",
-				max_length = props.include_alpha ? 9 : 7,
+				placeholder = props.config.include_alpha ? "rrggbbaa" : "rrggbb",
+				max_length = props.config.include_alpha ? 9 : 7,
 				width = set.Width(f32(110)),
 				height = set.Height(COLOR_PICKER_HEX_ROW_H),
 				tabbable = set.Tabbable(true),
@@ -511,7 +518,7 @@ Color_Picker_Type :: proc(props: Color_Picker_Type_Props) {
 		return
 	}
 
-	slot := int(props.color_type)
+	slot := int(props.config.color_type)
 
 	if slot < 0 || slot >= COLOR_PICKER_TYPE_SLOT_COUNT {
 		return
@@ -519,12 +526,12 @@ Color_Picker_Type :: proc(props: Color_Picker_Type_Props) {
 
 	ctx.runtime.type_active[slot] = true
 
-	if props.color_type == .WEB {
+	if props.config.color_type == .WEB {
 		ctx.has_web_type = true
 	}
 
 	color_picker_type_row_props = props
-	row_w := color_picker_type_row_width(props.color_type)
+	row_w := color_picker_type_row_width(props.config.color_type)
 	cfg := props.config
 
 	if cfg.direction.mode == .UNSET {
@@ -562,12 +569,12 @@ color_picker_type_field_cell_child :: proc(_: Rectangle_State) {
 	props := color_picker_type_row_props
 	i := color_picker_type_field_index
 	ctx := color_picker_ctx_top()
-	slot := int(props.color_type)
-	label := color_picker_type_field_label(props.color_type, i)
+	slot := int(props.config.color_type)
+	label := color_picker_type_field_label(props.config.color_type, i)
 	text := ctx.runtime.type_drafts[slot].text[i]
 
 	if text == "" {
-		text = color_picker_format_type_field(ctx.hsva, ctx.value, props.color_type, i)
+		text = color_picker_format_type_field(ctx.hsva, ctx.value, props.config.color_type, i)
 	}
 
 	Text(
@@ -600,7 +607,7 @@ color_picker_type_field_cell_child :: proc(_: Rectangle_State) {
 @(private)
 color_picker_type_row_child :: proc(_: Rectangle_State) {
 	props := color_picker_type_row_props
-	count := color_picker_type_field_count(props.color_type)
+	count := color_picker_type_field_count(props.config.color_type)
 
 	for i in 0 ..< count {
 		color_picker_type_field_index = i
@@ -674,8 +681,11 @@ color_picker_web_only_child :: proc(_: Rectangle_State) {
 	check_id := props.config.id
 	Checkbox(
 		{
-			config = {id = check_id, tabbable = set.Tabbable(true)},
-			checked = ctx.web_only ? .TRUE : .FALSE,
+			config = {
+				id = check_id,
+				tabbable = set.Tabbable(true),
+				checked = ctx.web_only ? .TRUE : .FALSE,
+			},
 			on_checked_change = color_picker_web_only_on_change,
 		},
 	)
@@ -702,8 +712,8 @@ color_picker_layout: struct {
 color_picker_side_child :: proc(_: Rectangle_State) {
 	p := color_picker_layout.prefix
 
-	Color_Picker_Swatch({config = {id = fmt.tprintf("%s-swatch-new", p)}, role = .CURRENT})
-	Color_Picker_Swatch({config = {id = fmt.tprintf("%s-swatch-prev", p)}, role = .PREVIOUS})
+	Color_Picker_Swatch({config = {id = fmt.tprintf("%s-swatch-new", p), role = .CURRENT}})
+	Color_Picker_Swatch({config = {id = fmt.tprintf("%s-swatch-prev", p), role = .PREVIOUS}})
 	Color_Picker_Channels({config = {id = fmt.tprintf("%s-channels", p)}})
 }
 
@@ -758,11 +768,11 @@ Color_Picker_Default :: proc(id_prefix: string, hex_include_alpha: bool = true) 
 	Color_Picker_Web_Only({config = {id = fmt.tprintf("%s-web-only", p)}})
 
 
-	Color_Picker_Hex({config = {id = fmt.tprintf("%s-hex", p)}, include_alpha = hex_include_alpha})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-rgb", p)}, color_type = .RGB})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-hsb", p)}, color_type = .HSB})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-hsl", p)}, color_type = .HSL})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-lab", p)}, color_type = .LAB})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-cmyk", p)}, color_type = .CMYK})
-	Color_Picker_Type({config = {id = fmt.tprintf("%s-web", p)}, color_type = .WEB})
+	Color_Picker_Hex({config = {id = fmt.tprintf("%s-hex", p), include_alpha = hex_include_alpha}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-rgb", p), color_type = .RGB}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-hsb", p), color_type = .HSB}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-hsl", p), color_type = .HSL}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-lab", p), color_type = .LAB}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-cmyk", p), color_type = .CMYK}})
+	Color_Picker_Type({config = {id = fmt.tprintf("%s-web", p), color_type = .WEB}})
 }

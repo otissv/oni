@@ -6,7 +6,11 @@ import set "../set"
 /*
 Tabs list configuration.
 */
-Tabs_List_Config :: o.Widget_Config
+Tabs_List_Config :: struct {
+	using _:           o.Widget_Config,
+	activate_on_focus: bool,
+	variant:           Tabs_List_Variant,
+}
 
 /*
 Tabs list per-frame state.
@@ -27,14 +31,13 @@ Tabs_List_Event :: o.Widget_Event(Tabs_List_State)
 /*
 Tabs list props.
 
-Groups `Tabs_Trigger` children. `activate_on_focus` matches Base UI: when true,
-arrow-key focus also activates the tab; when false (default), Space/Enter
-activate. `variant` controls list and selected-trigger chrome.
+Groups `Tabs_Trigger` children. `config.activate_on_focus` matches Base UI:
+when true, arrow-key focus also activates the tab; when false (default),
+Space/Enter activate. `config.variant` controls list and selected-trigger
+chrome.
 */
 Tabs_List_Props :: struct {
 	config:                       Tabs_List_Config,
-	activate_on_focus:            bool,
-	variant:                      Tabs_List_Variant,
 	child:                        proc(frame_state: Tabs_List_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -129,14 +132,14 @@ Tabs_List :: proc(props: Tabs_List_Props) {
 	was_focused := widget_is_focused(key)
 	in_tabs := tabs_ctx_ok()
 	orientation := Tabs_Orientation.HORIZONTAL
-	variant := tabs_variant_normalize(props.variant)
+	variant := tabs_variant_normalize(cfg.variant)
 	prev_in_list := false
 
 	if in_tabs {
 		ctx := tabs_ctx_top()
 		orientation = ctx.orientation
 		prev_in_list = ctx.in_list
-		ctx.activate_on_focus = props.activate_on_focus
+		ctx.activate_on_focus = cfg.activate_on_focus
 		ctx.variant = variant
 		ctx.in_list = true
 	}
@@ -152,7 +155,7 @@ Tabs_List :: proc(props: Tabs_List_Props) {
 		is_focused        = was_focused,
 		orientation       = orientation,
 		variant           = variant,
-		activate_on_focus = props.activate_on_focus,
+		activate_on_focus = cfg.activate_on_focus,
 	}
 
 	if frame_state.is_disabled {

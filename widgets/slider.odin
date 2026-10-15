@@ -7,7 +7,18 @@ import "core:fmt"
 /*
 Slider root configuration.
 */
-Slider_Config :: o.Widget_Config
+Slider_Config :: struct {
+	using _:                  o.Widget_Config,
+	values:                   []f32,
+	min:                      f32,
+	max:                      f32,
+	step:                     f32,
+	min_steps_between_thumbs: f32,
+	orientation:              o.Slider_Orientation,
+	inverted:                 bool,
+	thumb_size:               o.Cfg(o.Style_F32),
+	track_thickness:          o.Cfg(o.Style_F32),
+}
 
 /*
 Slider track part configuration.
@@ -22,7 +33,10 @@ Slider_Range_Config :: o.Widget_Config
 /*
 Slider thumb part configuration.
 */
-Slider_Thumb_Config :: o.Widget_Config
+Slider_Thumb_Config :: struct {
+	using _: o.Widget_Config,
+	index:   int,
+}
 
 /*
 Slider per-frame state, including the active working values.
@@ -81,46 +95,36 @@ Slider_Range_Props :: struct {
 /*
 Props for `Slider_Thumb`.
 
-`index` selects which thumb in `values` (`0 ..< value_count`) this part renders.
-Optional `child` renders inside an absolutely positioned host matching the thumb
-hit rect.
+`config.index` selects which thumb in `values` (`0 ..< value_count`) this part
+renders. Optional `child` renders inside an absolutely positioned host matching
+the thumb hit rect.
 */
 Slider_Thumb_Props :: struct {
 	config: Slider_Thumb_Config,
-	index:  int,
 	child:  proc(frame_state: Slider_Thumb_State),
 }
 
 /*
 Slider root props.
 
-`values` is owned by the caller and must be passed every frame with length 1
-(single thumb) or 2 (range). Pointer and keyboard interaction report updates
-through `on_value_change` only — the widget never mutates the caller's slice.
-`on_value_commit` fires once when an active pointer drag ends.
+`config.values` is owned by the caller and must be passed every frame with
+length 1 (single thumb) or 2 (range). Pointer and keyboard interaction report
+updates through `on_value_change` only — the widget never mutates the caller's
+slice. `on_value_commit` fires once when an active pointer drag ends.
 
 Compose chrome with `Slider_Track`, `Slider_Range`, and `Slider_Thumb` inside
 `child`. When `child` is nil, `Slider_Default_Parts` renders track, range fill,
 and one thumb per value using each part's theme defaults.
 
-`thumb_size` and `track_thickness` are layout metrics (unset `Cfg` keeps
-`SLIDER_DEFAULT_THUMB_SIZE` and `SLIDER_DEFAULT_TRACK_THICKNESS`).
+`config.thumb_size` and `config.track_thickness` are layout metrics (unset
+`Cfg` keeps `SLIDER_DEFAULT_THUMB_SIZE` and `SLIDER_DEFAULT_TRACK_THICKNESS`).
+Disable via `config.disabled` (`set.Disabled`).
 */
 Slider_Props :: struct {
 	config:                       Slider_Config,
-	values:                       []f32,
-	min:                          f32,
-	max:                          f32,
-	step:                         f32,
-	min_steps_between_thumbs:     f32,
-	orientation:                  o.Slider_Orientation,
-	inverted:                     bool,
-	disabled:                     bool,
-	thumb_size:                   o.Cfg(o.Style_F32),
-	track_thickness:              o.Cfg(o.Style_F32),
-	child:                        proc(frame_state: Slider_State),
 	on_value_change:              proc(values: []f32),
 	on_value_commit:              proc(values: []f32),
+	child:                        proc(frame_state: Slider_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Slider_State) -> o.Mount,
@@ -220,27 +224,27 @@ slider_ctx_pop :: proc() {
 }
 
 @(private)
-slider_resolve_thumb_size :: proc(props: Slider_Props) -> f32 {
-	return o.cfg_style_f32(props.thumb_size, o.SLIDER_DEFAULT_THUMB_SIZE)
+slider_resolve_thumb_size :: proc(cfg: Slider_Config) -> f32 {
+	return o.cfg_style_f32(cfg.thumb_size, o.SLIDER_DEFAULT_THUMB_SIZE)
 }
 
 @(private)
-slider_resolve_track_thickness :: proc(props: Slider_Props) -> f32 {
-	return o.cfg_style_f32(props.track_thickness, o.SLIDER_DEFAULT_TRACK_THICKNESS)
+slider_resolve_track_thickness :: proc(cfg: Slider_Config) -> f32 {
+	return o.cfg_style_f32(cfg.track_thickness, o.SLIDER_DEFAULT_TRACK_THICKNESS)
 }
 
 @(private)
-slider_resolve_bounds :: proc(props: Slider_Props) -> (min_v, max_v, step: f32) {
-	min_v = props.min
-	max_v = props.max
-	step = props.step
+slider_resolve_bounds :: proc(cfg: Slider_Config) -> (min_v, max_v, step: f32) {
+	min_v = cfg.min
+	max_v = cfg.max
+	step = cfg.step
 
 	if min_v == 0 && max_v == 0 {
 		min_v = o.SLIDER_DEFAULT_MIN
 		max_v = o.SLIDER_DEFAULT_MAX
 	}
 
-	if step == 0 && props.step == 0 && props.min == 0 && props.max == 0 {
+	if step == 0 && cfg.step == 0 && cfg.min == 0 && cfg.max == 0 {
 		step = o.SLIDER_DEFAULT_STEP
 	}
 
@@ -1010,13 +1014,12 @@ Slider_Thumb :: proc(props: Slider_Thumb_Props) {
 	}
 
 	ctx := slider_ctx_top()
-	i := props.index
+	cfg := props.config
+	i := cfg.index
 
 	if i < 0 || i >= ctx.count {
 		return
 	}
-
-	cfg := props.config
 
 	if cfg.id == "" {
 		cfg.id = slider_thumb_host_id(ctx.parent_key, i)
@@ -1174,7 +1177,7 @@ Slider_Default_Parts :: proc(frame_state: Slider_State) {
 	Slider_Range({config = {id = slider_part_id(ctx.parent_key, "range")}})
 
 	for i in 0 ..< frame_state.value_count {
-		Slider_Thumb({config = {id = slider_thumb_host_id(ctx.parent_key, i)}, index = i})
+		Slider_Thumb({config = {id = slider_thumb_host_id(ctx.parent_key, i), index = i}})
 	}
 }
 
@@ -1195,19 +1198,19 @@ Slider :: proc(props: Slider_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
 
-	min_v, max_v, step := slider_resolve_bounds(props)
+	min_v, max_v, step := slider_resolve_bounds(cfg)
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	working: [o.SLIDER_MAX_THUMBS]f32
-	count := o.slider_copy_values(props.values, &working)
+	count := o.slider_copy_values(cfg.values, &working)
 	count = o.slider_normalize_values(
 		&working,
 		count,
 		min_v,
 		max_v,
 		step,
-		props.min_steps_between_thumbs,
+		cfg.min_steps_between_thumbs,
 	)
 
 	active_thumb := 0
@@ -1227,8 +1230,8 @@ Slider :: proc(props: Slider_Props) {
 		min          = min_v,
 		max          = max_v,
 		step         = step,
-		orientation  = props.orientation,
-		inverted     = props.inverted,
+		orientation  = cfg.orientation,
+		inverted     = cfg.inverted,
 	}
 
 	if disabled {
@@ -1243,28 +1246,28 @@ Slider :: proc(props: Slider_Props) {
 	config := frame_state.config
 	handlers := widget_lifecycle_handlers(resolved_props, Slider_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
-	thumb_size := slider_resolve_thumb_size(props)
-	track_thickness := slider_resolve_track_thickness(props)
+	thumb_size := slider_resolve_thumb_size(cfg)
+	track_thickness := slider_resolve_track_thickness(cfg)
 	child := props.child
 
 	if child == nil {
 		child = Slider_Default_Parts
 	}
 
-	root_w, root_h := slider_root_size_for_thumbs(layout_id, config, props.orientation)
+	root_w, root_h := slider_root_size_for_thumbs(layout_id, config, cfg.orientation)
 	provisional_root := o.Rect {
 		w = root_w,
 		h = root_h,
 	}
-	rel_track := o.layout_slider_track_rect(provisional_root, props.orientation, track_thickness)
+	rel_track := o.layout_slider_track_rect(provisional_root, cfg.orientation, track_thickness)
 	rel_thumbs, _ := slider_paint_thumbs_from_track(
 		rel_track,
-		props.orientation,
+		cfg.orientation,
 		working,
 		count,
 		min_v,
 		max_v,
-		props.inverted,
+		cfg.inverted,
 		thumb_size,
 	)
 
@@ -1276,9 +1279,9 @@ Slider :: proc(props: Slider_Props) {
 			min = min_v,
 			max = max_v,
 			step = step,
-			min_steps_between_thumbs = props.min_steps_between_thumbs,
-			orientation = props.orientation,
-			inverted = props.inverted,
+			min_steps_between_thumbs = cfg.min_steps_between_thumbs,
+			orientation = cfg.orientation,
+			inverted = cfg.inverted,
 			layout_id = layout_id,
 			parent_key = key,
 			thumb_size = thumb_size,
@@ -1349,12 +1352,12 @@ Slider :: proc(props: Slider_Props) {
 		)
 		slider_bind_layout_chrome(
 			layout_id,
-			props.orientation,
+			cfg.orientation,
 			working,
 			count,
 			min_v,
 			max_v,
-			props.inverted,
+			cfg.inverted,
 			thumb_size,
 			track_thickness,
 		)
@@ -1437,12 +1440,12 @@ Slider :: proc(props: Slider_Props) {
 		ctx := slider_ctx_top()
 		thumbs, range_rect = slider_paint_thumbs_from_track(
 			track,
-			props.orientation,
+			cfg.orientation,
 			ctx.values,
 			ctx.count,
 			min_v,
 			max_v,
-			props.inverted,
+			cfg.inverted,
 			thumb_size,
 		)
 	}
@@ -1462,12 +1465,12 @@ Slider :: proc(props: Slider_Props) {
 		ctx := slider_ctx_top()
 		thumbs, range_rect = slider_paint_thumbs_from_track(
 			track,
-			props.orientation,
+			cfg.orientation,
 			ctx.values,
 			ctx.count,
 			min_v,
 			max_v,
-			props.inverted,
+			cfg.inverted,
 			thumb_size,
 		)
 	}

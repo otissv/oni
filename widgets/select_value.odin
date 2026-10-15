@@ -6,7 +6,10 @@ import set "../set"
 /*
 Select value configuration.
 */
-Select_Value_Config :: o.Widget_Config
+Select_Value_Config :: struct {
+	using _:     o.Widget_Config,
+	placeholder: string,
+}
 
 /*
 Select value per-frame state with resolved display text.
@@ -31,7 +34,6 @@ When `child` is set it replaces the default label text.
 */
 Select_Value_Props :: struct {
 	config:                       Select_Value_Config,
-	placeholder:                  string,
 	child:                        proc(frame_state: Select_Value_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -79,14 +81,16 @@ select_value_refresh_merged :: proc(
 
 @(private)
 select_value_resolve_text :: proc(props: Select_Value_Props) -> (text: string, has_value: bool) {
+	placeholder := props.config.placeholder
+
 	if !select_ctx_ok() {
-		return props.placeholder, false
+		return placeholder, false
 	}
 
 	ctx := select_ctx_top()
 
 	if !select_has_selection(ctx) {
-		return props.placeholder, false
+		return placeholder, false
 	}
 
 	return select_resolve_value_label(ctx), true
@@ -110,7 +114,7 @@ Select_Value :: proc(props: Select_Value_Props) {
 		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 		text        = text,
-		placeholder = props.placeholder,
+		placeholder = cfg.placeholder,
 		has_value   = has_value,
 	}
 

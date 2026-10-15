@@ -81,7 +81,7 @@ select_test_find_trigger_and_popover_content :: proc(
 
 @(private)
 select_test_anchor_trigger_child :: proc(_: Select_Trigger_State) {
-	Select_Value({config = {id = "anchor-value"}, placeholder = "Pick"})
+	Select_Value({config = {id = "anchor-value", placeholder = "Pick"}})
 }
 
 @(private)
@@ -100,16 +100,14 @@ select_test_anchor_child :: proc(_: Select_State) {
 
 @(private)
 select_test_anchor_content :: proc(_: Select_State) {
-	Option({config = {id = "anchor-option"}, value = "one", text = "One"})
+	Option({config = {id = "anchor-option", value = "one", text = "One"}})
 }
 
 @(private)
 select_test_click_content :: proc(_: Select_State) {
 	Option(
 		{
-			config = {id = "click-option"},
-			value = "one",
-			text = "One",
+			config = {id = "click-option", value = "one", text = "One"},
 			on_click = select_test_on_option_click,
 		},
 	)
@@ -119,23 +117,32 @@ select_test_click_content :: proc(_: Select_State) {
 select_test_sized_content :: proc(_: Select_State) {
 	Option(
 		{
-			config = {id = "sized-option-1", height = set.Height(f32(20))},
-			value = "one",
-			text = "One",
+			config = {
+				id = "sized-option-1",
+				height = set.Height(f32(20)),
+				value = "one",
+				text = "One",
+			},
 		},
 	)
 	Option(
 		{
-			config = {id = "sized-option-2", height = set.Height(f32(40))},
-			value = "two",
-			text = "Two",
+			config = {
+				id = "sized-option-2",
+				height = set.Height(f32(40)),
+				value = "two",
+				text = "Two",
+			},
 		},
 	)
 	Option(
 		{
-			config = {id = "sized-option-3", height = set.Height(f32(60))},
-			value = "three",
-			text = "Three",
+			config = {
+				id = "sized-option-3",
+				height = set.Height(f32(60)),
+				value = "three",
+				text = "Three",
+			},
 		},
 	)
 }
@@ -209,14 +216,13 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 		}
 
 		Select({
-			config = {id = "fruit", width = set.Width(f32(200)), height = set.Height(f32(40))},
-			open = true,
+			config = {id = "fruit", width = set.Width(f32(200)), height = set.Height(f32(40)), open = true},
 			on_open_change = select_test_on_open,
 			child = proc(_: Select_State) {
 				Select_Trigger({
 					config = {id = "fruit-trigger", width = set.Width(f32(160)), height = set.Height(f32(32))},
 					child = proc(_: Select_Trigger_State) {
-						Select_Value({config = {id = "fruit-value"}, placeholder = "Pick"})
+						Select_Value({config = {id = "fruit-value", placeholder = "Pick"}})
 					},
 				})
 			},
@@ -224,7 +230,7 @@ select_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 				Option_Group({
 					config = {id = "fruit-group"},
 					child = proc(_: Option_Group_State) {
-						Option({config = {id = "fruit-apple"}, value = "apple", text = "Apple"})
+						Option({config = {id = "fruit-apple", value = "apple", text = "Apple"}})
 					},
 				})
 			},
@@ -434,8 +440,7 @@ select_open_dropdown_height_hugs_options_not_viewport :: proc(t: ^testing.T) {
 
 		Select(
 			{
-				config = {id = "hug-select", x = set.F32(40), y = set.F32(80)},
-				open = true,
+				config = {id = "hug-select", x = set.F32(40), y = set.F32(80), open = true},
 				child = select_test_anchor_child,
 				content = select_test_anchor_content,
 			},
@@ -471,7 +476,7 @@ select_content_anchors_below_trigger_and_trigger_clips_children :: proc(t: ^test
 			widget_test_end_frame()
 		}
 
-		Select({config = {id = "anchor-select", x = set.F32(35), y = set.F32(60)}, open = true, on_open_change = select_test_on_open, child = select_test_anchor_child, content = select_test_anchor_content})
+		Select({config = {id = "anchor-select", x = set.F32(35), y = set.F32(60), open = true}, on_open_change = select_test_on_open, child = select_test_anchor_child, content = select_test_anchor_content})
 		widget_test_finish_layout()
 
 		root, root_ok := widget_test_layout_node("anchor-select")
@@ -511,8 +516,7 @@ select_dropdown_measures_options_and_flips_above_viewport_edge :: proc(t: ^testi
 
 			Select(
 				{
-					config = {id = "sized-select", y = set.F32(540)},
-					open = true,
+					config = {id = "sized-select", y = set.F32(540), open = true},
 					on_open_change = select_test_on_open,
 					child = select_test_anchor_child,
 					content = select_test_sized_content,
@@ -561,8 +565,7 @@ select_listbox_size_uses_measured_option_rows :: proc(t: ^testing.T) {
 
 			Select(
 				{
-					config = {id = "sized-listbox"},
-					size = 2,
+					config = {id = "sized-listbox", size = 2},
 					child = select_test_anchor_child,
 					content = select_test_sized_content,
 				},
@@ -668,22 +671,22 @@ select_value_text_resolves_placeholder_labels_and_multiple_fallbacks :: proc(t: 
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		text, has_value := select_value_resolve_text({placeholder = "Pick"})
+		text, has_value := select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "Pick")
 		testing.expect(t, !has_value)
 
 		select_ctx_push({select_key = "labels", value = "a"})
-		text, has_value = select_value_resolve_text({placeholder = "Pick"})
+		text, has_value = select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "a")
 		testing.expect(t, has_value)
 		_ = select_register_option("a", "Alpha", "option-a", false)
-		text, has_value = select_value_resolve_text({placeholder = "Pick"})
+		text, has_value = select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "Alpha")
 		testing.expect(t, has_value)
 		ctx := select_ctx_top()
 		ctx.value = "b"
 		ctx.value_label = ""
-		text, has_value = select_value_resolve_text({placeholder = "Pick"})
+		text, has_value = select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "b")
 		testing.expect(t, has_value)
 		select_ctx_pop()
@@ -868,17 +871,17 @@ select_resolve_open_value_uses_props_and_cached_label :: proc(t: ^testing.T) {
 		select_runtime_set_string(&rt.cache_value, "runtime")
 		select_runtime_set_string(&rt.value_label, "Runtime")
 
-		open, value, label := select_resolve_open_value({open = true, value = "runtime"}, "resolve")
+		open, value, label := select_resolve_open_value({config = {open = true, value = "runtime"}}, "resolve")
 		testing.expect(t, open)
 		testing.expect_value(t, value, "runtime")
 		testing.expect_value(t, label, "Runtime")
 
-		open, value, label = select_resolve_open_value({open = false, value = "controlled"}, "resolve")
+		open, value, label = select_resolve_open_value({config = {open = false, value = "controlled"}}, "resolve")
 		testing.expect(t, !open)
 		testing.expect_value(t, value, "controlled")
 		testing.expect_value(t, label, "")
 
-		_, value, label = select_resolve_open_value({multiple = true, values = []string{"a"}}, "resolve")
+		_, value, label = select_resolve_open_value({config = {multiple = true, values = []string{"a"}}}, "resolve")
 		testing.expect_value(t, value, "")
 		testing.expect_value(t, label, "")
 	})
@@ -896,8 +899,7 @@ select_trigger_click_notifies_controlled_open_end_to_end :: proc(t: ^testing.T) 
 		select_test_trigger_clicks = 0
 		select_test_open = false
 		props := Select_Props {
-			config = {id = "click-trigger-select"},
-			open = select_test_open,
+			config = {id = "click-trigger-select", open = select_test_open},
 			on_open_change = select_test_on_open,
 			child = proc(_: Select_State) {
 				Select_Trigger({config = {id = "click-trigger", width = set.Width(f32(160)), height = set.Height(f32(32))}, on_click = select_test_on_trigger_click})
@@ -949,8 +951,7 @@ select_option_click_commits_value_and_closes_end_to_end :: proc(t: ^testing.T) {
 		select_test_open = true
 		select_test_option_clicks = 0
 		props := Select_Props {
-			config = {id = "click-option-select"},
-			open = true,
+			config = {id = "click-option-select", open = true},
 			on_value_change = select_test_on_value,
 			on_open_change = select_test_on_open,
 			child = select_test_anchor_child,
@@ -1000,8 +1001,7 @@ select_outside_press_dismisses_open_dropdown_end_to_end :: proc(t: ^testing.T) {
 
 		select_test_open = true
 		props := Select_Props {
-			config = {id = "outside-select"},
-			open = true,
+			config = {id = "outside-select", open = true},
 			on_open_change = select_test_on_open,
 			child = select_test_anchor_child,
 			content = select_test_anchor_content,
@@ -1033,8 +1033,7 @@ select_content_press_is_owned_and_does_not_dismiss :: proc(t: ^testing.T) {
 
 		select_test_open = true
 		props := Select_Props {
-			config = {id = "inside-select"},
-			open = true,
+			config = {id = "inside-select", open = true},
 			on_open_change = select_test_on_open,
 			child = select_test_anchor_child,
 			content = select_test_anchor_content,

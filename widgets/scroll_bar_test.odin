@@ -157,12 +157,12 @@ scroll_bar_layout_owns_thumb_geometry :: proc(t: ^testing.T) {
 				id = "bar-chrome",
 				width = set.Width(f32(12)),
 				height = set.Height(f32(100)),
+				axis = .Y,
+				parent_scroll_x = &scroll_x,
+				parent_scroll_y = &scroll_y,
+				viewport = 50,
+				content = 200,
 			},
-			axis = .Y,
-			parent_scroll_x = &scroll_x,
-			parent_scroll_y = &scroll_y,
-			viewport = 50,
-			content = 200,
 		})
 		widget_test_finish_layout()
 
@@ -191,12 +191,12 @@ scroll_bar_writes_parent_scroll_y_on_track_press :: proc(t: ^testing.T) {
 					id = "bar",
 					width = set.Width(f32(12)),
 					height = set.Height(f32(100)),
+					axis = .Y,
+					parent_scroll_x = &scroll_x,
+					parent_scroll_y = &scroll_y,
+					viewport = 50,
+					content = 200,
 				},
-				axis = .Y,
-				parent_scroll_x = &scroll_x,
-				parent_scroll_y = &scroll_y,
-				viewport = 50,
-				content = 200,
 				on_scroll = proc(sx, sy: f32) {
 					_ = sx
 					scroll_bar_test_notified_y = sy
@@ -220,12 +220,12 @@ scroll_bar_writes_parent_scroll_y_on_track_press :: proc(t: ^testing.T) {
 					id = "bar",
 					width = set.Width(f32(12)),
 					height = set.Height(f32(100)),
+					axis = .Y,
+					parent_scroll_x = &scroll_x,
+					parent_scroll_y = &scroll_y,
+					viewport = 50,
+					content = 200,
 				},
-				axis = .Y,
-				parent_scroll_x = &scroll_x,
-				parent_scroll_y = &scroll_y,
-				viewport = 50,
-				content = 200,
 				on_scroll = proc(sx, sy: f32) {
 					_ = sx
 					scroll_bar_test_notified_y = sy
@@ -255,12 +255,12 @@ scroll_bar_config_sets_track_background :: proc(t: ^testing.T) {
 						height = set.Height(f32(100)),
 						background = set.Colors(o.Color.ACCENT),
 						radius = set.Radius(f32(8)),
+						axis = .Y,
+						parent_scroll_x = &scroll_x,
+						parent_scroll_y = &scroll_y,
+						viewport = 50,
+						content = 200,
 					},
-					axis = .Y,
-					parent_scroll_x = &scroll_x,
-					parent_scroll_y = &scroll_y,
-					viewport = 50,
-					content = 200,
 				},
 			)
 			widget_test_finish_layout()
@@ -330,13 +330,13 @@ scroll_bar_min_thumb_floors_geometry :: proc(t: ^testing.T) {
 						id = "bar-min-thumb",
 						width = set.Width(f32(10)),
 						height = set.Height(f32(100)),
+						axis = .Y,
+						parent_scroll_x = &scroll_x,
+						parent_scroll_y = &scroll_y,
+						viewport = 50,
+						content = 1000,
+						min_thumb = set.F32(f32(40)),
 					},
-					min_thumb = set.F32(f32(40)),
-					axis = .Y,
-					parent_scroll_x = &scroll_x,
-					parent_scroll_y = &scroll_y,
-					viewport = 10,
-					content = 1000,
 					child = proc(_: Scroll_Bar_State) {
 						Scroll_Bar_Thumb(
 							{
@@ -364,13 +364,13 @@ scroll_bar_min_thumb_floors_geometry :: proc(t: ^testing.T) {
 						id = "bar-min-thumb",
 						width = set.Width(f32(10)),
 						height = set.Height(f32(100)),
+						axis = .Y,
+						parent_scroll_x = &scroll_x,
+						parent_scroll_y = &scroll_y,
+						viewport = 50,
+						content = 1000,
+						min_thumb = set.F32(f32(40)),
 					},
-					min_thumb = set.F32(f32(40)),
-					axis = .Y,
-					parent_scroll_x = &scroll_x,
-					parent_scroll_y = &scroll_y,
-					viewport = 10,
-					content = 1000,
 					child = proc(_: Scroll_Bar_State) {
 						Scroll_Bar_Thumb(
 							{

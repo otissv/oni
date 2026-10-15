@@ -63,7 +63,7 @@ date_picker_test_on_trigger_click :: proc(_: Date_Picker_Trigger_Event) {
 
 @(private)
 date_picker_test_trigger_child :: proc(_: Date_Picker_Trigger_State) {
-	Date_Picker_Value({config = {id = "dp-value"}, placeholder = "Pick a date"})
+	Date_Picker_Value({config = {id = "dp-value", placeholder = "Pick a date"}})
 }
 
 @(private)
@@ -202,12 +202,12 @@ date_picker_content_anchors_below_trigger :: proc(t: ^testing.T) {
 					x = set.F32(35),
 					y = set.F32(60),
 					width = set.Width(f32(240)),
+					mode = .SINGLE,
+					open = true,
+					month = {2024, 6, 1},
+					today = {2024, 6, 5},
 				},
-				mode = .SINGLE,
-				open = true,
 				on_open_change = date_picker_test_on_open,
-				month = {2024, 6, 1},
-				today = {2024, 6, 5},
 				child = date_picker_test_child,
 			},
 		)
@@ -262,13 +262,13 @@ date_picker_range_two_months_sizes_panel :: proc(t: ^testing.T) {
 					x = set.F32(20),
 					y = set.F32(40),
 					width = set.Width(f32(280)),
+					mode = .RANGE,
+					open = true,
+					number_of_months = 2,
+					month = {2024, 6, 1},
+					today = {2024, 6, 5},
 				},
-				mode = .RANGE,
-				open = true,
-				number_of_months = 2,
 				on_open_change = date_picker_test_on_open,
-				month = {2024, 6, 1},
-				today = {2024, 6, 5},
 				child = date_picker_test_child,
 			},
 		)
@@ -342,14 +342,17 @@ date_picker_layout_registers_compound_kinds :: proc(t: ^testing.T) {
 
 		Date_Picker(
 			{
-				config = {id = "dp", width = set.Width(f32(240))},
-				mode = .SINGLE,
-				open = true,
+				config = {
+					id = "dp",
+					width = set.Width(f32(240)),
+					mode = .SINGLE,
+					open = true,
+					selected = {2024, 6, 5},
+					has_selected = true,
+					month = {2024, 6, 1},
+					today = {2024, 6, 5},
+				},
 				on_open_change = date_picker_test_on_open,
-				selected = {2024, 6, 5},
-				has_selected = true,
-				month = {2024, 6, 1},
-				today = {2024, 6, 5},
 				child = date_picker_test_child,
 			},
 		)
@@ -750,11 +753,13 @@ date_picker_input_content_press_does_not_dismiss :: proc(t: ^testing.T) {
 
 		date_picker_test_open = true
 		props := Date_Picker_Props {
-			config = {id = "dpi-press"},
-			mode = .SINGLE,
-			open = true,
-			month = {2024, 6, 1},
-			today = {2024, 6, 5},
+			config = {
+				id = "dpi-press",
+				mode = .SINGLE,
+				open = true,
+				month = {2024, 6, 1},
+				today = {2024, 6, 5},
+			},
 			on_open_change = date_picker_test_on_open,
 			on_select = date_picker_test_on_select,
 			child = date_picker_test_input_child,
@@ -803,12 +808,14 @@ date_picker_input_layout_registers_field :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Date_Picker({
-			config = {id = "dpi"},
-			mode = .SINGLE,
-			open = true,
+			config = {
+				id = "dpi",
+				mode = .SINGLE,
+				open = true,
+				month = {2024, 6, 1},
+				today = {2024, 6, 5},
+			},
 			on_open_change = date_picker_test_on_open,
-			month = {2024, 6, 1},
-			today = {2024, 6, 5},
 			child = proc(_: Date_Picker_State) {
 				Date_Picker_Input(
 					{

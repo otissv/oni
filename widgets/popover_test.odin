@@ -27,8 +27,7 @@ popover_test_panel :: proc(props: Popover_Content_Panel_Props) {
 @(private)
 popover_test_open_root :: proc(child: proc(frame_state: Popover_State)) {
 	Popover({
-		config = {id = "root-open"},
-		open = true,
+		config = {id = "root-open", open = true},
 		child = child,
 	})
 }
@@ -608,8 +607,7 @@ popover_content_skips_layout_when_closed :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Popover({
-			config = {id = "root-closed"},
-			open = false,
+			config = {id = "root-closed", open = false},
 			child = proc(_: Popover_State) {
 				Popover_Content({
 					config = {id = "popover-content-closed", width = set.Width(f32(80)), height = set.Height(f32(40))},
@@ -710,8 +708,11 @@ popover_content_align_end_anchors_to_trigger_end :: proc(t: ^testing.T) {
 				},
 			})
 			Popover_Content({
-				config = {width = set.Width(f32(80)), height = set.Height(f32(40))},
-				align = .END,
+				config = {
+					width = set.Width(f32(80)),
+					height = set.Height(f32(40)),
+					anchor_align = .END,
+				},
 				child = proc(_: Popover_Content_Props_State) {},
 			})
 		})

@@ -4,9 +4,19 @@ import o ".."
 import "core:fmt"
 
 /*
-Popover content configuration.
+Popover content configuration: Widget_Config plus floating placement.
+
+`anchor_align` / `anchor_gap` / `viewport_margin` / `match_trigger_width` are
+placement relative to the trigger and viewport — not CSS box `align` /
+`gap_*` / `margin`.
 */
-Popover_Content_Props_Config :: o.Widget_Config
+Popover_Content_Props_Config :: struct {
+	using _:             o.Widget_Config,
+	anchor_align:        Popover_Align,
+	anchor_gap:          f32,
+	viewport_margin:     f32,
+	match_trigger_width: bool,
+}
 
 /*
 Popover content per-frame state passed to the content child callback.
@@ -24,16 +34,9 @@ Popover_Content_Props_Event :: o.Widget_Event(Popover_Content_Props_State)
 
 /*
 Popover content props: floating panel anchored to the trigger while open.
-
-`align` controls horizontal alignment relative to the trigger width.
-`align`). `match_trigger_width` mirrors the trigger width when true.
 */
 Popover_Content_Props :: struct {
 	config:                       Popover_Content_Props_Config,
-	align:                        Popover_Align,
-	match_trigger_width:          bool,
-	gap:                          f32,
-	side_margin:                  f32,
 	child:                        proc(frame_state: Popover_Content_Props_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -113,13 +116,13 @@ Popover_Content :: proc(props: Popover_Content_Props) {
 		trigger_rect = {}
 	}
 
-	gap := props.gap
+	gap := props.config.anchor_gap
 
 	if gap <= 0 {
 		gap = POPOVER_DEFAULT_GAP_PX
 	}
 
-	margin := props.side_margin
+	margin := props.config.viewport_margin
 
 	if margin <= 0 {
 		margin = POPOVER_DEFAULT_VIEWPORT_MARGIN_PX
@@ -155,8 +158,8 @@ Popover_Content :: proc(props: Popover_Content_Props) {
 			anchor_id = ctx.trigger_layout_id,
 			gap = gap,
 			margin = margin,
-			match_width = props.match_trigger_width,
-			align = props.align,
+			match_width = props.config.match_trigger_width,
+			align = props.config.anchor_align,
 			on_mouse_enter = popover_content_panel_mouse_enter,
 			content_id = content_id,
 		},

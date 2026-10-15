@@ -60,8 +60,8 @@ color_picker_test_parts_child :: proc(_: Color_Picker_State) {
 	Color_Picker_Field({config = {id = "color-picker-layout-field"}})
 	Color_Picker_Slider({config = {id = "color-picker-layout-slider"}})
 	Color_Picker_Alpha({config = {id = "color-picker-layout-alpha"}})
-	Color_Picker_Type({config = {id = "color-picker-layout-rgb"}, color_type = .RGB})
-	Color_Picker_Type({config = {id = "color-picker-layout-hsb"}, color_type = .HSB})
+	Color_Picker_Type({config = {id = "color-picker-layout-rgb", color_type = .RGB}})
+	Color_Picker_Type({config = {id = "color-picker-layout-hsb", color_type = .HSB}})
 }
 
 @(private)
@@ -93,10 +93,10 @@ color_picker_default_layout_field_and_slider :: proc(t: ^testing.T) {
 				id = "color-picker-default-layout",
 				width = set.Width(f32(480)),
 				height = set.Height(f32(560)),
+				value = color_picker_test_value,
+				channel = .H,
+				previous = color_picker_test_previous,
 			},
-			value = color_picker_test_value,
-			channel = .H,
-			previous = color_picker_test_previous,
 			child = proc(_: Color_Picker_State) {
 				Color_Picker_Default("color-picker-default-layout")
 			},
@@ -116,10 +116,12 @@ color_picker_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Color_Picker(
 			{
-				config = {id = "color-picker-layout"},
-				value = color_picker_test_value,
-				channel = .H,
-				previous = color_picker_test_previous,
+				config = {
+					id = "color-picker-layout",
+					value = color_picker_test_value,
+					channel = .H,
+					previous = color_picker_test_previous,
+				},
 				child = color_picker_test_parts_child,
 			},
 		)
@@ -138,11 +140,13 @@ color_picker_disabled_not_tabbable :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Color_Picker(
 			{
-				config = {id = "color-picker-disabled"},
-				value = {0, 255, 0, 255},
-				channel = .H,
-				previous = {0, 255, 0, 255},
-				disabled = true,
+				config = {
+					id = "color-picker-disabled",
+					value = {0, 255, 0, 255},
+					channel = .H,
+					previous = {0, 255, 0, 255},
+					disabled = set.Disabled(true),
+				},
 				child = color_picker_test_parts_child,
 			},
 		)
@@ -159,10 +163,12 @@ color_picker_keyboard_nudges_value :: proc(t: ^testing.T) {
 		color_picker_test_reset()
 
 		props := Color_Picker_Props {
-			config = {id = "color-picker-keys"},
-			value = color_picker_test_value,
-			channel = .H,
-			previous = color_picker_test_previous,
+			config = {
+				id = "color-picker-keys",
+				value = color_picker_test_value,
+				channel = .H,
+				previous = color_picker_test_previous,
+			},
 			on_value_change = color_picker_test_on_change,
 			child = color_picker_test_interactive_child,
 		}
@@ -293,10 +299,12 @@ color_picker_shutdown_clears_runtimes :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Color_Picker(
 			{
-				config = {id = "color-picker-shutdown"},
-				value = {10, 20, 30, 255},
-				channel = .H,
-				previous = {10, 20, 30, 255},
+				config = {
+					id = "color-picker-shutdown",
+					value = {10, 20, 30, 255},
+					channel = .H,
+					previous = {10, 20, 30, 255},
+				},
 				child = color_picker_test_parts_child,
 			},
 		)
@@ -317,10 +325,12 @@ color_picker_unmount_clears_runtime :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Color_Picker({
-			config = {id = "color-picker-unmount"},
-			value = {10, 20, 30, 255},
-			channel = .H,
-			previous = {10, 20, 30, 255},
+			config = {
+				id = "color-picker-unmount",
+				value = {10, 20, 30, 255},
+				channel = .H,
+				previous = {10, 20, 30, 255},
+			},
 			unmount = true,
 			child = color_picker_test_parts_child,
 			on_unmount = proc(_: Color_Picker_State) -> o.Mount {
@@ -420,10 +430,10 @@ color_picker_part_config_sizing_overrides :: proc(t: ^testing.T) {
 				id = "color-picker-part-sizing",
 				width = set.Width(f32(480)),
 				height = set.Height(f32(560)),
+				value = color_picker_test_value,
+				channel = .H,
+				previous = color_picker_test_previous,
 			},
-			value = color_picker_test_value,
-			channel = .H,
-			previous = color_picker_test_previous,
 			child = proc(_: Color_Picker_State) {
 				Color_Picker_Field({
 					config = {
@@ -451,8 +461,8 @@ color_picker_part_config_sizing_overrides :: proc(t: ^testing.T) {
 						id = "color-picker-part-sizing-swatch",
 						width = set.Width(f32(64)),
 						height = set.Height(f32(36)),
+						role = .CURRENT,
 					},
-					role = .CURRENT,
 				})
 			},
 		})

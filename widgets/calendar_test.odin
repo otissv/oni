@@ -76,7 +76,7 @@ calendar_test_fixed_today :: proc() -> Calendar_Date {
 
 @(private)
 calendar_test_month_child :: proc(_: Calendar_State) {
-	Calendar_Month({config = {id = "calendar-test/month"}, month_index = 0})
+	Calendar_Month({config = {id = "calendar-test/month", month_index = 0}})
 }
 
 @(private)
@@ -134,8 +134,8 @@ calendar_part_outside_context_noop :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Calendar_Month({config = {id = "orphan-month"}, month_index = 0})
-		Calendar_Grid({config = {}, month_index = 0})
+		Calendar_Month({config = {id = "orphan-month", month_index = 0}})
+		Calendar_Grid({config = {month_index = 0}})
 		widget_test_finish_layout()
 	})
 }
@@ -147,12 +147,14 @@ calendar_composable_registers_day_labels :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Calendar({
-			config = {id = "calendar-parts"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
+			config = {
+				id    = "calendar-parts",
+				mode  = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+			},
 			child = proc(_: Calendar_State) {
-				Calendar_Month({config = {id = "calendar-parts/month"}, month_index = 0})
+				Calendar_Month({config = {id = "calendar-parts/month", month_index = 0}})
 			},
 		})
 		widget_test_finish_layout()
@@ -337,12 +339,14 @@ calendar_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Calendar({
-			config = {id = "calendar-layout"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
+			config = {
+				id    = "calendar-layout",
+				mode  = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+			},
 			child = proc(_: Calendar_State) {
-				Calendar_Month({config = {id = "calendar-layout/month"}, month_index = 0})
+				Calendar_Month({config = {id = "calendar-layout/month", month_index = 0}})
 			},
 		})
 		widget_test_finish_layout()
@@ -370,11 +374,13 @@ calendar_disabled_not_tabbable :: proc(t: ^testing.T) {
 
 		Calendar(
 			{
-				config = {id = "calendar-disabled"},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				disabled = true,
+				config = {
+					id       = "calendar-disabled",
+					mode     = .SINGLE,
+					month    = {2024, 6, 1},
+					today    = calendar_test_fixed_today(),
+					disabled = set.Disabled(true),
+				},
 				child = calendar_test_month_child,
 			},
 		)
@@ -392,9 +398,11 @@ calendar_shutdown_clears_runtimes :: proc(t: ^testing.T) {
 
 		Calendar(
 			{
-				config = {id = "calendar-shutdown"},
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
+				config = {
+					id    = "calendar-shutdown",
+					month = {2024, 6, 1},
+					today = calendar_test_fixed_today(),
+				},
 				child = calendar_test_month_child,
 			},
 		)
@@ -415,9 +423,11 @@ calendar_unmount_clears_runtime :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Calendar({
-			config = {id = "calendar-unmount"},
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
+			config = {
+				id    = "calendar-unmount",
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+			},
 			unmount = true,
 			child = calendar_test_month_child,
 			on_unmount = proc(_: Calendar_State) -> o.Mount {
@@ -444,13 +454,15 @@ calendar_keyboard_selects_focused_day :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Calendar_Props {
-			config = {id = "calendar-keyboard"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
-			selected = selected,
-			has_selected = has_selected,
-			on_select = calendar_test_on_select,
+			config = {
+				id           = "calendar-keyboard",
+				mode         = .SINGLE,
+				month        = {2024, 6, 1},
+				today        = calendar_test_fixed_today(),
+				selected     = selected,
+				has_selected = has_selected,
+			},
+			on_select    = calendar_test_on_select,
 			child = calendar_test_month_child,
 		}
 		Calendar(props)
@@ -482,11 +494,13 @@ calendar_arrow_moves_focus_month :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Calendar_Props {
-			config = {id = "calendar-arrows"},
-			mode = .SINGLE,
-			month = month,
+			config = {
+				id              = "calendar-arrows",
+				mode            = .SINGLE,
+				month           = month,
+				today           = calendar_test_fixed_today(),
+			},
 			on_month_change = calendar_test_on_month,
-			today = calendar_test_fixed_today(),
 			child = calendar_test_month_child,
 		}
 		Calendar(props)
@@ -520,12 +534,14 @@ calendar_pointer_selects_day :: proc(t: ^testing.T) {
 			defer widget_test_end_frame()
 
 			props := Calendar_Props {
-				config = {id = "calendar-pointer"},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				on_select = calendar_test_on_select,
-				on_day_click = calendar_test_on_day_click,
+				config = {
+					id           = "calendar-pointer",
+					mode         = .SINGLE,
+					month        = {2024, 6, 1},
+					today        = calendar_test_fixed_today(),
+				},
+			on_select    = calendar_test_on_select,
+			on_day_click = calendar_test_on_day_click,
 				child = calendar_test_month_child,
 			}
 			Calendar(props)
@@ -581,11 +597,13 @@ calendar_nav_button_click_advances_once :: proc(t: ^testing.T) {
 			defer widget_test_end_frame()
 
 			props := Calendar_Props {
-				config = {id = "calendar-nav-click"},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				on_month_change = calendar_test_on_month,
+				config = {
+					id              = "calendar-nav-click",
+					mode            = .SINGLE,
+					month           = {2024, 6, 1},
+					today           = calendar_test_fixed_today(),
+				},
+			on_month_change = calendar_test_on_month,
 				child = calendar_test_month_child,
 			}
 			Calendar(props)
@@ -634,10 +652,12 @@ calendar_disabled_matcher_blocks_select :: proc(t: ^testing.T) {
 			defer widget_test_end_frame()
 
 			props := Calendar_Props {
-				config = {id = "calendar-matcher"},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
+				config = {
+					id    = "calendar-matcher",
+					mode  = .SINGLE,
+					month = {2024, 6, 1},
+					today = calendar_test_fixed_today(),
+				},
 				on_select = calendar_test_on_select,
 				disabled_matcher = proc(date: Calendar_Date) -> bool {
 					return date.day == 15
@@ -728,13 +748,15 @@ calendar_start_end_date_blocks_select :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Calendar_Props {
-			config = {id = "calendar-bounds"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
-			start_date = {2024, 6, 10},
-			end_date = {2024, 6, 20},
-			on_select = calendar_test_on_select,
+			config = {
+				id          = "calendar-bounds",
+				mode        = .SINGLE,
+				month       = {2024, 6, 1},
+				today       = calendar_test_fixed_today(),
+				start_date  = {2024, 6, 10},
+				end_date    = {2024, 6, 20},
+			},
+			on_select   = calendar_test_on_select,
 			child = calendar_test_month_child,
 		}
 		Calendar(props)
@@ -769,7 +791,7 @@ calendar_start_end_date_blocks_select :: proc(t: ^testing.T) {
 @(private)
 calendar_test_nav_bounds_child :: proc(state: Calendar_State) {
 	calendar_test_last_state = state
-	Calendar_Month({config = {id = "calendar-test/month"}, month_index = 0})
+	Calendar_Month({config = {id = "calendar-test/month", month_index = 0}})
 
 	// Handlers must no-op while can_go_* is false (same path as disabled nav buttons).
 	calendar_nav_prev({})
@@ -787,12 +809,14 @@ calendar_start_end_date_disables_month_nav :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Calendar_Props {
-			config = {id = "calendar-nav-bounds"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
-			start_date = {2024, 6, 10},
-			end_date = {2024, 6, 20},
+			config = {
+				id              = "calendar-nav-bounds",
+				mode            = .SINGLE,
+				month           = {2024, 6, 1},
+				today           = calendar_test_fixed_today(),
+				start_date      = {2024, 6, 10},
+				end_date        = {2024, 6, 20},
+			},
 			on_month_change = calendar_test_on_month,
 			child = calendar_test_nav_bounds_child,
 		}
@@ -823,10 +847,12 @@ calendar_default_child_registers_months :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Calendar({
-			config = {id = "calendar-default-child"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
+			config = {
+				id    = "calendar-default-child",
+				mode  = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+			},
 		})
 		widget_test_finish_layout()
 
@@ -843,13 +869,15 @@ calendar_part_config_ids :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Calendar({
-			config = {id = "calendar-ids"},
-			mode = .SINGLE,
-			month = {2024, 6, 1},
-			today = calendar_test_fixed_today(),
+			config = {
+				id    = "calendar-ids",
+				mode  = .SINGLE,
+				month = {2024, 6, 1},
+				today = calendar_test_fixed_today(),
+			},
 			child = proc(_: Calendar_State) {
 				Calendar_Navigation({config = {id = "calendar-ids/custom-nav"}})
-				Calendar_Grid({config = {id = "calendar-ids/custom-grid"}, month_index = 0})
+				Calendar_Grid({config = {id = "calendar-ids/custom-grid", month_index = 0}})
 			},
 		})
 		widget_test_finish_layout()
@@ -868,9 +896,11 @@ calendar_test_custom_day :: proc(state: Calendar_Day_State) {
 	calendar_test_day_builder_calls += 1
 	Calendar_Day(
 		{
-			config = {id = state.id},
-			month_index = state.month_index,
-			day_index = state.day_index,
+			config = {
+				id          = state.id,
+				month_index = state.month_index,
+				day_index   = state.day_index,
+			},
 		},
 	)
 }
@@ -887,12 +917,14 @@ calendar_day_slot_replaces_grid_cells :: proc(t: ^testing.T) {
 
 		Calendar(
 			{
-				config = {id = "calendar-day-slot"},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				hide_outside_days = true,
-				day = calendar_test_custom_day,
+				config = {
+					id                = "calendar-day-slot",
+					mode              = .SINGLE,
+					month             = {2024, 6, 1},
+					today             = calendar_test_fixed_today(),
+					hide_outside_days = true,
+				},
+			day               = calendar_test_custom_day,
 				child = calendar_test_month_child,
 			},
 		)
@@ -906,7 +938,7 @@ calendar_day_slot_replaces_grid_cells :: proc(t: ^testing.T) {
 @(private)
 calendar_test_disabled_child :: proc(state: Calendar_State) {
 	calendar_test_last_state = state
-	Calendar_Month({config = {id = "calendar-config-disabled/month"}, month_index = 0})
+	Calendar_Month({config = {id = "calendar-config-disabled/month", month_index = 0}})
 }
 
 @(test)
@@ -922,13 +954,16 @@ calendar_config_disabled_blocks_interaction :: proc(t: ^testing.T) {
 			defer widget_test_end_frame()
 
 			props := Calendar_Props {
-				config = {id = "calendar-config-disabled", disabled = set.Disabled(true)},
-				mode = .SINGLE,
-				month = {2024, 6, 1},
-				today = calendar_test_fixed_today(),
-				on_select = calendar_test_on_select,
-				on_month_change = calendar_test_on_month,
-				on_day_click = calendar_test_on_day_click,
+				config = {
+					id           = "calendar-config-disabled",
+					disabled     = set.Disabled(true),
+					mode         = .SINGLE,
+					month        = {2024, 6, 1},
+					today        = calendar_test_fixed_today(),
+				},
+			on_select    = calendar_test_on_select,
+			on_month_change = calendar_test_on_month,
+			on_day_click = calendar_test_on_day_click,
 				child = calendar_test_disabled_child,
 			}
 			Calendar(props)

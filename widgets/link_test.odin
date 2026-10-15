@@ -90,9 +90,9 @@ link_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 				id = "link-layout",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "https://example.com",
+				text = "Example",
 			},
-			href = "https://example.com",
-			text = "Example",
 		})
 		widget_test_finish_layout()
 
@@ -113,10 +113,10 @@ link_disabled_is_not_tabbable :: proc(t: ^testing.T) {
 				id = "link-disabled",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "/x",
+				text = "X",
+				disabled = set.Disabled(true),
 			},
-			href = "https://example.com",
-			text = "Example",
-			disabled = true,
 		})
 		expect_in_tab_order(t, "link-disabled", false)
 		widget_test_finish_layout()
@@ -127,13 +127,16 @@ link_disabled_is_not_tabbable :: proc(t: ^testing.T) {
 link_config_override_preserves_kind :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		props := Link_Props {
-			config = {id = "link-styled", color = set.Colors(o.Color.ACCENT)},
-			href = "/docs",
-			text = "Docs",
+			config = {
+				id = "link-styled",
+				color = set.Colors(o.Color.ACCENT),
+				href = "/docs",
+				text = "Docs",
+			},
 		}
 		frame := Link_State {
-			href = props.href,
-			text = props.text,
+			href = props.config.href,
+			text = props.config.text,
 		}
 		event := link_refresh_merged(props, &frame)
 		testing.expect(t, event.frame_state.config.kind == .LINK)
@@ -153,10 +156,10 @@ link_enter_activates_when_focused :: proc(t: ^testing.T) {
 				id = "link-enter",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "/route",
+				text = "Go",
+				suppress_open_url = true,
 			},
-			href = "/route",
-			text = "Go",
-			suppress_open_url = true,
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -183,14 +186,9 @@ link_space_does_not_activate :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Link_Props {
-			config = {
-				id = "link-space",
+			config = {id = "link-space",
 				width = set.Width(f32(80)),
-				height = set.Height(f32(20)),
-			},
-			href = "/route",
-			text = "Go",
-			suppress_open_url = true,
+				height = set.Height(f32(20)),suppress_open_url = true},
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -216,10 +214,10 @@ link_pointer_click_activates_without_mod :: proc(t: ^testing.T) {
 				id = "link-pointer",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "/docs",
+				text = "Docs",
+				suppress_open_url = true,
 			},
-			href = "/docs",
-			text = "Docs",
-			suppress_open_url = true,
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -241,11 +239,11 @@ link_mod_blocks_plain_pointer_click :: proc(t: ^testing.T) {
 				id = "link-mod-block",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "https://example.com",
+				text = "Example",
+				mod = .CTRL,
+				suppress_open_url = true,
 			},
-			href = "https://example.com",
-			text = "Example",
-			mod = .CTRL,
-			suppress_open_url = true,
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -267,11 +265,11 @@ link_mod_allows_modified_pointer_click :: proc(t: ^testing.T) {
 				id = "link-mod-ok",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "https://example.com",
+				text = "Example",
+				mod = .CTRL,
+				suppress_open_url = true,
 			},
-			href = "https://example.com",
-			text = "Example",
-			mod = .CTRL,
-			suppress_open_url = true,
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -293,15 +291,9 @@ link_mod_enter_still_activates_without_modifier :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Link_Props {
-			config = {
-				id = "link-mod-enter",
+			config = {id = "link-mod-enter",
 				width = set.Width(f32(80)),
-				height = set.Height(f32(20)),
-			},
-			href = "/route",
-			text = "Go",
-			mod = .PRIMARY,
-			suppress_open_url = true,
+				height = set.Height(f32(20)),suppress_open_url = true},
 			on_navigate = link_test_on_navigate,
 			on_click = link_test_on_click,
 		}
@@ -331,11 +323,11 @@ link_disabled_blocks_activation :: proc(t: ^testing.T) {
 				id = "link-disabled-activate",
 				width = set.Width(f32(80)),
 				height = set.Height(f32(20)),
+				href = "/x",
+				text = "X",
+				disabled = set.Disabled(true),
+				suppress_open_url = true,
 			},
-			href = "/route",
-			text = "Go",
-			disabled = true,
-			suppress_open_url = true,
 			on_navigate = link_test_on_navigate,
 		}
 		Link(props)
@@ -358,25 +350,17 @@ link_custom_child_runs_instead_of_text :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Link({
-			config = {
-				id = "link-child",
+			config = {id = "link-child",
 				width = set.Width(f32(80)),
-				height = set.Height(f32(20)),
-			},
-			href = "/x",
-			text = "ignored",
+				height = set.Height(f32(20)),text = "ignored"},
 			child = link_test_child,
 		})
 		widget_test_finish_layout()
 		widget_test_begin_draw()
 		Link({
-			config = {
-				id = "link-child",
+			config = {id = "link-child",
 				width = set.Width(f32(80)),
-				height = set.Height(f32(20)),
-			},
-			href = "/x",
-			text = "ignored",
+				height = set.Height(f32(20)),text = "ignored"},
 			child = link_test_child,
 		})
 
@@ -416,13 +400,9 @@ link_unmount_skips_layout_node :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Link({
-			config = {
-				id = "link-gone",
+			config = {id = "link-gone",
 				width = set.Width(f32(40)),
-				height = set.Height(f32(20)),
-			},
-			href = "/x",
-			text = "Gone",
+				height = set.Height(f32(20)),text = "Gone"},
 			unmount = true,
 			on_unmount = proc(frame_state: Link_State) -> o.Mount {
 				_ = frame_state

@@ -15,7 +15,10 @@ Checkbox_Value :: enum {
 /*
 Checkbox configuration.
 */
-Checkbox_Config :: o.Widget_Config
+Checkbox_Config :: struct {
+	using _:   o.Widget_Config,
+	checked:   Checkbox_Value,
+}
 
 /*
 Checkbox per-frame state, including its resolved three-state value.
@@ -34,15 +37,13 @@ Checkbox_Event :: o.Widget_Event(Checkbox_State)
 /*
 Checkbox props.
 
-`checked` is owned by the caller and must be passed every frame. Activation
+`config.checked` is owned by the caller and must be passed every frame. Activation
 reports the next value through `on_checked_change` only — the widget never
-mutates caller state. `child` replaces the built-in check/minus indicator and
-is only called for TRUE and INDETERMINATE states.
+mutates caller state. `child` replaces the built-in check/minus indicator and is
+only called for TRUE and INDETERMINATE states.
 */
 Checkbox_Props :: struct {
 	config:                       Checkbox_Config,
-	checked:                      Checkbox_Value,
-	disabled:                     bool,
 	child:                        proc(frame_state: Checkbox_State),
 	on_checked_change:            proc(checked: Checkbox_Value),
 	unmount:                      bool,
@@ -221,18 +222,14 @@ Checkbox :: proc(props: Checkbox_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
 
-	checked := checkbox_value_normalize(props.checked)
+	checked := checkbox_value_normalize(cfg.checked)
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	frame_state := Checkbox_State {
 		is_disabled = disabled,
 		is_focused  = was_focused,
 		checked     = checked,
-	}
-
-	if disabled {
-		cfg.disabled = set.Disabled(true)
 	}
 
 	resolved_props := props

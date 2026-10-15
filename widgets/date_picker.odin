@@ -6,7 +6,31 @@ import set "../set"
 /*
 Date picker root configuration (Popover + Calendar composition).
 */
-Date_Picker_Config :: o.Widget_Config
+Date_Picker_Config :: struct {
+	using _:              o.Widget_Config,
+	mode:                 Calendar_Mode,
+	selected:             Calendar_Date,
+	has_selected:         bool,
+	selected_dates:       []Calendar_Date,
+	selected_range:       Calendar_Range,
+	open:                 bool,
+	keep_open:            bool,
+	month:                Calendar_Date,
+	required:             bool,
+	min:                  int,
+	max:                  int,
+	start_month:          Calendar_Date,
+	end_month:            Calendar_Date,
+	start_date:           Calendar_Date,
+	end_date:             Calendar_Date,
+	hide_outside_days:    bool,
+	show_week_numbers:    bool,
+	week_starts_on:       Calendar_Weekday,
+	number_of_months:     int,
+	today:                Calendar_Date,
+	day_size:             o.Cfg(o.Style_F32),
+	gap:                  o.Cfg(o.Style_F32),
+}
 
 /*
 Date picker root per-frame state merged with resolved style and selection fields.
@@ -51,35 +75,12 @@ close the popover unless `keep_open` is set. Multiple mode stays open.
 */
 Date_Picker_Props :: struct {
 	config:                       Date_Picker_Config,
-	mode:                         Calendar_Mode,
-	selected:                     Calendar_Date,
-	has_selected:                 bool,
-	selected_dates:               []Calendar_Date,
-	selected_range:               Calendar_Range,
-	open:                         bool,
-	keep_open:                    bool,
-	month:                        Calendar_Date,
 	on_month_change:              proc(month: Calendar_Date),
 	on_select:                    proc(selection: Calendar_Selection),
 	on_day_click:                 proc(date: Calendar_Date),
 	on_open_change:               proc(open: bool),
-	required:                     bool,
-	min:                          int,
-	max:                          int,
-	start_month:                  Calendar_Date,
-	end_month:                    Calendar_Date,
-	start_date:                   Calendar_Date,
-	end_date:                     Calendar_Date,
 	disabled_matcher:             proc(date: Calendar_Date) -> bool,
 	hidden_matcher:               proc(date: Calendar_Date) -> bool,
-	hide_outside_days:            bool,
-	show_week_numbers:            bool,
-	week_starts_on:               Calendar_Weekday,
-	number_of_months:             int,
-	today:                        Calendar_Date,
-	disabled:                     bool,
-	day_size:                     o.Cfg(o.Style_F32),
-	gap:                          o.Cfg(o.Style_F32),
 	day:                          proc(frame_state: Calendar_Day_State),
 	format_month:                 proc(date: Calendar_Date) -> string,
 	format_weekday:               proc(weekday: Calendar_Weekday) -> string,
@@ -165,30 +166,26 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	open := props.open
-	mode := date_picker_effective_mode(props.mode)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	open := cfg.open
+	mode := date_picker_effective_mode(cfg.mode)
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	frame_state := Date_Picker_State {
 		is_disabled    = disabled,
 		is_focused     = was_focused,
 		mode           = mode,
 		open           = open,
-		selected       = props.selected,
-		has_selected   = props.has_selected,
-		selected_dates = props.selected_dates,
-		selected_range = props.selected_range,
+		selected       = cfg.selected,
+		has_selected   = cfg.has_selected,
+		selected_dates = cfg.selected_dates,
+		selected_range = cfg.selected_range,
 		disabled       = disabled,
-		required       = props.required,
-	}
-
-	if props.disabled {
-		cfg.disabled = set.Disabled(true)
+		required       = cfg.required,
 	}
 
 	props_resolved := props
 	props_resolved.config = cfg
-	props_resolved.mode = mode
+	props_resolved.config.mode = mode
 
 	event := date_picker_refresh_merged(props_resolved, &frame_state)
 	style_fp := widget_style_interaction_fp(&frame_state)
@@ -202,32 +199,32 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 			mode = mode,
 			open = open,
 			disabled = disabled,
-			required = props.required,
-			keep_open = props.keep_open,
-			selected = props.selected,
-			has_selected = props.has_selected,
-			selected_dates = props.selected_dates,
-			selected_range = props.selected_range,
-			month = props.month,
+			required = cfg.required,
+			keep_open = cfg.keep_open,
+			selected = cfg.selected,
+			has_selected = cfg.has_selected,
+			selected_dates = cfg.selected_dates,
+			selected_range = cfg.selected_range,
+			month = cfg.month,
 			on_month_change = props.on_month_change,
 			on_select = props.on_select,
 			on_day_click = props.on_day_click,
 			on_open_change = props.on_open_change,
-			min = props.min,
-			max = props.max,
-			start_month = props.start_month,
-			end_month = props.end_month,
-			start_date = props.start_date,
-			end_date = props.end_date,
+			min = cfg.min,
+			max = cfg.max,
+			start_month = cfg.start_month,
+			end_month = cfg.end_month,
+			start_date = cfg.start_date,
+			end_date = cfg.end_date,
 			disabled_matcher = props.disabled_matcher,
 			hidden_matcher = props.hidden_matcher,
-			hide_outside_days = props.hide_outside_days,
-			show_week_numbers = props.show_week_numbers,
-			week_starts_on = props.week_starts_on,
-			number_of_months = props.number_of_months,
-			today = props.today,
-			day_size = props.day_size,
-			gap = props.gap,
+			hide_outside_days = cfg.hide_outside_days,
+			show_week_numbers = cfg.show_week_numbers,
+			week_starts_on = cfg.week_starts_on,
+			number_of_months = cfg.number_of_months,
+			today = cfg.today,
+			day_size = cfg.day_size,
+			gap = cfg.gap,
 			day = props.day,
 			format_month = props.format_month,
 			format_weekday = props.format_weekday,

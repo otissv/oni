@@ -12,8 +12,7 @@ dialog_test_panel :: proc(props: Dialog_Overlay_Panel_Props) {
 @(private)
 dialog_test_open_root :: proc(child: proc(frame_state: Dialog_State)) {
 	Dialog({
-		config = {id = "dialog-root-open"},
-		open = true,
+		config = {id = "dialog-root-open", open = true},
 		child = child,
 	})
 }
@@ -192,8 +191,7 @@ dialog_scrim_skips_layout_when_closed :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Dialog({
-			config = {id = "dialog-closed"},
-			open = false,
+			config = {id = "dialog-closed", open = false},
 			child = proc(_: Dialog_State) {
 				Dialog_Scrim({config = {id = "dialog-scrim-closed"}})
 			},
@@ -212,8 +210,7 @@ dialog_content_skips_layout_when_closed :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Dialog({
-			config = {id = "dialog-content-closed"},
-			open = false,
+			config = {id = "dialog-content-closed", open = false},
 			child = proc(_: Dialog_State) {
 				Dialog_Content({
 					config = {width = set.Width(f32(200)), height = set.Height(f32(120))},
@@ -270,8 +267,7 @@ dialog_test_dismiss_open := true
 @(private)
 dialog_test_dismiss_tree :: proc() {
 	Dialog({
-		config = {id = "dialog-dismiss"},
-		open = dialog_test_dismiss_open,
+		config = {id = "dialog-dismiss", open = dialog_test_dismiss_open},
 		on_open_change = proc(open: bool) {
 			dialog_test_dismiss_open = open
 		},
@@ -403,8 +399,7 @@ dialog_test_actions_child :: proc(_: Dialog_State) {
 @(private)
 dialog_test_actions_tree :: proc() {
 	Dialog({
-		config = {id = "dialog-actions"},
-		open = dialog_test_actions_open,
+		config = {id = "dialog-actions", open = dialog_test_actions_open},
 		on_open_change = proc(open: bool) {
 			dialog_test_actions_open = open
 		},

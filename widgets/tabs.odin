@@ -6,7 +6,12 @@ import set "../set"
 /*
 Tabs root configuration.
 */
-Tabs_Config :: o.Widget_Config
+Tabs_Config :: struct {
+	using _:     o.Widget_Config,
+	value:       string,
+	loop:        Tabs_Loop,
+	orientation: Tabs_Orientation,
+}
 
 /*
 Tabs root per-frame state.
@@ -29,18 +34,14 @@ Tabs_Event :: o.Widget_Event(Tabs_State)
 /*
 Tabs root props.
 
-`value` is owned by the caller and must be passed every frame. Choosing a
-trigger reports the next value through `on_value_change` only — the widget
-never writes caller state. An empty `value` means no panel is active.
-`orientation` defaults to horizontal. `loop` defaults to wrapping.
+`config.value` is owned by the caller and must be passed every frame. Choosing
+a trigger reports the next value through `on_value_change` only — the widget
+never writes caller state. An empty `config.value` means no panel is active.
+`config.orientation` defaults to horizontal. `config.loop` defaults to wrapping.
 */
 Tabs_Props :: struct {
 	config:                       Tabs_Config,
-	value:                        string,
-	disabled:                     bool,
 	on_value_change:              proc(value: string),
-	loop:                         Tabs_Loop,
-	orientation:                  Tabs_Orientation,
 	child:                        proc(frame_state: Tabs_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -117,14 +118,14 @@ Tabs :: proc(props: Tabs_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
-	orientation := tabs_orientation_normalize(props.orientation)
-	loop := tabs_loop_enabled(props.loop)
+	disabled := o.cfg_style_bool(cfg.disabled)
+	orientation := tabs_orientation_normalize(cfg.orientation)
+	loop := tabs_loop_enabled(cfg.loop)
 
 	frame_state := Tabs_State {
 		is_disabled = disabled,
 		is_focused  = was_focused,
-		value       = props.value,
+		value       = cfg.value,
 		loop        = loop,
 		orientation = orientation,
 	}
@@ -143,7 +144,7 @@ Tabs :: proc(props: Tabs_Props) {
 	pushed := tabs_ctx_push(
 		{
 			key = key,
-			value = props.value,
+			value = cfg.value,
 			disabled = disabled,
 			loop = loop,
 			orientation = orientation,

@@ -11,9 +11,11 @@ shortcuts_route_child :: proc(_: w.Rectangle_State) {
 	ui.Heading({id = "shortcuts_title", text = "Shortcuts", variant = .H2, theme = o.theme})
 
 	w.Shortcuts_Table({
-		config = {id = "shortcuts_settings"},
-		session = &g.app.shortcuts_table,
-		bindings_path = g.app.settings_path,
+		config = {
+			id = "shortcuts_settings",
+			session = &g.app.shortcuts_table,
+			bindings_path = g.app.settings_path,
+		},
 	})
 }
 

@@ -1,6 +1,7 @@
 package oni_widgets
 
 import o ".."
+import set "../set"
 import "core:fmt"
 import "core:testing"
 
@@ -88,11 +89,15 @@ tabs_test_reset :: proc() {
 
 @(private)
 tabs_test_trigger :: proc(id, value: string, disabled: bool) {
+	trigger_cfg := Tabs_Trigger_Config{id = id, value = value}
+
+	if disabled {
+		trigger_cfg.disabled = set.Disabled(true)
+	}
+
 	Tabs_Trigger(
 		{
-			config = {id = id},
-			value = value,
-			disabled = disabled,
+			config = trigger_cfg,
 			on_click = tabs_test_on_click,
 			on_focus = tabs_test_on_focus,
 			on_blur = tabs_test_on_blur,
@@ -124,16 +129,15 @@ tabs_test_content_b_child :: proc(_: Tabs_Content_State) {
 tabs_test_root_child :: proc(_: Tabs_State) {
 	tabs_test_group_value, tabs_test_group_ok = Tabs_Get_Value()
 	Tabs_List({config = {id = "tl"}, child = tabs_test_list_abc})
-	Tabs_Content({config = {id = "ca"}, value = "a", child = tabs_test_content_a_child})
-	Tabs_Content({config = {id = "cb"}, value = "b", child = tabs_test_content_b_child})
+	Tabs_Content({config = {id = "ca", value = "a"}, child = tabs_test_content_a_child})
+	Tabs_Content({config = {id = "cb", value = "b"}, child = tabs_test_content_b_child})
 }
 
 @(private)
 tabs_test_root_abc :: proc() {
 	Tabs(
 		{
-			config = {id = "tabs"},
-			value = tabs_test_value,
+			config = {id = "tabs", value = tabs_test_value},
 			on_value_change = tabs_test_on_change,
 			child = tabs_test_root_child,
 		},
@@ -289,9 +293,7 @@ tabs_disabled_root_has_no_tab_stop :: proc(t: ^testing.T) {
 
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = "a",
-				disabled = true,
+				config = {id = "tabs", value = "a", disabled = set.Disabled(true)},
 				child = tabs_test_root_child,
 			},
 		)
@@ -311,17 +313,16 @@ tabs_duplicate_and_empty_values_are_rejected :: proc(t: ^testing.T) {
 
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = "a",
+				config = {id = "tabs", value = "a"},
 				child = proc(_: Tabs_State) {
 					Tabs_List(
 						{
 							config = {id = "tl"},
 							child = proc(_: Tabs_List_State) {
-								Tabs_Trigger({config = {id = "empty"}, value = ""})
-								Tabs_Trigger({config = {id = "a1"}, value = "a"})
-								Tabs_Trigger({config = {id = "a2"}, value = "a"})
-								Tabs_Trigger({config = {id = "b"}, value = "b"})
+								Tabs_Trigger({config = {id = "empty", value = ""}})
+								Tabs_Trigger({config = {id = "a1", value = "a"}})
+								Tabs_Trigger({config = {id = "a2", value = "a"}})
+								Tabs_Trigger({config = {id = "b", value = "b"}})
 							},
 						},
 					)
@@ -353,8 +354,7 @@ tabs_orphan_trigger_is_not_tabbable :: proc(t: ^testing.T) {
 
 		Tabs_Trigger(
 			{
-				config = {id = "orphan"},
-				value = "a",
+				config = {id = "orphan", value = "a"},
 				on_click = tabs_test_on_click,
 			},
 		)
@@ -366,8 +366,7 @@ tabs_orphan_trigger_is_not_tabbable :: proc(t: ^testing.T) {
 		o.w_ctx.keys[int(o.Scancode.SPACE)] = {down = true, pressed = true}
 		Tabs_Trigger(
 			{
-				config = {id = "orphan"},
-				value = "a",
+				config = {id = "orphan", value = "a"},
 				on_click = tabs_test_on_click,
 			},
 		)
@@ -453,14 +452,12 @@ tabs_activate_on_focus_selects_with_arrows :: proc(t: ^testing.T) {
 
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
+				config = {id = "tabs", value = tabs_test_value},
 				on_value_change = tabs_test_on_change,
 				child = proc(_: Tabs_State) {
 					Tabs_List(
 						{
-							config = {id = "tl"},
-							activate_on_focus = true,
+							config = {id = "tl", activate_on_focus = true},
 							child = tabs_test_list_abc,
 						},
 					)
@@ -472,14 +469,12 @@ tabs_activate_on_focus_selects_with_arrows :: proc(t: ^testing.T) {
 		tabs_test_press("ta", .RIGHT)
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
+				config = {id = "tabs", value = tabs_test_value},
 				on_value_change = tabs_test_on_change,
 				child = proc(_: Tabs_State) {
 					Tabs_List(
 						{
-							config = {id = "tl"},
-							activate_on_focus = true,
+							config = {id = "tl", activate_on_focus = true},
 							child = tabs_test_list_abc,
 						},
 					)
@@ -513,9 +508,7 @@ tabs_arrow_loops_and_can_stop_at_ends :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				loop = .OFF,
+				config = {id = "tabs", value = tabs_test_value, loop = .OFF},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -525,9 +518,7 @@ tabs_arrow_loops_and_can_stop_at_ends :: proc(t: ^testing.T) {
 		tabs_test_press("tc", .RIGHT)
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				loop = .OFF,
+				config = {id = "tabs", value = tabs_test_value, loop = .OFF},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -565,9 +556,7 @@ tabs_vertical_uses_up_down :: proc(t: ^testing.T) {
 
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				orientation = .VERTICAL,
+				config = {id = "tabs", value = tabs_test_value, orientation = .VERTICAL},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -577,9 +566,7 @@ tabs_vertical_uses_up_down :: proc(t: ^testing.T) {
 		tabs_test_press("tb", .RIGHT)
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				orientation = .VERTICAL,
+				config = {id = "tabs", value = tabs_test_value, orientation = .VERTICAL},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -590,9 +577,7 @@ tabs_vertical_uses_up_down :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				orientation = .VERTICAL,
+				config = {id = "tabs", value = tabs_test_value, orientation = .VERTICAL},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -602,9 +587,7 @@ tabs_vertical_uses_up_down :: proc(t: ^testing.T) {
 		tabs_test_press("tb", .UP)
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
-				orientation = .VERTICAL,
+				config = {id = "tabs", value = tabs_test_value, orientation = .VERTICAL},
 				on_value_change = tabs_test_on_change,
 				child = tabs_test_root_child,
 			},
@@ -643,22 +626,18 @@ tabs_content_force_mount_keeps_inactive_panel :: proc(t: ^testing.T) {
 
 		Tabs(
 			{
-				config = {id = "tabs"},
-				value = tabs_test_value,
+				config = {id = "tabs", value = tabs_test_value},
 				child = proc(_: Tabs_State) {
 					Tabs_List({config = {id = "tl"}, child = tabs_test_list_abc})
 					Tabs_Content(
 						{
-							config = {id = "ca"},
-							value = "a",
+							config = {id = "ca", value = "a"},
 							child = tabs_test_content_a_child,
 						},
 					)
 					Tabs_Content(
 						{
-							config = {id = "cb"},
-							value = "b",
-							force_mount = true,
+							config = {id = "cb", value = "b", force_mount = true},
 							child = tabs_test_content_b_child,
 						},
 					)

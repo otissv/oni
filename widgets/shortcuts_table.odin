@@ -27,7 +27,11 @@ Shortcuts_Table_Mode :: enum u8 {
 	Add,
 }
 
-Shortcuts_Table_Config :: o.Widget_Config
+Shortcuts_Table_Config :: struct {
+	using _:       o.Widget_Config,
+	session:       ^Shortcuts_Table_Session,
+	bindings_path: string,
+}
 
 Shortcuts_Table_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 
@@ -36,12 +40,10 @@ Shortcuts_Table_Event :: o.Widget_Event(Shortcuts_Table_State)
 /*
 Props for the shortcuts settings table.
 
-`session` is required. `bindings_path` empty uses SETTINGS_DEFAULT_PATH.
+`config.session` is required. Empty `config.bindings_path` uses SETTINGS_DEFAULT_PATH.
 */
 Shortcuts_Table_Props :: struct {
-	config:        Shortcuts_Table_Config,
-	session:       ^Shortcuts_Table_Session,
-	bindings_path: string,
+	config: Shortcuts_Table_Config,
 }
 
 @(private)
@@ -959,23 +961,25 @@ shortcuts_table_root_child :: proc(_: Rectangle_State) {
 Renders a full shortcuts settings panel: toolbar, conflicts, and bindings table.
 
 Supports save/load/reset, add (action picker + capture), rebind, enable/disable,
-and remove (user bindings). Pass a Persistent-owned session via props.session.
+and remove (user bindings). Pass a Persistent-owned session via config.session.
 */
 Shortcuts_Table :: proc(props: Shortcuts_Table_Props) {
-	if props.session == nil do return
-	if !props.session.initialized {
-		Shortcuts_Table_Session_Init(props.session)
+	cfg := props.config
+
+	if cfg.session == nil do return
+
+	if !cfg.session.initialized {
+		Shortcuts_Table_Session_Init(cfg.session)
 	}
 
-	shortcuts_table_poll_capture(props.session)
+	shortcuts_table_poll_capture(cfg.session)
 
-	cfg := props.config
 	if cfg.id == "" {
 		cfg.id = "shortcuts_table"
 	}
 	shortcuts_table_ctx = {
-		session       = props.session,
-		bindings_path = props.bindings_path,
+		session       = cfg.session,
+		bindings_path = cfg.bindings_path,
 		id_prefix     = cfg.id,
 	}
 

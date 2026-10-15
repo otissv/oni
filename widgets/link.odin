@@ -23,7 +23,13 @@ Link_Mod :: enum u8 {
 /*
 Link configuration.
 */
-Link_Config :: o.Widget_Config
+Link_Config :: struct {
+	using _:           o.Widget_Config,
+	href:              string,
+	text:              string,
+	mod:               Link_Mod,
+	suppress_open_url: bool,
+}
 
 /*
 Link per-frame state including destination and activation modifier.
@@ -52,11 +58,6 @@ modifier; keyboard Enter still activates without it.
 */
 Link_Props :: struct {
 	config:                       Link_Config,
-	href:                         string,
-	text:                         string,
-	mod:                          Link_Mod,
-	suppress_open_url:            bool,
-	disabled:                     bool,
 	child:                        proc(frame_state: Link_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -264,10 +265,10 @@ Link :: proc(props: Link_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
-	mod := link_mod_normalize(props.mod)
-	href := props.href
-	text := props.text
+	disabled := o.cfg_style_bool(cfg.disabled)
+	mod := link_mod_normalize(cfg.mod)
+	href := cfg.href
+	text := cfg.text
 
 	frame_state := Link_State {
 		is_disabled = disabled,
@@ -277,13 +278,9 @@ Link :: proc(props: Link_Props) {
 		text        = text,
 	}
 
-	if disabled {
-		cfg.disabled = set.Disabled(true)
-	}
-
 	resolved_props := props
 	resolved_props.config = cfg
-	resolved_props.mod = mod
+	resolved_props.config.mod = mod
 
 	event := link_refresh_merged(resolved_props, &frame_state)
 	style_fp := widget_style_interaction_fp(&frame_state)
@@ -304,7 +301,7 @@ Link :: proc(props: Link_Props) {
 		active            = true,
 		text              = text,
 		mod               = mod,
-		suppress_open_url = props.suppress_open_url,
+		suppress_open_url = cfg.suppress_open_url,
 		child             = props.child,
 		on_click          = props.on_click,
 		on_navigate       = props.on_navigate,
@@ -443,12 +440,5 @@ Link :: proc(props: Link_Props) {
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 
-	widget_dispatch_events(
-		props_with_activate,
-		&frame_state,
-		handlers,
-		event,
-		key,
-		was_focused,
-	)
+	widget_dispatch_events(props_with_activate, &frame_state, handlers, event, key, was_focused)
 }

@@ -29,7 +29,14 @@ Radio_Orientation :: enum {
 /*
 Radio group configuration.
 */
-Radio_Group_Config :: o.Widget_Config
+Radio_Group_Config :: struct {
+	using _:     o.Widget_Config,
+	value:       string,
+	name:        string,
+	required:    bool,
+	loop:        Radio_Loop,
+	orientation: Radio_Orientation,
+}
 
 /*
 Radio group per-frame state.
@@ -62,13 +69,7 @@ widget does not submit a form.
 */
 Radio_Group_Props :: struct {
 	config:                       Radio_Group_Config,
-	value:                        string,
-	name:                         string,
-	required:                     bool,
-	disabled:                     bool,
 	on_value_change:              proc(value: string),
-	loop:                         Radio_Loop,
-	orientation:                  Radio_Orientation,
 	child:                        proc(frame_state: Radio_Group_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -979,22 +980,18 @@ Radio_Group :: proc(props: Radio_Group_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
-	orientation := radio_orientation_normalize(props.orientation)
-	loop := radio_loop_enabled(props.loop)
+	disabled := o.cfg_style_bool(cfg.disabled)
+	orientation := radio_orientation_normalize(cfg.orientation)
+	loop := radio_loop_enabled(cfg.loop)
 
 	frame_state := Radio_Group_State {
 		is_disabled = disabled,
 		is_focused  = was_focused,
-		value       = props.value,
-		name        = props.name,
-		required    = props.required,
+		value       = cfg.value,
+		name        = cfg.name,
+		required    = cfg.required,
 		loop        = loop,
 		orientation = orientation,
-	}
-
-	if disabled {
-		cfg.disabled = set.Disabled(true)
 	}
 
 	resolved_props := props
@@ -1007,9 +1004,9 @@ Radio_Group :: proc(props: Radio_Group_Props) {
 	pushed := radio_ctx_push(
 		{
 			key = key,
-			value = props.value,
-			name = props.name,
-			required = props.required,
+			value = cfg.value,
+			name = cfg.name,
+			required = cfg.required,
 			disabled = disabled,
 			loop = loop,
 			orientation = orientation,

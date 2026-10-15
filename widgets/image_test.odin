@@ -15,9 +15,11 @@ image_theme_base_sets_rect_kind :: proc(t: ^testing.T) {
 image_config_applies_fit_and_pos_overrides :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		props := Image_Props {
-			config = {id = "img"},
-			texture_fit = set.Texture_Fit(o.Texture_Fit.CONTAIN),
-			texture_pos = set.Texture_Pos(o.Texture_Pos_X_Y{x = 0, y = 0}),
+			config = {
+				id = "img",
+				texture_fit = set.Texture_Fit(o.Texture_Fit.CONTAIN),
+				texture_pos = set.Texture_Pos(o.Texture_Pos_X_Y{x = 0, y = 0}),
+			},
 		}
 		frame := Image_State{}
 		config := image_config(props, &frame)
@@ -31,11 +33,11 @@ image_config_applies_fit_and_pos_overrides :: proc(t: ^testing.T) {
 
 @(test)
 texture_src_size_prefers_src_then_texture_handle :: proc(t: ^testing.T) {
-	w, h := texture_src_size({src = {0, 0, 64, 32}})
+	w, h := texture_src_size({config = {src = {0, 0, 64, 32}}})
 	expect_close(t, w, 64)
 	expect_close(t, h, 32)
 
-	w, h = texture_src_size({texture = {w = 128, h = 96}})
+	w, h = texture_src_size({config = {texture = {w = 128, h = 96}}})
 	expect_close(t, w, 128)
 	expect_close(t, h, 96)
 
@@ -48,8 +50,10 @@ texture_src_size_prefers_src_then_texture_handle :: proc(t: ^testing.T) {
 texture_measure_size_adds_insets_for_auto_axes :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		props := Image_Props {
-			src         = {0, 0, 50, 25},
-			texture_fit = set.Texture_Fit(o.Texture_Fit.NONE),
+			config = {
+				src         = {0, 0, 50, 25},
+				texture_fit = set.Texture_Fit(o.Texture_Fit.NONE),
+			},
 		}
 		frame := Image_State{}
 		config := image_config(props, &frame)
@@ -67,7 +71,7 @@ texture_measure_size_adds_insets_for_auto_axes :: proc(t: ^testing.T) {
 texture_measure_size_empty_when_both_axes_definite :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		props := Image_Props {
-			src = {0, 0, 50, 25},
+			config = {src = {0, 0, 50, 25}},
 		}
 		frame := Image_State{}
 		config := image_config(props, &frame)
@@ -92,11 +96,11 @@ image_layout_registers_node_and_sets_image_input :: proc(t: ^testing.T) {
 				{
 					config = {
 						id = "photo",
+						src = {0, 0, 200, 100},
 						width = set.Width(f32(100)),
 						height = set.Height(f32(50)),
+						texture_fit = set.Texture_Fit(o.Texture_Fit.CONTAIN),
 					},
-					src = {0, 0, 200, 100},
-					texture_fit = set.Texture_Fit(o.Texture_Fit.CONTAIN),
 				},
 			)
 			widget_test_finish_layout()
@@ -140,8 +144,8 @@ image_tabbable_disabled_and_unmount :: proc(t: ^testing.T) {
 					tabbable = set.Bool(true),
 					width = set.Width(f32(40)),
 					height = set.Height(f32(20)),
+					src = {0, 0, 40, 20},
 				},
-				src = {0, 0, 40, 20},
 			},
 		)
 		expect_in_tab_order(t, "img-tab", true)
@@ -154,8 +158,8 @@ image_tabbable_disabled_and_unmount :: proc(t: ^testing.T) {
 					tabbable = set.Bool(true),
 					width = set.Width(f32(40)),
 					height = set.Height(f32(20)),
+					src = {0, 0, 40, 20},
 				},
-				src = {0, 0, 40, 20},
 			},
 		)
 		expect_in_tab_order(t, "img-dis", false)

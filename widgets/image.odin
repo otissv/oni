@@ -3,7 +3,13 @@ package oni_widgets
 import o ".."
 
 
-Image_Config :: o.Widget_Config
+Image_Config :: struct {
+	using _: o.Widget_Config,
+	texture: o.Texture_Handle,
+	src, dst: o.Rect,
+	tint:     o.Colors,
+	alt:      string,
+}
 Image_State :: o.Widget_Merged_State(o.Widget_Frame_State, o.Resolved_Widget_Config)
 Image_Event :: o.Widget_Event(Image_State)
 
@@ -12,18 +18,12 @@ Image widget props: source rect, tint, fit/pos overrides, and event handlers.
 */
 Image_Props :: struct {
 	config:                       Image_Config,
-	texture:                      o.Texture_Handle,
-	src, dst:                     o.Rect,
-	tint:                         o.Colors,
-	alt:                          string,
-	texture_fit:                  o.Cfg(o.Style_Texture_Fit),
-	texture_pos:                  o.Cfg(o.Style_Texture_Pos),
 	child:                        proc(frame_state: Image_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Image_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Image_State) -> o.Mount,
-	on_scroll:                     proc(scroll_x, scroll_y: f32),
+	on_scroll:                    proc(scroll_x, scroll_y: f32),
 	on_focus:                     proc(event: Image_Event),
 	on_blur:                      proc(event: Image_Event),
 	on_mouse_enter:               proc(event: Image_Event),
@@ -61,12 +61,8 @@ image_config :: proc(props: Image_Props, frame_state: ^Image_State) -> o.Resolve
 	event := widget_event(frame_state^)
 
 	base := image_theme_base(frame_state)
-	override := props.config
 
-	if props.texture_fit.mode != .UNSET do override.texture_fit = props.texture_fit
-	if props.texture_pos.mode != .UNSET do override.texture_pos = props.texture_pos
-
-	return o.resolve_widget_config(base, override, frame_state, event)
+	return o.resolve_widget_config(base, props.config, frame_state, event)
 }
 
 /*
@@ -99,13 +95,15 @@ Resolves the intrinsic source size from props.src or the loaded texture handle.
 */
 @(private)
 texture_src_size :: proc(props: Image_Props) -> (w, h: f32) {
-	src := props.src
+	cfg := props.config
+	src := cfg.src
+
 	if src.w > 0 || src.h > 0 {
 		return src.w, src.h
 	}
 
-	if props.texture.w > 0 && props.texture.h > 0 {
-		return props.texture.w, props.texture.h
+	if cfg.texture.w > 0 && cfg.texture.h > 0 {
+		return cfg.texture.w, cfg.texture.h
 	}
 
 	return 0, 0
@@ -221,7 +219,7 @@ Image :: proc(props: Image_Props) {
 			o.layout_set_measure_size(node, measure)
 		}
 
-		src := props.src
+		src := cfg.src
 		if src.w == 0 && src.h == 0 {
 			src_w, src_h := texture_src_size(props)
 			if src_w > 0 && src_h > 0 {
@@ -241,7 +239,7 @@ Image :: proc(props: Image_Props) {
 			pos = resolved_pos
 		}
 
-		o.layout_set_image(node, src, props.dst, fit, pos)
+		o.layout_set_image(node, src, cfg.dst, fit, pos)
 
 		o.ui_push_style(o.style_child_context(config))
 
@@ -290,13 +288,7 @@ Image :: proc(props: Image_Props) {
 		rect,
 		config,
 	)
-	widget_handle_scroll_wheel(
-		layout_id,
-		config,
-		frame_state.is_hovered,
-		key,
-		props.on_scroll,
-	)
+	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y
@@ -351,7 +343,7 @@ Image :: proc(props: Image_Props) {
 	}
 
 	tint := o.RGBA{255, 255, 255, 255}
-	if resolved_tint, tint_ok := o.to_rgba(props.tint, &frame_state, event); tint_ok {
+	if resolved_tint, tint_ok := o.to_rgba(cfg.tint, &frame_state, event); tint_ok {
 		tint = resolved_tint
 	}
 
@@ -364,11 +356,20 @@ Image :: proc(props: Image_Props) {
 
 	if paint {
 		if laid := o.layout_image_result(layout_id); laid != nil {
-			o.Draw_Texture_Fitted(props.texture, laid.src, laid.content, laid.dst, tint, radius)
+			o.Draw_Texture_Fitted(cfg.texture, laid.src, laid.content, laid.dst, tint, radius)
 		}
 	}
 
-	widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
+	widget_children(
+		child,
+		layout_id,
+		config,
+		frame_state,
+		key,
+		props.config,
+		props.on_scroll,
+		frame_state.is_hovered,
+	)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

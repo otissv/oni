@@ -6,7 +6,17 @@ import set "../set"
 /*
 Select root configuration.
 */
-Select_Config :: o.Widget_Config
+Select_Config :: struct {
+	using _:      o.Widget_Config,
+	value:        string,
+	values:       []string,
+	open:         bool,
+	name:         string,
+	required:     bool,
+	multiple:     bool,
+	size:         u8,
+	autocomplete: string,
+}
 
 /*
 Select root per-frame state merged with resolved style and compound fields.
@@ -49,15 +59,6 @@ HTML-like fields:
 */
 Select_Props :: struct {
 	config:                       Select_Config,
-	value:                        string,
-	values:                       []string,
-	open:                         bool,
-	name:                         string,
-	required:                     bool,
-	disabled:                     bool,
-	multiple:                     bool,
-	size:                         u8,
-	autocomplete:                 string,
 	on_value_change:              proc(value: string),
 	on_values_change:             proc(values: []string),
 	on_open_change:               proc(open: bool),
@@ -132,12 +133,13 @@ select_resolve_open_value :: proc(
 	value: string,
 	value_label: string,
 ) {
-	open = props.open
-	value = props.multiple ? "" : props.value
+	cfg := props.config
+	open = cfg.open
+	value = cfg.multiple ? "" : cfg.value
 	value_label = ""
 	rt := select_runtime_ensure(key)
 
-	if !props.multiple && rt != nil && rt.cache_value == value {
+	if !cfg.multiple && rt != nil && rt.cache_value == value {
 		value_label = rt.value_label
 	}
 
@@ -160,8 +162,8 @@ Select :: proc(props: Select_Props) {
 
 	was_focused := widget_is_focused(key)
 	open, value, value_label := select_resolve_open_value(props, key)
-	listbox := select_is_listbox(props.multiple, props.size)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	listbox := select_is_listbox(cfg.multiple, cfg.size)
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	if listbox {
 		open = true
@@ -171,18 +173,18 @@ Select :: proc(props: Select_Props) {
 		is_disabled  = disabled,
 		is_focused   = was_focused,
 		value        = value,
-		values       = props.values,
+		values       = cfg.values,
 		open         = open,
-		name         = props.name,
-		required     = props.required,
+		name         = cfg.name,
+		required     = cfg.required,
 		disabled     = disabled,
-		multiple     = props.multiple,
-		size         = props.size,
-		autocomplete = props.autocomplete,
+		multiple     = cfg.multiple,
+		size         = cfg.size,
+		autocomplete = cfg.autocomplete,
 		listbox      = listbox,
 	}
 
-	if props.disabled {
+	if disabled {
 		cfg.disabled = set.Disabled(true)
 	}
 
@@ -209,12 +211,12 @@ Select :: proc(props: Select_Props) {
 			value_label = value_label,
 			open = open,
 			disabled = disabled,
-			required = props.required,
-			multiple = props.multiple,
-			size = props.size,
-			autocomplete = props.autocomplete,
+			required = cfg.required,
+			multiple = cfg.multiple,
+			size = cfg.size,
+			autocomplete = cfg.autocomplete,
 			listbox = listbox,
-			name = props.name,
+			name = cfg.name,
 			on_value_change = props.on_value_change,
 			on_values_change = props.on_values_change,
 			on_open_change = props.on_open_change,
@@ -227,8 +229,8 @@ Select :: proc(props: Select_Props) {
 
 	ctx := select_ctx_top()
 
-	if props.multiple {
-		select_copy_values_into_ctx(ctx, props.values)
+	if cfg.multiple {
+		select_copy_values_into_ctx(ctx, cfg.values)
 		frame_state.values = Select_Get_Values()
 	}
 

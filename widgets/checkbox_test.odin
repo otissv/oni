@@ -77,7 +77,7 @@ checkbox_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Checkbox({config = {id = "checkbox-layout"}, checked = .FALSE})
+		Checkbox({config = {id = "checkbox-layout", checked = .FALSE}})
 		widget_test_finish_layout()
 
 		expect_registered_id(t, "checkbox-layout")
@@ -92,7 +92,7 @@ checkbox_disabled_is_not_tabbable :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Checkbox({config = {id = "checkbox-disabled"}, checked = .FALSE, disabled = true})
+		Checkbox({config = {id = "checkbox-disabled", disabled = set.Disabled(true), checked = .FALSE}})
 		expect_in_tab_order(t, "checkbox-disabled", false)
 		widget_test_finish_layout()
 	})
@@ -106,8 +106,7 @@ checkbox_config_disabled_blocks_activation :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-config-disabled", disabled = set.Disabled(true)},
-			checked = .FALSE,
+						config = {id = "checkbox-config-disabled", disabled = set.Disabled(true), checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 		}
 		Checkbox(props)
@@ -134,8 +133,7 @@ checkbox_keyboard_activation_reports_next_value :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-keyboard"},
-			checked = .FALSE,
+						config = {id = "checkbox-keyboard", checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 			on_click = checkbox_test_on_click,
 		}
@@ -166,8 +164,7 @@ checkbox_activation_only_reports_change :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-report"},
-			checked = checked,
+						config = {id = "checkbox-report", checked = checked},
 			on_checked_change = checkbox_test_on_change,
 		}
 		Checkbox(props)
@@ -195,8 +192,7 @@ checkbox_enter_does_not_activate :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-enter"},
-			checked = .FALSE,
+						config = {id = "checkbox-enter", checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 			on_click = checkbox_test_on_click,
 		}
@@ -221,8 +217,7 @@ checkbox_pointer_release_activates_once :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		checkbox_test_reset_events()
 		props := Checkbox_Props {
-			config = {id = "checkbox-pointer"},
-			checked = .FALSE,
+						config = {id = "checkbox-pointer", checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 			on_click = checkbox_test_on_click,
 		}
@@ -266,9 +261,7 @@ checkbox_disabled_blocks_keyboard_activation :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-disabled-keyboard"},
-			checked = .FALSE,
-			disabled = true,
+						config = {id = "checkbox-disabled-keyboard", disabled = set.Disabled(true), checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 		}
 		Checkbox(props)
@@ -294,8 +287,7 @@ checkbox_mounting_blocks_activation_by_default :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-mounting"},
-			checked = .FALSE,
+						config = {id = "checkbox-mounting", checked = .FALSE},
 			on_mount = proc(_: Checkbox_State) -> o.Mount {
 				return .RUNNING
 			},
@@ -326,18 +318,19 @@ checkbox_custom_indicator_only_runs_for_non_false_state :: proc(t: ^testing.T) {
 
 		Checkbox(
 			{
-				config = {id = "checkbox-false-child"},
-				checked = .FALSE,
+				config = {id = "checkbox-false-child", checked = .FALSE},
 				child = checkbox_test_child,
 			},
 		)
 		Checkbox(
-			{config = {id = "checkbox-true-child"}, checked = .TRUE, child = checkbox_test_child},
+			{
+				config = {id = "checkbox-true-child", checked = .TRUE},
+				child = checkbox_test_child,
+			},
 		)
 		Checkbox(
 			{
-				config = {id = "checkbox-indeterminate-child"},
-				checked = .INDETERMINATE,
+				config = {id = "checkbox-indeterminate-child", checked = .INDETERMINATE},
 				child = checkbox_test_child,
 			},
 		)
@@ -345,18 +338,19 @@ checkbox_custom_indicator_only_runs_for_non_false_state :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 		Checkbox(
 			{
-				config = {id = "checkbox-false-child"},
-				checked = .FALSE,
+				config = {id = "checkbox-false-child", checked = .FALSE},
 				child = checkbox_test_child,
 			},
 		)
 		Checkbox(
-			{config = {id = "checkbox-true-child"}, checked = .TRUE, child = checkbox_test_child},
+			{
+				config = {id = "checkbox-true-child", checked = .TRUE},
+				child = checkbox_test_child,
+			},
 		)
 		Checkbox(
 			{
-				config = {id = "checkbox-indeterminate-child"},
-				checked = .INDETERMINATE,
+				config = {id = "checkbox-indeterminate-child", checked = .INDETERMINATE},
 				child = checkbox_test_child,
 			},
 		)
@@ -373,13 +367,13 @@ checkbox_builtin_indicators_emit_expected_geometry :: proc(t: ^testing.T) {
 			widget_test_begin_layout()
 			defer widget_test_end_frame()
 
-			Checkbox({config = {id = "checkbox-check"}, checked = .TRUE})
-			Checkbox({config = {id = "checkbox-minus"}, checked = .INDETERMINATE})
+			Checkbox({config = {id = "checkbox-check", checked = .TRUE}})
+			Checkbox({config = {id = "checkbox-minus", checked = .INDETERMINATE}})
 			widget_test_finish_layout()
 			widget_test_begin_draw()
-			Checkbox({config = {id = "checkbox-check"}, checked = .TRUE})
+			Checkbox({config = {id = "checkbox-check", checked = .TRUE}})
 			check_vertices := len(o.batch_current().vertices)
-			Checkbox({config = {id = "checkbox-minus"}, checked = .INDETERMINATE})
+			Checkbox({config = {id = "checkbox-minus", checked = .INDETERMINATE}})
 			minus_vertices := len(o.batch_current().vertices) - check_vertices
 
 			// Background + two check lines + border.
@@ -397,8 +391,7 @@ checkbox_unmount_skips_layout_node :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Checkbox({
-			config = {id = "checkbox-unmount"},
-			checked = .TRUE,
+						config = {id = "checkbox-unmount", checked = .TRUE},
 			unmount = true,
 			on_unmount = proc(_: Checkbox_State) -> o.Mount {
 				return .COMPLETED
@@ -416,8 +409,7 @@ checkbox_caller_updates_value_after_change :: proc(t: ^testing.T) {
 		checkbox_test_reset_events()
 
 		props := Checkbox_Props {
-			config = {id = "checkbox-caller-owned"},
-			checked = checkbox_test_value,
+						config = {id = "checkbox-caller-owned", checked = checkbox_test_value},
 			on_checked_change = checkbox_test_on_change,
 		}
 
@@ -435,7 +427,7 @@ checkbox_caller_updates_value_after_change :: proc(t: ^testing.T) {
 
 		testing.expect(t, checkbox_test_value == .TRUE)
 
-		props.checked = checkbox_test_value
+		props.config.checked = checkbox_test_value
 		widget_test_begin_layout()
 		Checkbox(props)
 		widget_test_finish_layout()
@@ -448,11 +440,12 @@ checkbox_caller_updates_value_after_change :: proc(t: ^testing.T) {
 checkbox_config_override_preserves_kind :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		props := Checkbox_Props {
-			config = {id = "checkbox-styled", background = set.Background(o.Color.ACCENT)},
-			checked = .FALSE,
+						config = {id = "checkbox-styled", background = set.Background(o.Color.ACCENT), checked = .FALSE},
 		}
 		frame := Checkbox_State{}
-		config := widget_config(props, &frame, checkbox_theme_base)
+		event := widget_event(frame)
+		base := checkbox_theme_base(&frame)
+		config := o.resolve_widget_config(base, props.config, &frame, event)
 
 		testing.expect(t, config.kind == .CHECKBOX)
 		testing.expect_value(t, config.id, "checkbox-styled")
@@ -496,8 +489,7 @@ checkbox_label_for_id_click_activates_when_label_first :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		checkbox_test_reset_events()
 		props := Checkbox_Props {
-			config = {id = "checkbox-for-target"},
-			checked = .FALSE,
+						config = {id = "checkbox-for-target", checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 			on_click = checkbox_test_on_click,
 		}
@@ -566,8 +558,7 @@ checkbox_label_for_id_click_activates_when_control_first :: proc(t: ^testing.T) 
 		proc(t: ^testing.T) {
 			checkbox_test_reset_events()
 			props := Checkbox_Props {
-				config = {id = "checkbox-for-target"},
-				checked = .FALSE,
+								config = {id = "checkbox-for-target", checked = .FALSE},
 				on_checked_change = checkbox_test_on_change,
 				on_click = checkbox_test_on_click,
 			}
@@ -645,9 +636,7 @@ checkbox_label_for_id_ignores_disabled_target :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		checkbox_test_reset_events()
 		props := Checkbox_Props {
-			config = {id = "checkbox-for-target"},
-			checked = .FALSE,
-			disabled = true,
+						config = {id = "checkbox-for-target", disabled = set.Disabled(true), checked = .FALSE},
 			on_checked_change = checkbox_test_on_change,
 			on_click = checkbox_test_on_click,
 		}

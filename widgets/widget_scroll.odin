@@ -189,22 +189,22 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 	if show_y {
 		bottom_inset := show_x ? bar_size : f32(0)
 		bar_cfg := Scroll_Bar_Config {
-			id = bar_y_id,
-			position = set.Position(.ABSOLUTE),
-			right = set.Right(0),
-			y = set.F32(0),
-			bottom = set.Bottom(bottom_inset),
-			width = set.Width(bar_size),
-			z_index = set.Z_Index(f32(1)),
+			id                = bar_y_id,
+			position          = set.Position(.ABSOLUTE),
+			right             = set.Right(0),
+			y                 = set.F32(0),
+			bottom            = set.Bottom(bottom_inset),
+			width             = set.Width(bar_size),
+			z_index           = set.Z_Index(f32(1)),
+			axis              = .Y,
+			parent_scroll_x   = &ctx.scroll.x,
+			parent_scroll_y   = &ctx.scroll.y,
+			viewport          = metrics.viewport_size.y,
+			content           = metrics.content_size.y,
 		}
 		Scroll_Bar(
 			{
-				config = bar_cfg,
-				axis = .Y,
-				parent_scroll_x = &ctx.scroll.x,
-				parent_scroll_y = &ctx.scroll.y,
-				viewport = metrics.viewport_size.y,
-				content = metrics.content_size.y,
+				config    = bar_cfg,
 				on_scroll = widget_scroll_notify,
 			},
 		)
@@ -213,22 +213,22 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 	if show_x {
 		right_inset := show_y ? bar_size : f32(0)
 		bar_cfg := Scroll_Bar_Config {
-			id = bar_x_id,
-			position = set.Position(.ABSOLUTE),
-			x = set.F32(0),
-			bottom = set.Bottom(0),
-			right = set.Right(right_inset),
-			height = set.Height(bar_size),
-			z_index = set.Z_Index(f32(1)),
+			id                = bar_x_id,
+			position          = set.Position(.ABSOLUTE),
+			x                 = set.F32(0),
+			bottom            = set.Bottom(0),
+			right             = set.Right(right_inset),
+			height            = set.Height(bar_size),
+			z_index           = set.Z_Index(f32(1)),
+			axis              = .X,
+			parent_scroll_x   = &ctx.scroll.x,
+			parent_scroll_y   = &ctx.scroll.y,
+			viewport          = metrics.viewport_size.x,
+			content           = metrics.content_size.x,
 		}
 		Scroll_Bar(
 			{
-				config = bar_cfg,
-				axis = .X,
-				parent_scroll_x = &ctx.scroll.x,
-				parent_scroll_y = &ctx.scroll.y,
-				viewport = metrics.viewport_size.x,
-				content = metrics.content_size.x,
+				config    = bar_cfg,
 				on_scroll = widget_scroll_notify,
 			},
 		)

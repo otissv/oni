@@ -5,8 +5,15 @@ import set "../set"
 
 /*
 Tabs content configuration.
+
+`value` selects which root value shows this panel. `force_mount` keeps inactive panels
+in the tree with `HIDDEN` instead of removing them from layout (`visibility = NONE`).
 */
-Tabs_Content_Config :: o.Widget_Config
+Tabs_Content_Config :: struct {
+	using _:     o.Widget_Config,
+	value:       string,
+	force_mount: bool,
+}
 
 /*
 Tabs content per-frame state.
@@ -28,14 +35,12 @@ Tabs_Content_Event :: o.Widget_Event(Tabs_Content_State)
 /*
 Tabs content props.
 
-`value` selects which root value shows this panel. Inactive panels use
-`visibility = NONE` (removed from layout) unless `force_mount` keeps them in
-the tree with `HIDDEN`. Outside a `Tabs` root the panel stays inert and hidden.
+Inactive panels use `visibility = NONE` (removed from layout) unless
+`config.force_mount` keeps them in the tree with `HIDDEN`. Outside a `Tabs` root
+the panel stays inert and hidden.
 */
 Tabs_Content_Props :: struct {
 	config:                       Tabs_Content_Config,
-	value:                        string,
-	force_mount:                  bool,
 	child:                        proc(frame_state: Tabs_Content_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -83,7 +88,7 @@ tabs_content_refresh_merged :: proc(
 	event := widget_event(frame_state^)
 	base := tabs_content_theme_base(frame_state)
 
-	if !frame_state.active && props.force_mount {
+	if !frame_state.active && props.config.force_mount {
 		base.visibility = set.Visibility(.HIDDEN)
 	}
 
@@ -115,12 +120,12 @@ Tabs_Content :: proc(props: Tabs_Content_Props) {
 	layout_label := cfg.id != "" ? cfg.id : key
 	layout_id := o.ui_id(layout_label)
 	was_focused := widget_is_focused(key)
-	active := tabs_content_is_active(props.value)
+	active := tabs_content_is_active(cfg.value)
 
 	frame_state := Tabs_Content_State {
 		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
-		value       = props.value,
+		value       = cfg.value,
 		active      = active,
 	}
 
@@ -132,7 +137,7 @@ Tabs_Content :: proc(props: Tabs_Content_Props) {
 	handlers := widget_lifecycle_handlers(resolved_props, Tabs_Content_State)
 	child := props.child
 
-	if !frame_state.active && !props.force_mount {
+	if !frame_state.active && !cfg.force_mount {
 		child = nil
 	}
 
@@ -175,10 +180,10 @@ Tabs_Content :: proc(props: Tabs_Content_Props) {
 	}
 
 	frame_state.is_focused = widget_is_focused(key)
-	frame_state.active = tabs_content_is_active(props.value)
+	frame_state.active = tabs_content_is_active(cfg.value)
 	rect := o.ui_layout_rect(layout_id)
 
-	if !frame_state.active && !props.force_mount {
+	if !frame_state.active && !cfg.force_mount {
 		return
 	}
 

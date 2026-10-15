@@ -556,17 +556,21 @@ fmt_date_picker_calendar_id :: proc(picker_key: string) -> string {
 }
 
 @(private)
-date_picker_popover_content_config :: proc() -> o.Widget_Config {
-	return o.Widget_Config {
+date_picker_popover_content_config :: proc() -> Popover_Content_Props_Config {
+	return Popover_Content_Props_Config {
 		// Must be sized (FIT or explicit). Unset width stretches to the viewport
 		// as a POPOVER layer root; layout_resolve_anchors then clamps x off-screen.
-		width      = set.Width(.FIT),
-		height     = set.Height(.FIT),
-		overflow_y = set.Overflow_Y(.HIDDEN),
-		direction  = set.Direction(.VERTICAL),
-		padding    = set.Padding(f32(0)),
-		background = set.Background(o.Color.BACKGROUND),
-		radius     = set.Radius(f32(8)),
+		width                = set.Width(.FIT),
+		height               = set.Height(.FIT),
+		overflow_y           = set.Overflow_Y(.HIDDEN),
+		direction            = set.Direction(.VERTICAL),
+		padding              = set.Padding(f32(0)),
+		background           = set.Background(o.Color.BACKGROUND),
+		radius               = set.Radius(f32(8)),
+		anchor_align         = .START,
+		match_trigger_width  = false,
+		anchor_gap           = DATE_PICKER_POPOVER_GAP_PX,
+		viewport_margin      = DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
 	}
 }
 
@@ -585,33 +589,37 @@ date_picker_default_content :: proc(fs: Date_Picker_State) {
 
 	Calendar(
 		{
-			config = {id = cal_id, width = set.Width(cal_w), border = set.Border(f32(1))},
-			mode = mode,
-			selected = ctx.selected,
-			has_selected = ctx.has_selected,
-			selected_dates = ctx.selected_dates,
-			selected_range = ctx.selected_range,
-			month = ctx.month,
+			config = {
+				id = cal_id,
+				width = set.Width(cal_w),
+				border = set.Border(f32(1)),
+				mode = mode,
+				selected = ctx.selected,
+				has_selected = ctx.has_selected,
+				selected_dates = ctx.selected_dates,
+				selected_range = ctx.selected_range,
+				month = ctx.month,
+				required = ctx.required,
+				min = ctx.min,
+				max = ctx.max,
+				start_month = ctx.start_month,
+				end_month = ctx.end_month,
+				start_date = ctx.start_date,
+				end_date = ctx.end_date,
+				hide_outside_days = ctx.hide_outside_days,
+				show_week_numbers = ctx.show_week_numbers,
+				week_starts_on = ctx.week_starts_on,
+				number_of_months = ctx.number_of_months,
+				today = ctx.today,
+				disabled = set.Disabled(ctx.disabled),
+				day_size = ctx.day_size,
+				gap = ctx.gap,
+			},
 			on_month_change = ctx.on_month_change,
 			on_select = date_picker_on_calendar_select,
 			on_day_click = ctx.on_day_click,
-			required = ctx.required,
-			min = ctx.min,
-			max = ctx.max,
-			start_month = ctx.start_month,
-			end_month = ctx.end_month,
-			start_date = ctx.start_date,
-			end_date = ctx.end_date,
 			disabled_matcher = ctx.disabled_matcher,
 			hidden_matcher = ctx.hidden_matcher,
-			hide_outside_days = ctx.hide_outside_days,
-			show_week_numbers = ctx.show_week_numbers,
-			week_starts_on = ctx.week_starts_on,
-			number_of_months = ctx.number_of_months,
-			today = ctx.today,
-			disabled = ctx.disabled,
-			day_size = ctx.day_size,
-			gap = ctx.gap,
 			day = ctx.day,
 			format_month = ctx.format_month,
 			format_weekday = ctx.format_weekday,
@@ -627,15 +635,20 @@ date_picker_compound_child :: proc(fs: Date_Picker_State) {
 	ctx.content_frame = fs
 	popover_id := ctx.picker_key != "" ? fmt_date_picker_popover_id(ctx.picker_key) : ""
 
+	popover_cfg := Popover_Config {
+		id = popover_id,
+		direction = set.Direction(.VERTICAL),
+		gap_y = set.Gap_Y(u16(0)),
+		open = ctx.open,
+	}
+
+	if ctx.disabled {
+		popover_cfg.disabled = set.Disabled(true)
+	}
+
 	Popover(
 		{
-			config = {
-				id = popover_id,
-				direction = set.Direction(.VERTICAL),
-				gap_y = set.Gap_Y(u16(0)),
-			},
-			open = ctx.open,
-			disabled = ctx.disabled,
+			config = popover_cfg,
 			on_open_change = date_picker_on_popover_open_change,
 			child = date_picker_popover_child,
 		},
@@ -653,10 +666,6 @@ date_picker_popover_child :: proc(_: Popover_State) {
 	Popover_Content(
 		{
 			config = date_picker_popover_content_config(),
-			align = .START,
-			match_trigger_width = false,
-			gap = DATE_PICKER_POPOVER_GAP_PX,
-			side_margin = DATE_PICKER_POPOVER_VIEWPORT_MARGIN_PX,
 			child = date_picker_popover_content_child,
 		},
 	)

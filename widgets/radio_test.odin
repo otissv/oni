@@ -112,9 +112,7 @@ radio_test_reset :: proc() {
 radio_test_item :: proc(id, value: string, disabled: bool) {
 	Radio(
 		{
-			config = {id = id},
-			value = value,
-			disabled = disabled,
+			config = {id = id, value = value, disabled = set.Disabled(disabled)},
 			on_click = radio_test_on_click,
 			on_focus = radio_test_on_focus,
 			on_blur = radio_test_on_blur,
@@ -134,8 +132,7 @@ radio_test_abc :: proc(_: Radio_Group_State) {
 radio_test_group_abc :: proc() {
 	Radio_Group(
 		{
-			config = {id = "rg"},
-			value = radio_test_value,
+			config = {id = "rg", value = radio_test_value},
 			on_value_change = radio_test_on_change,
 			child = radio_test_abc,
 		},
@@ -279,8 +276,7 @@ radio_checked_disabled_falls_back_to_first_enabled :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "a",
+				config = {id = "rg", value = "a"},
 				child = proc(_: Radio_Group_State) {
 					radio_test_item("a", "a", true)
 					radio_test_item("b", "b", false)
@@ -302,9 +298,7 @@ radio_group_disabled_has_no_tab_stop :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "a",
-				disabled = true,
+				config = {id = "rg", value = "a", disabled = set.Disabled(true)},
 				child = radio_test_abc,
 			},
 		)
@@ -324,8 +318,7 @@ radio_tab_stop_stays_with_checked_item_around_other_controls :: proc(t: ^testing
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "a",
+				config = {id = "rg", value = "a"},
 				child = proc(_: Radio_Group_State) {
 					radio_test_item("a", "a", false)
 					Button({config = {id = "mid", tabbable = set.Tabbable(true)}})
@@ -347,8 +340,7 @@ radio_later_checked_item_replaces_provisional_tab_stop :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "b",
+				config = {id = "rg", value = "b"},
 				child = proc(_: Radio_Group_State) {
 					radio_test_item("a", "a", false)
 					Button({config = {id = "mid", tabbable = set.Tabbable(true)}})
@@ -370,13 +362,12 @@ radio_duplicate_and_empty_values_are_rejected :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "a",
+				config = {id = "rg", value = "a"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "empty"}, value = ""})
-					Radio({config = {id = "a1"}, value = "a"})
-					Radio({config = {id = "a2"}, value = "a"})
-					Radio({config = {id = "b"}, value = "b"})
+					Radio({config = {id = "empty", value = ""}})
+					Radio({config = {id = "a1", value = "a"}})
+					Radio({config = {id = "a2", value = "a"}})
+					Radio({config = {id = "b", value = "b"}})
 				},
 			},
 		)
@@ -405,8 +396,7 @@ radio_orphan_is_not_tabbable :: proc(t: ^testing.T) {
 
 		Radio(
 			{
-				config = {id = "orphan"},
-				value = "a",
+				config = {id = "orphan", value = "a"},
 				on_click = radio_test_on_click,
 			},
 		)
@@ -418,8 +408,7 @@ radio_orphan_is_not_tabbable :: proc(t: ^testing.T) {
 		o.w_ctx.keys[int(o.Scancode.SPACE)] = {down = true, pressed = true}
 		Radio(
 			{
-				config = {id = "orphan"},
-				value = "a",
+				config = {id = "orphan", value = "a"},
 				on_click = radio_test_on_click,
 			},
 		)
@@ -550,9 +539,7 @@ radio_arrow_loops_and_can_stop_at_ends :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				loop = .OFF,
+				config = {id = "rg", value = radio_test_value, loop = .OFF},
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -562,9 +549,7 @@ radio_arrow_loops_and_can_stop_at_ends :: proc(t: ^testing.T) {
 		radio_test_press("c", .DOWN)
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				loop = .OFF,
+				config = {id = "rg", value = radio_test_value, loop = .OFF},
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -602,9 +587,7 @@ radio_horizontal_uses_left_right :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				orientation = .HORIZONTAL,
+				config = {id = "rg", value = radio_test_value, orientation = .HORIZONTAL, },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -614,9 +597,7 @@ radio_horizontal_uses_left_right :: proc(t: ^testing.T) {
 		radio_test_press("b", .DOWN)
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				orientation = .HORIZONTAL,
+				config = {id = "rg", value = radio_test_value, orientation = .HORIZONTAL, },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -628,9 +609,7 @@ radio_horizontal_uses_left_right :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				orientation = .HORIZONTAL,
+				config = {id = "rg", value = radio_test_value, orientation = .HORIZONTAL, },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -640,9 +619,7 @@ radio_horizontal_uses_left_right :: proc(t: ^testing.T) {
 		radio_test_press("b", .LEFT)
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
-				orientation = .HORIZONTAL,
+				config = {id = "rg", value = radio_test_value, orientation = .HORIZONTAL, },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -662,8 +639,7 @@ radio_arrows_skip_disabled_items :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
+				config = {id = "rg", value = radio_test_value},
 				on_value_change = radio_test_on_change,
 				child = proc(_: Radio_Group_State) {
 					radio_test_item("a", "a", false)
@@ -677,8 +653,7 @@ radio_arrows_skip_disabled_items :: proc(t: ^testing.T) {
 		radio_test_press("a", .DOWN)
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = radio_test_value,
+				config = {id = "rg", value = radio_test_value},
 				on_value_change = radio_test_on_change,
 				child = proc(_: Radio_Group_State) {
 					radio_test_item("a", "a", false)
@@ -847,8 +822,7 @@ radio_disabled_blocks_keyboard_and_group_disable_blocks_all :: proc(t: ^testing.
 
 		Radio_Group(
 			{
-				config = {id = "rg", disabled = set.Disabled(true)},
-				value = "a",
+				config = {id = "rg", disabled = set.Disabled(true), value = "a", },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -858,8 +832,7 @@ radio_disabled_blocks_keyboard_and_group_disable_blocks_all :: proc(t: ^testing.
 		radio_test_press("a", .SPACE)
 		Radio_Group(
 			{
-				config = {id = "rg", disabled = set.Disabled(true)},
-				value = "a",
+				config = {id = "rg", disabled = set.Disabled(true), value = "a", },
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -882,8 +855,7 @@ radio_mounting_blocks_activation :: proc(t: ^testing.T) {
 				child = proc(_: Radio_Group_State) {
 					Radio(
 						{
-							config = {id = "a"},
-							value = "a",
+							config = {id = "a", value = "a"},
 							on_mount = proc(_: Radio_State) -> o.Mount {
 								return .RUNNING
 							},
@@ -903,8 +875,7 @@ radio_mounting_blocks_activation :: proc(t: ^testing.T) {
 				child = proc(_: Radio_Group_State) {
 					Radio(
 						{
-							config = {id = "a"},
-							value = "a",
+							config = {id = "a", value = "a"},
 							on_mount = proc(_: Radio_State) -> o.Mount {
 								return .RUNNING
 							},
@@ -943,8 +914,7 @@ radio_nested_groups_are_independent :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "outer"},
-				value = "o1",
+				config = {id = "outer", value = "o1"},
 				on_value_change = proc(value: string) {
 					radio_test_outer_changes += 1
 					radio_test_last = value
@@ -954,8 +924,7 @@ radio_nested_groups_are_independent :: proc(t: ^testing.T) {
 					radio_test_item("o2", "o2", false)
 					Radio_Group(
 						{
-							config = {id = "inner"},
-							value = "i1",
+							config = {id = "inner", value = "i1"},
 							on_value_change = proc(value: string) {
 								radio_test_inner_changes += 1
 								radio_test_value = value
@@ -974,8 +943,7 @@ radio_nested_groups_are_independent :: proc(t: ^testing.T) {
 		radio_test_press("i1", .DOWN)
 		Radio_Group(
 			{
-				config = {id = "outer"},
-				value = "o1",
+				config = {id = "outer", value = "o1"},
 				on_value_change = proc(value: string) {
 					radio_test_outer_changes += 1
 					radio_test_last = value
@@ -985,8 +953,7 @@ radio_nested_groups_are_independent :: proc(t: ^testing.T) {
 					radio_test_item("o2", "o2", false)
 					Radio_Group(
 						{
-							config = {id = "inner"},
-							value = "i1",
+							config = {id = "inner", value = "i1"},
 							on_value_change = proc(value: string) {
 								radio_test_inner_changes += 1
 								radio_test_value = value
@@ -1016,12 +983,14 @@ radio_group_exposes_form_metadata :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "a",
-				name = "plan",
-				required = true,
-				loop = .OFF,
-				orientation = .HORIZONTAL,
+				config = {
+					id = "rg",
+					value = "a",
+					name = "plan",
+					required = true,
+					loop = .OFF,
+					orientation = .HORIZONTAL,
+				},
 				child = proc(state: Radio_Group_State) {
 					radio_test_seen_name = state.name
 					radio_test_seen_required = state.required
@@ -1048,8 +1017,7 @@ radio_auto_focus_lands_on_checked_item :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg", auto_focus = set.Bool(true)},
-				value = "c",
+				config = {id = "rg", auto_focus = set.Bool(true), value = "c", },
 				child = radio_test_abc,
 			},
 		)
@@ -1067,11 +1035,10 @@ radio_custom_indicator_runs_only_when_checked :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "b",
+				config = {id = "rg", value = "b"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "a"}, value = "a", child = radio_test_child_proc})
-					Radio({config = {id = "b"}, value = "b", child = radio_test_child_proc})
+					Radio({config = {id = "a", value = "a"}, child = radio_test_child_proc})
+					Radio({config = {id = "b", value = "b"}, child = radio_test_child_proc})
 				},
 			},
 		)
@@ -1079,11 +1046,10 @@ radio_custom_indicator_runs_only_when_checked :: proc(t: ^testing.T) {
 		widget_test_begin_draw()
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = "b",
+				config = {id = "rg", value = "b"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "a"}, value = "a", child = radio_test_child_proc})
-					Radio({config = {id = "b"}, value = "b", child = radio_test_child_proc})
+					Radio({config = {id = "a", value = "a"}, child = radio_test_child_proc})
+					Radio({config = {id = "b", value = "b"}, child = radio_test_child_proc})
 				},
 			},
 		)
@@ -1101,16 +1067,15 @@ radio_builtin_indicator_emits_only_when_checked :: proc(t: ^testing.T) {
 			{
 				config = {id = "off-group"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "off"}, value = "off"})
+					Radio({config = {id = "off", value = "off"}})
 				},
 			},
 		)
 		Radio_Group(
 			{
-				config = {id = "on-group"},
-				value = "on",
+				config = {id = "on-group", value = "on"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "on"}, value = "on"})
+					Radio({config = {id = "on", value = "on"}})
 				},
 			},
 		)
@@ -1121,17 +1086,16 @@ radio_builtin_indicator_emits_only_when_checked :: proc(t: ^testing.T) {
 			{
 				config = {id = "off-group"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "off"}, value = "off"})
+					Radio({config = {id = "off", value = "off"}})
 				},
 			},
 		)
 		off := len(o.batch_current().vertices) - before
 		Radio_Group(
 			{
-				config = {id = "on-group"},
-				value = "on",
+				config = {id = "on-group", value = "on"},
 				child = proc(_: Radio_Group_State) {
-					Radio({config = {id = "on"}, value = "on"})
+					Radio({config = {id = "on", value = "on"}})
 				},
 			},
 		)
@@ -1175,8 +1139,7 @@ radio_caller_keeps_ownership_of_value :: proc(t: ^testing.T) {
 
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = held,
+				config = {id = "rg", value = held},
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -1186,8 +1149,7 @@ radio_caller_keeps_ownership_of_value :: proc(t: ^testing.T) {
 		radio_test_press("a", .DOWN)
 		Radio_Group(
 			{
-				config = {id = "rg"},
-				value = held,
+				config = {id = "rg", value = held},
 				on_value_change = radio_test_on_change,
 				child = radio_test_abc,
 			},
@@ -1249,20 +1211,20 @@ radio_test_radio_rects :: proc() -> (rects: [8]o.Rect, n: int) {
 radio_config_override_preserves_kind :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 	props := Radio_Props {
-		config = {id = "styled", background = set.Background(o.Color.ACCENT)},
-		value = "a",
+		config = {id = "styled", background = set.Background(o.Color.ACCENT), value = "a"},
 	}
 	frame := Radio_State{}
-	config := widget_config(props, &frame, radio_theme_base)
+	_ = radio_refresh_merged(props, &frame)
+	config := frame.config
 	testing.expect(t, config.kind == .RADIO)
 	testing.expect_value(t, config.id, "styled")
 
 	group_props := Radio_Group_Props {
-		config = {id = "group-styled"},
-		orientation = .HORIZONTAL,
+		config = {id = "group-styled", orientation = .HORIZONTAL},
 	}
 	group_frame := Radio_Group_State{orientation = .HORIZONTAL}
-	group_config := widget_config(group_props, &group_frame, radio_group_theme_base)
+	_ = radio_group_refresh_merged(group_props, &group_frame)
+	group_config := group_frame.config
 	testing.expect(t, group_config.kind == .RADIO_GROUP)
 	testing.expect_value(t, group_config.id, "group-styled")
 	})

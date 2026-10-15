@@ -4,9 +4,14 @@ import o ".."
 import set "../set"
 
 /*
-Popover root configuration.
+Popover root configuration: Widget_Config plus caller-owned `open`.
+
+`disabled` is the usual Widget_Config style field (`set.Disabled` / `set.Bool`).
 */
-Popover_Config :: o.Widget_Config
+Popover_Config :: struct {
+	using _: o.Widget_Config,
+	open:    bool,
+}
 
 /*
 Popover root per-frame state merged with resolved style and open flag.
@@ -24,15 +29,13 @@ Popover root event snapshot.
 Popover_Event :: o.Widget_Event(Popover_State)
 
 /*
-Popover root props: caller-owned `open`, compound Trigger / Content children.
+Popover root props: caller-owned `config.open`, compound Trigger / Content children.
 
-Pass `open` every frame and update from `on_open_change`. Escape and outside
-pointer press dismiss the content while open.
+Pass `config.open` every frame and update from `on_open_change`. Escape and
+outside pointer press dismiss the content while open.
 */
 Popover_Props :: struct {
 	config:                       Popover_Config,
-	open:                         bool,
-	disabled:                     bool,
 	on_open_change:               proc(open: bool),
 	child:                        proc(frame_state: Popover_State),
 	unmount:                      bool,
@@ -110,12 +113,8 @@ Popover :: proc(props: Popover_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	open := props.open
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
-
-	if disabled {
-		cfg.disabled = set.Disabled(true)
-	}
+	open := cfg.open
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	frame_state := Popover_State {
 		is_disabled = disabled,

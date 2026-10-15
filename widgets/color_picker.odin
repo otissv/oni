@@ -24,7 +24,13 @@ COLOR_PICKER_DEFAULT_SWATCH_WIDTH :: o.COLOR_PICKER_DEFAULT_SWATCH_WIDTH
 COLOR_PICKER_DEFAULT_SWATCH_HEIGHT :: o.COLOR_PICKER_DEFAULT_SWATCH_HEIGHT
 COLOR_PICKER_DEFAULT_CHANNELS_WIDTH :: o.COLOR_PICKER_DEFAULT_CHANNELS_WIDTH
 
-Color_Picker_Config :: o.Widget_Config
+Color_Picker_Config :: struct {
+	using _:  o.Widget_Config,
+	value:    o.RGBA,
+	channel:  o.Color_Picker_Channel,
+	previous: o.RGBA,
+	web_only: bool,
+}
 
 Color_Picker_State :: struct {
 	using frame_state: o.Widget_Frame_State,
@@ -41,18 +47,13 @@ Color_Picker_Event :: o.Widget_Event(Color_Picker_State)
 /*
 Color picker root props.
 
-`value`, `channel`, `previous`, and `web_only` are caller-owned and must be
-passed every frame. Parts such as `Color_Picker_Field` must be descendants of
-this root. Interaction reports updates through `on_value_change` /
-`on_channel_change` / `on_web_only_change` only.
+`config.value`, `config.channel`, `config.previous`, and `config.web_only` are
+caller-owned and must be passed every frame. Parts such as `Color_Picker_Field`
+must be descendants of this root. Interaction reports updates through
+`on_value_change` / `on_channel_change` / `on_web_only_change` only.
 */
 Color_Picker_Props :: struct {
 	config:                       Color_Picker_Config,
-	value:                        o.RGBA,
-	channel:                      o.Color_Picker_Channel,
-	previous:                     o.RGBA,
-	web_only:                     bool,
-	disabled:                     bool,
 	child:                        proc(frame_state: Color_Picker_State),
 	on_value_change:              proc(value: o.RGBA),
 	on_value_commit:              proc(value: o.RGBA),
@@ -1733,16 +1734,16 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	disabled := o.cfg_style_bool(cfg.disabled)
 	rt := color_picker_runtime_ensure(key)
 
-	color_picker_sync_runtime_hsva(rt, props.value)
+	color_picker_sync_runtime_hsva(rt, cfg.value)
 
-	value := props.value
-	previous := props.previous
+	value := cfg.value
+	previous := cfg.previous
 	hsva := rt != nil ? rt.hsva : o.rgba_to_hsva(value)
-	channel := props.channel
-	web_only := props.web_only
+	channel := cfg.channel
+	web_only := cfg.web_only
 
 	frame_state := Color_Picker_State {
 		is_disabled = disabled,
@@ -1752,10 +1753,6 @@ Color_Picker :: proc(props: Color_Picker_Props) {
 		hsva        = hsva,
 		channel     = channel,
 		web_only    = web_only,
-	}
-
-	if disabled {
-		cfg.disabled = set.Disabled(true)
 	}
 
 	resolved_props := props

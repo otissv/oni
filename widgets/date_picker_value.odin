@@ -6,7 +6,10 @@ import set "../set"
 /*
 Date picker value configuration.
 */
-Date_Picker_Value_Config :: o.Widget_Config
+Date_Picker_Value_Config :: struct {
+	using _:     o.Widget_Config,
+	placeholder: string,
+}
 
 /*
 Date picker value per-frame state with resolved display text.
@@ -25,13 +28,12 @@ Date picker value event snapshot.
 Date_Picker_Value_Event :: o.Widget_Event(Date_Picker_Value_State)
 
 /*
-Date picker value props: shows the formatted selection or `placeholder`.
+Date picker value props: shows the formatted selection or `config.placeholder`.
 
 When `child` is set it replaces the default label text.
 */
 Date_Picker_Value_Props :: struct {
 	config:                       Date_Picker_Value_Config,
-	placeholder:                  string,
 	child:                        proc(frame_state: Date_Picker_Value_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -91,13 +93,13 @@ Date_Picker_Value :: proc(props: Date_Picker_Value_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	text, has_value := date_picker_resolve_value_text(props.placeholder)
+	text, has_value := date_picker_resolve_value_text(cfg.placeholder)
 
 	frame_state := Date_Picker_Value_State {
 		is_disabled = o.cfg_style_bool(cfg.disabled),
 		is_focused  = was_focused,
 		text        = text,
-		placeholder = props.placeholder,
+		placeholder = cfg.placeholder,
 		has_value   = has_value,
 	}
 

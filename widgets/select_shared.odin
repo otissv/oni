@@ -777,8 +777,8 @@ select_listbox_theme_config :: proc(trigger_w: f32) -> o.Widget_Config {
 }
 
 @(private)
-select_dropdown_content_config :: proc() -> o.Widget_Config {
-	return o.Widget_Config {
+select_dropdown_content_config :: proc() -> Popover_Content_Props_Config {
+	return Popover_Content_Props_Config {
 		width = set.Width(f32(120)),
 		height = set.Height(o.Height_Mode.FIT),
 		overflow_y = set.Overflow_Y(.SCROLL),
@@ -789,6 +789,10 @@ select_dropdown_content_config :: proc() -> o.Widget_Config {
 		border = set.Border(f32(1)),
 		border_color = set.Border_color(o.Color.BORDER),
 		radius = set.Radius(f32(6)),
+		anchor_align = .START,
+		match_trigger_width = true,
+		anchor_gap = SELECT_DROPDOWN_GAP_PX,
+		viewport_margin = SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
 	}
 }
 
@@ -819,15 +823,20 @@ select_compound_child :: proc(fs: Select_State) {
 
 	popover_id := ctx.select_key != "" ? fmt_select_popover_id(ctx.select_key) : ""
 
+	popover_cfg := Popover_Config {
+		id = popover_id,
+		direction = set.Direction(.VERTICAL),
+		gap_y = set.Gap_Y(u16(0)),
+		open = ctx.open,
+	}
+
+	if ctx.disabled {
+		popover_cfg.disabled = set.Disabled(true)
+	}
+
 	Popover(
 		{
-			config = {
-				id = popover_id,
-				direction = set.Direction(.VERTICAL),
-				gap_y = set.Gap_Y(u16(0)),
-			},
-			open = ctx.open,
-			disabled = ctx.disabled,
+			config = popover_cfg,
 			on_open_change = select_on_popover_open_change,
 			child = select_dropdown_popover_child,
 		},
@@ -849,10 +858,6 @@ select_dropdown_popover_child :: proc(_: Popover_State) {
 	Popover_Content(
 		{
 			config = select_dropdown_content_config(),
-			align = .START,
-			match_trigger_width = true,
-			gap = SELECT_DROPDOWN_GAP_PX,
-			side_margin = SELECT_DROPDOWN_VIEWPORT_MARGIN_PX,
 			child = select_popover_content_child,
 		},
 	)

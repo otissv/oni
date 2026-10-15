@@ -6,7 +6,11 @@ import set "../set"
 /*
 Option configuration.
 */
-Option_Config :: o.Widget_Config
+Option_Config :: struct {
+	using _: o.Widget_Config,
+	value:   string,
+	text:    string,
+}
 
 /*
 Option per-frame state including selection / highlight bits.
@@ -33,8 +37,6 @@ Option props: a selectable row inside Select content.
 */
 Option_Props :: struct {
 	config:                       Option_Config,
-	value:                        string,
-	text:                         string,
 	child:                        proc(frame_state: Option_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -89,9 +91,11 @@ option_refresh_merged :: proc(props: Option_Props, frame_state: ^Option_State) -
 
 @(private)
 option_display_text :: proc(props: Option_Props) -> string {
-	if props.text != "" do return props.text
+	cfg := props.config
 
-	return props.value
+	if cfg.text != "" do return cfg.text
+
+	return cfg.value
 }
 
 /*
@@ -120,15 +124,15 @@ Option :: proc(props: Option_Props) {
 			disabled = true
 		}
 
-		is_selected = select_ctx_has_value(ctx, props.value)
-		option_index = select_register_option(props.value, text, key, disabled)
+		is_selected = select_ctx_has_value(ctx, cfg.value)
+		option_index = select_register_option(cfg.value, text, key, disabled)
 		is_highlighted = option_index >= 0 && option_index == ctx.highlight
 	}
 
 	frame_state := Option_State {
 		is_disabled    = disabled,
 		is_focused     = was_focused,
-		value          = props.value,
+		value          = cfg.value,
 		text           = text,
 		is_selected    = is_selected,
 		is_highlighted = is_highlighted,

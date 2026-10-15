@@ -4,18 +4,20 @@ import o ".."
 import set "../set"
 import "core:fmt"
 
-Calendar_Month_Part_Config :: o.Widget_Config
+Calendar_Month_Part_Config :: struct {
+	using _:     o.Widget_Config,
+	month_index: int,
+}
 
 /*
 Index of the visible month relative to the root `month` (0 = first month).
 
-`day` overrides the cell builder for this month's grid; nil falls back to the
-root `Calendar.day`, then built-in `Calendar_Day`.
+Props `day` overrides the cell builder for this month's grid; nil falls back to
+the root `Calendar.day`, then built-in `Calendar_Day`.
 */
 Calendar_Month_Part_Props :: struct {
-	config:      Calendar_Month_Part_Config,
-	month_index: int,
-	day:         proc(frame_state: Calendar_Day_State),
+	config: Calendar_Month_Part_Config,
+	day:    proc(frame_state: Calendar_Day_State),
 }
 
 Calendar_Navigation_Config :: o.Widget_Config
@@ -23,42 +25,57 @@ Calendar_Navigation_Props :: struct {
 	config: Calendar_Navigation_Config,
 }
 
-Calendar_Caption_Config :: o.Widget_Config
+Calendar_Caption_Config :: struct {
+	using _:     o.Widget_Config,
+	month_index: int,
+}
+
 Calendar_Caption_Props :: struct {
-	config:      Calendar_Caption_Config,
+	config: Calendar_Caption_Config,
+}
+
+Calendar_Weekdays_Config :: struct {
+	using _:     o.Widget_Config,
 	month_index: int,
 }
 
-Calendar_Weekdays_Config :: o.Widget_Config
 Calendar_Weekdays_Props :: struct {
-	config:      Calendar_Weekdays_Config,
+	config: Calendar_Weekdays_Config,
+}
+
+Calendar_Week_Numbers_Config :: struct {
+	using _:     o.Widget_Config,
 	month_index: int,
 }
 
-Calendar_Week_Numbers_Config :: o.Widget_Config
 Calendar_Week_Numbers_Props :: struct {
-	config:      Calendar_Week_Numbers_Config,
-	month_index: int,
+	config: Calendar_Week_Numbers_Config,
 }
 
-Calendar_Grid_Config :: o.Widget_Config
+Calendar_Grid_Config :: struct {
+	using _:     o.Widget_Config,
+	month_index: int,
+}
 
 /*
 Day-cell grid for one month column.
 
-`day` builds each visible cell; nil falls back to the month/root `day`, then
-built-in `Calendar_Day`. Pass a custom proc to replace day chrome entirely.
+Props `day` builds each visible cell; nil falls back to the month/root `day`,
+then built-in `Calendar_Day`. Pass a custom proc to replace day chrome entirely.
 */
 Calendar_Grid_Props :: struct {
-	config:      Calendar_Grid_Config,
-	month_index: int,
-	day:         proc(frame_state: Calendar_Day_State),
+	config: Calendar_Grid_Config,
+	day:    proc(frame_state: Calendar_Day_State),
 }
 
 /*
 Per-day cell part: paints selection chrome and owns the hit target.
 */
-Calendar_Day_Config :: o.Widget_Config
+Calendar_Day_Config :: struct {
+	using _:     o.Widget_Config,
+	month_index: int,
+	day_index:   int,
+}
 
 /*
 Per-frame day cell state passed to `Calendar.day` / `Calendar_Grid.day` / `child`.
@@ -73,10 +90,8 @@ Calendar_Day_State :: struct {
 }
 
 Calendar_Day_Props :: struct {
-	config:      Calendar_Day_Config,
-	month_index: int,
-	day_index:   int,
-	child:       proc(frame_state: Calendar_Day_State),
+	config: Calendar_Day_Config,
+	child:  proc(frame_state: Calendar_Day_State),
 }
 
 @(private)
@@ -450,12 +465,12 @@ Calendar_Navigation :: proc(props: Calendar_Navigation_Props) {
 Month title for one visible month column.
 */
 Calendar_Caption :: proc(props: Calendar_Caption_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
 	ctx := calendar_ctx_top()
-	month := Calendar_Date_Add_Months(ctx.month, props.month_index)
+	month := Calendar_Date_Add_Months(ctx.month, props.config.month_index)
 	prefix := calendar_part_id_prefix(props.config.id)
 
 	cfg := o.merge_widget_config(
@@ -469,7 +484,7 @@ Calendar_Caption :: proc(props: Calendar_Caption_Props) {
 		},
 		props.config,
 	)
-	cfg.id = fmt.tprintf("%s/month-label-%d", prefix, props.month_index)
+	cfg.id = fmt.tprintf("%s/month-label-%d", prefix, props.config.month_index)
 
 	Text(
 		{
@@ -537,7 +552,7 @@ calendar_weekdays_child :: proc(_: Rectangle_State) {
 Weekday header row for one month column.
 */
 Calendar_Weekdays :: proc(props: Calendar_Weekdays_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
@@ -546,7 +561,7 @@ Calendar_Weekdays :: proc(props: Calendar_Weekdays_Props) {
 
 	calendar_weekdays_build = {
 		prefix      = prefix,
-		month_index = props.month_index,
+		month_index = props.config.month_index,
 	}
 
 	cfg := o.merge_widget_config(
@@ -602,7 +617,7 @@ calendar_week_numbers_child :: proc(_: Rectangle_State) {
 ISO week numbers for one month column when `show_week_numbers` is enabled on the root.
 */
 Calendar_Week_Numbers :: proc(props: Calendar_Week_Numbers_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
@@ -612,7 +627,7 @@ Calendar_Week_Numbers :: proc(props: Calendar_Week_Numbers_Props) {
 		return
 	}
 
-	cells, grid_ok := calendar_part_month_cells(props.month_index)
+	cells, grid_ok := calendar_part_month_cells(props.config.month_index)
 
 	if !grid_ok {
 		return
@@ -622,7 +637,7 @@ Calendar_Week_Numbers :: proc(props: Calendar_Week_Numbers_Props) {
 
 	calendar_week_numbers_build = {
 		prefix      = prefix,
-		month_index = props.month_index,
+		month_index = props.config.month_index,
 		cells       = cells,
 	}
 
@@ -644,22 +659,22 @@ Calendar_Week_Numbers :: proc(props: Calendar_Week_Numbers_Props) {
 One interactive day cell: selection chrome, hover, today/focus rings, and label.
 */
 Calendar_Day :: proc(props: Calendar_Day_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
-	if props.day_index < 0 || props.day_index >= CALENDAR_GRID_DAYS {
+	if props.config.day_index < 0 || props.config.day_index >= CALENDAR_GRID_DAYS {
 		return
 	}
 
 	ctx := calendar_ctx_top()
-	cells, grid_ok := calendar_part_month_cells(props.month_index)
+	cells, grid_ok := calendar_part_month_cells(props.config.month_index)
 
 	if !grid_ok {
 		return
 	}
 
-	cell := cells[props.day_index]
+	cell := cells[props.config.day_index]
 
 	if cell.hidden {
 		return
@@ -671,7 +686,7 @@ Calendar_Day :: proc(props: Calendar_Day_Props) {
 		day_id = fmt.tprintf(
 			"%s/day-%d-%04d-%02d-%02d",
 			ctx.key,
-			props.month_index,
+			props.config.month_index,
 			cell.date.year,
 			int(cell.date.month),
 			int(cell.date.day),
@@ -682,8 +697,8 @@ Calendar_Day :: proc(props: Calendar_Day_Props) {
 		id          = day_id,
 		date        = cell.date,
 		cell        = cell,
-		month_index = props.month_index,
-		day_index   = props.day_index,
+		month_index = props.config.month_index,
+		day_index   = props.config.day_index,
 		disabled    = cell.disabled || ctx.widget_disabled,
 	}
 
@@ -786,7 +801,15 @@ calendar_grid_child :: proc(_: Rectangle_State) {
 			continue
 		}
 
-		Calendar_Day({config = {id = day_id}, month_index = build.month_index, day_index = i})
+		Calendar_Day(
+			{
+				config = {
+					id          = day_id,
+					month_index = build.month_index,
+					day_index   = i,
+				},
+			},
+		)
 	}
 }
 
@@ -797,11 +820,11 @@ Calls `day` (or root/month fallback) per visible cell. Nil uses `Calendar_Day`.
 Hidden cells keep a sized spacer so the 7-column wrap stays aligned.
 */
 Calendar_Grid :: proc(props: Calendar_Grid_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
-	cells, grid_ok := calendar_part_month_cells(props.month_index)
+	cells, grid_ok := calendar_part_month_cells(props.config.month_index)
 
 	if !grid_ok {
 		return
@@ -817,7 +840,7 @@ Calendar_Grid :: proc(props: Calendar_Grid_Props) {
 
 	calendar_grid_build = {
 		prefix      = prefix,
-		month_index = props.month_index,
+		month_index = props.config.month_index,
 		day         = day_fn,
 		cells       = cells,
 		day_size    = ctx.day_size,
@@ -860,11 +883,21 @@ calendar_month_body_child :: proc(_: Rectangle_State) {
 
 	Calendar_Week_Numbers(
 		{
-			config = {id = fmt.tprintf("%s/week_numbers", build.prefix)},
-			month_index = build.month_index,
+			config = {
+				id          = fmt.tprintf("%s/week_numbers", build.prefix),
+				month_index = build.month_index,
+			},
 		},
 	)
-	Calendar_Grid({config = {id = build.prefix}, month_index = build.month_index, day = build.day})
+	Calendar_Grid(
+		{
+			config = {
+				id          = build.prefix,
+				month_index = build.month_index,
+			},
+			day = build.day,
+		},
+	)
 }
 
 @(private)
@@ -899,7 +932,12 @@ calendar_month_header_child :: proc(_: Rectangle_State) {
 	}
 
 	Calendar_Caption(
-		{config = {id = fmt.tprintf("%s/caption", build.prefix)}, month_index = build.month_index},
+		{
+			config = {
+				id          = fmt.tprintf("%s/caption", build.prefix),
+				month_index = build.month_index,
+			},
+		},
 	)
 
 	if build.month_index == 0 {
@@ -942,8 +980,10 @@ calendar_month_child :: proc(_: Rectangle_State) {
 	)
 	Calendar_Weekdays(
 		{
-			config = {id = fmt.tprintf("%s/weekdays", build.prefix)},
-			month_index = build.month_index,
+			config = {
+				id          = fmt.tprintf("%s/weekdays", build.prefix),
+				month_index = build.month_index,
+			},
 		},
 	)
 
@@ -963,7 +1003,13 @@ calendar_month_child :: proc(_: Rectangle_State) {
 		)
 	} else {
 		Calendar_Grid(
-			{config = {id = build.prefix}, month_index = build.month_index, day = build.day},
+			{
+				config = {
+					id          = build.prefix,
+					month_index = build.month_index,
+				},
+				day = build.day,
+			},
 		)
 	}
 }
@@ -972,7 +1018,7 @@ calendar_month_child :: proc(_: Rectangle_State) {
 Full month column: navigation (first month only), caption, weekdays, optional week numbers, grid.
 */
 Calendar_Month :: proc(props: Calendar_Month_Part_Props) {
-	if !calendar_part_month_index_ok(props.month_index) {
+	if !calendar_part_month_index_ok(props.config.month_index) {
 		return
 	}
 
@@ -980,12 +1026,12 @@ Calendar_Month :: proc(props: Calendar_Month_Part_Props) {
 	prefix := calendar_part_id_prefix(props.config.id)
 
 	if props.config.id == "" {
-		prefix = fmt.tprintf("%s/month_%d", ctx.key, props.month_index)
+		prefix = fmt.tprintf("%s/month_%d", ctx.key, props.config.month_index)
 	}
 
 	calendar_month_build = {
 		prefix      = prefix,
-		month_index = props.month_index,
+		month_index = props.config.month_index,
 		day         = props.day,
 	}
 
@@ -1026,7 +1072,14 @@ calendar_default_months_child :: proc(_: Rectangle_State) {
 	count := calendar_default_months_count
 
 	for i in 0 ..< count {
-		Calendar_Month({config = {id = fmt.tprintf("%s/month_%d", ctx.key, i)}, month_index = i})
+		Calendar_Month(
+			{
+				config = {
+					id          = fmt.tprintf("%s/month_%d", ctx.key, i),
+					month_index = i,
+				},
+			},
+		)
 	}
 }
 

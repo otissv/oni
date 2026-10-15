@@ -6,7 +6,10 @@ import set "../set"
 /*
 Tabs trigger configuration.
 */
-Tabs_Trigger_Config :: o.Widget_Config
+Tabs_Trigger_Config :: struct {
+	using _: o.Widget_Config,
+	value:   string,
+}
 
 /*
 Tabs trigger per-frame state.
@@ -32,14 +35,12 @@ Tabs_Trigger_Event :: o.Widget_Event(Tabs_Trigger_State)
 /*
 Tabs trigger props.
 
-`value` is required and must be unique inside the parent `Tabs`. The trigger is
-inert outside a root, when `value` is empty, or when another trigger already
-registered the same value.
+`config.value` is required and must be unique inside the parent `Tabs`. The
+trigger is inert outside a root, when `config.value` is empty, or when another
+trigger already registered the same value.
 */
 Tabs_Trigger_Props :: struct {
 	config:                       Tabs_Trigger_Config,
-	value:                        string,
-	disabled:                     bool,
 	child:                        proc(frame_state: Tabs_Trigger_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -190,7 +191,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 	group_key := ""
 	group_disabled := false
 	variant := Tabs_List_Variant.DEFAULT
-	own_disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	own_disabled := o.cfg_style_bool(cfg.disabled)
 
 	if in_tabs {
 		ctx := tabs_ctx_top()
@@ -203,7 +204,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 	frame_state := Tabs_Trigger_State {
 		is_disabled    = own_disabled || group_disabled || !in_tabs,
 		is_focused     = was_focused,
-		value          = props.value,
+		value          = cfg.value,
 		group_disabled = group_disabled,
 		variant        = variant,
 	}
@@ -218,7 +219,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 		frame_state.group_disabled = false
 	}
 
-	frame_state.active = tabs_active_now(props.value, registered)
+	frame_state.active = tabs_active_now(cfg.value, registered)
 
 	if frame_state.is_disabled {
 		cfg.disabled = set.Disabled(true)
@@ -236,7 +237,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 	previous_action := tabs_trigger_action
 	tabs_trigger_action = {
 		active   = true,
-		value    = props.value,
+		value    = cfg.value,
 		on_click = props.on_click,
 	}
 	defer tabs_trigger_action = previous_action
@@ -267,7 +268,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 		if in_tabs {
 			registered = tabs_register_trigger(
 				{
-					value = props.value,
+					value = cfg.value,
 					element_id = key,
 					disabled = !can_interact,
 					auto_focus = config.auto_focus,
@@ -281,7 +282,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 			frame_state.group_disabled = false
 			frame_state.active = false
 		} else {
-			frame_state.active = tabs_active_now(props.value, true)
+			frame_state.active = tabs_active_now(cfg.value, true)
 		}
 
 		disabled_changed := frame_state.is_disabled != (own_disabled || group_disabled || !in_tabs)
@@ -327,7 +328,7 @@ Tabs_Trigger :: proc(props: Tabs_Trigger_Props) {
 	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 
 	frame_state.is_focused = widget_is_focused(key)
-	frame_state.active = tabs_active_now(props.value, registered)
+	frame_state.active = tabs_active_now(cfg.value, registered)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y

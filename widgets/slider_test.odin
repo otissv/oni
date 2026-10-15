@@ -91,10 +91,10 @@ slider_test_custom_child :: proc(frame_state: Slider_State) {
 		Slider_Thumb({
 			config = {
 				id = fmt.tprintf("slider-custom/thumb-%d", i),
+				index = i,
 				background = set.Background(o.Color.BACKGROUND),
 				border_color = set.Border_color(o.Color.PRIMARY),
 			},
-			index = i,
 			child = slider_test_custom_thumb,
 		})
 	}
@@ -132,8 +132,7 @@ slider_layout_registers_kind_and_tab_order :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Slider({
-			config = {id = "slider-layout"},
-			values = values[:],
+			config = {id = "slider-layout", values = values[:]},
 		})
 		widget_test_finish_layout()
 
@@ -160,9 +159,7 @@ slider_disabled_is_not_tabbable :: proc(t: ^testing.T) {
 		defer widget_test_end_frame()
 
 		Slider({
-			config = {id = "slider-disabled"},
-			values = values[:],
-			disabled = true,
+			config = {id = "slider-disabled", values = values[:], disabled = set.Disabled(true)},
 		})
 		expect_in_tab_order(t, "slider-disabled", false)
 		widget_test_finish_layout()
@@ -175,7 +172,7 @@ slider_empty_values_are_not_tabbable :: proc(t: ^testing.T) {
 		widget_test_begin_layout()
 		defer widget_test_end_frame()
 
-		Slider({config = {id = "slider-empty"}, values = {}})
+		Slider({config = {id = "slider-empty", values = {}}})
 		expect_in_tab_order(t, "slider-empty", false)
 		widget_test_finish_layout()
 	})
@@ -189,11 +186,13 @@ slider_keyboard_arrow_reports_stepped_value :: proc(t: ^testing.T) {
 		slider_test_values[0] = 40
 
 		props := Slider_Props {
-			config = {id = "slider-keyboard"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 5,
+			config = {
+				id = "slider-keyboard",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 5,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -221,11 +220,13 @@ slider_keyboard_home_end :: proc(t: ^testing.T) {
 		values := [1]f32{40}
 
 		props := Slider_Props {
-			config = {id = "slider-home"},
-			values = values[:],
-			min = 10,
-			max = 90,
-			step = 1,
+			config = {
+				id = "slider-home",
+				values = values[:],
+				min = 10,
+				max = 90,
+				step = 1,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -242,7 +243,7 @@ slider_keyboard_home_end :: proc(t: ^testing.T) {
 
 		widget_test_end_frame()
 		values[0] = slider_test_last_change[0]
-		props.values = values[:]
+		props.config.values = values[:]
 		slider_test_reset()
 
 		widget_test_begin_layout()
@@ -262,9 +263,11 @@ slider_disabled_blocks_keyboard :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [1]f32{40}
 		props := Slider_Props {
-			config = {id = "slider-key-disabled"},
-			values = values[:],
-			disabled = true,
+			config = {
+				id = "slider-key-disabled",
+				values = values[:],
+				disabled = set.Disabled(true),
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -292,11 +295,11 @@ slider_track_press_jumps_and_commits_on_release :: proc(t: ^testing.T) {
 				id = "slider-track",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 1,
 			},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 1,
 			on_value_change = slider_test_on_change,
 			on_value_commit = slider_test_on_commit,
 		}
@@ -321,7 +324,7 @@ slider_track_press_jumps_and_commits_on_release :: proc(t: ^testing.T) {
 		testing.expect(t, slider_test_last_change[0] > 50)
 
 		values[0] = slider_test_last_change[0]
-		props.values = values[:]
+		props.config.values = values[:]
 		change_before_release := slider_test_change_count
 
 		widget_test_begin_layout()
@@ -351,11 +354,11 @@ slider_drag_updates_while_held :: proc(t: ^testing.T) {
 				id = "slider-drag",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 1,
 			},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 1,
 			on_value_change = slider_test_on_change,
 		}
 
@@ -378,7 +381,7 @@ slider_drag_updates_while_held :: proc(t: ^testing.T) {
 		widget_test_end_frame()
 
 		values[0] = slider_test_last_change[0]
-		props.values = values[:]
+		props.config.values = values[:]
 		first := slider_test_last_change[0]
 
 		o.state.input.mouse_left = true
@@ -406,12 +409,14 @@ slider_range_keyboard_moves_active_thumb :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [2]f32{20, 80}
 		props := Slider_Props {
-			config = {id = "slider-range"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 5,
-			min_steps_between_thumbs = 1,
+			config = {
+				id = "slider-range",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 5,
+				min_steps_between_thumbs = 1,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -441,12 +446,14 @@ slider_vertical_keyboard_uses_up_down :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [1]f32{40}
 		props := Slider_Props {
-			config = {id = "slider-vertical"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 10,
-			orientation = .VERTICAL,
+			config = {
+				id = "slider-vertical",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 10,
+				orientation = .VERTICAL,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -470,12 +477,14 @@ slider_inverted_reverses_arrow_direction :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [1]f32{40}
 		props := Slider_Props {
-			config = {id = "slider-inverted"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 10,
-			inverted = true,
+			config = {
+				id = "slider-inverted",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 10,
+				inverted = true,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -499,11 +508,13 @@ slider_shift_arrow_uses_large_step :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [1]f32{40}
 		props := Slider_Props {
-			config = {id = "slider-shift"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 1,
+			config = {
+				id = "slider-shift",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 1,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -528,11 +539,13 @@ slider_caller_owned_values_are_not_mutated :: proc(t: ^testing.T) {
 		slider_test_reset()
 		values := [1]f32{25}
 		props := Slider_Props {
-			config = {id = "slider-owned"},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 5,
+			config = {
+				id = "slider-owned",
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 5,
+			},
 			on_value_change = slider_test_on_change,
 		}
 
@@ -561,8 +574,8 @@ slider_ui_shutdown_releases_drag_map :: proc(t: ^testing.T) {
 				id = "slider-shutdown",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
 			},
-			values = values[:],
 		})
 		widget_test_finish_layout()
 		rect := o.ui_layout_rect(o.ui_id("slider-shutdown"))
@@ -578,8 +591,8 @@ slider_ui_shutdown_releases_drag_map :: proc(t: ^testing.T) {
 				id = "slider-shutdown",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
 			},
-			values = values[:],
 			on_value_change = slider_test_on_change,
 		})
 		testing.expect(t, o.state.ui.slider_drags != nil)
@@ -597,11 +610,11 @@ slider_composable_parts_run_once_per_thumb :: proc(t: ^testing.T) {
 				id = "slider-custom",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
+				min = 0,
+				max = 100,
+				step = 1,
 			},
-			values = values[:],
-			min = 0,
-			max = 100,
-			step = 1,
 			child = slider_test_custom_child,
 		}
 
@@ -639,8 +652,8 @@ slider_default_child_registers_parts :: proc(t: ^testing.T) {
 				id = "slider-default",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(20)),
+				values = values[:],
 			},
-			values = values[:],
 		})
 		widget_test_finish_layout()
 
@@ -665,10 +678,10 @@ slider_layout_metrics_props :: proc(t: ^testing.T) {
 				id = "slider-metrics",
 				width = set.Width(f32(200)),
 				height = set.Height(f32(24)),
+				values = values[:],
+				thumb_size = set.F32(f32(20)),
+				track_thickness = set.F32(f32(8)),
 			},
-			values = values[:],
-			thumb_size = set.F32(f32(20)),
-			track_thickness = set.F32(f32(8)),
 		})
 		widget_test_finish_layout()
 
@@ -691,7 +704,7 @@ slider_parts_outside_context_noop :: proc(t: ^testing.T) {
 
 		Slider_Track({config = {id = "orphan-slider-track"}})
 		Slider_Range({config = {id = "orphan-slider-range"}})
-		Slider_Thumb({config = {id = "orphan-slider-thumb"}, index = 0})
+		Slider_Thumb({config = {id = "orphan-slider-thumb", index = 0}})
 		Slider_Default_Parts({})
 		widget_test_finish_layout()
 	})

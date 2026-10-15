@@ -13,7 +13,29 @@ CALENDAR_PAD :: f32(12)
 // Shared by today outline and keyboard-selection focus ring.
 CALENDAR_DAY_RING_WIDTH :: f32(2)
 
-Calendar_Config :: o.Widget_Config
+Calendar_Config :: struct {
+	using _:              o.Widget_Config,
+	mode:                 Calendar_Mode,
+	selected:             Calendar_Date,
+	has_selected:         bool,
+	selected_dates:       []Calendar_Date,
+	selected_range:       Calendar_Range,
+	month:                Calendar_Date,
+	required:             bool,
+	min:                  int,
+	max:                  int,
+	start_month:          Calendar_Date,
+	end_month:            Calendar_Date,
+	start_date:           Calendar_Date,
+	end_date:             Calendar_Date,
+	hide_outside_days:    bool,
+	show_week_numbers:    bool,
+	week_starts_on:       Calendar_Weekday,
+	number_of_months:     int,
+	today:                Calendar_Date,
+	day_size:             o.Cfg(o.Style_F32),
+	gap:                  o.Cfg(o.Style_F32),
+}
 
 /*
 Per-frame calendar state exposed to handlers and composable part builders.
@@ -44,52 +66,35 @@ Compose with `Calendar_Month` or finer parts (`Calendar_Navigation`, `Calendar_C
 `Calendar_Weekdays`, `Calendar_Week_Numbers`, `Calendar_Grid`, `Calendar_Day`) inside
 `child`. When `child` is nil, `Calendar_Default_Months` is used.
 
-Selection and displayed month are caller-owned: pass `selected*` / `month` every
-frame and update them from `on_select` / `on_month_change`. The widget never
-mutates caller slices or dates and does not keep month as runtime source of truth.
+Selection and displayed month are caller-owned: pass `config.selected*` /
+`config.month` every frame and update them from `on_select` / `on_month_change`.
+The widget never mutates caller slices or dates and does not keep month as
+runtime source of truth.
 
 Compose with `child` (default `Calendar_Default_Months`). Override day cells via
 `day` (threaded through `Calendar_Month` / `Calendar_Grid`); nil uses
 `Calendar_Day`. Day chrome uses theme tokens — customize by supplying `day`.
 
-`day_size` / `gap` are layout metrics (unset Cfg keeps defaults). The root owns
-keyboard navigation, measurement, and the outer box.
+`config.day_size` / `config.gap` are layout metrics (unset Cfg keeps defaults).
+The root owns keyboard navigation, measurement, and the outer box.
 
 `disabled_matcher` / `hidden_matcher` return true when a day cannot be selected
-or should not be shown. `start_date` / `end_date` disable days outside an
-inclusive selectable window and also clamp month navigation (prev/next and
-keyboard) to months that overlap that window. `today` overrides the system date
-when non-zero (tests). Outside-month days show by default; set
-`hide_outside_days` to hide them.
+or should not be shown. `config.start_date` / `config.end_date`
+disable days outside an inclusive selectable window and also clamp month
+navigation (prev/next and keyboard) to months that overlap that window.
+`config.today` overrides the system date when non-zero (tests). Outside-month
+days show by default; set `config.hide_outside_days` to hide them.
+
+Widget disable uses `config.disabled` (`set.Disabled`); there is no separate
+props-level `disabled` bool.
 */
 Calendar_Props :: struct {
 	config:                       Calendar_Config,
-	mode:                         Calendar_Mode,
-	selected:                     Calendar_Date,
-	has_selected:                 bool,
-	selected_dates:               []Calendar_Date,
-	selected_range:               Calendar_Range,
-	month:                        Calendar_Date,
 	on_month_change:              proc(month: Calendar_Date),
 	on_select:                    proc(selection: Calendar_Selection),
 	on_day_click:                 proc(date: Calendar_Date),
-	required:                     bool,
-	min:                          int,
-	max:                          int,
-	start_month:                  Calendar_Date,
-	end_month:                    Calendar_Date,
-	start_date:                   Calendar_Date,
-	end_date:                     Calendar_Date,
 	disabled_matcher:             proc(date: Calendar_Date) -> bool,
 	hidden_matcher:               proc(date: Calendar_Date) -> bool,
-	hide_outside_days:            bool,
-	show_week_numbers:            bool,
-	week_starts_on:               Calendar_Weekday,
-	number_of_months:             int,
-	today:                        Calendar_Date,
-	disabled:                     bool,
-	day_size:                     o.Cfg(o.Style_F32),
-	gap:                          o.Cfg(o.Style_F32),
 	day:                          proc(frame_state: Calendar_Day_State),
 	format_month:                 proc(date: Calendar_Date) -> string,
 	format_weekday:               proc(weekday: Calendar_Weekday) -> string,
@@ -301,35 +306,35 @@ calendar_resolve_months :: proc(count: int) -> int {
 }
 
 @(private)
-calendar_resolve_show_outside :: proc(props: Calendar_Props) -> bool {
+calendar_resolve_show_outside :: proc(cfg: Calendar_Config) -> bool {
 	// DayPicker defaults to showing outside-month days.
-	return !props.hide_outside_days
+	return !cfg.hide_outside_days
 }
 
 @(private)
-calendar_resolve_today :: proc(props: Calendar_Props) -> Calendar_Date {
-	if Calendar_Date_Valid(props.today) {
-		return props.today
+calendar_resolve_today :: proc(cfg: Calendar_Config) -> Calendar_Date {
+	if Calendar_Date_Valid(cfg.today) {
+		return cfg.today
 	}
 
 	return Calendar_Today()
 }
 
 @(private)
-calendar_selection_from_props :: proc(props: Calendar_Props) -> Calendar_Selection {
+calendar_selection_from_config :: proc(cfg: Calendar_Config) -> Calendar_Selection {
 	sel := Calendar_Selection {
-		mode = props.mode,
+		mode = cfg.mode,
 	}
 
-	switch props.mode {
+	switch cfg.mode {
 	case .NONE:
 	case .SINGLE:
-		sel.has_single = props.has_selected && Calendar_Date_Valid(props.selected)
-		sel.single = props.selected
+		sel.has_single = cfg.has_selected && Calendar_Date_Valid(cfg.selected)
+		sel.single = cfg.selected
 	case .MULTIPLE:
-		sel.multiple = props.selected_dates
+		sel.multiple = cfg.selected_dates
 	case .RANGE:
-		sel.range = Calendar_Range_Normalize(props.selected_range)
+		sel.range = Calendar_Range_Normalize(cfg.selected_range)
 	}
 
 	return sel
@@ -1125,7 +1130,7 @@ Calendar :: proc(props: Calendar_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	if disabled && was_focused {
 		o.widget_set_focused_id("")
@@ -1133,21 +1138,21 @@ Calendar :: proc(props: Calendar_Props) {
 	}
 
 	rt := calendar_runtime_ensure(key)
-	number_of_months := calendar_resolve_months(props.number_of_months)
-	show_outside := calendar_resolve_show_outside(props)
-	today := calendar_resolve_today(props)
-	selection := calendar_selection_from_props(props)
-	day_size := calendar_cfg_f32(props.day_size, CALENDAR_DEFAULT_DAY_SIZE)
-	gap := calendar_cfg_f32(props.gap, CALENDAR_DEFAULT_GAP)
+	number_of_months := calendar_resolve_months(cfg.number_of_months)
+	show_outside := calendar_resolve_show_outside(cfg)
+	today := calendar_resolve_today(cfg)
+	selection := calendar_selection_from_config(cfg)
+	day_size := calendar_cfg_f32(cfg.day_size, CALENDAR_DEFAULT_DAY_SIZE)
+	gap := calendar_cfg_f32(cfg.gap, CALENDAR_DEFAULT_GAP)
 
 	nav_start, nav_end := Calendar_Resolve_Nav_Bounds(
-		props.start_month,
-		props.end_month,
-		props.start_date,
-		props.end_date,
+		cfg.start_month,
+		cfg.end_month,
+		cfg.start_date,
+		cfg.end_date,
 	)
 
-	month := Calendar_Start_Of_Month(props.month)
+	month := Calendar_Start_Of_Month(cfg.month)
 
 	if month.year == 0 {
 		month = Calendar_Start_Of_Month(today)
@@ -1190,14 +1195,14 @@ Calendar :: proc(props: Calendar_Props) {
 	frame_state := Calendar_State {
 		is_disabled       = disabled,
 		is_focused        = was_focused,
-		mode              = props.mode,
+		mode              = cfg.mode,
 		month             = month,
 		focused_day       = focused_day,
 		selection         = selection,
 		number_of_months  = number_of_months,
-		week_starts_on    = props.week_starts_on,
+		week_starts_on    = cfg.week_starts_on,
 		show_outside_days = show_outside,
-		show_week_numbers = props.show_week_numbers,
+		show_week_numbers = cfg.show_week_numbers,
 		can_go_prev       = can_go_prev,
 		can_go_next       = can_go_next,
 	}
@@ -1221,21 +1226,21 @@ Calendar :: proc(props: Calendar_Props) {
 			key = key,
 			layout_id = layout_id,
 			runtime = rt,
-			mode = props.mode,
+			mode = cfg.mode,
 			month = month,
 			focused_day = focused_day,
 			selection = selection,
-			required = props.required,
-			min = props.min,
-			max = props.max,
+			required = cfg.required,
+			min = cfg.min,
+			max = cfg.max,
 			start_month = nav_start,
 			end_month = nav_end,
-			start_date = props.start_date,
-			end_date = props.end_date,
+			start_date = cfg.start_date,
+			end_date = cfg.end_date,
 			number_of_months = number_of_months,
-			week_starts_on = props.week_starts_on,
+			week_starts_on = cfg.week_starts_on,
 			show_outside_days = show_outside,
-			show_week_numbers = props.show_week_numbers,
+			show_week_numbers = cfg.show_week_numbers,
 			today = today,
 			day_size = day_size,
 			gap = gap,
@@ -1280,7 +1285,7 @@ Calendar :: proc(props: Calendar_Props) {
 			number_of_months,
 			day_size,
 			gap,
-			props.show_week_numbers,
+			cfg.show_week_numbers,
 		)
 		frame_state.content_width = content_w
 		frame_state.content_height = content_h

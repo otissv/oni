@@ -6,7 +6,10 @@ import set "../set"
 /*
 Radio item configuration.
 */
-Radio_Config :: o.Widget_Config
+Radio_Config :: struct {
+	using _: o.Widget_Config,
+	value:   string,
+}
 
 /*
 Radio per-frame state.
@@ -32,14 +35,12 @@ Radio_Event :: o.Widget_Event(Radio_State)
 Radio item props.
 
 `value` is required and must be unique inside the parent `Radio_Group`. The
-item is inert outside a group, when `value` is empty, or when another item
-already registered the same value. `child` replaces the built-in dot and runs
-only while `checked` is true.
+	item is inert outside a group, when `value` is empty, or when another item
+already registered the same value. Props `child` replaces the built-in dot and
+runs only while `checked` is true.
 */
 Radio_Props :: struct {
 	config:                       Radio_Config,
-	value:                        string,
-	disabled:                     bool,
 	child:                        proc(frame_state: Radio_State),
 	unmount:                      bool,
 	can_interactive_during_mount: bool,
@@ -223,7 +224,7 @@ Radio :: proc(props: Radio_Props) {
 	in_group := radio_ctx_ok()
 	group_key := ""
 	group_disabled := false
-	own_disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
+	own_disabled := o.cfg_style_bool(cfg.disabled)
 
 	if in_group {
 		ctx := radio_ctx_top()
@@ -235,7 +236,7 @@ Radio :: proc(props: Radio_Props) {
 	frame_state := Radio_State {
 		is_disabled    = own_disabled || group_disabled || !in_group,
 		is_focused     = was_focused,
-		value          = props.value,
+		value          = cfg.value,
 		group_disabled = group_disabled,
 	}
 	registered := false
@@ -249,7 +250,7 @@ Radio :: proc(props: Radio_Props) {
 		frame_state.group_disabled = false
 	}
 
-	frame_state.checked = radio_checked_now(props.value, registered)
+	frame_state.checked = radio_checked_now(cfg.value, registered)
 
 	if frame_state.is_disabled {
 		cfg.disabled = set.Disabled(true)
@@ -267,7 +268,7 @@ Radio :: proc(props: Radio_Props) {
 	previous_action := radio_action
 	radio_action = {
 		active   = true,
-		value    = props.value,
+		value    = cfg.value,
 		on_click = props.on_click,
 	}
 	defer radio_action = previous_action
@@ -298,7 +299,7 @@ Radio :: proc(props: Radio_Props) {
 		if in_group {
 			registered = radio_register_item(
 				{
-					value = props.value,
+					value = cfg.value,
 					element_id = key,
 					disabled = !can_interact,
 					auto_focus = config.auto_focus,
@@ -312,7 +313,7 @@ Radio :: proc(props: Radio_Props) {
 			frame_state.group_disabled = false
 			frame_state.checked = false
 		} else {
-			frame_state.checked = radio_checked_now(props.value, true)
+			frame_state.checked = radio_checked_now(cfg.value, true)
 		}
 
 		disabled_changed :=
@@ -365,7 +366,7 @@ Radio :: proc(props: Radio_Props) {
 	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)
 
 	frame_state.is_focused = widget_is_focused(key)
-	frame_state.checked = radio_checked_now(props.value, registered)
+	frame_state.checked = radio_checked_now(cfg.value, registered)
 	scroll := o.widget_scroll_get(key)
 	config.scroll_x = scroll.x
 	config.scroll_y = scroll.y

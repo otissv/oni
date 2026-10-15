@@ -6,7 +6,10 @@ import set "../set"
 /*
 Dialog root configuration.
 */
-Dialog_Config :: o.Widget_Config
+Dialog_Config :: struct {
+	using _: o.Widget_Config,
+	open:    bool,
+}
 
 /*
 Dialog root per-frame state merged with resolved style and open flag.
@@ -31,11 +34,9 @@ pointer press dismiss the modal while open.
 */
 Dialog_Props :: struct {
 	config:                       Dialog_Config,
-	open:                         bool,
-	disabled:                     bool,
-	on_open_change:               proc(open: bool),
 	child:                        proc(frame_state: Dialog_State),
 	unmount:                      bool,
+	on_open_change:               proc(open: bool),
 	can_interactive_during_mount: bool,
 	on_mount:                     proc(frame_state: Dialog_State) -> o.Mount,
 	on_unmount:                   proc(frame_state: Dialog_State) -> o.Mount,
@@ -110,12 +111,8 @@ Dialog :: proc(props: Dialog_Props) {
 	layout_id := o.ui_id(layout_label)
 
 	was_focused := widget_is_focused(key)
-	open := props.open
-	disabled := props.disabled || o.cfg_style_bool(cfg.disabled)
-
-	if disabled {
-		cfg.disabled = set.Disabled(true)
-	}
+	open := cfg.open
+	disabled := o.cfg_style_bool(cfg.disabled)
 
 	frame_state := Dialog_State {
 		is_disabled = disabled,
