@@ -14,13 +14,15 @@ run_init_once :: proc(prc: proc()) {
 }
 
 /*
-Runs one full frame: pacing wait, timing, input, tick, UI end, and present.
+Runs one full frame: pacing wait, timing, input, UI begin, tick, present, end.
 
 Under on-demand effective pacing, waits for input/wake/timeout when idle.
 Pass app-specific tick and draw callbacks; returns early if state is nil
 or the window cannot render. Housekeeping-only idle timeouts may skip the
 frame body when nothing is dirty. Wake-deadline-only iterations may still
 run tick but skip `present_frame` when nothing marked oneshot dirty.
+Typical app draw calls o.Render inside present_frame (Layout + Draw + prune);
+host end_frame calls ui_end_frame again afterward.
 */
 run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 	if state == nil do return

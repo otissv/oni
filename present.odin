@@ -10,7 +10,8 @@ Acquires the swapchain, records draw commands, and submits the GPU frame.
 Layout/draw record and deferred texture uploads run before WaitAndAcquire so CPU
 work overlaps the previous frame's present. Wait is the sync point before GPU
 buffer reuse (safe with the dual Batch_State ping-pong). Call once per frame after
-tick and UI; no-ops when rendering is unavailable.
+tick; the draw callback typically runs o.Render (Layout + Draw) before GPU upload.
+No-ops when rendering is unavailable.
 */
 present_frame :: proc(draw: Draw_Proc) {
 	if !state.can_render || state.window == nil || state.gpu == nil do return

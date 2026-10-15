@@ -4,11 +4,12 @@ Product and engineering order for Oni: **desktop UI toolkit first**, then a **pl
 
 | Doc | Owns |
 | --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Immediate-mode model, props/callbacks, state ownership (model of record) |
 | [APP.md](APP.md) | UI / HUD feature checklist vs codebase |
 | [ATLAS.md](ATLAS.md) | Production glyph atlas (shipped; policy + groups A–I) |
-| [FONT.md](../../FONT.md) | LCD / dual-source text sharpness (shipped) |
+| [FONT.md](../../FONT.md) | LCD / dual-source text sharpness (shipped; lives at repo-parent `FONT.md`) |
 | [DRAW.md](DRAW.md) | Draw / batch / present model |
-| [Layout.md](Layout.md) | Layout solve rules |
+| [Layout.md](Layout.md) | Layout solve rules (flex + CSS-like grid) |
 | [FRAME_MODES.md](FRAME_MODES.md) | Frame pacing (`FRAME_MODE`) |
 | [attributes.md](attributes.md) | CSS ↔ style field map |
 

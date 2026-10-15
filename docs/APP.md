@@ -107,15 +107,20 @@ UI_Id :: distinct u64
 
 ### Frame order (fixed)
 
-1. Poll SDL events → update input + `Dpi_Info`
-2. App tick / screens
-3. `ui_begin_frame()` — reset per-frame UI transient state
-4. **Pass 1 — layout:** widgets register tree nodes; solver writes `rect`
-5. **Pass 2 — draw:** same widget procs; `ui_layout_rect`; emit draw + handle input
-6. `ui_end_frame()` — focus / tab bookkeeping (popover via `space = .POPOVER` / `Popover_Begin`)
-7. `present_frame()` — flush draw lists, present swapchain
+Matches `run_frame` in `oni/runtime.odin` (pacing may skip the body or present):
 
-App entry: prefer `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`).
+1. `input_begin_frame` → poll SDL events (+ `settings_poll`) → update input / DPI
+2. `ui_begin_frame()` — Layout pass; reset per-frame UI / layout
+3. App `tick(dt)` (and first-frame `init` once)
+4. `present_frame(draw)` — CPU record, then GPU upload/present:
+   - App draw callback calls `o.Render(main_ui)` (`oni/ui.odin` / `oni/api.odin`)
+   - **Pass 1 — layout:** widgets register tree; space end solves rects; optional error banner UI
+   - `ui_end_layout_pass()` — layer/anchor solve, stack order, pointer hit, focus/tab, shortcuts → Draw
+   - **Pass 2 — draw:** same widget procs; `ui_layout_rect`; emit draw + input handlers
+   - `ui_end_frame()` — prune widgets not touched this builder (not focus/tab)
+5. Host `end_frame()` — `ui_end_frame` again (usually no-op after `Render`)
+
+Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame step.
 
 ### Hot reload rules
 

@@ -13,7 +13,7 @@ Oni’s generic wake API if another frame is needed.
 
 | Mode | Behavior | Typical use |
 |------|----------|-------------|
-| **Continuous** | Every host loop iteration runs tick → layout → draw → present (still paced by VSync when enabled), whether or not the window is focused. | Games and always-live viewports that must keep advancing in the background. |
+| **Continuous** | Every host loop iteration runs `ui_begin_frame` → tick → `present_frame` (app `o.Render`: layout → draw) → `end_frame` (still paced by VSync when enabled), whether or not the window is focused. | Games and always-live viewports that must keep advancing in the background. |
 | **On-demand** | The engine waits for input, a timeout, or an explicit wake. A full frame runs only when something needs one, focused or not. | Docs, settings UIs, editors at rest, reading-heavy tools. |
 | **Focused** | **Focused:** same as continuous. **Unfocused:** same as on-demand (wait + dirty/wake; longer wait timeout is allowed to save CPU). Focus gain/loss wakes a frame so the transition is immediate. | Desktop apps and tools that should feel live while in use but idle when in the background. |
 
@@ -120,7 +120,7 @@ Engine-owned wake sources (no vendor involved; same on-demand rule):
 
 ## Relation to the host loop
 
-The host still loops on `should_run` → `reloader` → `app_update` → `Run_Frame`. Continuous pacing preserves a full tick/layout/draw/present each iteration (VSync-capped). On-demand idle waits on `SDL_WaitEventTimeout` (plus dirty/wake); focused selects continuous or on-demand from window focus before the same pipeline. Settings watch and host reload debounce are time-based so they progress under on-demand idle timeouts.
+The host still loops on `should_run` → `reloader` → `app_update` → `Run_Frame`. Continuous pacing preserves a full `run_frame` each iteration (VSync-capped): begin UI → tick → present (layout+draw inside) → end. On-demand idle waits on `SDL_WaitEventTimeout` (plus dirty/wake); focused selects continuous or on-demand from window focus before the same pipeline. Settings watch and host reload debounce are time-based so they progress under on-demand idle timeouts.
 
 ## API surface
 

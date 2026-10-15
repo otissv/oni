@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Oni is an Odin immediate mode UI toolkit on SDL3 + SDL_GPU. It is a **framework package** that a consumer project imports (typically as `./oni`). Tengu is a standalone animation package under `libs/tengu` with no Oni dependency.
+Oni is an immediate-mode, props-declared UI toolkit on SDL3 + SDL_GPU with engine-retained interaction state. Widgets are **controlled** (app owns domain values via props down / events up) and **fully composable** (nest via `child` / `Children`, not monolithic). It is a **framework package** that a consumer project imports (typically as `./oni`). Tengu is a standalone animation package under `libs/tengu` with no Oni dependency.
 
 ## Consumer layout
 
@@ -133,11 +133,13 @@ Distinguish true cache misses from repeated alloc-with-no-cache:
 - No cache, alloc every call: HarfBuzz shaping (`font_shape` — `[]Shaped_Glyph` per call); main heap churn besides layout scratch
 - Frame scratch (not a lookup miss): layout wrap/flex/table `[dynamic]` + `defer delete` each frame — route to temp or the layout frame arena instead
 
-See `docs/Prerformance todos.md` for the full audit and priority list.
+See this section and `docs/APP.md` Section 12 / `docs/ROAD_MAP.md` §1.4 for polish priorities.
 
 ## Architecture (do not reinvent)
 
-**Hot reload:** App state lives in heap `Persistent` (`app/exports.odin`). Host keeps the pointer across DLL swaps. GPU/font/atlas live in engine state and are rebound on reload. Do not put long-lived UI state in package globals outside `Persistent` / engine state. Host CWD is the consumer project root (exe dir), so `build/hot_reload/app.so` and `assets/` resolve there.
+**Model:** Immediate-mode, proc-based UI with declarative `*_Props` (config + child + handlers). The app rebuilds the tree every frame; there is no retained app widget graph. **Config flows down; lifecycle hooks run on Layout; input `on_*` handlers run on Draw.** Widgets are **controlled** and **fully composable**, and not fully stateless: **domain state** lives in `Persistent.app`; **UI chrome** lives in `State.widget` (`Widget_Context`) and `State.ui` (scrollports, drag latches, mount map). Input callbacks do not trigger a second layout in the same frame. Full narrative: `docs/ARCHITECTURE.md`.
+
+**Hot reload:** App + engine state live in heap `Persistent` (`app/exports.odin`). Host keeps the pointer across DLL swaps. GPU/font/atlas live in engine state and are rebound on reload. Do not put long-lived UI state in package globals outside `Persistent` / engine state. Host CWD is the consumer project root (exe dir), so `build/hot_reload/app.so` and `assets/` resolve there.
 
 **Product config:** Set required `APP_TYPE` and `FRAME_MODE` in `app/globlas/global.odin` (`APP_TYPE` → shortcut pack; `FRAME_MODE` → pacing). Omitting `FRAME_MODE` is a compile error. Do not edit `exports.odin` for those values; do not put them in `settings.kdl` (user prefs only: window, DPI, fonts, shortcuts). See `docs/FRAME_MODES.md`.
 
@@ -145,16 +147,27 @@ See `docs/Prerformance todos.md` for the full audit and priority list.
 
 **App → engine:** Prefer `oni/api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_Texture`, …). Import engine as `o`, widgets as `w`, set helpers as `set`.
 
+|Name|	Fit|
+|-|-|
+|Immediate-mode UI (IMGUI) | Core: rebuild every frame, no app-owned widget object graph|
+|Controlled widgets | App owns domain values; widgets take value/config via props and report changes via `on_*`|
+|Fully composable | Widgets nest via `child` / `Children`; build UIs from small widgets, not monoliths|
+|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config|
+|Unidirectional data flow (partial)	| App domain: props down, events up — like React’s data story, without a VDOM|
+|Hybrid retained interaction state	| Engine keeps focus/scroll/caret/drags across frames — not “pure” IMGUI|
+
+
+
 ## Layout / draw pass
 
 Layout owns sizing/positioning and Draw paints only.
 
 Each frame the UI tree runs **twice** via `o.Render(main_ui)` (`ui.odin`):
 
-1. **Layout** — `ui_pass() == .Layout`: register nodes, measure intrinsics, run mount/unmount lifecycle, solve flex layout into rects
+1. **Layout** — `ui_pass() == .Layout`: register nodes, measure intrinsics, run mount/unmount lifecycle, solve flex/grid on space end
 2. **Draw** — after `ui_end_layout_pass()`: same procs run again with `ui_pass() == .Draw`; read `ui_layout_rect(id)`, handle input/events, emit draw commands
 
-Between passes the engine snapshots layout ids, prunes focus, processes tab order, and resets auto element ids / static id maps so both passes regenerate the same keys.
+Between passes `ui_end_layout_pass` runs layer/anchor solve, stack order, pointer hit, focus/tab, and shortcuts, then resets auto/static id maps so Draw regenerates the same keys.
 
 **Widget shape** (see `widgets/button.odin`):
 
@@ -178,7 +191,7 @@ Rules:
 - Cleaned up all manual memory
 - Exit criteria wis when you can clearly and confidently say there are no gaps in the implementation
 
-Frame order around this: poll input → app tick → UI begin → layout pass → draw pass → UI end → present.
+Frame order around this: poll input → `ui_begin_frame` → app tick → `present_frame` (`o.Render`: layout → `ui_end_layout_pass` → draw → `ui_end_frame`) → host `end_frame`.
 
 
 
@@ -191,10 +204,12 @@ Follow existing widgets (`widgets/button.odin`, `table.odin`):
 - Theme base via a private `*_theme_base` proc
 - Style overrides through `set.*` helpers, not raw unset fields when a set helper exists
 - Stable `config.id` strings for focus / `GetElementById` / `FocusElement`
+- Controlled: domain values live in app state; pass them in via `*_Props` / config and update through `on_*` handlers — do not hide app state inside the widget
+- Fully composable: nest widgets via `child` / `Children`; prefer small composable pieces over monolithic widgets
 
 Demo UI lives under the consumer `app/routes/` and `app/ui/` (templates ship under `templates/app/`); shared chrome under `app/components/`.
 
-CSS ↔ style field mapping: see `docs/attributes.md`. Layout is flex-like (row/column), not CSS Grid.
+CSS ↔ style field mapping: see `docs/attributes.md`. Layout is flex-like (row/column ± wrap) plus CSS-like grid for `kind = .GRID` (`layout_grid.odin` / `w.Grid`).
 
 ## Tengu
 

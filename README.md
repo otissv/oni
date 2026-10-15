@@ -1,6 +1,6 @@
 # Oni
 
-Odin immediate-mode UI toolkit on **SDL3 + SDL_GPU**. Custom widgets, flex/grid layout, FreeType + HarfBuzz text (including LCD dual-source), and hot-reload for app code.
+Oni is an immediate-mode, props-declared UI toolkit on **SDL3 + SDL_GPU** with engine-retained interaction state. Widgets are **controlled** (app owns domain values via props down / events up) and **fully composable** (nest via `child` / `Children`, not monolithic). Custom widgets, flex/grid layout, FreeType + HarfBuzz text (including LCD dual-source), and hot-reload for app code.
 
 Oni is a **framework package** you vendor (usually as `./oni`). Your project owns the host (`main.odin`), hot-reload DLL (`app/`), and assets. Tengu (`libs/tengu`) is a standalone animation library with no Oni dependency.
 
@@ -75,25 +75,38 @@ App code should prefer `api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_T
 
 ## Architecture (short)
 
-Each frame, `o.Render(main_ui)` runs the UI tree **twice**:
+Oni is an **immediate-mode, props-declared UI with engine-retained interaction state**: the app rebuilds the widget tree every frame from current state and declarative `*_Props` (config down; lifecycle on Layout; input `on_*` on Draw). Widgets are **controlled** and **fully composable** — not a retained object graph and not fully stateless. **App domain state** lives in `Persistent.app`; **engine UI chrome** lives in `State.widget` / `State.ui`.
 
-1. **Layout** — register nodes, measure, mount/unmount, solve flex/grid into rects
-2. **Draw** — hit-test / events, paint from `o.ui_layout_rect`; do not re-solve layout
+Each frame, inside `present_frame`, `o.Render(main_ui)` runs the UI tree **twice**:
 
-Widgets branch on `o.ui_pass()`. Keep both passes’ tree structure identical for the same ids. Coordinates are logical design pixels; DPI scale is handled by the engine.
+1. **Layout** — register nodes, measure, mount/unmount, solve flex/grid on space end
+2. **Draw** — after `ui_end_layout_pass` (stack/hit/tab): hit-test / events, paint from `o.ui_layout_rect`; do not re-solve layout
 
-Long-lived app state lives in heap `Persistent` (`app/exports.odin`); the host keeps the pointer across DLL swaps.
+Widgets branch on `o.ui_pass()`. Keep both passes’ tree structure identical for the same ids. Coordinates are logical design pixels; DPI scale is handled by the engine. The host keeps heap `Persistent` (`app/exports.odin`) across DLL swaps.
+
+|Name|	Fit|
+|-|-|
+|Immediate-mode UI (IMGUI) | Core: rebuild every frame, no app-owned widget object graph|
+|Controlled widgets | App owns domain values; widgets take value/config via props and report changes via `on_*`|
+|Fully composable | Widgets nest via `child` / `Children`; build UIs from small widgets, not monoliths|
+|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config|
+|Unidirectional data flow (partial)	| App domain: props down, events up — like React’s data story, without a VDOM|
+|Hybrid retained interaction state	| Engine keeps focus/scroll/caret/drags across frames — not “pure” IMGUI|
+
+Full narrative: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Documentation
 
 | Doc | Topic |
 | --- | ----- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Immediate-mode model, props/callbacks, state ownership |
 | [docs/ROAD_MAP.md](docs/ROAD_MAP.md) | Product sequence and exit criteria |
 | [docs/APP.md](docs/APP.md) | UI / HUD checklist vs codebase |
 | [docs/ATLAS.md](docs/ATLAS.md) | Production glyph atlas |
 | [docs/DRAW.md](docs/DRAW.md) | Draw / batch / present |
-| [docs/Layout.md](docs/Layout.md) | Layout solve rules |
+| [docs/Layout.md](docs/Layout.md) | Layout solve rules (flex + CSS-like grid) |
 | [docs/FRAME_MODES.md](docs/FRAME_MODES.md) | Frame pacing |
 | [docs/attributes.md](docs/attributes.md) | CSS ↔ style field map |
+| [FONT.md](../FONT.md) | LCD / dual-source text |
 | [libs/tengu/README.md](libs/tengu/README.md) | Tengu animation API |
 | [AGENTS.md](AGENTS.md) | Contributor / agent conventions |

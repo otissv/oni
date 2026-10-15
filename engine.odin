@@ -828,9 +828,12 @@ begin_frame :: proc() {
 }
 
 /*
-Ends a UI frame after layout and widget recording.
+Ends a UI frame by pruning widgets not touched this frame.
 
-Thin wrapper around ui_end_frame; call before present_frame.
+Thin wrapper around ui_end_frame. Prefer o.Render, which already calls
+ui_end_frame per builder after Draw. Host run_frame may call this again
+after present_frame (usually a no-op). Do not call this before present when
+using Render — layout/draw/prune run inside the present draw callback.
 */
 end_frame :: proc() {
 	ui_end_frame()
