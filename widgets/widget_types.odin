@@ -170,6 +170,9 @@ Shutdown :: proc() {
 	date_picker_shutdown()
 	popover_shutdown()
 	dialog_shutdown()
+	collapsible_shutdown()
+	context_menu_shutdown()
+	progress_shutdown()
 	o.widget_ctx_shutdown()
 }
 

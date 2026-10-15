@@ -189,6 +189,9 @@ Layout_Popup_Anchor :: struct {
 	margin:      f32,
 	match_width: bool,
 	align:       Layout_Popup_Align,
+	// When true, place relative to `point` instead of the `anchor_id` node rect.
+	use_point:   bool,
+	point:       Vec2,
 }
 
 /*
@@ -2694,6 +2697,7 @@ Resolves one axis size from length kind, desired content, and available space.
 `.FIT` is CSS fit-content: shrink to content (`min(desired, available)` when
 available is known).
 `.GROW` fills available / free space on this axis.
+`.SHRINK` uses content size (sibling deficit sharing is handled in flex place).
 `.UNSET` uses content, then stretches to available when content is empty.
 
 Width `.AUTO` uses content (empty may stretch). Height `.AUTO` fills the parent
@@ -2720,6 +2724,8 @@ layout_resolve_axis_size :: proc(
 	case .FIT:
 		size = desired
 		if available > 0 do size = min(size, available)
+	case .SHRINK:
+		size = desired
 	case .UNSET:
 		size = desired
 		if size <= 0 && available > 0 do size = available
@@ -2787,8 +2793,8 @@ layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2
 }
 
 /*
-Flex/grow weight on the main axis. Explicit `flex` wins; otherwise axis `.GROW`
-contributes weight 1. Definite main sizes never grow.
+Flex grow weight on the main axis. Explicit `flex` wins; otherwise axis `.GROW`
+contributes weight 1. `.SHRINK` and definite main sizes never grow.
 */
 layout_child_main_grow_weight :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
 	main_len := is_horizontal ? child.config.width : child.config.height
@@ -2800,29 +2806,52 @@ layout_child_main_grow_weight :: proc(child: ^Layout_Node, is_horizontal: bool) 
 }
 
 /*
+Flex shrink weight on the main axis when the line overflows.
+
+Explicit `flex` and axis `.GROW` / `.SHRINK` contribute weight (flex value or 1).
+Definite main sizes never shrink via this pool.
+*/
+layout_child_main_shrink_weight :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
+	main_len := is_horizontal ? child.config.width : child.config.height
+	if length_is_definite(main_len) do return 0
+	if child.config.flex > 0 do return child.config.flex
+	if length_fills_free_space(main_len) || length_is_shrink(main_len) do return 1
+
+	return 0
+}
+
+/*
 Returns the main-axis flex basis before free-space distribution.
 
-Explicit `flex` keeps a zero basis (CSS `flex: 1 1 0%`). Axis `.GROW` uses
-content desired as basis so default-width widgets hug under `.FIT` ancestors
-and still expand into leftover free space.
+Explicit `flex` keeps a zero basis (CSS `flex: 1 1 0%`). Axis `.GROW` / `.SHRINK`
+use content desired as basis so widgets hug under `.FIT` ancestors; `.GROW`
+still expands into leftover free space, `.SHRINK` only yields on deficit.
 */
-layout_child_main_grow_basis :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
+layout_child_main_flex_basis :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
 	main_len := is_horizontal ? child.config.width : child.config.height
 	if length_is_definite(main_len) do return 0
 	if child.config.flex > 0 do return 0
-	if !length_fills_free_space(main_len) do return 0
+	if !length_fills_free_space(main_len) && !length_is_shrink(main_len) do return 0
 
 	return is_horizontal ? child.desired.x : child.desired.y
 }
 
 /*
-Computes a child's main-axis size including flex / grow distribution.
+Alias for `layout_child_main_flex_basis` (grow/shrink content basis).
+*/
+layout_child_main_grow_basis :: proc(child: ^Layout_Node, is_horizontal: bool) -> f32 {
+	return layout_child_main_flex_basis(child, is_horizontal)
+}
 
-Explicit `flex` shares free space from a zero basis (CSS `flex: 1` /
-`1 1 0%`). Axis `.GROW` uses content desired as basis, then adds
-`flex_unit * weight` of remaining free space. When the line overflows,
-`flex_unit` is negative and GROW/flex items shrink so constrained parents
-(e.g. height `.GROW` scrollports) keep a viewport and scroll excess content.
+/*
+Computes a child's main-axis size including flex grow / shrink distribution.
+
+Positive `flex_unit` applies only grow weights; negative only shrink weights.
+Explicit `flex` shares from a zero basis (CSS `flex: 1` / `1 1 0%`). Axis
+`.GROW` uses content desired as basis, then takes leftover. Axis `.SHRINK`
+uses content desired as basis and only participates when `flex_unit` is
+negative. When the line overflows, grow/flex/shrink items yield so constrained
+parents (e.g. height `.GROW` scrollports) keep a viewport and scroll excess.
 
 Height `.AUTO` fills `parent_main` when available (parent content area /
 scrollport viewport) without flex weight. `.FIT` is content-sized and clamped
@@ -2838,11 +2867,16 @@ layout_child_main_size :: proc(
 	main_fixed := length_resolve(main_len, parent_main)
 	if main_fixed > 0 do return main_fixed
 
-	weight := layout_child_main_grow_weight(child, is_horizontal)
-	if weight > 0 {
-		basis := layout_child_main_grow_basis(child, is_horizontal)
-		if flex_unit != 0 {
-			return max(0, basis + flex_unit * weight)
+	grow_weight := layout_child_main_grow_weight(child, is_horizontal)
+	shrink_weight := layout_child_main_shrink_weight(child, is_horizontal)
+	if grow_weight > 0 || shrink_weight > 0 {
+		basis := layout_child_main_flex_basis(child, is_horizontal)
+		if flex_unit > 0 && grow_weight > 0 {
+			return max(0, basis + flex_unit * grow_weight)
+		}
+
+		if flex_unit < 0 && shrink_weight > 0 {
+			return max(0, basis + flex_unit * shrink_weight)
 		}
 
 		return basis
@@ -2865,6 +2899,28 @@ layout_child_main_size :: proc(
 	}
 
 	return desired
+}
+
+/*
+Computes flex_unit for a line from remaining main space and grow/shrink totals.
+
+Positive leftover uses grow weights; deficit uses shrink weights. Mixing
+`.GROW` and `.SHRINK` siblings must not assign leftover to shrink-only items.
+*/
+layout_flex_unit_from_remaining :: proc(
+	remaining: f32,
+	grow_total: f32,
+	shrink_total: f32,
+) -> f32 {
+	if remaining > 0 && grow_total > 0 {
+		return remaining / grow_total
+	}
+
+	if remaining < 0 && shrink_total > 0 {
+		return remaining / shrink_total
+	}
+
+	return 0
 }
 
 /*
@@ -2931,7 +2987,7 @@ layout_child_cross_size :: proc(
 			desired = min_v
 		}
 	}
-	if length_is_fit(cross_len) && cross_for_border > 0 {
+	if (length_is_fit(cross_len) || length_is_shrink(cross_len)) && cross_for_border > 0 {
 		return min(desired, cross_for_border)
 	}
 
@@ -3673,9 +3729,10 @@ layout_sync_soft_wrap_heights_before_flex :: proc(
 		child_justify := layout_merge_justify(justify, child.config.self)
 
 		if is_horizontal {
-			if layout_child_main_grow_weight(child, true) > 0 {
-				// Content-basis grow: sync to basis now; final width syncs after flex.
-				basis := layout_child_main_grow_basis(child, true)
+			if layout_child_main_grow_weight(child, true) > 0 ||
+			   layout_child_main_shrink_weight(child, true) > 0 {
+				// Content-basis grow/shrink: sync to basis now; final width syncs after flex.
+				basis := layout_child_main_flex_basis(child, true)
 				if basis > 0 {
 					layout_text_sync_height_for_assigned_width(child, basis)
 				}
@@ -3758,15 +3815,18 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 	for line, line_index in lines {
 		line_main_available := main_limit > 0 ? main_limit : line.main_sum
 
-		flex_total: f32
+		grow_total: f32
+		shrink_total: f32
 		fixed_total: f32
 		for i in 0 ..< line.count {
 			child := &state.ui.layout.nodes[node.child_indices[line.start + i]]
 			margin_main := layout_margin_main(child.margin, is_horizontal)
-			weight := layout_child_main_grow_weight(child, is_horizontal)
-			if weight > 0 {
-				flex_total += weight
-				fixed_total += margin_main + layout_child_main_grow_basis(child, is_horizontal)
+			grow_weight := layout_child_main_grow_weight(child, is_horizontal)
+			shrink_weight := layout_child_main_shrink_weight(child, is_horizontal)
+			if grow_weight > 0 || shrink_weight > 0 {
+				grow_total += grow_weight
+				shrink_total += shrink_weight
+				fixed_total += margin_main + layout_child_main_flex_basis(child, is_horizontal)
 			} else {
 				fixed_total +=
 					layout_wrap_child_main(child_sizes[line.start + i], is_horizontal) +
@@ -3776,7 +3836,7 @@ layout_position_children_wrap :: proc(node: ^Layout_Node, content_in: Rect) {
 		if line.count > 1 do fixed_total += gap_main * f32(line.count - 1)
 
 		remaining := line_main_available - fixed_total
-		flex_unit := flex_total > 0 ? remaining / flex_total : 0
+		flex_unit := layout_flex_unit_from_remaining(remaining, grow_total, shrink_total)
 
 		line_cross_natural: f32
 		for i in 0 ..< line.count {
@@ -4083,7 +4143,8 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 	main_available = is_horizontal ? content.w : content.h
 	cross_available = is_horizontal ? content.h : content.w
 
-	flex_total: f32
+	grow_total: f32
+	shrink_total: f32
 	fixed_total: f32
 	in_flow_count := 0
 
@@ -4092,11 +4153,13 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 		if !layout_position_in_flex_flow(child.config.position) do continue
 		in_flow_count += 1
 		margin_main := layout_margin_main(child.margin, is_horizontal)
-		weight := layout_child_main_grow_weight(child, is_horizontal)
+		grow_weight := layout_child_main_grow_weight(child, is_horizontal)
+		shrink_weight := layout_child_main_shrink_weight(child, is_horizontal)
 
-		if weight > 0 {
-			flex_total += weight
-			fixed_total += margin_main + layout_child_main_grow_basis(child, is_horizontal)
+		if grow_weight > 0 || shrink_weight > 0 {
+			grow_total += grow_weight
+			shrink_total += shrink_weight
+			fixed_total += margin_main + layout_child_main_flex_basis(child, is_horizontal)
 		} else {
 			main := layout_child_main_size(child, is_horizontal, 0, main_available)
 			fixed_total += main + margin_main
@@ -4108,7 +4171,7 @@ layout_position_children :: proc(node: ^Layout_Node, content_in: Rect) {
 	}
 
 	remaining := main_available - fixed_total
-	flex_unit := flex_total > 0 ? remaining / flex_total : 0
+	flex_unit := layout_flex_unit_from_remaining(remaining, grow_total, shrink_total)
 
 	table_index := -1
 	row_track_index := -1
@@ -4422,6 +4485,31 @@ layout_anchor_popup :: proc(
 }
 
 /*
+Registers a floating node anchored to a point (context menus) with viewport flip.
+*/
+layout_anchor_popup_at_point :: proc(
+	floating_id: UI_Id,
+	point: Vec2,
+	gap: f32,
+	margin: f32,
+	align: Layout_Popup_Align = .START,
+) {
+	if state == nil || state.ui.pass != .Layout do return
+
+	append(
+		&state.ui.layout.popup_anchors,
+		{
+			floating_id = floating_id,
+			gap = max(gap, 0),
+			margin = max(margin, 0),
+			align = align,
+			use_point = true,
+			point = point,
+		},
+	)
+}
+
+/*
 Counts descendants of `kind`, treating a matching node as one complete item.
 */
 @(private)
@@ -4583,23 +4671,33 @@ layout_resolve_anchors :: proc() {
 	viewport := layout_space_bounds(.POPOVER)
 
 	for relation in state.ui.layout.popup_anchors {
-		anchor_index, anchor_ok := state.ui.layout.id_to_node[relation.anchor_id]
 		floating_index, floating_ok := state.ui.layout.id_to_node[relation.floating_id]
 
-		if !anchor_ok || !floating_ok do continue
+		if !floating_ok do continue
 
-		anchor := &state.ui.layout.nodes[anchor_index]
+		anchor_rect: Rect
+
+		if relation.use_point {
+			anchor_rect = {relation.point.x, relation.point.y, 0, 0}
+		} else {
+			anchor_index, anchor_ok := state.ui.layout.id_to_node[relation.anchor_id]
+
+			if !anchor_ok do continue
+
+			anchor_rect = state.ui.layout.nodes[anchor_index].rect
+		}
+
 		floating := &state.ui.layout.nodes[floating_index]
 		rect := floating.rect
 
-		if relation.match_width {
-			rect.w = max(rect.w, anchor.rect.w)
+		if relation.match_width && !relation.use_point {
+			rect.w = max(rect.w, anchor_rect.w)
 		}
 
 		top := viewport.y + relation.margin
 		bottom := viewport.y + viewport.h - relation.margin
-		below_y := anchor.rect.y + anchor.rect.h + relation.gap
-		above_bottom := anchor.rect.y - relation.gap
+		below_y := anchor_rect.y + anchor_rect.h + relation.gap
+		above_bottom := anchor_rect.y - relation.gap
 		available_below := max(0, bottom - below_y)
 		available_above := max(0, above_bottom - top)
 		// Prefer measured content height. Layer roots are re-solved against the
@@ -4614,11 +4712,11 @@ layout_resolve_anchors :: proc() {
 		rect.h = min(preferred_h, available)
 		switch relation.align {
 		case .START:
-			rect.x = anchor.rect.x
+			rect.x = anchor_rect.x
 		case .END:
-			rect.x = anchor.rect.x + anchor.rect.w - rect.w
+			rect.x = anchor_rect.x + anchor_rect.w - rect.w
 		case .CENTER:
-			rect.x = anchor.rect.x + (anchor.rect.w - rect.w) * 0.5
+			rect.x = anchor_rect.x + (anchor_rect.w - rect.w) * 0.5
 		}
 		min_x := viewport.x + relation.margin
 		max_x := viewport.x + viewport.w - relation.margin - rect.w

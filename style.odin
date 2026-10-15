@@ -6,8 +6,8 @@ import "core:mem"
 /*
 Resolves a Length value against a parent axis size.
 
-Fixed / percent / inherit resolve to pixels. Auto, fit-content, grow, and
-min/max-content are indefinite at this stage and return 0; layout applies
+Fixed / percent / inherit resolve to pixels. Auto, fit-content, grow, shrink,
+and min/max-content are indefinite at this stage and return 0; layout applies
 content / free-space / intrinsic rules.
 */
 length_resolve :: proc(length: Length, parent: f32) -> f32 {
@@ -18,7 +18,7 @@ length_resolve :: proc(length: Length, parent: f32) -> f32 {
 		return parent * length.value * 0.01
 	case .INHERIT:
 		return parent
-	case .UNSET, .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
+	case .UNSET, .AUTO, .FIT, .GROW, .SHRINK, .MIN_CONTENT, .MAX_CONTENT:
 		return 0
 	}
 	return 0
@@ -31,7 +31,7 @@ length_is_definite :: proc(length: Length) -> bool {
 	switch length.kind {
 	case .FIXED, .PERCENT, .INHERIT:
 		return true
-	case .UNSET, .AUTO, .FIT, .GROW, .MIN_CONTENT, .MAX_CONTENT:
+	case .UNSET, .AUTO, .FIT, .GROW, .SHRINK, .MIN_CONTENT, .MAX_CONTENT:
 		return false
 	}
 	return false
@@ -52,11 +52,18 @@ length_is_grow :: proc(length: Length) -> bool {
 }
 
 /*
+Returns whether a length is the `.SHRINK` keyword.
+*/
+length_is_shrink :: proc(length: Length) -> bool {
+	return length.kind == .SHRINK
+}
+
+/*
 Returns whether a length fills free space via flex weight (`.GROW`).
 
 Width unset defaults to `.GROW`. Height `.GROW` shares free vertical space.
 Height `.AUTO` fills the parent content area through axis resolve (not flex
-weight).
+weight). `.SHRINK` does not take positive free space.
 */
 length_fills_free_space :: proc(length: Length, is_height := false) -> bool {
 	_ = is_height
@@ -66,13 +73,13 @@ length_fills_free_space :: proc(length: Length, is_height := false) -> bool {
 /*
 Returns whether a height may expand after nested soft-wrap remasure.
 
-Height `.FIT` / min/max-content / unresolved content may grow with remasured
-children. Height `.AUTO` (parent content area / scrollport) and `.GROW` (free
-space) must not — that would collapse scroll range.
+Height `.FIT` / `.SHRINK` / min/max-content / unresolved content may grow with
+remasured children. Height `.AUTO` (parent content area / scrollport) and
+`.GROW` (free space) must not — that would collapse scroll range.
 */
 length_height_expands_with_content :: proc(length: Length) -> bool {
 	switch length.kind {
-	case .UNSET, .FIT, .MIN_CONTENT, .MAX_CONTENT:
+	case .UNSET, .FIT, .SHRINK, .MIN_CONTENT, .MAX_CONTENT:
 		return true
 	case .AUTO, .GROW, .FIXED, .PERCENT, .INHERIT:
 		return false
@@ -106,11 +113,11 @@ length_is_max_content :: proc(length: Length) -> bool {
 }
 
 /*
-Returns whether a length uses intrinsic content sizing (fit / min / max-content).
+Returns whether a length uses intrinsic content sizing (fit / shrink / min / max-content).
 */
 length_is_intrinsic :: proc(length: Length) -> bool {
 	switch length.kind {
-	case .FIT, .MIN_CONTENT, .MAX_CONTENT:
+	case .FIT, .SHRINK, .MIN_CONTENT, .MAX_CONTENT:
 		return true
 	case .UNSET, .AUTO, .FIXED, .PERCENT, .INHERIT, .GROW:
 		return false
@@ -128,7 +135,7 @@ explicit `wrap = .NONE`. `.UNSET` and `.AUTO` still forward provisional size.
 */
 length_is_measure_indefinite :: proc(length: Length) -> bool {
 	switch length.kind {
-	case .FIT, .MIN_CONTENT, .MAX_CONTENT, .GROW:
+	case .FIT, .SHRINK, .MIN_CONTENT, .MAX_CONTENT, .GROW:
 		return true
 	case .UNSET, .AUTO, .FIXED, .PERCENT, .INHERIT:
 		return false
@@ -385,6 +392,8 @@ resolve_length_from_width :: proc(
 			return {kind = .FIT}
 		case .GROW:
 			return {kind = .GROW}
+		case .SHRINK:
+			return {kind = .SHRINK}
 		case .MIN_CONTENT:
 			return {kind = .MIN_CONTENT}
 		case .MAX_CONTENT:
@@ -411,8 +420,8 @@ Converts a Height union to a resolved Length, evaluating proc callbacks when pre
 
 Unset / empty height stays content-sized (`Length_Kind.UNSET`) so widgets hug
 content. Pass `.AUTO` to fill the parent content area (scrollport viewport),
-`.GROW` to fill free vertical space, or `.FIT` to shrink to content clamped to
-available space.
+`.GROW` to fill free vertical space, `.FIT` to shrink to content clamped to
+available space, or `.SHRINK` for content basis that shares main-axis deficit.
 */
 @(private)
 resolve_length_from_height :: proc(
@@ -437,6 +446,8 @@ resolve_length_from_height :: proc(
 			return {kind = .FIT}
 		case .GROW:
 			return {kind = .GROW}
+		case .SHRINK:
+			return {kind = .SHRINK}
 		case .MIN_CONTENT:
 			return {kind = .MIN_CONTENT}
 		case .MAX_CONTENT:

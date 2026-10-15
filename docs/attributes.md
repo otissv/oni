@@ -20,7 +20,7 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `font-style` | `font_style` | `NORMAL` / `ITALIC`; missing italic faces use synthetic oblique |
 | `font-weight` | `font_weight` | `Font_Weight` 100–900; VF `wght` or closest static face + fake bold |
 | `gap` | `gap` | Single value; no separate row/column gap |
-| `height` | `height` | `Height` / `Length`: `f32`, `%` via `Dim_struct`, unset (content) / `.GROW` (fill free space) / `.AUTO` (fill parent content area) / `.FIT` (shrink to content) / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT` |
+| `height` | `height` | `Height` / `Length`: `f32`, `%` via `Dim_struct`, unset (content) / `.GROW` (fill free space) / `.AUTO` (fill parent content area) / `.FIT` (shrink to content) / `.SHRINK` (content basis; share main-axis deficit; ignore leftover) / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT` |
 | `justify-content` + `align-items` | `justify` | Combined in `Justify_Pos` |
 | `left` | `x` | Inset / offset; with `position` absolute/fixed, pairs with `right` |
 | `letter-spacing` | `letter_spacing` | |
@@ -46,7 +46,7 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `text-decoration-color` | `text_decoration_color` | Unset uses text `color` (currentColor) |
 | `top` | `y` | Inset / offset; with absolute/fixed pairs with `bottom` |
 | `visibility` | `visibility` | `VISIBLE` (default), `HIDDEN` (layout hole, no paint/hit), `NONE` (removed from tree) |
-| `width` | `width` | `Width` / `Length`: `f32`, `%` via `Dim_struct`, `.AUTO` / `.FIT` / `.GROW` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`. Unset defaults to `.GROW` |
+| `width` | `width` | `Width` / `Length`: `f32`, `%` via `Dim_struct`, `.AUTO` / `.FIT` / `.GROW` / `.SHRINK` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`. Unset defaults to `.GROW` |
 | `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Preserve`, `Balance` — not full `white-space`; unset inherits parent (theme at root) |
 | `tab-size` | `tab_size` | Preserve text tab stops in space columns; default `4` |
 | `word-spacing` | `word_spacing` | Extra advance on space clusters; default `0` |
@@ -119,7 +119,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `margin-block` / `margin-inline` and logical longhands
 - CSS margin collapse (Oni does not collapse adjacent margins; use `gap_*` for sibling spacing)
 - `box-sizing`
-- `width` / `height` keywords beyond `.AUTO` / `.FIT` / fit-content / `.GROW` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`
+- `width` / `height` keywords beyond `.AUTO` / `.FIT` / fit-content / `.GROW` / `.SHRINK` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`
 - `block-size`
 - `inline-size`
 - `min-block-size`

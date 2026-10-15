@@ -972,6 +972,32 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .DIALOG_SCRIM, true
 	case "dialog-content":
 		return .DIALOG_CONTENT, true
+	case "collapsible":
+		return .COLLAPSIBLE, true
+	case "collapsible-trigger":
+		return .COLLAPSIBLE_TRIGGER, true
+	case "collapsible-content":
+		return .COLLAPSIBLE_CONTENT, true
+	case "progress":
+		return .PROGRESS, true
+	case "progress-label":
+		return .PROGRESS_LABEL, true
+	case "progress-value":
+		return .PROGRESS_VALUE, true
+	case "progress-track":
+		return .PROGRESS_TRACK, true
+	case "progress-indicator":
+		return .PROGRESS_INDICATOR, true
+	case "context-menu":
+		return .CONTEXT_MENU, true
+	case "context-menu-trigger":
+		return .CONTEXT_MENU_TRIGGER, true
+	case "context-menu-content":
+		return .CONTEXT_MENU_CONTENT, true
+	case "context-menu-item":
+		return .CONTEXT_MENU_ITEM, true
+	case "context-menu-separator":
+		return .CONTEXT_MENU_SEPARATOR, true
 	}
 	return .RECT, false
 }

@@ -75,6 +75,11 @@ layout_len_grow :: proc() -> Length {
 }
 
 @(private)
+layout_len_shrink :: proc() -> Length {
+	return {kind = .SHRINK}
+}
+
+@(private)
 layout_len_auto :: proc() -> Length {
 	return {kind = .AUTO}
 }
@@ -1481,6 +1486,23 @@ layout_child_main_size_prefers_fixed_then_flex_then_desired :: proc(t: ^testing.
 	expect_close(t, layout_child_main_size(&fit, true, 0, 50), 50)
 	expect_close(t, layout_child_main_size(&fit, true, 0, 0), 80)
 
+	shrunk := Layout_Node {
+		config = {width = layout_len_shrink()},
+		desired = {80, 10},
+	}
+	// `.SHRINK`: content basis; positive flex_unit ignored; negative applied.
+	expect_close(t, layout_child_main_grow_weight(&shrunk, true), 0)
+	expect_close(t, layout_child_main_shrink_weight(&shrunk, true), 1)
+	expect_close(t, layout_child_main_flex_basis(&shrunk, true), 80)
+	expect_close(t, layout_child_main_size(&shrunk, true, 40, 200), 80)
+	expect_close(t, layout_child_main_size(&shrunk, true, 0, 200), 80)
+	expect_close(t, layout_child_main_size(&shrunk, true, -30, 200), 50)
+
+	expect_close(t, layout_flex_unit_from_remaining(100, 2, 2), 50)
+	expect_close(t, layout_flex_unit_from_remaining(-100, 2, 2), -50)
+	expect_close(t, layout_flex_unit_from_remaining(100, 0, 2), 0)
+	expect_close(t, layout_flex_unit_from_remaining(-100, 2, 0), 0)
+
 	desired_only := Layout_Node {
 		desired = {33, 10},
 	}
@@ -1495,6 +1517,10 @@ layout_resolve_axis_size_fit_grow_auto :: proc(t: ^testing.T) {
 
 	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 100, 0, 0), 100)
 	expect_close(t, layout_resolve_axis_size({kind = .GROW}, 20, 0, 0, 0), 20)
+
+	// `.SHRINK` keeps content size at axis resolve; flex place shares deficit.
+	expect_close(t, layout_resolve_axis_size({kind = .SHRINK}, 80, 50, 0, 0), 80)
+	expect_close(t, layout_resolve_axis_size({kind = .SHRINK}, 30, 100, 0, 0), 30)
 
 	// Width `.AUTO` is content-sized.
 	expect_close(t, layout_resolve_axis_size({kind = .AUTO}, 40, 100, 0, 0, false), 40)
@@ -2363,6 +2389,110 @@ layout_flex_shrinks_to_unit_when_desired_larger :: proc(t: ^testing.T) {
 			expect_close(t, layout.nodes[b].rect.w, 50)
 		},
 	)
+}
+
+@(test)
+layout_width_shrink_shares_deficit_unlike_fit :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{300, 40},
+			{direction = .HORIZONTAL, width = layout_len_fixed(300), height = layout_len_fixed(40)},
+		)
+		a := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{200, 20},
+			{width = layout_len_shrink(), height = layout_len_fixed(20)},
+		)
+		b := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{200, 20},
+			{width = layout_len_shrink(), height = layout_len_fixed(20)},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 300, 40})
+		// Content bases 200+200 overflow by 100 → equal shrink → 150 each.
+		expect_close(t, layout.nodes[a].rect.w, 150)
+		expect_close(t, layout.nodes[b].rect.w, 150)
+	})
+}
+
+@(test)
+layout_width_shrink_ignores_positive_free_space_unlike_grow :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{300, 40},
+			{direction = .HORIZONTAL, width = layout_len_fixed(300), height = layout_len_fixed(40)},
+		)
+		a := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{80, 20},
+			{width = layout_len_shrink(), height = layout_len_fixed(20)},
+		)
+		b := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{80, 20},
+			{width = layout_len_grow(), height = layout_len_fixed(20)},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 300, 40})
+		// Leftover 140 goes only to `.GROW`; `.SHRINK` stays at content 80.
+		expect_close(t, layout.nodes[a].rect.w, 80)
+		expect_close(t, layout.nodes[b].rect.w, 220)
+	})
+}
+
+@(test)
+layout_height_shrink_shares_vertical_deficit :: proc(t: ^testing.T) {
+	with_layout_solve(t, proc(layout: ^Layout_State, t: ^testing.T) {
+		root := layout_test_append_node(
+			layout,
+			-1,
+			.RECT,
+			{},
+			{40, 300},
+			{direction = .VERTICAL, width = layout_len_fixed(40), height = layout_len_fixed(300)},
+		)
+		a := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{20, 200},
+			{width = layout_len_fixed(20), height = layout_len_shrink()},
+		)
+		b := layout_test_append_node(
+			layout,
+			root,
+			.RECT,
+			{},
+			{20, 200},
+			{width = layout_len_fixed(20), height = layout_len_shrink()},
+		)
+
+		layout_solve(&layout.nodes[root], {0, 0, 40, 300})
+		expect_close(t, layout.nodes[a].rect.h, 150)
+		expect_close(t, layout.nodes[b].rect.h, 150)
+	})
 }
 
 @(test)

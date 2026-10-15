@@ -10,6 +10,7 @@ style_length_resolve_and_definite :: proc(t: ^testing.T) {
 	expect_close(t, length_resolve({kind = .AUTO}, 100), 0)
 	expect_close(t, length_resolve({kind = .FIT}, 100), 0)
 	expect_close(t, length_resolve({kind = .GROW}, 100), 0)
+	expect_close(t, length_resolve({kind = .SHRINK}, 100), 0)
 	expect_close(t, length_resolve({kind = .MIN_CONTENT}, 100), 0)
 	expect_close(t, length_resolve({kind = .MAX_CONTENT}, 100), 0)
 
@@ -18,28 +19,35 @@ style_length_resolve_and_definite :: proc(t: ^testing.T) {
 	testing.expect(t, !length_is_definite({kind = .AUTO}))
 	testing.expect(t, !length_is_definite({kind = .FIT}))
 	testing.expect(t, !length_is_definite({kind = .GROW}))
+	testing.expect(t, !length_is_definite({kind = .SHRINK}))
 	testing.expect(t, !length_is_definite({kind = .MIN_CONTENT}))
 	testing.expect(t, !length_is_definite({kind = .MAX_CONTENT}))
 	testing.expect(t, length_is_fit({kind = .FIT}))
 	testing.expect(t, length_is_grow({kind = .GROW}))
+	testing.expect(t, length_is_shrink({kind = .SHRINK}))
 	testing.expect(t, length_is_min_content({kind = .MIN_CONTENT}))
 	testing.expect(t, length_is_max_content({kind = .MAX_CONTENT}))
 	testing.expect(t, length_is_intrinsic({kind = .FIT}))
+	testing.expect(t, length_is_intrinsic({kind = .SHRINK}))
 	testing.expect(t, length_is_intrinsic({kind = .MIN_CONTENT}))
 	testing.expect(t, length_is_intrinsic({kind = .MAX_CONTENT}))
 	testing.expect(t, !length_is_intrinsic({kind = .AUTO}))
 	testing.expect(t, !length_is_intrinsic({kind = .GROW}))
 	testing.expect(t, !length_is_fit({kind = .AUTO}))
 	testing.expect(t, !length_is_grow({kind = .AUTO}))
+	testing.expect(t, !length_is_shrink({kind = .GROW}))
 	testing.expect(t, length_fills_free_space({kind = .GROW}))
 	testing.expect(t, !length_fills_free_space({kind = .AUTO}))
+	testing.expect(t, !length_fills_free_space({kind = .SHRINK}))
 	testing.expect(t, length_height_fills_parent({kind = .AUTO}))
 	testing.expect(t, !length_height_fills_parent({kind = .GROW}))
 	testing.expect(t, length_height_expands_with_content({kind = .FIT}))
+	testing.expect(t, length_height_expands_with_content({kind = .SHRINK}))
 	testing.expect(t, !length_height_expands_with_content({kind = .AUTO}))
 	testing.expect(t, !length_height_expands_with_content({kind = .GROW}))
 	testing.expect(t, length_is_measure_indefinite({kind = .FIT}))
 	testing.expect(t, length_is_measure_indefinite({kind = .GROW}))
+	testing.expect(t, length_is_measure_indefinite({kind = .SHRINK}))
 	testing.expect(t, !length_is_measure_indefinite({kind = .AUTO}))
 	testing.expect(t, !length_is_measure_indefinite({kind = .FIXED, value = 1}))
 }
@@ -325,6 +333,9 @@ style_resolve_length_from_width_height_modes :: proc(t: ^testing.T) {
 		w_grow := resolve_length_from_width(Width_Mode.GROW, 100, &frame, event)
 		testing.expect(t, w_grow.kind == .GROW)
 
+		w_shrink := resolve_length_from_width(Width_Mode.SHRINK, 100, &frame, event)
+		testing.expect(t, w_shrink.kind == .SHRINK)
+
 		w_min_c := resolve_length_from_width(Width_Mode.MIN_CONTENT, 100, &frame, event)
 		testing.expect(t, w_min_c.kind == .MIN_CONTENT)
 
@@ -532,6 +543,9 @@ style_resolve_length_from_height_modes_and_empty_dim :: proc(t: ^testing.T) {
 
 		h_grow := resolve_length_from_height(Height_Mode.GROW, 80, &frame, event)
 		testing.expect(t, h_grow.kind == .GROW)
+
+		h_shrink := resolve_length_from_height(Height_Mode.SHRINK, 80, &frame, event)
+		testing.expect(t, h_shrink.kind == .SHRINK)
 
 		h_min_c := resolve_length_from_height(Height_Mode.MIN_CONTENT, 80, &frame, event)
 		testing.expect(t, h_min_c.kind == .MIN_CONTENT)

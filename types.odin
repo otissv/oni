@@ -550,6 +550,32 @@ Widget_Kind :: enum {
 	DIALOG_SCRIM,
 	// Dialog centered content panel.
 	DIALOG_CONTENT,
+	// Collapsible root.
+	COLLAPSIBLE,
+	// Collapsible trigger.
+	COLLAPSIBLE_TRIGGER,
+	// Collapsible in-flow content panel.
+	COLLAPSIBLE_CONTENT,
+	// Progress root.
+	PROGRESS,
+	// Progress accessible label.
+	PROGRESS_LABEL,
+	// Progress formatted value text.
+	PROGRESS_VALUE,
+	// Progress track bar.
+	PROGRESS_TRACK,
+	// Progress fill indicator.
+	PROGRESS_INDICATOR,
+	// Context menu root.
+	CONTEXT_MENU,
+	// Context menu trigger (right-click / contextmenu).
+	CONTEXT_MENU_TRIGGER,
+	// Context menu floating content panel.
+	CONTEXT_MENU_CONTENT,
+	// Context menu action item.
+	CONTEXT_MENU_ITEM,
+	// Context menu separator.
+	CONTEXT_MENU_SEPARATOR,
 }
 
 /*
@@ -669,6 +695,8 @@ Length_Kind :: enum {
 	FIT,
 	// Take free space on this axis (flex weight 1 when `flex` unset).
 	GROW,
+	// Content basis; share main-axis deficit with siblings; do not take leftover.
+	SHRINK,
 	// CSS min-content on this axis.
 	MIN_CONTENT,
 	// CSS max-content on this axis.
@@ -677,7 +705,7 @@ Length_Kind :: enum {
 
 /*
 Resolved axis length: fixed, percent, inherit, auto, fit-content, grow,
-min-content, or max-content.
+shrink, min-content, or max-content.
 */
 Length :: struct {
 	// Interpretation of `value`.
@@ -1466,7 +1494,7 @@ Table_Grid_Pos :: struct {
 Width/height dimension with min/max, percent, and preset flags.
 
 Axis keywords use `Width_Mode` / `Height_Mode` (`.GROW` / `.FIT` /
-`.MIN_CONTENT` / `.MAX_CONTENT`).
+`.SHRINK` / `.MIN_CONTENT` / `.MAX_CONTENT`).
 */
 Dim_struct :: struct {
 	// Minimum size clamp (may be `.INHERIT`).
@@ -1493,6 +1521,7 @@ Unset width resolves to `.GROW` (see `resolve_length_from_width`).
 `.AUTO` — content size; may stretch to bounds when content is empty.
 `.FIT` — CSS `fit-content`: shrink to content, clamped to available space.
 `.GROW` — take free space on this axis (flex weight 1 when `flex` unset). Default when unset.
+`.SHRINK` — content basis; share main-axis deficit with siblings; ignore leftover.
 `.MIN_CONTENT` — CSS `min-content`: smallest size without avoidable overflow.
 `.MAX_CONTENT` — CSS `max-content`: size that fits content without soft-wrap.
 `.INHERIT` — match parent axis size.
@@ -1506,6 +1535,8 @@ Width_Mode :: enum {
 	FIT,
 	// Grow into free horizontal space. Default when width is unset.
 	GROW,
+	// Content basis; shrink with siblings on overflow; do not grow.
+	SHRINK,
 	// CSS min-content width.
 	MIN_CONTENT,
 	// CSS max-content width.
@@ -1531,6 +1562,7 @@ Unset height is content-sized (`Length_Kind.UNSET` via `resolve_length_from_heig
 `.GROW` — fill free vertical space (flex weight 1 when `flex` unset).
 `.AUTO` — fill the parent content area (scrollport viewport; does not grow with content).
 `.FIT` — shrink to content size, clamped to available space (CSS `fit-content`).
+`.SHRINK` — content basis; share main-axis deficit with siblings; ignore leftover.
 `.MIN_CONTENT` — CSS `min-content` height.
 `.MAX_CONTENT` — CSS `max-content` height.
 `.INHERIT` — match parent axis size.
@@ -1544,6 +1576,8 @@ Height_Mode :: enum {
 	FIT,
 	// Fill free vertical space.
 	GROW,
+	// Content basis; shrink with siblings on overflow; do not grow.
+	SHRINK,
 	// CSS min-content height.
 	MIN_CONTENT,
 	// CSS max-content height.

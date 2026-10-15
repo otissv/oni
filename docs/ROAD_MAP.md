@@ -5,6 +5,7 @@ Product and engineering order for Oni: **desktop UI toolkit first**, then a **pl
 | Doc | Owns |
 | --- | --- |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Immediate-mode model, props/callbacks, state ownership (model of record) |
+| [WIDGETS.md](WIDGETS.md) | Widget authoring checklist (config/props, Layout/Draw, compound parts) |
 | [APP.md](APP.md) | UI / HUD feature checklist vs codebase |
 | [ATLAS.md](ATLAS.md) | Production glyph atlas (shipped; policy + groups A–I) |
 | [FONT.md](../../FONT.md) | LCD / dual-source text sharpness (shipped; lives at repo-parent `FONT.md`) |
@@ -38,12 +39,12 @@ Shipped and in daily use:
 - [x] Assets + textures; production dynamic atlas (evict / repack / grow / overflow / multi-texture) — see [ATLAS.md](ATLAS.md)
 - [x] FreeType + HarfBuzz, LCD dual-source text — see [FONT.md](../../FONT.md)
 - [x] Two-pass UI (layout → draw), flex + CSS-like grid, overflow scrollports
-- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table, Tabs
+- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Dialog, Context_Menu, Collapsible, Progress, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table, Tabs
 - [x] Shortcuts (key / mouse / wheel / gamepad / sequences), settings.kdl, `APP_TYPE` / `FRAME_MODE`
 - [x] Clipboard + Open URL (`platform_os.odin`); Tengu animations (`oni/libs/tengu`)
 - [x] Package tests via `./oni/scripts/test_all.sh` (vet, strict-style, leak tracking)
 
-Still open at a high level: form/overlay gaps, OS file/DnD, performance virtualization, **platform game**, audio, editor, a11y / packaging / SVG. Tracked below and in [APP.md](APP.md).
+Still open at a high level: tooltip / menu bar / input-capture flags, OS file/DnD, performance virtualization, **platform game**, audio, editor, a11y / packaging / SVG. Tracked below and in [APP.md](APP.md).
 
 ---
 
@@ -54,12 +55,15 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 ### 1.1 Widgets & overlays
 
 - [ ] First-class **tooltip** (delay, one active)
-- [ ] **Context menu** / menu bar (arrows + Enter; Escape closes)
-- [ ] **Dialog / modal** chrome on the existing popover stacking slot (focus trap, click-outside)
+- [x] **Context menu** (`Context_Menu` / Trigger / Content / Item / Separator; Escape + outside dismiss; items tabbable)
+- [ ] **Menu bar** (app chrome; arrow + Enter navigation across menus)
+- [x] **Dialog** (`Dialog` / Trigger / Scrim / Content / Actions; Escape + outside dismiss on `.OVERLAY`)
+- [~] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
 - [x] Select
-- [~] **Dropdown**: Select / popover cover most “dropdown” needs; keep one shared popup API — no second overlay system
+- [~] **Dropdown**: Select / Popover / Context_Menu share overlay paths; keep one shared popup API — no second overlay system
 - [x] Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`)
-- [ ] **Progress indicator**
+- [x] **Progress** (`Progress` / Label / Value / Track / Indicator; determinate + indeterminate)
+- [x] **Collapsible** (`Collapsible` / Trigger / Content; in-flow expand/collapse)
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard` for host / game input handoff
 
 ### 1.2 Layout & style gaps
@@ -205,7 +209,7 @@ flowchart TD
     T4 --> T5
 ```
 
-1. Close Track 1 items that unblock game HUD and editor chrome (capture flags, modal/tooltip, file/DnD as needed).
+1. Close remaining Track 1 HUD/editor blockers (tooltip, menu bar, capture flags, focus-trap polish, file/DnD as needed).
 2. Land Track 2.1 → 2.2 → 2.3 until the playable-level checkpoint.
 3. Add Track 3 when jump/combat exist so SFX have hooks.
 4. Build Track 4 only after widgets + camera exist.

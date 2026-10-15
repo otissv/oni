@@ -2,7 +2,7 @@
 
 Oni is an **immediate-mode, proc-based UI** with **declarative configuration** and **callback-driven events**. The app rebuilds the widget tree every frame from current state and props. The engine co-owns presentation and interaction state (focus, scroll, text caret, drags) keyed by stable widget ids.
 
-This page is the narrative model. Frame solve details live in [Layout.md](Layout.md); paint and batching in [DRAW.md](DRAW.md); frame pacing in [FRAME_MODES.md](FRAME_MODES.md).
+This page is the narrative model. Widget authoring lives in [WIDGETS.md](WIDGETS.md); frame solve details in [Layout.md](Layout.md); paint and batching in [DRAW.md](DRAW.md); frame pacing in [FRAME_MODES.md](FRAME_MODES.md).
 
 ## One-sentence model
 
@@ -29,12 +29,21 @@ Children are **closures**, not VDOM nodes — typically `proc(frame_state: Butto
 
 ## Declarative configuration
 
-Widgets take a `*_Props` struct. Style and identity live in `config` (usually a `Widget_Config` / theme-merged style). Overrides use `set.*` helpers. Theme defaults come from a private `*_theme_base` proc merged with props each call.
+Widgets take a `*_Props` struct. Style, identity, and domain values live in `config` (usually embedding `Widget_Config`). Overrides use `set.*` helpers. Theme defaults come from a private `*_theme_base` proc merged with props each call.
+
+### Config vs props (hard rule)
+
+| Piece | May contain | Must not contain |
+| ----- | ----------- | ---------------- |
+| `*_Config` | Data only: `Widget_Config` fields (`id`, style, `disabled`, …) plus domain values (selection, open, metrics, paths, …) | Any `proc` field |
+| `*_Props` | `config` and procedures only (`child`, `on_*`, formatters, matchers, …) | Non-procedure domain / style values |
+
+If a field is not a procedure, it belongs on `*_Config`. Disable widgets with `config.disabled` / `set.Disabled`, not a separate props-level `disabled: bool`. Engine lifecycle bools `unmount` / `can_interactive_during_mount` remain on props today; prefer not adding other non-proc fields there.
 
 | Piece | Role |
 | ----- | ---- |
-| `*_Config` | Identity (`id`), style fields, disabled / tabbable / visibility, … |
-| `*_Props` | `config`, optional `child`, mount/unmount hooks, input handlers |
+| `*_Config` | Identity, style, and all non-proc domain values |
+| `*_Props` | `config` + procedures (compose / lifecycle / input / format) |
 | `*_State` | Per-frame merged snapshot: interaction flags + resolved config (`Widget_Merged_State`) |
 | `*_Event` | Handler payload: frame state plus optional input metadata |
 
@@ -42,9 +51,9 @@ Stable `config.id` strings matter: focus, scroll offsets, text-edit maps, and `G
 
 ## Props down, callbacks up
 
-**Down:** the parent passes the current value and look — text string, checked flag, selected index, colors, layout hints — through `config` and related props fields.
+**Down:** the parent passes the current value and look — text string, checked flag, selected index, colors, layout hints — through `config`.
 
-**Up:** the parent passes optional handlers. Split by pass:
+**Up:** the parent passes optional handlers on `*_Props`. Split by pass:
 
 | Kind | When | Examples |
 | ---- | ---- | -------- |
@@ -146,6 +155,7 @@ Beyond per-frame props, widgets can participate in mount/unmount via props (`on_
 
 | Doc | Topic |
 | --- | ----- |
+| [WIDGETS.md](WIDGETS.md) | Authoring guide: type quartet, Layout/Draw skeleton, compound widgets |
 | [Layout.md](Layout.md) | Flex + CSS-like grid solve, spaces, frame arena, two-pass rules |
 | [DRAW.md](DRAW.md) | Batch record, GPU flush, interaction during draw |
 | [FRAME_MODES.md](FRAME_MODES.md) | Frame pacing |
@@ -153,4 +163,4 @@ Beyond per-frame props, widgets can participate in mount/unmount via props (`on_
 | [APP.md](APP.md) | UI / HUD feature checklist |
 | [ROAD_MAP.md](ROAD_MAP.md) | Product sequence |
 | [../FONT.md](../FONT.md) | LCD / dual-source text |
-| [AGENTS.md](../AGENTS.md) | Contributor conventions (memory, widgets, boundaries) |
+| [AGENTS.md](../AGENTS.md) | Contributor conventions (memory, widgets, config/props split, boundaries) |

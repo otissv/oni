@@ -137,7 +137,7 @@ See this section and `docs/APP.md` Section 12 / `docs/ROAD_MAP.md` §1.4 for pol
 
 ## Architecture (do not reinvent)
 
-**Model:** Immediate-mode, proc-based UI with declarative `*_Props` (config + child + handlers). The app rebuilds the tree every frame; there is no retained app widget graph. **Config flows down; lifecycle hooks run on Layout; input `on_*` handlers run on Draw.** Widgets are **controlled** and **fully composable**, and not fully stateless: **domain state** lives in `Persistent.app`; **UI chrome** lives in `State.widget` (`Widget_Context`) and `State.ui` (scrollports, drag latches, mount map). Input callbacks do not trigger a second layout in the same frame. Full narrative: `docs/ARCHITECTURE.md`.
+**Model:** Immediate-mode, proc-based UI with declarative `*_Props`. **`*_Config` is data only** (style + domain values; no procs); **`*_Props` is `config` plus procedures** (`child`, `on_*`, …). The app rebuilds the tree every frame; there is no retained app widget graph. **Config flows down; lifecycle hooks run on Layout; input `on_*` handlers run on Draw.** Widgets are **controlled** and **fully composable**, and not fully stateless: **domain state** lives in `Persistent.app`; **UI chrome** lives in `State.widget` (`Widget_Context`) and `State.ui` (scrollports, drag latches, mount map). Input callbacks do not trigger a second layout in the same frame. Full narrative: `docs/ARCHITECTURE.md`.
 
 **Hot reload:** App + engine state live in heap `Persistent` (`app/exports.odin`). Host keeps the pointer across DLL swaps. GPU/font/atlas live in engine state and are rebound on reload. Do not put long-lived UI state in package globals outside `Persistent` / engine state. Host CWD is the consumer project root (exe dir), so `build/hot_reload/app.so` and `assets/` resolve there.
 
@@ -152,7 +152,7 @@ See this section and `docs/APP.md` Section 12 / `docs/ROAD_MAP.md` §1.4 for pol
 |Immediate-mode UI (IMGUI) | Core: rebuild every frame, no app-owned widget object graph|
 |Controlled widgets | App owns domain values; widgets take value/config via props and report changes via `on_*`|
 |Fully composable | Widgets nest via `child` / `Children`; build UIs from small widgets, not monoliths|
-|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config|
+|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config (data on config; procs on props)|
 |Unidirectional data flow (partial)	| App domain: props down, events up — like React’s data story, without a VDOM|
 |Hybrid retained interaction state	| Engine keeps focus/scroll/caret/drags across frames — not “pure” IMGUI|
 
@@ -197,14 +197,14 @@ Frame order around this: poll input → `ui_begin_frame` → app tick → `prese
 
 ## Widget conventions
 
-Follow existing widgets (`widgets/button.odin`, `table.odin`):
+Follow existing widgets (`widgets/button.odin`, `table.odin`). Full model: `docs/ARCHITECTURE.md`.
 
 - `*_Config`, `*_State`, `*_Event`, `*_Props` types
-- `*_Props` with `config`, optional `child`, mount/unmount, and input handlers
+- **Config vs props:** `*_Config` is data only (`Widget_Config` + domain values) — never `proc` fields. `*_Props` is `config` plus procedures only (`child`, `on_*`, formatters, matchers, …). Non-procedure values belong on `config`. Use `config.disabled` / `set.Disabled`, not a props-level `disabled: bool`
 - Theme base via a private `*_theme_base` proc
 - Style overrides through `set.*` helpers, not raw unset fields when a set helper exists
 - Stable `config.id` strings for focus / `GetElementById` / `FocusElement`
-- Controlled: domain values live in app state; pass them in via `*_Props` / config and update through `on_*` handlers — do not hide app state inside the widget
+- Controlled: domain values live in app state; pass them in via `config` and update through `on_*` handlers — do not hide app state inside the widget
 - Fully composable: nest widgets via `child` / `Children`; prefer small composable pieces over monolithic widgets
 
 Demo UI lives under the consumer `app/routes/` and `app/ui/` (templates ship under `templates/app/`); shared chrome under `app/components/`.

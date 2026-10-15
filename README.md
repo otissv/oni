@@ -77,6 +77,8 @@ App code should prefer `api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_T
 
 Oni is an **immediate-mode, props-declared UI with engine-retained interaction state**: the app rebuilds the widget tree every frame from current state and declarative `*_Props` (config down; lifecycle on Layout; input `on_*` on Draw). Widgets are **controlled** and **fully composable** — not a retained object graph and not fully stateless. **App domain state** lives in `Persistent.app`; **engine UI chrome** lives in `State.widget` / `State.ui`.
 
+**Config vs props:** `*_Config` holds data only (style + domain values) — no `proc` fields. `*_Props` is `config` plus procedures only (`child`, `on_*`, …). Non-procedure values belong on `config`.
+
 Each frame, inside `present_frame`, `o.Render(main_ui)` runs the UI tree **twice**:
 
 1. **Layout** — register nodes, measure, mount/unmount, solve flex/grid on space end
@@ -89,7 +91,7 @@ Widgets branch on `o.ui_pass()`. Keep both passes’ tree structure identical fo
 |Immediate-mode UI (IMGUI) | Core: rebuild every frame, no app-owned widget object graph|
 |Controlled widgets | App owns domain values; widgets take value/config via props and report changes via `on_*`|
 |Fully composable | Widgets nest via `child` / `Children`; build UIs from small widgets, not monoliths|
-|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config|
+|Declarative configuration / props-driven	| Widgets declare look/behavior via *_Props + config (data on config; procs on props)|
 |Unidirectional data flow (partial)	| App domain: props down, events up — like React’s data story, without a VDOM|
 |Hybrid retained interaction state	| Engine keeps focus/scroll/caret/drags across frames — not “pure” IMGUI|
 
