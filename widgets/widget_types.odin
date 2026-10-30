@@ -171,6 +171,7 @@ Shutdown :: proc() {
 	popover_shutdown()
 	dialog_shutdown()
 	collapsible_shutdown()
+	accordion_shutdown()
 	context_menu_shutdown()
 	progress_shutdown()
 	o.widget_ctx_shutdown()

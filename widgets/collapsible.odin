@@ -9,8 +9,8 @@ Collapsible root configuration: Widget_Config plus caller-owned `open`.
 `disabled` is the usual Widget_Config style field (`set.Disabled` / `set.Bool`).
 */
 Collapsible_Config :: struct {
-	using _: o.Widget_Config,
-	open:    bool,
+	using widget: o.Widget_Config,
+	open:         bool,
 }
 
 /*

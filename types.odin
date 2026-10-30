@@ -576,6 +576,14 @@ Widget_Kind :: enum {
 	CONTEXT_MENU_ITEM,
 	// Context menu separator.
 	CONTEXT_MENU_SEPARATOR,
+	// Controlled disclosure group, composed from Rectangle and Collapsible.
+	ACCORDION,
+	// One value-bearing disclosure in an accordion.
+	ACCORDION_ITEM,
+	// Focusable accordion heading control.
+	ACCORDION_TRIGGER,
+	// In-flow accordion disclosure panel.
+	ACCORDION_CONTENT,
 }
 
 /*

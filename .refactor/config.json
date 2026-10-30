@@ -1,0 +1,21 @@
+{
+  "minStrength": "Strong",
+  "branchStaleDays": 30,
+  "lessonThreshold": 3,
+  "maxLessons": 30,
+  "staleAfterRuns": 10,
+  "implementerTrailer": {
+    "key": "Agent",
+    "value": "implementer"
+  },
+  "uncommittedIsImplementer": true,
+  "maxFilesPerCandidate": 8,
+  "maxCandidatesPerRun": 3,
+  "excludePaths": [],
+  "disabledRules": [],
+  "checks": {
+    "typecheck": "",
+    "lint": "",
+    "test": "./scripts/test_all.sh"
+  }
+}
