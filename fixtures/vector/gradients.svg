@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="64" viewBox="0 0 192 64">
+  <defs>
+    <linearGradient id="lin" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ff0000"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <radialGradient id="rad" cx="0.5" cy="0.5" r="0.5" fx="0.5" fy="0.5" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <linearGradient id="pad" x1="74.375" y1="0" x2="98.375" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="pad">
+      <stop offset="0" stop-color="#00ff00"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <linearGradient id="xf" x1="0" y1="0" x2="1" y2="0" gradientUnits="objectBoundingBox" gradientTransform="rotate(90 0.5 0.5)">
+      <stop offset="0" stop-color="#ff0000"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <linearGradient id="reflect" x1="42.375" y1="0" x2="66.375" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="reflect">
+      <stop offset="0" stop-color="#00ff00"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <linearGradient id="repeat" x1="98.375" y1="0" x2="122.375" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="repeat">
+      <stop offset="0" stop-color="#00ff00"/>
+      <stop offset="1" stop-color="#0000ff"/>
+    </linearGradient>
+    <radialGradient id="rad_off" cx="0.5" cy="0.5" r="0.5" fx="0.2" fy="0.5" gradientUnits="objectBoundingBox">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+  </defs>
+  <rect x="2.375" y="2.125" width="28" height="28" fill="url(#lin)"/>
+  <circle cx="54.375" cy="16.125" r="12" fill="url(#rad)"/>
+  <rect x="74.375" y="2.125" width="48" height="28" fill="url(#pad)"/>
+  <rect x="134.375" y="2.125" width="28" height="28" fill="url(#xf)"/>
+  <rect x="2.375" y="34.125" width="28" height="28" fill="url(#lin)" fill-opacity="0.5"/>
+  <rect x="42.375" y="34.125" width="48" height="28" fill="url(#reflect)"/>
+  <rect x="98.375" y="34.125" width="48" height="28" fill="url(#repeat)"/>
+  <circle cx="170.375" cy="48.125" r="12" fill="url(#rad_off)"/>
+</svg>

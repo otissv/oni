@@ -1,3 +1,4 @@
+#+test
 package oni_widgets
 
 import o ".."

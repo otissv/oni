@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
+  <use href="#later" x="8" y="8"/>
+  <rect id="later" width="16" height="16" fill="seagreen"/>
+</svg>

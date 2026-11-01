@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="48" height="24" viewBox="0 0 48 24">
+  <defs>
+    <rect id="chip" width="20" height="12" rx="2" fill="#336699"/>
+  </defs>
+  <use href="#chip" x="4" y="6" xlink:href="#unused-secondary" fill="red"/>
+</svg>

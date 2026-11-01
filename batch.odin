@@ -44,6 +44,9 @@ Batch_Segment :: struct {
 	key:         Batch_Key,
 	first_index: u32,
 	index_count: u32,
+	sequence:    u64,
+	vector:      bool,
+	vector_index: int,
 }
 
 /*
@@ -60,6 +63,7 @@ Batch_State :: struct {
 	current_key:         Batch_Key,
 	has_current_key:     bool,
 	current_stack:       u32,
+	next_sequence:       u64,
 	vertex_buffer:       ^sdl.GPUBuffer,
 	index_buffer:        ^sdl.GPUBuffer,
 	vertex_capacity:     u32,
@@ -240,6 +244,7 @@ Clears recorded vertices, indices, segments, and stack state for a new frame.
 Does not release GPU buffers or change capacity.
 */
 batch_reset :: proc() {
+	vector_scene_reset()
 	clear(&batch_current().vertices)
 	clear(&batch_current().indices)
 	clear(&batch_current().segments)
@@ -252,6 +257,7 @@ batch_reset :: proc() {
 	clear(&batch_current().opacity_stack)
 	batch_current().has_current_key = false
 	batch_current().current_stack = 0
+	batch_current().next_sequence = 0
 	batch_current().cached_opacity = 1
 	batch_current().clip_cache_valid = false
 	batch_current().view_cache_valid = false
@@ -401,10 +407,25 @@ batch_check_key :: proc(
 
 	append(
 		&batch_current().segments,
-		Batch_Segment{key = key, first_index = u32(len(batch_current().indices))},
+		Batch_Segment{key = key, first_index = u32(len(batch_current().indices)), sequence = batch_current().next_sequence},
 	)
+	batch_current().next_sequence += 1
 	batch_current().current_key = key
 	batch_current().has_current_key = true
+}
+
+@(private)
+batch_close_segment :: proc() {
+	if !batch_current().has_current_key {
+		return
+	}
+	if len(batch_current().segments) == 0 {
+		batch_current().has_current_key = false
+		return
+	}
+	index := len(batch_current().segments) - 1
+	batch_current().segments[index].index_count = u32(len(batch_current().indices)) - batch_current().segments[index].first_index
+	batch_current().has_current_key = false
 }
 
 /*
@@ -688,19 +709,7 @@ Higher draw_space and stack_index paint on top. Equal keys keep submission order
 (first_index ascending). Call before upload or flush when recording is complete.
 */
 batch_finalize_segments :: proc() {
-	if batch_current().has_current_key && len(batch_current().segments) > 0 {
-		last_index := 0
-
-		for segment, index in batch_current().segments {
-			if segment.first_index > batch_current().segments[last_index].first_index {
-				last_index = index
-			}
-		}
-
-		seg := batch_current().segments[last_index]
-		seg.index_count = u32(len(batch_current().indices)) - seg.first_index
-		batch_current().segments[last_index] = seg
-	}
+	batch_close_segment()
 
 	segs := batch_current().segments[:]
 	n := len(segs)
@@ -717,7 +726,7 @@ batch_finalize_segments :: proc() {
 				continue
 			}
 
-			if prev.first_index > key.first_index {
+			if prev.sequence > key.sequence || (prev.sequence == key.sequence && prev.first_index > key.first_index) {
 				segs[j + 1] = segs[j]
 				j -= 1
 				continue
@@ -727,6 +736,18 @@ batch_finalize_segments :: proc() {
 		}
 		segs[j + 1] = key
 	}
+	write := 0
+	for segment in batch_current().segments {
+		if write > 0 {
+			previous := batch_current().segments[write - 1]
+			if previous.vector && segment.vector && vector_merge_submissions(previous.vector_index, segment.vector_index) {
+				continue
+			}
+		}
+		batch_current().segments[write] = segment
+		write += 1
+	}
+	resize(&batch_current().segments, write)
 }
 
 /*
@@ -822,9 +843,10 @@ clip_to_scissor :: proc(clip: Rect, dpi: Dpi_Info) -> sdl.Rect {
 /*
 Issues indexed draw calls for each batch segment with bound texture and scissor.
 
-Binds vertex/index buffers once, then per segment selects the UI or LCD pipeline
-(rebind only when `seg.key.lcd` changes), sampler, scissor, and draws. Skips
-segments with zero indices, missing GPU textures, or LCD without `lcd_pipeline`.
+Binds vertex/index buffers once, then per segment either draws a vector submission
+or selects the UI/LCD pipeline (MSAA variants when vectors are present; rebind only
+when `seg.key.lcd` changes), sampler, scissor, and draws. Skips segments with zero
+indices, missing GPU textures, or LCD without `lcd_pipeline`.
 */
 batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
@@ -854,13 +876,27 @@ batch_flush_draws :: proc() {
 	}
 
 	for seg in batch_current().segments {
+		if seg.vector {
+			vector_gpu_draw_submission(seg.vector_index)
+			has_pipeline_bound = false
+			lcd_ubo_pushed = false
+			sdl.BindGPUVertexBuffers(batch_current().pass, 0, &vertex_binding, 1)
+			sdl.BindGPUIndexBuffer(batch_current().pass, index_binding, ._16BIT)
+			continue
+		}
 		if seg.index_count == 0 do continue
 
 		pipeline := state.gpu_state.pipeline
+		if len(vector_frame().draws) > 0 {
+			pipeline = vector_gpu_frame().root.has_depth ? state.vector.gpu.ui_pipeline_depth : state.vector.gpu.ui_pipeline
+		}
 		if seg.key.lcd {
 			if state.gpu_state.lcd_pipeline == nil do continue
 
 			pipeline = state.gpu_state.lcd_pipeline
+			if len(vector_frame().draws) > 0 {
+				pipeline = vector_gpu_frame().root.has_depth ? state.vector.gpu.lcd_pipeline_depth : state.vector.gpu.lcd_pipeline
+			}
 		}
 
 		if !has_pipeline_bound || bound_lcd != seg.key.lcd {
@@ -934,6 +970,41 @@ batch_flush_draws :: proc() {
 		)
 
 		scissor := clip_to_scissor(seg.key.clip, batch_current().dpi)
+		if len(vector_frame().draws) > 0 {
+			origin := vector_gpu_frame().root.bounds
+			if origin.x != 0 || origin.y != 0 || origin.w > 0 || origin.h > 0 {
+				scissor.x -= i32(origin.x)
+				scissor.y -= i32(origin.y)
+				max_w := i32(origin.w) - scissor.x
+				max_h := i32(origin.h) - scissor.y
+				if max_w < 0 {
+					max_w = 0
+				}
+				if max_h < 0 {
+					max_h = 0
+				}
+				if scissor.x < 0 {
+					scissor.w += scissor.x
+					scissor.x = 0
+				}
+				if scissor.y < 0 {
+					scissor.h += scissor.y
+					scissor.y = 0
+				}
+				if scissor.w > max_w {
+					scissor.w = max_w
+				}
+				if scissor.h > max_h {
+					scissor.h = max_h
+				}
+				if scissor.w < 0 {
+					scissor.w = 0
+				}
+				if scissor.h < 0 {
+					scissor.h = 0
+				}
+			}
+		}
 		sdl.SetGPUScissor(batch_current().pass, scissor)
 
 		sdl.DrawGPUIndexedPrimitives(

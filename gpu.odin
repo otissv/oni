@@ -110,6 +110,7 @@ gpu_create_device :: proc(debug_mode := true) -> ^sdl.GPUDevice {
 
 	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true)
 	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug_mode)
+	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, true)
 	_ = sdl.SetBooleanProperty(
 		props,
 		sdl.PROP_GPU_DEVICE_CREATE_FEATURE_DUAL_SOURCE_BLENDING_BOOLEAN,
@@ -144,13 +145,30 @@ gpu_device_supports_dual_source_blending :: proc(device: ^sdl.GPUDevice) -> bool
 }
 
 /*
-Returns premultiplied-style alpha blending state for the UI color target.
+Returns straight-alpha blending state for the UI color target.
 
 Uses standard src-alpha over dst-alpha compositing for UI transparency.
 */
 gpu_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
 	return {
 		src_color_blendfactor = .SRC_ALPHA,
+		dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
+		color_blend_op = .ADD,
+		src_alpha_blendfactor = .ONE,
+		dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
+		alpha_blend_op = .ADD,
+		enable_blend = true,
+	}
+}
+
+/*
+Premultiplied source blending for vector meshes and group composites.
+
+Fragment shaders emit premultiplied RGBA; UI pipelines keep gpu_blend_state().
+*/
+gpu_vector_blend_state :: proc() -> sdl.GPUColorTargetBlendState {
+	return {
+		src_color_blendfactor = .ONE,
 		dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
 		color_blend_op = .ADD,
 		src_alpha_blendfactor = .ONE,
@@ -249,7 +267,13 @@ gpu_create_ui_layout_pipeline :: proc(
 	frag_code: []u8,
 	blend: sdl.GPUColorTargetBlendState,
 	frag_uniform_buffers: u32 = 0,
+	sample_count: sdl.GPUSampleCount = ._1,
+	depth_stencil_format: sdl.GPUTextureFormat = .INVALID,
 ) -> ^sdl.GPUGraphicsPipeline {
+	if gpu == nil {
+		return nil
+	}
+
 	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
 	frag := gpu_load_shader(
 		gpu,
@@ -301,7 +325,13 @@ gpu_create_ui_layout_pipeline :: proc(
 			vertex_input_state = vertex_input,
 			primitive_type = .TRIANGLELIST,
 			rasterizer_state = {cull_mode = .NONE},
-			target_info = {num_color_targets = 1, color_target_descriptions = &color_target_desc},
+			multisample_state = {sample_count = sample_count},
+			target_info = {
+				num_color_targets = 1,
+				color_target_descriptions = &color_target_desc,
+				has_depth_stencil_target = depth_stencil_format != .INVALID,
+				depth_stencil_format = depth_stencil_format,
+			},
 		},
 	)
 }
@@ -337,6 +367,8 @@ Requires a device created with dual-source blending enabled.
 gpu_create_lcd_pipeline :: proc(
 	gpu: ^sdl.GPUDevice,
 	format: sdl.GPUTextureFormat,
+	sample_count: sdl.GPUSampleCount = ._1,
+	depth_stencil_format: sdl.GPUTextureFormat = .INVALID,
 ) -> ^sdl.GPUGraphicsPipeline {
 	if gpu == nil {
 		return nil
@@ -348,6 +380,8 @@ gpu_create_lcd_pipeline :: proc(
 		lcd_frag_shader_code,
 		gpu_dual_source_blend_state(),
 		1,
+		sample_count,
+		depth_stencil_format,
 	)
 	if test_hook_gpu_fail_lcd_pipeline && pipeline != nil {
 		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
@@ -356,6 +390,34 @@ gpu_create_lcd_pipeline :: proc(
 	}
 
 	return pipeline
+}
+
+/*
+Selects a depth/stencil format supported together with a 4x colour target.
+Pipeline creation and readback remain necessary to validate dual-source drawing.
+*/
+gpu_vector_depth_format :: proc(
+	gpu: ^sdl.GPUDevice,
+	colour_format: sdl.GPUTextureFormat,
+) -> (format: sdl.GPUTextureFormat, ok: bool) {
+	if gpu == nil {
+		return .INVALID, false
+	}
+
+	if !sdl.GPUTextureSupportsFormat(gpu, colour_format, .D2, {.COLOR_TARGET}) ||
+	   !sdl.GPUTextureSupportsSampleCount(gpu, colour_format, ._4) {
+		return .INVALID, false
+	}
+
+	candidates := [2]sdl.GPUTextureFormat{.D24_UNORM_S8_UINT, .D32_FLOAT_S8_UINT}
+	for candidate in candidates {
+		if sdl.GPUTextureSupportsFormat(gpu, candidate, .D2, {.DEPTH_STENCIL_TARGET}) &&
+		   sdl.GPUTextureSupportsSampleCount(gpu, candidate, ._4) {
+			return candidate, true
+		}
+	}
+
+	return .INVALID, false
 }
 
 /*
@@ -511,6 +573,7 @@ Safe to call when state is nil or GPU resources were partially initialized.
 gpu_destroy :: proc() {
 	if state == nil do return
 
+	vector_gpu_shutdown()
 	batch_destroy()
 	if state.gpu == nil do return
 
@@ -642,6 +705,7 @@ gpu_reload :: proc() -> bool {
 
 	texture_reload_gpu()
 	font_reload_faces()
+	vector_after_gpu_recreate()
 
 	return true
 }

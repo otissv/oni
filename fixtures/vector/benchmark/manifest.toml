@@ -1,0 +1,38 @@
+# Frozen dense-scene benchmark manifest (M8 imported SVG gate).
+seed = "0x4F4E49"
+viewport = "24x24"
+icons = 2048
+grid = "64x32"
+spacing = 28
+
+[[asset]]
+file = "icon-0.svg"
+sha256 = "bbdc089e50ffb23148616e0e2119c44f3f90a7068a8e512bb530e83f8738668e"
+
+[[asset]]
+file = "icon-1.svg"
+sha256 = "d7f5d79f3505af20e4ac2a02a4bcb5d1312cbb59d14d9e7a35ea155674c53e57"
+
+[[asset]]
+file = "icon-2.svg"
+sha256 = "d4266fe13c6e2e5c7c9fffd0fd8392f136701baabad1d2d7eb9df8f8ffa550a6"
+
+[[asset]]
+file = "icon-3.svg"
+sha256 = "0a971e19dd704330027bba45d9bf24dea83cf3f1de9799d9a748db3815c90087"
+
+[[asset]]
+file = "icon-4.svg"
+sha256 = "0546f7a46f5a902dee5517af1820fef37f466f8fc6e51f452f0bf2f196c75571"
+
+[[asset]]
+file = "icon-5.svg"
+sha256 = "93c632a38acffa0bb648913a453947ac609b04abbd1b2fb4ff12820c8f092a94"
+
+[[asset]]
+file = "icon-6.svg"
+sha256 = "c2c3990d52c4db6b6411159a6fcf10cce28d2be17a4acb1ac18c8c0a76fea87f"
+
+[[asset]]
+file = "icon-7.svg"
+sha256 = "4e708a576a05c4625219bd95010a900889baccd602ab1bbb881428c43db7bca7"

@@ -2044,13 +2044,18 @@ UI_Id :: distinct u64
 
 /*
 Reference to a loaded texture asset with pixel dimensions.
+
+`generation` must match the live record; stale handles report Failed via
+`Texture_Status` without touching a reused slot. Dimensions are zero until Ready.
 */
 Texture_Handle :: struct {
 	// Asset id of the texture (or `INVALID_ASSET_ID`).
 	id: Asset_Id,
-	// Intrinsic width in texture pixels.
+	// Record generation captured at acquire / Ready publication.
+	generation: u32,
+	// Intrinsic width in texture pixels (0 while Pending/Failed).
 	w:  f32,
-	// Intrinsic height in texture pixels.
+	// Intrinsic height in texture pixels (0 while Pending/Failed).
 	h:  f32,
 }
 

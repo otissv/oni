@@ -121,6 +121,7 @@ Layout_Node :: struct {
 	text:                        Layout_Text,
 	image_input:                 Layout_Image_Input,
 	image:                       Layout_Image,
+	vector:                      Layout_Vector,
 	collapsed_borders:           Layout_Collapsed_Borders,
 	slider_input:                Layout_Slider_Input,
 	slider:                      Layout_Slider,
@@ -2127,6 +2128,7 @@ Finalizes all layout-owned paint geometry for a node after its rect is assigned.
 layout_finalize_node :: proc(node: ^Layout_Node) {
 	layout_finalize_text_node(node)
 	layout_finalize_image_node(node)
+	layout_finalize_vector_node(node)
 	layout_finalize_chrome_node(node)
 }
 
@@ -2569,11 +2571,11 @@ layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layou
 		padding        = padding,
 		border         = border,
 		parent         = parent_index,
-		child_indices  = make([dynamic]int, layout_frame_allocator()),
 		in_flex_flow   = layout_position_in_flex_flow(style.position),
 		space          = space,
 	}
 	append(&state.ui.layout.nodes, node)
+	state.ui.layout.nodes[node_index].child_indices.allocator = layout_frame_allocator()
 
 	// Collapsed tables share borders via paint conflict resolution; layout must
 	// not reserve separate border space on the table or its structural parts.
@@ -2679,6 +2681,10 @@ layout_pop_node :: proc() {
 
 	node.intrinsic_min = layout_measure_intrinsic_min(node)
 	desired := layout_measure(node)
+	if node.vector.active {
+		node.intrinsic_min = layout_vector_measure(node, node.intrinsic_min)
+		desired = layout_vector_measure(node, desired)
+	}
 
 	if length_is_min_content(node.config.width) {
 		desired.x = node.intrinsic_min.x
@@ -2763,7 +2769,7 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 		}
 	}
 
-	return {
+	size := Vec2{
 		layout_resolve_axis_size(
 			node.config.width,
 			width_desired,
@@ -2781,6 +2787,8 @@ layout_resolve_node_size :: proc(node: ^Layout_Node, bounds: Rect) -> Vec2 {
 			true,
 		),
 	}
+	layout_vector_apply_aspect_ratio(node, &size)
+	return size
 }
 
 /*
@@ -2790,6 +2798,11 @@ layout_apply_definite_size :: proc(node: ^Layout_Node, bounds: Rect, size: ^Vec2
 	resolved := layout_resolve_node_size(node, bounds)
 	if length_is_definite(node.config.width) do size.x = resolved.x
 	if length_is_definite(node.config.height) do size.y = resolved.y
+	if node.vector.active {
+		layout_vector_apply_aspect_ratio(node, size)
+		if !length_is_definite(node.config.width) { node.desired.x = size.x }
+		if !length_is_definite(node.config.height) { node.desired.y = size.y }
+	}
 }
 
 /*
@@ -3603,6 +3616,7 @@ layout_fit_content_sized_parent_to_child_rects :: proc(
 	gap_main: f32,
 ) {
 	if node == nil || content == nil do return
+	if node.vector.active do return
 	if length_is_definite(node.config.height) do return
 	if !length_height_expands_with_content(node.config.height) do return
 	if layout_node_scrolls_axis(node.config.overflow_y) do return
@@ -3665,6 +3679,7 @@ layout_grow_content_sized_parent_for_children :: proc(
 	gap_main: f32,
 ) {
 	if node == nil || content == nil do return
+	if node.vector.active do return
 	if length_is_definite(node.config.height) do return
 	if !length_height_expands_with_content(node.config.height) do return
 	if layout_node_scrolls_axis(node.config.overflow_y) do return

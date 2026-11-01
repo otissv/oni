@@ -1,3 +1,4 @@
+#+test
 package oni
 
 import "core:math"
@@ -1804,8 +1805,8 @@ batch_test_seed_mixed_atlas_text :: proc(mode: Atlas_Draw_Mode) -> Layout_Text {
 	texture_init()
 	append(
 		&state.textures.records,
-		Texture_Record{w = 16, h = 16},
-		Texture_Record{w = 16, h = 16},
+		Texture_Record{w = 16, h = 16, status = .Ready, generation = 1},
+		Texture_Record{w = 16, h = 16, status = .Ready, generation = 1},
 	)
 	state.textures.atlas = {
 		texture_id = Asset_Id(1),

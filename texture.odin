@@ -33,11 +33,46 @@ lock and must join before any shelf/cache mutate (`raster_workers` must be 0).
 /*
 Single registered texture: GPU handle, CPU surface, dimensions, and source path.
 */
+/*
+Load lifecycle for a texture record.
+
+Pending is the zero value so new slots start unloaded until decode/upload finish.
+Manual Ready fixtures must set `status = .Ready` and a non-zero `generation`.
+*/
+Texture_Load_Status :: enum {
+	Pending,
+	Ready,
+	Failed,
+}
+
+/*
+Caller-owned texture diagnostic. Free with `delete` / `texture_error_free`.
+*/
+Texture_Error_Info :: struct {
+	message: string,
+	kind:    Texture_Error_Kind,
+}
+
+Texture_Error_Kind :: enum {
+	None,
+	Invalid_Handle,
+	Decode,
+	Gpu,
+	Limit,
+}
+
 Texture_Record :: struct {
-	gpu:     ^sdl.GPUTexture,
-	surface: ^sdl.Surface,
-	w, h:    i32,
-	path:    string,
+	gpu:             ^sdl.GPUTexture,
+	surface:         ^sdl.Surface,
+	w, h:            i32,
+	path:            string,
+	status:          Texture_Load_Status,
+	generation:      u32,
+	decoded_credit:  u64,
+	request_token:   u64,
+	refs:            int,
+	diagnostic:      string,
+	awaiting_upload: bool,
 }
 
 /*
@@ -139,6 +174,8 @@ Pending_Upload :: struct {
 	surface:                    ^sdl.Surface,
 	dst_x, dst_y, dst_w, dst_h: i32,
 	src_x, src_y:               i32,
+	// Non-zero when this upload belongs to an async asset record awaiting Ready.
+	asset_id:                   Asset_Id,
 }
 
 /*
@@ -279,15 +316,25 @@ texture_shutdown :: proc() {
 	delete(state.textures.pending_uploads)
 	state.textures.pending_uploads = nil
 
-	for entry, i in state.textures.records {
+	for &entry, i in state.textures.records {
 		if i > 0 && entry.gpu != nil && state.gpu != nil {
 			sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
+			entry.gpu = nil
 		}
+
 		if entry.surface != nil {
 			sdl.DestroySurface(entry.surface)
+			entry.surface = nil
 		}
+
 		if len(entry.path) > 0 {
 			delete(entry.path)
+			entry.path = ""
+		}
+
+		if len(entry.diagnostic) > 0 {
+			delete(entry.diagnostic)
+			entry.diagnostic = ""
 		}
 	}
 	clear(&state.textures.records)
@@ -301,6 +348,7 @@ Releases GPU textures for all records while keeping CPU surfaces intact.
 Used before device teardown or hot reload so surfaces can be re-uploaded later.
 */
 texture_release_gpu :: proc() {
+	assets_io_drain()
 	// Drop pending uploads first — they hold pointers to GPU textures about to be released.
 	clear(&state.textures.pending_uploads)
 
@@ -350,9 +398,12 @@ texture_register_surface :: proc(
 	bool,
 ) {
 	entry := Texture_Record {
-		surface = surface,
-		w       = surface.w,
-		h       = surface.h,
+		surface    = surface,
+		w          = surface.w,
+		h          = surface.h,
+		status     = .Ready,
+		generation = 1,
+		refs       = 1,
 	}
 	if len(path) > 0 {
 		entry.path = strings.clone(path)
@@ -371,13 +422,7 @@ texture_register_surface :: proc(
 		return {}, {}, false
 	}
 
-	loaded := state.textures.records[entry_index]
-	handle := Texture_Handle {
-		id = id,
-		w  = f32(loaded.w),
-		h  = f32(loaded.h),
-	}
-	return id, handle, true
+	return id, texture_handle(id), true
 }
 
 /*
@@ -408,7 +453,7 @@ Releases any existing GPU texture on the record before uploading.
 When `deferred` is true, the pixel copy is queued for `texture_uploads_flush`
 instead of submitting immediately.
 */
-texture_upload_record :: proc(entry: ^Texture_Record, deferred := false) -> bool {
+texture_upload_record :: proc(entry: ^Texture_Record, deferred := false, asset_id: Asset_Id = 0) -> bool {
 	if state.gpu == nil || entry.surface == nil do return false
 
 	w := entry.surface.w
@@ -439,7 +484,11 @@ texture_upload_record :: proc(entry: ^Texture_Record, deferred := false) -> bool
 
 	ok: bool
 	if deferred {
-		ok = texture_upload_surface_deferred(state.gpu, texture, entry.surface, 0, 0, w, h)
+		if asset_id != 0 {
+			ok = texture_upload_surface_deferred_asset(state.gpu, texture, entry.surface, asset_id, 0, 0, w, h)
+		} else {
+			ok = texture_upload_surface_deferred(state.gpu, texture, entry.surface, 0, 0, w, h)
+		}
 	} else {
 		ok = texture_upload_surface(state.gpu, texture, entry.surface, 0, 0, w, h)
 	}
@@ -451,6 +500,10 @@ texture_upload_record :: proc(entry: ^Texture_Record, deferred := false) -> bool
 	entry.gpu = texture
 	entry.w = w
 	entry.h = h
+	if deferred && asset_id != 0 {
+		entry.awaiting_upload = true
+	}
+
 	return true
 }
 
@@ -592,24 +645,132 @@ texture_upload_surface_deferred :: proc(
 			dst_h = dst_h,
 			src_x = src_x,
 			src_y = src_y,
+			asset_id = 0,
 		},
 	)
 	return true
 }
 
 /*
-Submits all pending texture uploads in a single command buffer / copy pass.
+Queues a deferred upload tagged with an asset id for Ready publication after flush.
+*/
+texture_upload_surface_deferred_asset :: proc(
+	gpu: ^sdl.GPUDevice,
+	texture: ^sdl.GPUTexture,
+	surface: ^sdl.Surface,
+	asset_id: Asset_Id,
+	dst_x, dst_y, dst_w, dst_h: i32,
+	src_x: i32 = 0,
+	src_y: i32 = 0,
+) -> bool {
+	if gpu == nil || texture == nil || surface == nil do return false
+	if dst_w <= 0 || dst_h <= 0 do return false
 
-Clears the queue on success or failure. Transfers are always released.
+	append(
+		&state.textures.pending_uploads,
+		Pending_Upload {
+			texture = texture,
+			surface = surface,
+			dst_x = dst_x,
+			dst_y = dst_y,
+			dst_w = dst_w,
+			dst_h = dst_h,
+			src_x = src_x,
+			src_y = src_y,
+			asset_id = asset_id,
+		},
+	)
+	return true
+}
+
+@(private)
+texture_fail_asset_uploads :: proc(uploads: []Pending_Upload) {
+	for upload in uploads {
+		if upload.asset_id == 0 {
+			continue
+		}
+
+		index := int(upload.asset_id)
+		if index <= 0 || index >= len(state.textures.records) {
+			continue
+		}
+
+		entry := &state.textures.records[index]
+		if !entry.awaiting_upload || entry.status != .Pending {
+			continue
+		}
+
+		entry.awaiting_upload = false
+		entry.status = .Failed
+		if entry.gpu != nil && state.gpu != nil {
+			sdl.ReleaseGPUTexture(state.gpu, entry.gpu)
+			entry.gpu = nil
+		}
+
+		if entry.surface != nil {
+			sdl.DestroySurface(entry.surface)
+			entry.surface = nil
+		}
+
+		entry.w = 0
+		entry.h = 0
+		assets_io_release_decoded_credit(entry.decoded_credit)
+		entry.decoded_credit = 0
+		assets_free_string(&entry.diagnostic)
+		entry.diagnostic = strings.clone("GPU texture upload failed")
+	}
+
+	request_frame()
+}
+
+@(private)
+texture_upload_byte_count :: proc(upload: Pending_Upload) -> u64 {
+	if upload.dst_w <= 0 || upload.dst_h <= 0 {
+		return 0
+	}
+
+	return u64(upload.dst_w) * u64(upload.dst_h) * 4
+}
+
+/*
+Submits pending texture uploads in a single command buffer / copy pass.
+
+Honours `ASSET_IO_UPLOAD_BYTES_PER_FRAME`: takes as many uploads as fit the
+budget (always at least one so oversized singles still progress). Remainder
+stays queued and requests another frame. Transfers are always released for the
+taken slice; failure fails only the taken asset-tagged uploads.
 */
 texture_uploads_flush :: proc(gpu: ^sdl.GPUDevice) -> bool {
-	uploads := state.textures.pending_uploads[:]
-	if len(uploads) == 0 do return true
-	defer clear(&state.textures.pending_uploads)
+	if len(state.textures.pending_uploads) == 0 do return true
 
-	if gpu == nil do return false
+	take := 0
+	bytes: u64
+	for upload in state.textures.pending_uploads {
+		sz := texture_upload_byte_count(upload)
+		if take > 0 && bytes + sz > ASSET_IO_UPLOAD_BYTES_PER_FRAME {
+			break
+		}
 
-	transfers := make([dynamic]^sdl.GPUTransferBuffer, 0, len(uploads), context.temp_allocator)
+		take += 1
+		bytes += sz
+	}
+
+	uploads := make([]Pending_Upload, take, context.temp_allocator)
+	copy(uploads, state.textures.pending_uploads[:take])
+	copy(state.textures.pending_uploads[:], state.textures.pending_uploads[take:])
+	resize(&state.textures.pending_uploads, len(state.textures.pending_uploads) - take)
+	has_remaining := len(state.textures.pending_uploads) > 0
+	if has_remaining {
+		request_frame()
+	}
+
+	if gpu == nil {
+		texture_fail_asset_uploads(uploads)
+
+		return false
+	}
+
+	transfers := make([dynamic]^sdl.GPUTransferBuffer, 0, take, context.temp_allocator)
 	defer {
 		for t in transfers {
 			if t != nil do sdl.ReleaseGPUTransferBuffer(gpu, t)
@@ -625,13 +786,20 @@ texture_uploads_flush :: proc(gpu: ^sdl.GPUDevice) -> bool {
 			upload.dst_w,
 			upload.dst_h,
 		)
-		if transfer == nil do return false
+		if transfer == nil {
+			texture_fail_asset_uploads(uploads)
+
+			return false
+		}
+
 		append(&transfers, transfer)
 	}
 
 	cmd := sdl.AcquireGPUCommandBuffer(gpu)
 	if cmd == nil {
 		log_errorf("SDL_AcquireGPUCommandBuffer failed: %s", sdl.GetError())
+		texture_fail_asset_uploads(uploads)
+
 		return false
 	}
 
@@ -664,7 +832,38 @@ texture_uploads_flush :: proc(gpu: ^sdl.GPUDevice) -> bool {
 
 	if !sdl.SubmitGPUCommandBuffer(cmd) {
 		log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
+		texture_fail_asset_uploads(uploads)
+
 		return false
+	}
+
+	// Upload commands are ordered before subsequent sampling submissions.
+	changed := false
+	for upload in uploads {
+		if upload.asset_id == 0 {
+			continue
+		}
+
+		index := int(upload.asset_id)
+		if index <= 0 || index >= len(state.textures.records) {
+			continue
+		}
+
+		entry := &state.textures.records[index]
+		if !entry.awaiting_upload || entry.status != .Pending || entry.gpu == nil {
+			continue
+		}
+
+		entry.awaiting_upload = false
+		entry.status = .Ready
+		assets_io_release_decoded_credit(entry.decoded_credit)
+		entry.decoded_credit = 0
+		assets_free_string(&entry.diagnostic)
+		changed = true
+	}
+
+	if changed || has_remaining {
+		request_frame()
 	}
 
 	return true
@@ -752,13 +951,109 @@ Returns an empty handle when the id is out of range.
 */
 texture_handle :: proc(id: Asset_Id) -> Texture_Handle {
 	if id == TEXTURE_WHITE_ID {
-		return {id = TEXTURE_WHITE_ID, w = 1, h = 1}
+		return {id = TEXTURE_WHITE_ID, generation = 1, w = 1, h = 1}
 	}
 
 	index := int(id)
 	if index <= 0 || index >= len(state.textures.records) do return {}
 	entry := state.textures.records[index]
-	return {id = id, w = f32(entry.w), h = f32(entry.h)}
+	generation := entry.generation
+	if generation == 0 {
+		// Ready records created before an explicit generation still expose gen 1.
+		if entry.status != .Ready {
+			return {}
+		}
+
+		generation = 1
+	}
+
+	if entry.status != .Ready {
+		return {id = id, generation = generation, w = 0, h = 0}
+	}
+
+	return {id = id, generation = generation, w = f32(entry.w), h = f32(entry.h)}
+}
+
+@(private)
+texture_record_matches_handle :: proc(handle: Texture_Handle) -> ^Texture_Record {
+	if handle.id == TEXTURE_WHITE_ID {
+		return nil
+	}
+
+	index := int(handle.id)
+	if state == nil || index <= 0 || index >= len(state.textures.records) {
+		return nil
+	}
+
+	entry := &state.textures.records[index]
+	if entry.generation == 0 {
+		if handle.generation != 0 && handle.generation != 1 {
+			return nil
+		}
+	} else if entry.generation != handle.generation {
+		return nil
+	}
+
+	return entry
+}
+
+/*
+Returns the load status for a texture handle (Pending / Ready / Failed).
+
+Stale / invalid handles report Failed without touching a reused slot.
+*/
+texture_load_status :: proc(handle: Texture_Handle) -> Texture_Load_Status {
+	if handle.id == TEXTURE_WHITE_ID {
+		return .Ready
+	}
+
+	entry := texture_record_matches_handle(handle)
+	if entry == nil {
+		return .Failed
+	}
+
+	return entry.status
+}
+
+/*
+Returns a caller-owned diagnostic for `handle`. Free with `delete(info.message)`.
+*/
+texture_error :: proc(handle: Texture_Handle) -> Texture_Error_Info {
+	if handle.id == TEXTURE_WHITE_ID {
+		return {}
+	}
+
+	entry := texture_record_matches_handle(handle)
+	if entry == nil {
+		return {message = strings.clone("invalid texture handle"), kind = .Invalid_Handle}
+	}
+
+	if len(entry.diagnostic) == 0 {
+		switch entry.status {
+		case .Ready, .Pending:
+			return {}
+		case .Failed:
+			return {message = strings.clone("texture load failed"), kind = .Decode}
+		}
+	}
+
+	return {message = strings.clone(entry.diagnostic), kind = .Decode}
+}
+
+texture_error_free :: proc(info: ^Texture_Error_Info) {
+	if info == nil {
+		return
+	}
+
+	delete(info.message)
+	info^ = {}
+}
+
+/*
+True when the handle references a Ready texture with a GPU resource (or white).
+*/
+texture_is_ready :: proc(handle: Texture_Handle) -> bool {
+	return texture_load_status(handle) == .Ready
 }
 
 /*
@@ -795,6 +1090,8 @@ texture_retire_record :: proc(id: Asset_Id) {
 		entry.path = ""
 	}
 
+	assets_io_release_decoded_credit(entry.decoded_credit)
+	entry.decoded_credit = 0
 	entry.w = 0
 	entry.h = 0
 }

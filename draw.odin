@@ -59,6 +59,27 @@ rect_intersect :: proc(a, b: Rect) -> Rect {
 }
 
 /*
+Computes the axis-aligned union of two rectangles.
+
+Empty inputs (non-positive width or height) are ignored; two empties yield empty.
+*/
+rect_union :: proc(a, b: Rect) -> Rect {
+	if a.w <= 0 || a.h <= 0 {
+		return b
+	}
+
+	if b.w <= 0 || b.h <= 0 {
+		return a
+	}
+
+	x0 := min(a.x, b.x)
+	y0 := min(a.y, b.y)
+	x1 := max(a.x + a.w, b.x + b.w)
+	y1 := max(a.y + a.h, b.y + b.h)
+	return {x0, y0, x1 - x0, y1 - y0}
+}
+
+/*
 Begins CPU-side draw recording for the current frame.
 
 Sets the batch DPI used when geometry is later uploaded and flushed.
@@ -457,7 +478,7 @@ draw_texture :: proc(
 	border: Bd_px = {},
 	border_color: RGBA = {},
 ) {
-	has_texture := texture.w > 0 && texture.h > 0
+	has_texture := texture_load_status(texture) == .Ready && texture.w > 0 && texture.h > 0
 	has_radius := radius.tl > 0 || radius.tr > 0 || radius.br > 0 || radius.bl > 0
 	has_border :=
 		border_color.a > 0 && (border.t > 0 || border.b > 0 || border.l > 0 || border.r > 0)
@@ -549,6 +570,7 @@ draw_texture_fitted :: proc(
 	tint: RGBA,
 	radius: Radius_px,
 ) {
+	if texture_load_status(texture) != .Ready do return
 	if texture.w <= 0 || texture.h <= 0 do return
 	if content.w <= 0 || content.h <= 0 do return
 	if image_dst.w <= 0 || image_dst.h <= 0 do return

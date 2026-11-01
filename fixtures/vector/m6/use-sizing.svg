@@ -1,0 +1,1 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64"><defs><symbol id="chip" viewBox="0 0 20 10"><rect width="20" height="10" rx="2" fill="currentColor"/></symbol></defs><use href="#chip" x="8" y="8" width="40" height="40" color="red"/><use href="#chip" x="64" y="8" width="48" height="40" color="blue"/></svg>

@@ -28,6 +28,11 @@ hsla_to_rgba :: col.hsla_to_rgba
 rgba_to_hex :: col.rgba_to_hex
 hex_parse :: col.hex_parse
 hex_format :: col.hex_format
+svg_color_parse :: col.svg_color_parse
+rgba_lerp :: col.rgba_lerp
+Color_Interpolation :: col.Color_Interpolation
+color_srgb_to_linear :: col.color_srgb_to_linear
+color_linear_to_srgb :: col.color_linear_to_srgb
 color_hue_wrap :: col.color_hue_wrap
 color_clamp01 :: col.color_clamp01
 color_u8_from01 :: col.color_u8_from01

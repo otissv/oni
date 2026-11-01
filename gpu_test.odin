@@ -1,3 +1,4 @@
+#+test
 package oni
 
 import "core:math"
@@ -478,6 +479,67 @@ gpu_test_download_rgba :: proc(
 	out := make([]u8, need)
 	mem.copy(raw_data(out), mapped, need)
 	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
+
+	return out, true
+}
+
+/*
+Downloads the resolved MSAA vector root and places it into a full-framebuffer
+RGBA buffer at `root.bounds` origin (same layout as present's blit). Callers own
+the returned slice.
+*/
+@(private)
+gpu_test_download_vector_framebuffer :: proc(
+	t: ^testing.T,
+	fb_w, fb_h: u32,
+	loc := #caller_location,
+) -> (
+	pixels: []u8,
+	ok: bool,
+) {
+	if fb_w == 0 || fb_h == 0 {
+		testing.expectf(t, false, "gpu_test_download_vector_framebuffer: bad framebuffer size", loc = loc)
+
+		return nil, false
+	}
+
+	root := vector_gpu_frame().root
+	if root.resolved == nil || root.alloc_w <= 0 || root.alloc_h <= 0 {
+		testing.expectf(t, false, "gpu_test_download_vector_framebuffer: vector root not ready", loc = loc)
+
+		return nil, false
+	}
+
+	aw := u32(root.alloc_w)
+	ah := u32(root.alloc_h)
+	tile, tile_ok := gpu_test_download_rgba(t, root.resolved, aw, ah, loc)
+	if !tile_ok {
+		return nil, false
+	}
+	defer delete(tile)
+
+	out := make([]u8, int(fb_w) * int(fb_h) * 4)
+	ox := int(root.bounds.x)
+	oy := int(root.bounds.y)
+	for y in 0 ..< int(ah) {
+		dy := oy + y
+		if dy < 0 || dy >= int(fb_h) {
+			continue
+		}
+
+		src_row := y * int(aw) * 4
+		dst_row := dy * int(fb_w) * 4
+		for x in 0 ..< int(aw) {
+			dx := ox + x
+			if dx < 0 || dx >= int(fb_w) {
+				continue
+			}
+
+			si := src_row + x * 4
+			di := dst_row + dx * 4
+			copy(out[di:di + 4], tile[si:si + 4])
+		}
+	}
 
 	return out, true
 }

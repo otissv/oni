@@ -783,6 +783,7 @@ shutdown :: proc() {
 	error_shutdown()
 	settings_shutdown()
 	font_shutdown()
+	vector_scene_shutdown()
 	assets_shutdown()
 	gpu_destroy()
 
@@ -921,12 +922,30 @@ Copies live engine fields from src into dst for persistent-state migration.
 
 Transfers SDL/GPU handles, assets, view, UI, and gamepad; does not copy
 input heap data (see release_input_allocations).
+
+Worker pools are joined and destroyed on src before the copy. Live thread,
+mutex and semaphore handles are never migrated. Retained CPU path/cache and
+texture records move with the data fields; pools recreate on next use.
 */
 copy_state_fields :: proc(dst: ^State, src: ^State) {
+	if src != nil {
+		saved := state
+		state = src
+		assets_io_drain()
+		if state.gpu != nil {
+			_ = texture_uploads_flush(state.gpu)
+		}
+		vector_tess_pool_shutdown()
+		assets_io_shutdown()
+		font_raster_pool_shutdown()
+		state = saved
+	}
+
 	dst.app_type = src.app_type
 	dst.window = src.window
 	dst.gpu = src.gpu
 	dst.gpu_state = src.gpu_state
+	dst.vector = src.vector
 	dst.assets = src.assets
 	dst.textures = src.textures
 	dst.fonts = src.fonts
@@ -947,6 +966,15 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.errors = src.errors
 	dst.gamepad = src.gamepad
 	dst.gamepad_instance_id = src.gamepad_instance_id
+
+	dst.vector.tess_pool = nil
+	dst.vector.tess_workers = 0
+	dst.assets.io_pool = nil
+	dst.fonts.raster_pool = nil
+	src.vector.tess_pool = nil
+	src.vector.tess_workers = 0
+	src.assets.io_pool = nil
+	src.fonts.raster_pool = nil
 }
 
 /*

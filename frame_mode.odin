@@ -165,6 +165,8 @@ frame_work_pending :: proc() -> bool {
 
 	if state.frame_dirty do return true
 
+	if assets_io_has_completions() do return true
+
 	return frame_wake_active(frame_now_ns())
 }
 

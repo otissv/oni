@@ -1,3 +1,4 @@
+#+test
 package oni
 
 import "core:strings"

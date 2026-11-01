@@ -48,6 +48,8 @@ run_frame :: proc(tick: Tick_Proc, draw: Draw_Proc, init: proc()) {
 	entered_dirty := state.frame_dirty
 	frame_consume_dirty()
 
+	assets_io_drain()
+
 	ui_begin_frame()
 
 	if tick != nil do tick(f32(dt))

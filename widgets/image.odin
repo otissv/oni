@@ -91,7 +91,11 @@ image_refresh_merged_if_interaction_changed :: proc(
 }
 
 /*
-Resolves the intrinsic source size from props.src or the loaded texture handle.
+Resolves the intrinsic source size from props.src or a Ready texture.
+
+Pending/Failed handles contribute zero intrinsic size. Live Ready dimensions are
+read from the engine so Layout remeasures after async upload without the app
+rewriting Persistent handle fields mid-session.
 */
 @(private)
 texture_src_size :: proc(props: Image_Props) -> (w, h: f32) {
@@ -102,8 +106,15 @@ texture_src_size :: proc(props: Image_Props) -> (w, h: f32) {
 		return src.w, src.h
 	}
 
-	if cfg.texture.w > 0 && cfg.texture.h > 0 {
-		return cfg.texture.w, cfg.texture.h
+	if o.Texture_Status(cfg.texture) == .Ready {
+		live := o.Get_Texture(cfg.texture.id)
+		if live.generation == cfg.texture.generation && live.w > 0 && live.h > 0 {
+			return live.w, live.h
+		}
+
+		if cfg.texture.w > 0 && cfg.texture.h > 0 {
+			return cfg.texture.w, cfg.texture.h
+		}
 	}
 
 	return 0, 0
@@ -355,8 +366,10 @@ Image :: proc(props: Image_Props) {
 	widget_draw_box_background(layout_id, rect, background, radius)
 
 	if paint {
-		if laid := o.layout_image_result(layout_id); laid != nil {
-			o.Draw_Texture_Fitted(cfg.texture, laid.src, laid.content, laid.dst, tint, radius)
+		if o.Texture_Status(cfg.texture) == .Ready {
+			if laid := o.layout_image_result(layout_id); laid != nil {
+				o.Draw_Texture_Fitted(cfg.texture, laid.src, laid.content, laid.dst, tint, radius)
+			}
 		}
 	}
 

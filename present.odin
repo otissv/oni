@@ -18,13 +18,25 @@ present_frame :: proc(draw: Draw_Proc) {
 	if state.gpu_state.pipeline == nil do return
 	if theme == nil do return
 
+	// Adopt decode completions before draw. Newly decoded textures stay Pending
+	// until upload flush below publishes Ready for the next UI frame.
+	assets_io_drain()
+
 	// Record into the current CPU/GPU batch slot before waiting on the swapchain.
 	draw_record_begin(state.dpi)
 	if draw != nil do draw()
 	draw_record_end()
 
-	// Flush glyph atlas / texture reloads queued during draw before geometry upload.
+	// Flush glyph atlas / texture uploads; asset records become Ready after submit.
+	assets_io_drain()
 	_ = texture_uploads_flush(state.gpu)
+
+	if len(vector_frame().draws) > 0 {
+		vector_gpu_present()
+		batch_reset()
+		batch_flip()
+		return
+	}
 
 	cmd_buf := sdl.AcquireGPUCommandBuffer(state.gpu)
 	if test_hook_present_fail_acquire_cmd && cmd_buf != nil {

@@ -7,6 +7,7 @@ import "core:log"
 import "core:mem"
 import "core:os"
 import "core:path/filepath"
+import "core:strconv"
 import "core:time"
 import sdl "vendor:sdl3"
 
@@ -337,6 +338,165 @@ init_app :: proc(
 	old_apis = make([dynamic]App_API, default_allocator)
 	ok = true
 	return
+}
+
+/*
+Procedure table for a statically linked production app (no dynlib / hot reload).
+
+Fill from the consumer `app` package exports and pass to `run_static_app`.
+*/
+Static_App_API :: struct {
+	init_window:     proc(),
+	init:            proc(),
+	update:          proc(),
+	should_run:      proc() -> bool,
+	shutdown:        proc(),
+	shutdown_window: proc(),
+}
+
+/*
+Production bootstrap: sets cwd to the executable directory and installs logging.
+
+Does not load a shared library. Call before `run_static_app`, or use
+`run_static_app` which calls this automatically.
+
+On failure after creating the logger, call `shutdown_static_host` (or rely on
+`run_static_app`, which always defers it).
+*/
+init_static_host :: proc() -> bool {
+	exe_path := os.args[0]
+	exe_dir := filepath.dir(string(exe_path))
+	os.set_working_directory(exe_dir)
+
+	host_logger = log.create_console_logger()
+	context.logger = host_logger
+	default_context = context
+
+	// Keep production SDL logs quiet; verbose chatter belongs to the hot-reload host.
+	sdl.SetLogPriorities(.ERROR)
+	sdl.SetLogOutputFunction(
+		proc "c" (
+			userdata: rawptr,
+			category: sdl.LogCategory,
+			priority: sdl.LogPriority,
+			message: cstring,
+		) {
+			context = default_context
+			log.debugf("SDL {} [{}]: {}", category, priority, message)
+		},
+		nil,
+	)
+
+	return true
+}
+
+/*
+Tears down production host logging installed by `init_static_host`.
+*/
+shutdown_static_host :: proc() {
+	if host_logger.procedure != nil {
+		log.destroy_console_logger(host_logger)
+		host_logger = {}
+	}
+}
+
+/*
+Reads ONI_SMOKE_FRAMES from the environment (positive integer → auto-exit).
+
+Uses the temp allocator; call before the frame loop. Zero means run until quit.
+*/
+static_app_smoke_frame_limit :: proc() -> int {
+	v, ok := os.lookup_env("ONI_SMOKE_FRAMES", context.temp_allocator)
+
+	if !ok {
+		return 0
+	}
+
+	n, parse_ok := strconv.parse_int(v, 10)
+
+	if !parse_ok || n <= 0 {
+		return 0
+	}
+
+	return n
+}
+
+/*
+Runs a statically linked app to completion: window init → init → update loop → shutdown.
+
+No hot reload, no tracking allocator, no dynlib. Returns false if init fails.
+
+Set ONI_SMOKE_FRAMES to a positive integer to run that many update frames then
+exit cleanly (used by `build_production.sh smoke`).
+*/
+run_static_app :: proc(api: Static_App_API) -> bool {
+	if api.init_window == nil ||
+	   api.init == nil ||
+	   api.update == nil ||
+	   api.should_run == nil ||
+	   api.shutdown == nil ||
+	   api.shutdown_window == nil {
+		fmt.println("run_static_app: Static_App_API is incomplete")
+
+		return false
+	}
+
+	host_ok := init_static_host()
+	defer shutdown_static_host()
+
+	if !host_ok {
+		return false
+	}
+
+	use_host_context()
+	api.init_window()
+	use_host_context()
+	api.init()
+
+	use_host_context()
+
+	if !api.should_run() {
+		fmt.println("App exited during init.")
+		use_host_context()
+		api.shutdown()
+		use_host_context()
+		api.shutdown_window()
+		free_all(context.temp_allocator)
+
+		return false
+	}
+
+	smoke_limit := static_app_smoke_frame_limit()
+	frames_run := 0
+
+	for {
+		use_host_context()
+
+		if !api.should_run() {
+			break
+		}
+
+		use_host_context()
+		api.update()
+		free_all(context.temp_allocator)
+
+		if smoke_limit > 0 {
+			frames_run += 1
+
+			if frames_run >= smoke_limit {
+				break
+			}
+		}
+	}
+
+	free_all(context.temp_allocator)
+
+	use_host_context()
+	api.shutdown()
+	use_host_context()
+	api.shutdown_window()
+
+	return true
 }
 
 /*

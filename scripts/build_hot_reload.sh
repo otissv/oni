@@ -21,113 +21,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ONI_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if [[ -n "${ONI_PROJECT_ROOT:-}" ]]; then
-	PROJECT_ROOT="$(cd "$ONI_PROJECT_ROOT" && pwd)"
-else
-	PROJECT_ROOT="$(cd "$ONI_ROOT/.." && pwd)"
-fi
-
-# shellcheck source=../odin_collections.sh
-source "${ONI_ROOT}/odin_collections.sh"
+# shellcheck source=lib_build.sh
+source "${SCRIPT_DIR}/lib_build.sh"
 
 OUT_DIR="${PROJECT_ROOT}/build/hot_reload"
 HOST_EXE="${PROJECT_ROOT}/game_hot_reload"
 WATCH_PID_FILE="${OUT_DIR}/.watch.pid"
 BUILD_LOCK_FILE="${OUT_DIR}/.build.lock"
 
-SHADER_DIR="${ONI_ROOT}/shaders"
-UI_FRAG="${SHADER_DIR}/ui.frag"
-UI_VERT="${SHADER_DIR}/ui.vert"
-UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
-UI_SPV_VERT="${SHADER_DIR}/ui.spv.vert"
-UI_LCD_FRAG="${SHADER_DIR}/ui_lcd.frag"
-UI_LCD_SPV_FRAG="${SHADER_DIR}/ui_lcd.spv.frag"
-DUAL_FRAG="${SHADER_DIR}/dual_source_test.frag"
-DUAL_VERT="${SHADER_DIR}/dual_source_test.vert"
-DUAL_SPV_FRAG="${SHADER_DIR}/dual_source_test.spv.frag"
-DUAL_SPV_VERT="${SHADER_DIR}/dual_source_test.spv.vert"
-
-when_os() {
-	case "$(uname -s)" in
-	Darwin) echo "darwin" ;;
-	MINGW* | MSYS* | CYGWIN*) echo "windows" ;;
-	*) echo "linux" ;;
-	esac
-}
-
-OS="$(when_os)"
-
-case "$OS" in
-darwin) LIB_EXT=".dylib" ;;
-windows) LIB_EXT=".dll" ;;
-*) LIB_EXT=".so" ;;
-esac
+LIB_EXT="$ONI_LIB_EXT"
+OS="$ONI_OS"
 
 ODIN_FLAGS=(-vet -strict-style -debug)
-# Single -extra-linker-flags (Odin keeps only the last occurrence).
-FONT_LIBS=(-extra-linker-flags:"${ONI_SDL3_LINKER_FLAGS}-lfreetype -lharfbuzz")
-
-has_sdl3_image() {
-	for lib in /usr/lib/libSDL3_image.so /usr/local/lib/libSDL3_image.so; do
-		if [[ -e "$lib" ]]; then
-			return 0
-		fi
-	done
-
-	local libs
-	libs="$(ldconfig -p 2>/dev/null || true)"
-	[[ "$libs" == *libSDL3_image* ]]
-}
+FONT_LIBS=("$(oni_font_libs)")
 
 check_project_layout() {
-	local missing=()
-
-	if [[ ! -f "${PROJECT_ROOT}/main.odin" ]]; then
-		missing+=("main.odin (hot-reload host; see oni/templates/main.odin)")
-	fi
-	if [[ ! -d "${PROJECT_ROOT}/app" ]]; then
-		missing+=("app/ (copy from oni/templates/app/)")
-	fi
-
-	if ((${#missing[@]} > 0)); then
-		echo "Project root: ${PROJECT_ROOT}"
-		echo "Missing consumer files (Oni is a framework — the user project owns these):"
-		for dep in "${missing[@]}"; do
-			echo "  - ${dep}"
-		done
-		echo "Set ONI_PROJECT_ROOT if the project root is not the parent of oni/."
-		return 1
-	fi
+	oni_check_project_layout
 }
 
 check_build_deps() {
-	local missing=()
+	oni_check_build_deps
+}
 
-	if ! command -v glslc > /dev/null 2>&1; then
-		missing+=("glslc (Vulkan SDK / shaderc package)")
-	fi
-
-	if ! has_sdl3_image; then
-		case "$OS" in
-		darwin)
-			missing+=("SDL3_image (e.g. brew install sdl3_image)")
-			;;
-		linux)
-			missing+=("sdl3_image (sudo pacman -S sdl3_image)")
-			;;
-		windows)
-			missing+=("SDL3_image.dll on PATH")
-			;;
-		esac
-	fi
-
-	if ((${#missing[@]} > 0)); then
-		echo "Missing build dependencies:"
-		for dep in "${missing[@]}"; do
-			echo "  - ${dep}"
-		done
-		return 1
-	fi
+build_shaders() {
+	oni_build_shaders
 }
 
 is_app_running() {
@@ -138,65 +55,6 @@ is_app_running() {
 
 app_pid() {
 	pgrep -x "$(basename "$HOST_EXE")" 2>/dev/null | head -1
-}
-
-build_shaders() {
-	if ! command -v glslc > /dev/null 2>&1; then
-		echo "glslc not found. Install the Vulkan SDK (or a package that provides glslc)."
-		exit 1
-	fi
-
-	local -a pids=()
-	local compiled=false
-
-	if [[ ! -f "$UI_SPV_FRAG" || "$UI_FRAG" -nt "$UI_SPV_FRAG" ]]; then
-		echo "Compiling ui.frag"
-		glslc "$UI_FRAG" -o "$UI_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ ! -f "$UI_SPV_VERT" || "$UI_VERT" -nt "$UI_SPV_VERT" ]]; then
-		echo "Compiling ui.vert"
-		glslc "$UI_VERT" -o "$UI_SPV_VERT" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ ! -f "$UI_LCD_SPV_FRAG" || "$UI_LCD_FRAG" -nt "$UI_LCD_SPV_FRAG" ]]; then
-		echo "Compiling ui_lcd.frag"
-		glslc "$UI_LCD_FRAG" -o "$UI_LCD_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ -f "$DUAL_FRAG" && (! -f "$DUAL_SPV_FRAG" || "$DUAL_FRAG" -nt "$DUAL_SPV_FRAG") ]]; then
-		echo "Compiling dual_source_test.frag"
-		glslc "$DUAL_FRAG" -o "$DUAL_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ -f "$DUAL_VERT" && (! -f "$DUAL_SPV_VERT" || "$DUAL_VERT" -nt "$DUAL_SPV_VERT") ]]; then
-		echo "Compiling dual_source_test.vert"
-		glslc "$DUAL_VERT" -o "$DUAL_SPV_VERT" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	local status=0
-	for pid in "${pids[@]+"${pids[@]}"}"; do
-		if ! wait "$pid"; then
-			status=1
-		fi
-	done
-	if ((status != 0)); then
-		return 1
-	fi
-
-	if [[ "$compiled" == false ]]; then
-		echo "Shaders up to date"
-	fi
 }
 
 build_app_locked() {

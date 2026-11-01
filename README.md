@@ -23,9 +23,11 @@ Runtime needs a working **Vulkan ICD** (`vulkaninfo --summary`). Hybrid machines
 ```
 <project>/                 # your project
   main.odin                # hot-reload host (see templates/main.odin)
-  app/                     # hot-reload DLL (see templates/app/)
+  release/main.odin        # production host (see templates/release/main.odin)
+  app/                     # app sources (see templates/app/)
   assets/                  # runtime fonts / textures
   build/hot_reload/        # app.so + logs (generated)
+  build/production/        # release binary + staged assets (generated)
   game_hot_reload          # host binary (generated)
   oni/                     # this framework
 ```
@@ -36,6 +38,8 @@ Set `APP_TYPE` and `FRAME_MODE` in `app/globlas/global.odin`. User prefs (window
 
 From the consumer project (scripts resolve the project as the parent of `oni/`):
 
+**Development:**
+
 ```bash
 ./oni/scripts/build_hot_reload.sh run      # build, start, watch app/ + oni/ + main.odin
 ./oni/scripts/build_hot_reload.sh build    # rebuild app.so only (hot-reloads if running)
@@ -43,9 +47,20 @@ From the consumer project (scripts resolve the project as the parent of `oni/`):
 ./oni/scripts/build_hot_reload.sh stop
 ```
 
-Override root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run`.
-
 In-app: **F5** force reload, **F6** force restart.
+
+**Production:**
+
+```bash
+./oni/scripts/build_production.sh build    # optimized static binary + assets
+./oni/scripts/build_production.sh run
+./oni/scripts/build_production.sh smoke   # ONI_SMOKE_FRAMES then exit
+./oni/scripts/build_production.sh package  # portable .tar.gz
+./oni/scripts/build_production.sh clean
+./oni/scripts/test_build_production.sh
+```
+
+Override root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run`.
 
 ## Tests
 
@@ -68,7 +83,7 @@ Uses `-vet -strict-style -debug` and tracking-allocator leak checks. Prefer `tes
 | `shaders/` | UI shaders (SPIR-V via `#load`) |
 | `libs/colors`, `libs/tengu` | Standalone libs (`-collection:libs=...`) |
 | `templates/` | Starter host + app |
-| `scripts/` | Hot-reload build and test runners |
+| `scripts/` | Hot-reload + production build and test runners |
 | `docs/` | Architecture, road map, feature checklists |
 
 App code should prefer `api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_Texture`, …). Import the engine as `o`, widgets as `w`, style helpers as `set`.

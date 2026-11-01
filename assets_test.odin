@@ -1,3 +1,4 @@
+#+test
 package oni
 
 import "core:fmt"
@@ -518,7 +519,10 @@ assets_get_texture_delegates_white_invalid_and_registered :: proc(t: ^testing.T)
 			negative := assets_get_texture(Asset_Id(-5))
 			testing.expect_value(t, negative.id, Asset_Id(0))
 
-			append(&state.textures.records, Texture_Record{w = 16, h = 24})
+			append(
+				&state.textures.records,
+				Texture_Record{w = 16, h = 24, status = .Ready, generation = 1},
+			)
 			handle := assets_get_texture(Asset_Id(1))
 			testing.expect_value(t, handle.id, Asset_Id(1))
 			expect_close(t, handle.w, 16)
@@ -534,28 +538,29 @@ assets_get_texture_delegates_white_invalid_and_registered :: proc(t: ^testing.T)
 // ---------------------------------------------------------------------------
 
 @(test)
-assets_load_texture_fails_for_missing_file_without_caching :: proc(t: ^testing.T) {
+assets_load_texture_missing_file_becomes_failed_after_drain :: proc(t: ^testing.T) {
 	with_assets_env(
 		t,
 		proc(t: ^testing.T) {
-			before_records := len(state.textures.records)
 			out := with_captured_stderr(
 				t,
 				proc(t: ^testing.T) {
 					handle, ok := assets_load_texture("oni_assets_test_fixtures/missing-nope.png")
-					testing.expect(t, !ok)
-					testing.expect_value(t, handle.id, Asset_Id(0))
+					testing.expect(t, ok)
+					testing.expect(t, handle.id > TEXTURE_WHITE_ID)
+					testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+					assets_io_wait_idle()
+					testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Failed)
 				},
 			)
 			defer delete(out)
-			testing.expect_value(t, len(state.assets.paths), 0)
-			testing.expect_value(t, len(state.textures.records), before_records)
+			testing.expect_value(t, len(state.assets.paths), 1)
 		},
 	)
 }
 
 @(test)
-assets_load_texture_register_failure_destroys_surface_and_does_not_cache :: proc(t: ^testing.T) {
+assets_load_texture_no_gpu_marks_failed_after_decode :: proc(t: ^testing.T) {
 	with_assets_env(
 		t,
 		proc(t: ^testing.T) {
@@ -564,13 +569,12 @@ assets_load_texture_register_failure_destroys_surface_and_does_not_cache :: proc
 			path := fmt.tprintf("%s/orphan.bmp", assets_test_fixture_dir())
 			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {10, 20, 30}))
 
-			before_records := len(state.textures.records)
-			// No GPU device → texture_register_surface fails and assets destroys the surface.
 			handle, ok := assets_load_texture(path)
-			testing.expect(t, !ok)
-			testing.expect_value(t, handle.id, Asset_Id(0))
-			testing.expect_value(t, len(state.assets.paths), 0)
-			testing.expect_value(t, len(state.textures.records), before_records)
+			testing.expect(t, ok)
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Failed)
+			testing.expect_value(t, len(state.assets.paths), 1)
 		},
 	)
 }
@@ -580,17 +584,22 @@ assets_load_texture_cache_hit_returns_prior_handle_without_reload :: proc(t: ^te
 	with_assets_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.textures.records, Texture_Record{w = 8, h = 4})
+			append(
+				&state.textures.records,
+				Texture_Record{w = 8, h = 4, status = .Ready, generation = 1, refs = 1},
+			)
 			id := Asset_Id(1)
 			state.assets.paths[strings.clone("cached/tex.png")] = id
 
 			handle, ok := assets_load_texture("cached/tex.png")
 			testing.expect(t, ok)
 			testing.expect_value(t, handle.id, id)
+			testing.expect_value(t, handle.generation, u32(1))
 			expect_close(t, handle.w, 8)
 			expect_close(t, handle.h, 4)
 			testing.expect_value(t, len(state.assets.paths), 1)
 			testing.expect_value(t, len(state.textures.records), 2)
+			testing.expect_value(t, state.textures.records[1].refs, 2)
 		},
 	)
 }
@@ -600,7 +609,10 @@ assets_load_texture_cache_key_is_owned_clone_independent_of_caller :: proc(t: ^t
 	with_assets_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.textures.records, Texture_Record{w = 5, h = 5})
+			append(
+				&state.textures.records,
+				Texture_Record{w = 5, h = 5, status = .Ready, generation = 1, refs = 1},
+			)
 			path := strings.clone("owned/key.png")
 			state.assets.paths[strings.clone(path)] = Asset_Id(1)
 
@@ -637,6 +649,9 @@ assets_gpu_load_texture_caches_and_returns_stable_handle :: proc(t: ^testing.T) 
 			handle1, ok1 := assets_load_texture(path)
 			testing.expect(t, ok1)
 			testing.expect(t, handle1.id > TEXTURE_WHITE_ID)
+			assets_io_wait_idle()
+			handle1 = assets_get_texture(handle1.id)
+			testing.expect_value(t, texture_load_status(handle1), Texture_Load_Status.Ready)
 			expect_close(t, handle1.w, 4)
 			expect_close(t, handle1.h, 6)
 			testing.expect_value(t, len(state.assets.paths), 1)
@@ -678,6 +693,9 @@ assets_gpu_load_distinct_paths_get_distinct_ids :: proc(t: ^testing.T) {
 			ha, oka := assets_load_texture(a)
 			hb, okb := assets_load_texture(b)
 			testing.expect(t, oka && okb)
+			assets_io_wait_idle()
+			ha = assets_get_texture(ha.id)
+			hb = assets_get_texture(hb.id)
 			testing.expect(t, ha.id != hb.id)
 			testing.expect_value(t, len(state.assets.paths), 2)
 			expect_close(t, ha.w, 2)
@@ -699,6 +717,8 @@ assets_gpu_load_png_fixture_and_empty_path_string_content_lookup :: proc(t: ^tes
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
 			testing.expect(t, handle.id > TEXTURE_WHITE_ID)
+			assets_io_wait_idle()
+			handle = assets_get_texture(handle.id)
 			expect_close(t, handle.w, 1)
 			expect_close(t, handle.h, 1)
 
@@ -725,7 +745,9 @@ assets_gpu_reload_keeps_cache_and_restores_gpu_textures :: proc(t: ^testing.T) {
 
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
+			assets_io_wait_idle()
 			id := handle.id
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
 			testing.expect(t, texture_get_gpu(id) != nil)
 
 			assets_reload_gpu(state.gpu)
@@ -754,19 +776,23 @@ assets_gpu_failed_load_does_not_poison_later_success :: proc(t: ^testing.T) {
 			out := with_captured_stderr(
 				t,
 				proc(t: ^testing.T) {
-					_, bad := assets_load_texture("oni_assets_test_fixtures/nope-again.png")
-					testing.expect(t, !bad)
+					bad_handle, accepted := assets_load_texture("oni_assets_test_fixtures/nope-again.png")
+					testing.expect(t, accepted)
+					assets_io_wait_idle()
+					testing.expect_value(t, texture_load_status(bad_handle), Texture_Load_Status.Failed)
 				},
 			)
 			defer delete(out)
-			testing.expect_value(t, len(state.assets.paths), 0)
+			testing.expect_value(t, len(state.assets.paths), 1)
 
 			path := fmt.tprintf("%s/after-fail.bmp", assets_test_fixture_dir())
 			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {11, 22, 33}))
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
+			assets_io_wait_idle()
 			testing.expect(t, handle.id > TEXTURE_WHITE_ID)
-			testing.expect_value(t, len(state.assets.paths), 1)
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
+			testing.expect_value(t, len(state.assets.paths), 2)
 		},
 	)
 }
@@ -805,6 +831,8 @@ assets_gpu_load_unicode_path_roundtrip :: proc(t: ^testing.T) {
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
 			testing.expect(t, handle.id > TEXTURE_WHITE_ID)
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
 
 			again, ok2 := assets_load_texture(path)
 			testing.expect(t, ok2)
@@ -894,6 +922,9 @@ assets_gpu_cache_hit_survives_deleted_source_file :: proc(t: ^testing.T) {
 			first, ok1 := assets_load_texture(path)
 			testing.expect(t, ok1)
 			testing.expect(t, first.id > TEXTURE_WHITE_ID)
+			assets_io_wait_idle()
+			first = assets_get_texture(first.id)
+			testing.expect_value(t, texture_load_status(first), Texture_Load_Status.Ready)
 
 			testing.expect(t, os.remove(path) == nil)
 			testing.expect(t, !os.exists(path))
@@ -920,7 +951,9 @@ assets_gpu_load_path_with_spaces_and_reload_twice :: proc(t: ^testing.T) {
 
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
+			assets_io_wait_idle()
 			id := handle.id
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
 
 			assets_reload_gpu(state.gpu)
 			assets_reload_gpu(nil) // gpu arg ignored; still uses state.gpu
@@ -946,6 +979,8 @@ assets_gpu_load_jpeg_via_img_fallback_registers_texture :: proc(t: ^testing.T) {
 
 			handle, ok := assets_load_texture(path)
 			testing.expect(t, ok)
+			assets_io_wait_idle()
+			handle = assets_get_texture(handle.id)
 			testing.expect(t, handle.id > TEXTURE_WHITE_ID)
 			expect_close(t, handle.w, 2)
 			expect_close(t, handle.h, 2)
@@ -955,7 +990,7 @@ assets_gpu_load_jpeg_via_img_fallback_registers_texture :: proc(t: ^testing.T) {
 }
 
 @(test)
-assets_distinct_path_strings_are_distinct_cache_keys :: proc(t: ^testing.T) {
+assets_lexically_equivalent_paths_share_cache_key :: proc(t: ^testing.T) {
 	with_assets_gpu_env(
 		t,
 		proc(t: ^testing.T) {
@@ -966,13 +1001,180 @@ assets_distinct_path_strings_are_distinct_cache_keys :: proc(t: ^testing.T) {
 			a := fmt.tprintf("%s/same.bmp", dir)
 			testing.expect(t, assets_test_write_bmp(t, a, 2, 2, {9, 9, 9}))
 
-			// Cache keys are literal path strings, not canonicalized filesystem paths.
+			// Lexical clean coalesces ./prefix aliases; symlink aliases stay distinct.
 			dot_a := fmt.tprintf("./%s/same.bmp", dir)
 			ha, oka := assets_load_texture(a)
 			hb, okb := assets_load_texture(dot_a)
 			testing.expect(t, oka && okb)
-			testing.expect(t, ha.id != hb.id)
-			testing.expect_value(t, len(state.assets.paths), 2)
+			assets_io_wait_idle()
+			testing.expect_value(t, ha.id, hb.id)
+			testing.expect_value(t, texture_load_status(ha), Texture_Load_Status.Ready)
+			testing.expect_value(t, len(state.assets.paths), 1)
+		},
+	)
+}
+
+@(test)
+assets_load_texture_sets_frame_dirty_on_completion :: proc(t: ^testing.T) {
+	with_assets_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			defer assets_test_cleanup_fixtures()
+
+			path := fmt.tprintf("%s/wake.bmp", assets_test_fixture_dir())
+			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {1, 2, 3}))
+
+			state.frame_dirty = false
+			handle, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			// Enqueue requests a frame immediately.
+			testing.expect(t, state.frame_dirty)
+			state.frame_dirty = false
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
+			testing.expect(t, state.frame_dirty)
+		},
+	)
+}
+
+@(test)
+assets_shutdown_mid_pending_does_not_hang :: proc(t: ^testing.T) {
+	with_assets_env(
+		t,
+		proc(t: ^testing.T) {
+			defer assets_test_cleanup_fixtures()
+
+			path := fmt.tprintf("%s/mid-pending.bmp", assets_test_fixture_dir())
+			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {4, 5, 6}))
+
+			handle, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+			testing.expect(t, state.assets.io_pool != nil)
+
+			assets_shutdown()
+			testing.expect(t, state.assets.io_pool == nil)
+			testing.expect(t, state.assets.paths == nil)
+
+			// Re-init so with_assets_env defer shutdown is safe.
+			assets_init(nil)
+		},
+	)
+}
+
+@(test)
+assets_gpu_reload_with_inflight_load_drains_cleanly :: proc(t: ^testing.T) {
+	with_assets_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			defer assets_test_cleanup_fixtures()
+
+			path := fmt.tprintf("%s/reload-inflight.bmp", assets_test_fixture_dir())
+			testing.expect(t, assets_test_write_bmp(t, path, 3, 3, {7, 8, 9}))
+
+			handle, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			// May still be Pending; reload must drain then rebuild GPU.
+			assets_reload_gpu(state.gpu)
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
+			testing.expect(t, texture_get_gpu(handle.id) != nil)
+		},
+	)
+}
+
+@(test)
+assets_migrate_shuts_down_io_pool :: proc(t: ^testing.T) {
+	with_assets_env(
+		t,
+		proc(t: ^testing.T) {
+			defer assets_test_cleanup_fixtures()
+
+			path := fmt.tprintf("%s/migrate.bmp", assets_test_fixture_dir())
+			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {9, 9, 9}))
+
+			_, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			testing.expect(t, state.assets.io_pool != nil)
+
+			dst: State
+			copy_state_fields(&dst, state)
+			testing.expect(t, dst.assets.io_pool == nil)
+			testing.expect(t, state.assets.io_pool == nil)
+		},
+	)
+}
+
+@(test)
+assets_failed_stays_failed_until_retry :: proc(t: ^testing.T) {
+	with_assets_env(
+		t,
+		proc(t: ^testing.T) {
+			path := "oni_assets_test_fixtures/does-not-exist-retry.png"
+			handle, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Failed)
+
+			again, again_ok := assets_load_texture(path)
+			testing.expect(t, again_ok)
+			testing.expect_value(t, again.id, handle.id)
+			testing.expect_value(t, again.generation, handle.generation)
+			testing.expect_value(t, texture_load_status(again), Texture_Load_Status.Failed)
+
+			testing.expect(t, !assets_retry_texture({id = handle.id, generation = handle.generation + 99}))
+			testing.expect(t, assets_retry_texture(handle))
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+			assets_io_wait_idle()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Failed)
+
+			info := texture_error(handle)
+			testing.expect(t, info.kind != .None)
+			texture_error_free(&info)
+		},
+	)
+}
+
+@(test)
+assets_decode_stays_pending_until_upload_flush :: proc(t: ^testing.T) {
+	with_assets_gpu_env(
+		t,
+		proc(t: ^testing.T) {
+			defer assets_test_cleanup_fixtures()
+
+			path := fmt.tprintf("%s/pending-until-flush.bmp", assets_test_fixture_dir())
+			testing.expect(t, assets_test_write_bmp(t, path, 2, 2, {3, 4, 5}))
+
+			handle, ok := assets_load_texture(path)
+			testing.expect(t, ok)
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+
+			// Wait for decode workers without publishing Ready.
+			for state.assets.io_pool != nil {
+				pool := state.assets.io_pool
+				sync.mutex_lock(&pool.queue_mutex)
+				sync.mutex_lock(&pool.results_mutex)
+				idle := len(pool.queue) == 0 && pool.inflight == 0
+				has := len(pool.results) > 0
+				sync.mutex_unlock(&pool.results_mutex)
+				sync.mutex_unlock(&pool.queue_mutex)
+				if has {
+					break
+				}
+
+				if idle {
+					break
+				}
+
+				sync.sema_wait(&pool.done_sema)
+			}
+
+			assets_io_drain()
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Pending)
+			testing.expect(t, state.textures.records[int(handle.id)].awaiting_upload)
+
+			testing.expect(t, texture_uploads_flush(state.gpu))
+			testing.expect_value(t, texture_load_status(handle), Texture_Load_Status.Ready)
 		},
 	)
 }

@@ -72,6 +72,7 @@ Rectangle implementation with a custom theme base (shared by compound widgets).
 rectangle_with_theme :: proc(
 	props: Rectangle_Props,
 	theme_base: proc(frame_state: ^Rectangle_State) -> Rectangle_Config,
+	content: Widget_Content = {},
 ) {
 	cfg := props.config
 	key := o.element_key(cfg.id)
@@ -117,7 +118,7 @@ rectangle_with_theme :: proc(
 				frame_state.is_focused = true
 			}
 			widget_register_tab_order(key, config.tabbable, can_interact)
-			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered)
+			widget_children(child, layout_id, config, frame_state, key, props.config, props.on_scroll, frame_state.is_hovered, content)
 		}
 
 		return
@@ -185,6 +186,7 @@ rectangle_with_theme :: proc(
 			element_id = key,
 			author = props.config,
 			on_scroll = props.on_scroll,
+			content = content,
 		},
 	)
 
@@ -202,6 +204,7 @@ Draw_Widget_Rectangle :: struct {
 	element_id:  string,
 	author:      o.Widget_Config,
 	on_scroll:   proc(scroll_x, scroll_y: f32),
+	content: Widget_Content,
 }
 
 @(private)
@@ -254,6 +257,7 @@ draw_widget_rectangle :: proc(props: Draw_Widget_Rectangle) {
 		props.author,
 		props.on_scroll,
 		frame_state.is_hovered,
+		props.content,
 	)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)

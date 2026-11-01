@@ -7,9 +7,11 @@ Oni is an immediate-mode, props-declared UI toolkit on SDL3 + SDL_GPU with engin
 ```
 <project>/                 # user-owned
   main.odin                # hot-reload host (see oni/templates/main.odin)
-  app/                     # hot-reload DLL (see oni/templates/app/)
+  release/main.odin        # production host (see oni/templates/release/main.odin)
+  app/                     # app sources — DLL in dev, static in release (see oni/templates/app/)
   assets/                  # runtime assets (fonts, textures)
   build/hot_reload/        # app.so + logs (generated)
+  build/production/        # release binary + staged assets (generated)
   game_hot_reload          # host binary (generated)
   oni/                     # this framework
 ```
@@ -23,16 +25,22 @@ Oni is an immediate-mode, props-declared UI toolkit on SDL3 + SDL_GPU with engin
 | `shaders/` | UI shaders (SPIR-V embedded via `#load`) |
 | `assets/fonts/` | Engine default Inter faces (`#directory`; fallback when settings.kdl has no faces) |
 | `libs/colors`, `libs/tengu` | Standalone libs via `-collection:libs=...` |
-| `templates/main.odin` | Starter host |
+| `templates/main.odin` | Starter hot-reload host |
+| `templates/release/main.odin` | Starter production host (static link) |
 | `templates/app/` | Starter app (routes, components, theme, exports) |
 | `fixtures/` | Test-only assets (fonts) |
-| `scripts/build_hot_reload.sh` | Build, run, watch, stop (operates on the **parent** project) |
+| `scripts/build_hot_reload.sh` | Dev: build, run, watch, stop (operates on the **parent** project) |
+| `scripts/build_production.sh` | Release: optimized static binary + staged assets / package |
+| `scripts/lib_build.sh` | Shared deps / shader helpers for build scripts |
 | `scripts/test_all.sh` | Package test runner (debug + leak checks) |
+| `scripts/test_build_production.sh` | Production build contract checks |
 | `odin_collections.sh` | Shared `-collection:libs=oni/libs` flags |
 
 ## Build & run
 
 From the consumer project (or anywhere; the script resolves the project as the parent of `oni/`):
+
+**Development (hot reload):**
 
 ```bash
 ./oni/scripts/build_hot_reload.sh run      # build app.so + host, start, watch app/ + oni/ + main.odin
@@ -41,11 +49,24 @@ From the consumer project (or anywhere; the script resolves the project as the p
 ./oni/scripts/build_hot_reload.sh stop
 ```
 
+Flags: `-vet -strict-style -debug`. In-app: **F5** force reload, **F6** force restart.
+
+**Production (static release):**
+
+```bash
+./oni/scripts/build_production.sh build    # optimized exe + assets into build/production/
+./oni/scripts/build_production.sh run     # run the staged release binary
+./oni/scripts/build_production.sh smoke   # run ONI_SMOKE_FRAMES then exit (default 3)
+./oni/scripts/build_production.sh package # .tar.gz under build/production/packages/
+./oni/scripts/build_production.sh clean
+./oni/scripts/test_build_production.sh     # contract checks
+```
+
+Flags: `-vet -strict-style -o:speed -disable-assert` (no `-debug`, no DLL). Creates `release/main.odin` from the template when missing. Override binary name with `ONI_APP_NAME`. Bundles non-GPU shared libs into `build/production/lib/` with `$ORIGIN/lib` rpath (Vulkan ICD stays on the OS). `#+test` sources are excluded from this build.
+
 Override project root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run`.
 
-Flags used by the build: `-vet -strict-style -debug`. Needs `odin`, `glslc`, SDL3, SDL3_image, FreeType, HarfBuzz; Linux watch needs `inotify-tools`.
-
-In-app: **F5** force reload, **F6** force restart.
+Needs `odin`, `glslc`, SDL3, SDL3_image, FreeType, HarfBuzz; Linux watch needs `inotify-tools`.
 
 ## Tests
 
@@ -145,7 +166,7 @@ See this section and `docs/APP.md` Section 12 / `docs/ROAD_MAP.md` §1.4 for pol
 
 **Coordinates:** Layout and widgets use logical design pixels; DPI scale is handled by the engine.
 
-**App → engine:** Prefer `oni/api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_Texture`, …). Import engine as `o`, widgets as `w`, set helpers as `set`.
+**App → engine:** Prefer `oni/api.odin` names (`o.Begin_Screen`, `o.Render`, `o.Load_Texture`, …). Import engine as `o`, widgets as `w`, set helpers as `set`. `Load_Texture` is non-blocking: `ok` means the request was accepted (handle may be `Pending`); use `Texture_Status` / Ready dimensions before sampling. Disk decode runs on workers; the owner commits surfaces and GPU uploads on drain (present / run_frame). Failed stays Failed until `Retry_Texture`; use `Unload_Texture` to release references.
 
 |Name|	Fit|
 |-|-|
@@ -220,7 +241,7 @@ Own state; pass `dt` in **seconds**; use `*_Params(T)` structs and `Animatable(T
 - Match surrounding Odin style; build already enforces `-vet` and `-strict-style`
 - Prefer small, focused procs; document non-obvious exported/hot-reload entry points
 - Keep shaders in `shaders/`; rebuild runs `glslc` via the build script
-- Do not commit `build/`, `game_hot_reload`, or compiled `.so`/`.dll`/`.dylib`
+- Do not commit `build/`, `game_hot_reload`, production binaries under `build/production/`, or compiled `.so`/`.dll`/`.dylib`
 
 ## Boundaries
 

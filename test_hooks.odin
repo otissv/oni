@@ -2,6 +2,15 @@ package oni
 
 import sdl "vendor:sdl3"
 
+@(private)
+test_hook_vector_fail_pass_after: int
+@(private)
+test_hook_vector_fail_buffer_after: int
+@(private)
+test_hook_vector_fail_transfer: bool
+@(private)
+test_hook_vector_fail_map: bool
+
 /*
 Test-only injection points for branches that cannot be forced through real SDL /
 FreeType failures in CI. Default false; no effect outside tests that set them.
@@ -131,6 +140,10 @@ test_hook_gamepad_buttons: [GAMEPAD_BUTTON_COUNT]bool
 
 @(private)
 clear_test_hooks :: proc() {
+	test_hook_vector_fail_pass_after = 0
+	test_hook_vector_fail_buffer_after = 0
+	test_hook_vector_fail_transfer = false
+	test_hook_vector_fail_map = false
 	test_hook_dpi_sync_fail_get_size = false
 	test_hook_dpi_sync_fail_get_pixels = false
 	test_hook_dpi_sync_force_logical_w_zero = false

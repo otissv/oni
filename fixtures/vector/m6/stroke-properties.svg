@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="64" viewBox="0 0 128 64">
+  <path d="M8 12 H32 V38" fill="none" stroke="navy" stroke-width="6" stroke-linecap="square" stroke-linejoin="bevel" stroke-miterlimit="2" stroke-dasharray="5 3" stroke-dashoffset="2" pathLength="50"/>
+  <path d="M0 10 H30 V42" transform="translate(55 8) scale(1.5 .8)" fill="none" stroke="red" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+  <path d="M8 54H120" fill="none" stroke="navy" stroke-width="2" stroke-dasharray="4 2" stroke-dashoffset="1" vector-effect="non-scaling-stroke"/>
+</svg>

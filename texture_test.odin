@@ -1,3 +1,4 @@
+#+test
 package oni
 
 import "core:strings"
@@ -147,7 +148,14 @@ texture_test_seed_atlas :: proc(width: i32 = TEXTURE_TEST_ATLAS_SIZE, height: i3
 	surface := texture_test_make_surface(width, height, {0, 0, 0, 0})
 	append(
 		&state.textures.records,
-		Texture_Record{surface = surface, w = width, h = height, gpu = nil},
+		Texture_Record {
+			surface    = surface,
+			w          = width,
+			h          = height,
+			gpu        = nil,
+			status     = .Ready,
+			generation = 1,
+		},
 	)
 	id := Asset_Id(len(state.textures.records) - 1)
 	state.textures.atlas = Atlas_State {
@@ -410,7 +418,7 @@ texture_get_gpu_and_handle_for_white_invalid_and_registered :: proc(t: ^testing.
 			defer free(fake_gpu)
 			append(
 				&state.textures.records,
-				Texture_Record{gpu = fake_gpu, w = 32, h = 48},
+				Texture_Record{gpu = fake_gpu, w = 32, h = 48, status = .Ready, generation = 1},
 			)
 			id := Asset_Id(1)
 			testing.expect(t, texture_get_gpu(id) == fake_gpu)
@@ -431,11 +439,15 @@ texture_atlas_region_from_and_handle_roundtrip :: proc(t: ^testing.T) {
 	with_texture_env(
 		t,
 		proc(t: ^testing.T) {
-			append(&state.textures.records, Texture_Record{w = 100, h = 50})
+			append(
+				&state.textures.records,
+				Texture_Record{w = 100, h = 50, status = .Ready, generation = 1},
+			)
 			tex := Texture_Handle {
-				id = Asset_Id(1),
-				w  = 100,
-				h  = 50,
+				id         = Asset_Id(1),
+				generation = 1,
+				w          = 100,
+				h          = 50,
 			}
 			region := atlas_region_from(tex, {10, 20, 30, 40})
 			expect_atlas_region(t, region, Asset_Id(1), 10, 20, 30, 40)

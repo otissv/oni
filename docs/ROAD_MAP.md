@@ -94,7 +94,8 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [ ] F3 (or settings) debug overlay: FPS, draw calls, batch flushes, atlas stats
 - [ ] Log / toast for non-fatal errors; structured GPU device-loss quit path
 - [ ] Release GPU path (no always-on validation); multi-backend shaders beyond SPIR-V when needed
-- [ ] CI: `test_all.sh` + hot-reload build on push; Darwin / Windows watch parity
+- [x] Production build script (`build_production.sh`: static `-o:speed` binary, staged assets, SDL bundle, package tarball)
+- [ ] CI: `test_all.sh` + hot-reload/production builds on push; Darwin / Windows watch parity
 
 **Track 1 exit:** A settings-heavy demo (sidebar + form widgets + scroll + shortcuts) and a small document/browser-style shell survive F5 with `Persistent` state intact. No Dear ImGui.
 

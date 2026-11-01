@@ -1,0 +1,211 @@
+# M6 acceptance fixtures — expected load outcome.
+# positive = must load; negative = must fail with category.
+
+[[case]]
+name = "stroke-properties"
+file = "stroke-properties.svg"
+expect = "positive"
+
+[[case]]
+name = "invalid-stroke"
+file = "negative-stroke.svg"
+expect = "negative"
+category = "Invalid_Value"
+
+[[case]]
+name = "fills-document"
+file = "../fills.svg"
+expect = "positive"
+
+[[case]]
+name = "gradients-document"
+file = "../gradients.svg"
+expect = "positive"
+
+[[case]]
+name = "namespace-default"
+file = "namespace-default.svg"
+expect = "positive"
+
+[[case]]
+name = "namespace-prefixed"
+file = "namespace-prefixed.svg"
+expect = "positive"
+
+[[case]]
+name = "href-precedence"
+file = "href-precedence.svg"
+expect = "positive"
+
+[[case]]
+name = "xlink-href-only"
+file = "xlink-href.svg"
+expect = "positive"
+
+[[case]]
+name = "forward-reference"
+file = "forward-reference.svg"
+expect = "positive"
+
+[[case]]
+name = "symbol-instances"
+file = "symbol-instances.svg"
+expect = "positive"
+
+[[case]]
+name = "editor-metadata"
+file = "editor-metadata.svg"
+expect = "positive"
+
+[[case]]
+name = "duplicate-id"
+file = "negative-duplicate-id.svg"
+expect = "negative"
+category = "Duplicate_Id"
+
+[[case]]
+name = "missing-reference"
+file = "negative-missing-ref.svg"
+expect = "negative"
+category = "Missing_Reference"
+
+[[case]]
+name = "reference-cycle"
+file = "negative-use-cycle.svg"
+expect = "negative"
+category = "Reference_Cycle"
+
+[[case]]
+name = "unsupported-text"
+file = "negative-text.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "foreign-in-tree"
+file = "negative-foreign.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "dtd"
+file = "negative-dtd.svg"
+expect = "negative"
+category = "Malformed_Xml"
+
+[[case]]
+name = "css-classes"
+file = "css-classes.svg"
+expect = "positive"
+
+[[case]]
+name = "nested-viewports"
+file = "nested-viewports.svg"
+expect = "positive"
+
+[[case]]
+name = "mask-stroke"
+file = "mask-stroke.svg"
+expect = "positive"
+
+[[case]]
+name = "clip-union"
+file = "clip-union.svg"
+expect = "positive"
+
+[[case]]
+name = "gradient-inheritance"
+file = "gradient-inheritance.svg"
+expect = "positive"
+
+[[case]]
+name = "geometry-paths"
+file = "geometry-paths.svg"
+expect = "positive"
+
+[[case]]
+name = "physical-lengths"
+file = "physical-lengths.svg"
+expect = "positive"
+
+[[case]]
+name = "namespace-scope"
+file = "namespace-scope.svg"
+expect = "positive"
+
+[[case]]
+name = "use-sizing"
+file = "use-sizing.svg"
+expect = "positive"
+
+[[case]]
+name = "opacity-paint-order"
+file = "opacity-paint-order.svg"
+expect = "positive"
+
+[[case]]
+name = "negative-hidden-geometry"
+file = "negative-hidden-geometry.svg"
+expect = "negative"
+category = "Invalid_Value"
+
+[[case]]
+name = "negative-unused-property"
+file = "negative-unused-property.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "negative-unknown-attribute"
+file = "negative-unknown-attribute.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "negative-gradient-cycle"
+file = "negative-gradient-cycle.svg"
+expect = "negative"
+category = "Reference_Cycle"
+
+[[case]]
+name = "negative-namespace"
+file = "negative-namespace.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "negative-external-reference"
+file = "negative-external-reference.svg"
+expect = "negative"
+category = "Invalid_Reference"
+
+[[case]]
+name = "negative-selector"
+file = "negative-selector.svg"
+expect = "negative"
+category = "Unsupported_Feature"
+
+[[case]]
+name = "negative-units"
+file = "negative-units.svg"
+expect = "negative"
+category = "Invalid_Value"
+
+[[case]]
+name = "negative-nonfinite"
+file = "negative-nonfinite.svg"
+expect = "negative"
+category = "Invalid_Value"
+
+[[case]]
+name = "negative-duplicate-attribute"
+file = "negative-duplicate-attribute.svg"
+expect = "negative"
+category = "Malformed_Xml"
+
+[[case]]
+name = "negative-mask-reference"
+file = "negative-mask-reference.svg"
+expect = "negative"
+category = "Missing_Reference"
+

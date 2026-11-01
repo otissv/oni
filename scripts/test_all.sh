@@ -25,6 +25,7 @@ TEST_DEFINES=(
 ALL_PACKAGES=(
 	colors
 	tengu
+	vector
 	oni
 	widgets
 )
@@ -32,6 +33,7 @@ ALL_PACKAGES=(
 USE_ASAN=false
 USE_VALGRIND=false
 REPORT_MEMORY=false
+REQUIRE_VECTOR_GPU=false
 PACKAGES=()
 
 usage() {
@@ -41,12 +43,13 @@ Usage: $0 [options] [package...]
 Run all (or selected) package tests with debug info and leak detection.
 
 Packages (default: all):
-  colors  tengu  oni  widgets
+  colors  tengu  vector  oni  widgets
 
 Options:
   --asan              Enable AddressSanitizer (-sanitize:address) and leak detection
   --valgrind          After building, re-run each test binary under Valgrind
   --report-memory     Always print per-test memory usage (even with no leaks)
+  --require-vector-gpu  Fail if vector MSAA/LCD real-GPU checks cannot run (includes oni)
   -h, --help          Show this help
 
 Always enabled:
@@ -71,6 +74,7 @@ package_path() {
 	case "$1" in
 	colors) echo "libs/colors" ;;
 	tengu) echo "libs/tengu" ;;
+	vector) echo "vector" ;;
 	oni) echo "." ;;
 	widgets) echo "widgets" ;;
 	*)
@@ -182,6 +186,10 @@ while (($# > 0)); do
 		REPORT_MEMORY=true
 		shift
 		;;
+	--require-vector-gpu)
+		REQUIRE_VECTOR_GPU=true
+		shift
+		;;
 	-*)
 		echo "Unknown option: $1" >&2
 		usage >&2
@@ -205,6 +213,13 @@ fi
 
 if ((${#PACKAGES[@]} == 0)); then
 	PACKAGES=("${ALL_PACKAGES[@]}")
+fi
+
+if $REQUIRE_VECTOR_GPU; then
+	TEST_DEFINES+=(-define:ONI_REQUIRE_VECTOR_GPU_TESTS=true)
+	if [[ ! " ${PACKAGES[*]} " == *" oni "* ]]; then
+		PACKAGES+=(oni)
+	fi
 fi
 
 for pkg in "${PACKAGES[@]}"; do

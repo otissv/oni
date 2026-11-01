@@ -71,6 +71,7 @@ State :: struct {
 	window:              ^sdl.Window,
 	gpu:                 ^sdl.GPUDevice,
 	gpu_state:           GPU_State,
+	vector:              Vector_State,
 	assets:              Asset_Cache,
 	textures:            Texture_State,
 	fonts:               Font_State,

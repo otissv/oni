@@ -81,6 +81,17 @@ Test_Text_Tags_Parse_Call_Count :: test_text_tags_parse_call_count
 Test_Text_Tags_Parse_Call_Count_Reset :: test_text_tags_parse_call_count_reset
 
 Draw_Rectangle :: draw_rect
+Draw_Vector_Scene :: draw_vector_scene
+Load_Svg_File        :: load_svg_file
+Load_Svg_Memory      :: load_svg_memory
+Destroy_Svg_Asset    :: destroy_svg_asset
+Reload_Svg_Memory    :: reload_svg_memory
+Reload_Svg_File      :: reload_svg_file
+Destroy_Svg_Load_Result :: destroy_svg_load_result
+Get_Vector_Stats     :: vector_stats
+Svg_Intrinsic_Size   :: svg_intrinsic_size
+Svg_Lookup_Element   :: svg_lookup_element
+Draw_Svg_Asset       :: draw_svg_asset
 Draw_Line :: draw_line
 Draw_Texture :: draw_texture
 Draw_Texture_Fitted :: draw_texture_fitted
@@ -90,6 +101,11 @@ Draw_Pop_Opacity :: draw_pop_opacity
 Draw_Push_Space :: draw_push_space
 Draw_Pop_Space :: draw_pop_space
 Draw_Effective_Opacity :: draw_effective_opacity
+
+// Vector path/scene APIs are already PascalCase on package oni
+// (`Draw_Vector_Path`, `Draw_Vector_Paths`, `Vector_Prefetch_Paths`, …).
+// SVG instance editing (M7): `Prepare_Svg_Instance`, `Draw_Svg_Instance`,
+// `Destroy_Svg_Instance`, `Svg_Lookup_Occurrence`, `Svg_Result_Error`.
 
 Begin_Artboard :: begin_artboard
 End_Artboard :: end_artboard
@@ -102,6 +118,11 @@ End_Overlay :: end_overlay
 Render :: render
 
 Load_Texture :: assets_load_texture
+Retry_Texture :: assets_retry_texture
+Unload_Texture :: assets_unload_texture
+Texture_Status :: texture_load_status
+Texture_Error :: texture_error
+Texture_Error_Free :: texture_error_free
 Get_Texture :: assets_get_texture
 Register_Font_Family :: font_register_family
 Font_Family_By_Name :: font_family_by_name

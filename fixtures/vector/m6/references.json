@@ -1,0 +1,213 @@
+{
+  "renderer": "rsvg-convert version 2.63.4\n\nlibraries used:\n  cairo 1.18.6\n  pango 1.58.2\n  harfbuzz 15.0.0\n  fontconfig 2.18.3",
+  "fixtures": [
+    {
+      "source": "css-classes.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "17e747d202dfe6fb327045dbf99d137ee97030229fe16c9889e0c5e60d2676e8",
+      "images": [
+        {
+          "file": "css-classes-1x.png",
+          "sha256": "b2bfe6198681a058e1e870c557bd145fbf1e4af08210898bb07176afa4346963"
+        },
+        {
+          "file": "css-classes-2x.png",
+          "sha256": "c0fbf1a55046e14bbf7815cb5a31c0b889db5c02964147be5222ef5a621631cd"
+        }
+      ]
+    },
+    {
+      "source": "nested-viewports.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "9b87c2cef78d62e2c8d93c9aedbc9bc4179744486e7089605ddc657cd87b3b95",
+      "images": [
+        {
+          "file": "nested-viewports-1x.png",
+          "sha256": "1f2c221e3f4b1217d9e12693f60882f5c9a2bb123b7874cf7101b8b7969cc937"
+        },
+        {
+          "file": "nested-viewports-2x.png",
+          "sha256": "6dc4e3bf6dffbd950df5b7e8bca83cc2dacd31f39c9934a6f604e6ed8ad1fa54"
+        }
+      ]
+    },
+    {
+      "source": "mask-stroke.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "9bfe59377040da4bbb5bb0800e489a9dfae19993fc086bf6188ae6d41817461c",
+      "images": [
+        {
+          "file": "mask-stroke-1x.png",
+          "sha256": "3b294a6b1539da168ea685bdd3fe095d987be6a89f05dfcc629852a462143f77"
+        },
+        {
+          "file": "mask-stroke-2x.png",
+          "sha256": "feae71f6078e20d24c9598eaf7a25a093a1d18ce5d29d7591284a38483283fd6"
+        }
+      ]
+    },
+    {
+      "source": "clip-union.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "f21c7d11e0a8698a3397c87b16a162a1e3bf67fb47e94362ee5947f6091df12b",
+      "images": [
+        {
+          "file": "clip-union-1x.png",
+          "sha256": "131aa179ac8750158ca353c8d059c6dc16f6494eda5a4db692feb99d45f24ae1"
+        },
+        {
+          "file": "clip-union-2x.png",
+          "sha256": "a75887445fd58b85989814dbdf86f102351e88fbceccc70aaf65a5aa109c6152"
+        }
+      ]
+    },
+    {
+      "source": "gradient-inheritance.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "66ae64ec599d224939bd1fbb0a9bda806bc21050863a34f6980c19e249e6f462",
+      "images": [
+        {
+          "file": "gradient-inheritance-1x.png",
+          "sha256": "0b4dc597895c16453951e5041542007d6b495206e11b30a2663dbf429c42c344"
+        },
+        {
+          "file": "gradient-inheritance-2x.png",
+          "sha256": "c3c213ff42aad293788e1f6c79aef8da648f36fcb0c5abbcd8212e4d2633b0ec"
+        }
+      ]
+    },
+    {
+      "source": "geometry-paths.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "1e0ea3fd115cb429599af8c35b067f11a4c22c97a8efd1b6eee83b8be95c1bb6",
+      "images": [
+        {
+          "file": "geometry-paths-1x.png",
+          "sha256": "d52f084c21df526a806aec8f9289fac6bc33ce49a6966e5fa1557b5b237baf65"
+        },
+        {
+          "file": "geometry-paths-2x.png",
+          "sha256": "a35b4a7de4fa67659fcbe2438e1aa3cf92c9f0b2a34fc3f94c6a0e219e4ebbbf"
+        }
+      ]
+    },
+    {
+      "source": "physical-lengths.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "be1b80206b88fe45bffe38ce322e90310413d18276f7d128886f61255eaf9494",
+      "images": [
+        {
+          "file": "physical-lengths-1x.png",
+          "sha256": "9ffa7a223385a50d72b5df355dda0c740365005e1ec91c70e769df6c1a77c82a"
+        },
+        {
+          "file": "physical-lengths-2x.png",
+          "sha256": "91d76ae4a00bfb4dfa808a73d45b2d26a2eed3ab85588bbb5aef0471f1eb78b2"
+        }
+      ]
+    },
+    {
+      "source": "namespace-scope.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "99d9c9ebec2eb9850336f3377b97a154340f80cc4f211a4c6a4f0d887aeec408",
+      "images": [
+        {
+          "file": "namespace-scope-1x.png",
+          "sha256": "310b04150a1c6cbdae439836421cacdf9ee55c78ccd88ae0fcf95bc743a2aca5"
+        },
+        {
+          "file": "namespace-scope-2x.png",
+          "sha256": "ddf8d9be0b6092124ef233fff10a54b6d40afce1edb8cae650c1e1ccad67e031"
+        }
+      ]
+    },
+    {
+      "source": "use-sizing.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "728921bd17163b43584c5208ea59768c7d3b42c4720022da4bdc19b8fe1950ab",
+      "images": [
+        {
+          "file": "use-sizing-1x.png",
+          "sha256": "e8b162734ac041d916c9d62c28c6927dca361ebdbdec4d9af845cab15c75d019"
+        },
+        {
+          "file": "use-sizing-2x.png",
+          "sha256": "d1a9b4adcd50e9d3aa6f25d5198f18c67f3e000fbd59e27547488c4ebbddd41b"
+        }
+      ]
+    },
+    {
+      "source": "opacity-paint-order.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "31f0023c363a4f5de00fe7dad2b0bee681e9ab723193ce5ca4fa4cb5ef4b9fe0",
+      "images": [
+        {
+          "file": "opacity-paint-order-1x.png",
+          "sha256": "8504bfb53f4d93a096ab4f6c1dd7e50e5aa9a32eda6a1675884f0a7a4cb98d52"
+        },
+        {
+          "file": "opacity-paint-order-2x.png",
+          "sha256": "2498b3d026f411914fb581a92e7d532d84efae3d21b0654b348137de4c4989d9"
+        }
+      ]
+    },
+    {
+      "source": "namespace-prefixed.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "ec0f24526e0fa6b6af7108a30fdf8dbab3ff9831a15fbb85336ae2f1e3ea4776",
+      "images": [
+        {
+          "file": "namespace-prefixed-1x.png",
+          "sha256": "1cd2b150b18818b546cb85f4357febae73bf6e769cffa3271b3320dbb6833499"
+        },
+        {
+          "file": "namespace-prefixed-2x.png",
+          "sha256": "b88bb07441d0d8d670258ba26968ef36a49e9fcbd711f2b9cfb0dc17b6142e2d"
+        }
+      ]
+    },
+    {
+      "source": "symbol-instances.svg",
+      "width": 96,
+      "height": 32,
+      "sha256": "bb50f67e289f38d1c17b80f983fc4861227e9cb7232926e8fa418e1ad72c32c6",
+      "images": [
+        {
+          "file": "symbol-instances-1x.png",
+          "sha256": "286ab3fc2ef60cfdf570d2ccc288198d7020cb6a66cbec2fffd400a58c2b62cb"
+        },
+        {
+          "file": "symbol-instances-2x.png",
+          "sha256": "681b11999b667d9f31c1342466512c3edc9f20edb15d147d36d790db2c7b750c"
+        }
+      ]
+    },
+    {
+      "source": "stroke-properties.svg",
+      "width": 128,
+      "height": 64,
+      "sha256": "32a03dc903487a5197293e3e78cbeba033ffef35a832e3bc5860f6a8e3f061f7",
+      "images": [
+        {
+          "file": "stroke-properties-1x.png",
+          "sha256": "1f0614e4c8cc3e99b4a9a216d361db4bada46cb9eab985238e58168a36f7438d"
+        },
+        {
+          "file": "stroke-properties-2x.png",
+          "sha256": "7253cd18a71513eb33e300b126974db0fb2752af898f93fa01dadb6bf42d10b1"
+        }
+      ]
+    }
+  ]
+}

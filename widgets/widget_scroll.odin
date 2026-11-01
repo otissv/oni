@@ -316,6 +316,12 @@ scrollbar updates write context automatically; `on_scroll` is notification only.
 
 `hovered` drives overlay bar reveal for .SCROLL/.AUTO (sticky into the next frame).
 */
+@(private)
+Widget_Content :: struct {
+	data: rawptr,
+	invoke: proc(data: rawptr, layout_id: o.UI_Id, frame: rawptr),
+}
+
 widget_children :: proc(
 	child: proc(frame_state: $S),
 	layout_id: o.UI_Id,
@@ -325,28 +331,40 @@ widget_children :: proc(
 	author: o.Widget_Config,
 	on_scroll: proc(scroll_x, scroll_y: f32) = nil,
 	hovered: bool = false,
+	content: Widget_Content = {},
 ) {
 	resolved := config
 	o.widget_scroll_apply(element_id, author, &resolved)
-
-	// Scroll stack is for nested scrollports only — not every widget_children call.
-	if !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
+	if content.invoke == nil && !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
 		o.Children(child, layout_id, resolved, frame_state)
-
 		return
 	}
 
 	Binder :: struct {
 		child: proc(_: S),
 		state: S,
+		content: Widget_Content,
+		layout_id: o.UI_Id,
 	}
 	binder := Binder {
 		child = child,
 		state = frame_state,
+		content = content,
+		layout_id = layout_id,
+	}
+	build_content := proc(b: Binder) {
+		state := b.state
+		if b.content.invoke != nil { b.content.invoke(b.content.data, b.layout_id, rawptr(&state)) }
+		if b.child != nil { b.child(b.state) }
+	}
+	if !o.style_is_scrollport(resolved.overflow_x, resolved.overflow_y) {
+		o.Children(build_content, layout_id, resolved, binder)
+		return
 	}
 
 	invoke := proc(data: rawptr) {
 		b := cast(^Binder)data
+		if b.content.invoke != nil { b.content.invoke(b.content.data, b.layout_id, rawptr(&b.state)) }
 
 		if b.child != nil {
 			b.child(b.state)
