@@ -4,6 +4,7 @@ import "core:path/filepath"
 import "core:sync"
 import "core:thread"
 import "core:strings"
+import "core:mem"
 import sdl "vendor:sdl3"
 
 ASSET_IO_MAX_WORKERS :: 4
@@ -26,6 +27,7 @@ Asset_IO_Result :: struct {
 	request_token:     u64,
 	device_generation:  u64,
 	path:              string,
+	path_allocator:    mem.Allocator,
 	surface:           ^sdl.Surface,
 	ok:                bool,
 	diagnostic:        string,
@@ -39,6 +41,7 @@ Asset_IO_Job :: struct {
 	request_token:   u64,
 	device_generation: u64,
 	path:            string,
+	path_allocator:  mem.Allocator,
 }
 
 @(private)
@@ -144,7 +147,7 @@ assets_io_shutdown :: proc() {
 
 	sync.mutex_lock(&pool.queue_mutex)
 	for job in pool.queue {
-		delete(job.path)
+		delete(job.path, job.path_allocator)
 	}
 	clear(&pool.queue)
 	delete(pool.queue)
@@ -156,7 +159,7 @@ assets_io_shutdown :: proc() {
 			sdl.DestroySurface(result.surface)
 		}
 
-		delete(result.path)
+		delete(result.path, result.path_allocator)
 		delete(result.diagnostic)
 	}
 	clear(&pool.results)
@@ -200,7 +203,7 @@ assets_io_free_result :: proc(result: ^Asset_IO_Result) {
 	}
 
 	if len(result.path) > 0 {
-		delete(result.path)
+		delete(result.path, result.path_allocator)
 		result.path = ""
 	}
 
@@ -272,6 +275,7 @@ assets_io_worker :: proc(slot: ^Asset_IO_Pool_Slot) {
 				request_token     = job.request_token,
 				device_generation  = job.device_generation,
 				path              = job.path,
+				path_allocator    = job.path_allocator,
 				surface           = surface,
 				ok                = loaded,
 				decoded_bytes     = decoded,
@@ -288,7 +292,7 @@ assets_io_worker :: proc(slot: ^Asset_IO_Pool_Slot) {
 						result.surface = nil
 					}
 
-					delete(result.path)
+					delete(result.path, result.path_allocator)
 					delete(result.diagnostic)
 
 					return
@@ -348,6 +352,7 @@ assets_io_enqueue :: proc(id: Asset_Id, path: string, generation: u32, request_t
 		request_token    = request_token,
 		device_generation = pool.device_generation,
 		path             = job_path,
+		path_allocator   = context.allocator,
 	}
 	append(&pool.queue, job)
 	pool.inflight += 1

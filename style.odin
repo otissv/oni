@@ -1,6 +1,5 @@
 package oni
 
-import "core:hash"
 import "core:mem"
 
 /*
@@ -636,20 +635,7 @@ theme_widget_style_cache: Resolved_Widget_Style
 @(private)
 theme_widget_style_cache_valid: bool
 @(private)
-theme_widget_style_cache_sig: u64
-
-/*
-Builds a signature of theme fields that feed theme_widget_style.
-
-Hashes the whole Theme so in-place mutations bust the memo without an explicit
-invalidate call.
-*/
-@(private)
-theme_widget_style_signature :: proc() -> u64 {
-	if theme == nil do return 0
-	bytes := mem.byte_slice(rawptr(theme), size_of(Theme))
-	return hash.fnv64a(bytes)
-}
+theme_widget_style_cache_theme: [size_of(Theme)]u8
 
 /*
 Invalidates the memoized theme widget style base.
@@ -658,7 +644,6 @@ Call when the active theme pointer changes (bind / hot reload).
 */
 theme_widget_style_invalidate :: proc() {
 	theme_widget_style_cache_valid = false
-	theme_widget_style_cache_sig = 0
 }
 
 /*
@@ -668,8 +653,8 @@ Memoized while the theme fields that feed this proc are unchanged.
 */
 @(private)
 theme_widget_style :: proc() -> Resolved_Widget_Style {
-	sig := theme_widget_style_signature()
-	if theme_widget_style_cache_valid && theme_widget_style_cache_sig == sig {
+	if theme_widget_style_cache_valid && theme != nil &&
+	   mem.compare_byte_ptrs(raw_data(theme_widget_style_cache_theme[:]), cast([^]u8)theme, size_of(Theme)) == 0 {
 		return theme_widget_style_cache
 	}
 
@@ -734,7 +719,7 @@ theme_widget_style :: proc() -> Resolved_Widget_Style {
 		grid_auto_flow        = .ROW,
 	}
 	theme_widget_style_cache_valid = true
-	theme_widget_style_cache_sig = sig
+	mem.copy(raw_data(theme_widget_style_cache_theme[:]), theme, size_of(Theme))
 	return theme_widget_style_cache
 }
 

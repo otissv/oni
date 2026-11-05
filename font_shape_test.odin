@@ -696,6 +696,24 @@ font_text_segment_advance_estimate_matches_shaped_none_width :: proc(t: ^testing
 }
 
 @(test)
+font_advance_metrics_cache_reuses_glyphs_and_preserves_spacing :: proc(t: ^testing.T) {
+	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = pixel
+		face, _, ok := font_test_face(inter, 16)
+		testing.expect(t, ok)
+		first := font_text_segment_advance_estimate(face, "Ab A", 0, 0)
+		testing.expect_value(t, len(face.advance_cache), 3)
+		second := font_text_segment_advance_estimate(face, "Ab A", 2, 3)
+		expect_close(t, second, first + 9)
+		testing.expect_value(t, len(face.advance_cache), 3)
+		face.fake_bold = true
+		bold := font_text_segment_advance_estimate(face, "Ab A", 0, 0)
+		testing.expect(t, bold >= first)
+		testing.expect_value(t, len(face.advance_cache), 6)
+	})
+}
+
+@(test)
 font_text_min_content_advance_is_longest_unbreakable_run :: proc(t: ^testing.T) {
 	with_font_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
 		_ = pixel

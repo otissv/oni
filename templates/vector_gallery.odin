@@ -45,6 +45,10 @@ Persistent :: struct {
 	svg_difference: bool,
 	m8_asset: o.Svg_Asset,
 	m8_reload_status: string,
+	m8_status_storage: [256]u8,
+	m8_workload: f32,
+	m8_animate: bool,
+	m8_seconds, m8_frame_ms: f32,
 	m8_inject_error: bool,
 }
 
@@ -652,6 +656,8 @@ m7_init_animation :: proc() {
 }
 
 m7_tick :: proc(dt: f32) {
+	persistent.m8_frame_ms = dt * 1000
+	if persistent.m8_animate { persistent.m8_seconds += dt; o.Request_Frame() }
 	if persistent.m7_playing {
 		motion := tengu.tween_step(tengu.Step_Params(f32){state = &persistent.motion, dt = dt, anim = tengu.F32_Animatable()})
 		color := tengu.tween_step(tengu.Step_Params(tengu.RGBA){state = &persistent.animated_color, dt = dt, anim = tengu.RGBA_Animatable()})
@@ -788,6 +794,10 @@ m8_init_stress :: proc() -> bool {
 	return true
 }
 
+m8_status :: proc(format: string, args: ..any) {
+	persistent.m8_reload_status = fmt.bprintf(persistent.m8_status_storage[:], format, ..args)
+}
+
 m8_stress_gallery :: proc() {
 	w.Text({config = {id = "m8-title", text = "M8: lifecycle stress / counters / reload / deliberate errors", height = set.Height(28)}})
 	w.Rectangle({
@@ -809,10 +819,10 @@ m8_stress_gallery :: proc() {
 					result := o.Reload_Svg_File(persistent.m8_asset, "oni/fixtures/vector/benchmark/icon-1.svg")
 					defer o.Destroy_Svg_Load_Result(&result)
 					if result.ok {
-						persistent.m8_reload_status = fmt.tprintf("Reload ok revision=%d", persistent.m8_asset.revision)
+						m8_status("Reload ok revision=%d", persistent.m8_asset.revision)
 					} else if len(result.diagnostics) > 0 {
 						d := result.diagnostics[0]
-						persistent.m8_reload_status = fmt.tprintf("Reload failed: %v", d.category)
+						m8_status("Reload failed: %v", d.category)
 					}
 				},
 			})
@@ -823,7 +833,7 @@ m8_stress_gallery :: proc() {
 					revision := persistent.m8_asset.revision
 					result := o.Reload_Svg_Memory(persistent.m8_asset, `<svg xmlns="http://www.w3.org/2000/svg"><text>bad</text></svg>`)
 					defer o.Destroy_Svg_Load_Result(&result)
-					persistent.m8_reload_status = fmt.tprintf("Rejected reload; revision still %d", revision)
+					m8_status("Rejected reload; revision still %d", revision)
 				},
 			})
 			w.Checkbox({
@@ -839,9 +849,20 @@ m8_stress_gallery :: proc() {
 			if persistent.m8_inject_error {
 				return
 			}
-			persistent.m8_reload_status = fmt.tprintf("Draw error: %v", error)
+			m8_status("Draw error: %v", error)
 		},
 	})
+	w.Slider({config = {id = "m8-workload", values = []f32{persistent.m8_workload}, min = 0, max = 2048, step = 64, height = set.Height(32)}, on_value_change = proc(values: []f32) { persistent.m8_workload = values[0] }})
+	w.Checkbox({config = {id = "m8-animate", checked = persistent.m8_animate ? .TRUE : .FALSE}, on_checked_change = proc(value: w.Checkbox_Value) { persistent.m8_animate = value == .TRUE; o.Request_Frame() }})
+	w.Text({config = {text = fmt.tprintf("Instances=%d animation=%v frame=%.2fms", int(persistent.m8_workload), persistent.m8_animate, persistent.m8_frame_ms), height = set.Height(28)}})
+	w.Vector({config = {id = "m8-dense", viewport = {0, 0, 1792, 896}, width = set.Width(820), height = set.Height(410)}, draw = proc(_: w.Vector_State, canvas: w.Vector_Canvas) {
+		for i in 0 ..< int(persistent.m8_workload) {
+			phase := f64(persistent.m8_seconds) + f64(i) * .0137
+			c, s := math.cos(phase), math.sin(phase)
+			local := o.Vector_Transform{c, s, -s, c, f64(i % 64) * 28 + 12 - 12 * c + 12 * s, f64(i / 64) * 28 + 12 - 12 * s - 12 * c}
+			if err := o.Draw_Svg_Asset(persistent.m8_asset, v.Affine_Compose(canvas.transform, local)); err != .None { m8_status("Dense scene failed: %v", err); break }
+		}
+	}})
 	if persistent.m8_inject_error && o.ui_pass() == .Draw {
 		_ = o.Draw_Svg_Asset(persistent.m8_asset, opacity = -1)
 	}

@@ -10,6 +10,7 @@ cp "$ONI_ROOT/fixtures/vector/gallery_test.odin" "$M7_GALLERY_ROOT/main_test.odi
 odin test "$M7_GALLERY_ROOT" -vet -strict-style -debug -sanitize:address \
   "${ODIN_COLLECTION_FLAGS[@]}" \
   -define:ODIN_TEST_TRACK_MEMORY=true -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true \
+  -define:ODIN_TEST_THREADS=1 \
   -extra-linker-flags:"${ONI_SDL3_LINKER_FLAGS}-lfreetype -lharfbuzz" \
   -out:"$M7_GALLERY_ROOT/gallery-test"
 odin build "$M7_GALLERY_ROOT" -vet -strict-style -o:speed -disable-assert \

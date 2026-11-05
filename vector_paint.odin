@@ -163,10 +163,6 @@ vector_paint_resolve :: proc(
 	skip: bool,
 	err: Vector_Error,
 ) {
-	if err_v := v.Validate_Paint(paint); err_v != .None {
-		return {}, true, vector_paint_error(err_v)
-	}
-
 	if !(opacity >= 0 && opacity <= 1) {
 		return {}, true, .Invalid_Value
 	}
@@ -181,7 +177,7 @@ vector_paint_resolve :: proc(
 			return {}, true, .None
 		}
 
-		colour := color_to_f32(paint.solid)
+		colour := rgba_to_f32(paint.solid)
 		colour[3] *= draw_opacity
 		return {colour = colour}, false, .None
 	case .Current_Color:
@@ -189,10 +185,13 @@ vector_paint_resolve :: proc(
 			return {}, true, .None
 		}
 
-		colour := color_to_f32(current_color)
+		colour := rgba_to_f32(current_color)
 		colour[3] *= draw_opacity
 		return {colour = colour}, false, .None
 	case .Linear_Gradient:
+		if err_v := v.Validate_Paint(paint); err_v != .None {
+			return {}, true, vector_paint_error(err_v)
+		}
 		if draw_opacity == 0 {
 			return {}, true, .None
 		}
@@ -226,6 +225,9 @@ vector_paint_resolve :: proc(
 				colour = {1, 1, 1, draw_opacity},
 			})
 	case .Radial_Gradient:
+		if err_v := v.Validate_Paint(paint); err_v != .None {
+			return {}, true, vector_paint_error(err_v)
+		}
 		if draw_opacity == 0 {
 			return {}, true, .None
 		}

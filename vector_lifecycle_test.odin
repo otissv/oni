@@ -74,7 +74,7 @@ vector_lifecycle_migrate_preserves_retained_paths :: proc(t: ^testing.T) {
 
 @(test)
 vector_lifecycle_gpu_reload_bumps_geometry_epoch :: proc(t: ^testing.T) {
-	with_gpu_device_env(t, proc(t: ^testing.T) {
+	with_gpu_window_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()
 		defer vector_gpu_shutdown()
 		before := state.vector.gpu.geometry_epoch

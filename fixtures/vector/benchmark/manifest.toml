@@ -4,35 +4,75 @@ viewport = "24x24"
 icons = 2048
 grid = "64x32"
 spacing = 28
+framebuffer = "1920x1080"
+dpi = 1
+samples = 4
+slots = 2
+warmup = 120
+frames = 1800
+time = "frame_index / 60 seconds, including warmup"
+phase = "time + instance_index * 0.0137"
+transform = "rotate(phase) * scale(1+.25*sin(phase),1+.25*cos(.7*phase)), about (12,12), plus (2*sin(phase),2*cos(.7*phase))"
+colour = "rgb(120+100*sin(phase),120+100*cos(phase),220)"
+opacity = ".8+.2*sin(phase)"
+morph = "instances 1536..2047; each control/end point (x,y) += (.45*sin(phase+part*.17+y*.7),.45*cos((phase+part*.17)*.83+x*.7))"
+topology = "part 0: one hole (opposite winding); part 1: two-lobed self-intersection; parts 2/3: simple contours; 32 nondegenerate cubics each"
+control_points = "exact round-trip decimal control points in the hashed SVG files"
+ordinary_ui = "32 labelled 72x24 buttons at (16+(i%8)*80,16+(i/8)*28), Inter 14, Btn i; 96 120x18 labels at (720+(i%12)*96,16+(i/12)*20), Inter 12, Label i; UI submitted before vectors"
+composition = "256 instances,16x16,64x48 viewport,96x64 spacing,origin(208,36); composition.svg; phase=time+i*.03; alpha translate(2sin(p),2cos(p)); luma translate(2cos(.7p),2sin(.7p)); outer opacity .7+.2cos(.7p); inner opacity .6+.2sin(p)"
 
 [[asset]]
 file = "icon-0.svg"
-sha256 = "bbdc089e50ffb23148616e0e2119c44f3f90a7068a8e512bb530e83f8738668e"
+sha256 = "feffe3a83f2c057bae517e49be956e8798b96b16f007a68279c702e1d3110577"
 
 [[asset]]
 file = "icon-1.svg"
-sha256 = "d7f5d79f3505af20e4ac2a02a4bcb5d1312cbb59d14d9e7a35ea155674c53e57"
+sha256 = "f61cd118264c356b60e81f071484d80433fdade6b900dc56fce3350faa247a2f"
 
 [[asset]]
 file = "icon-2.svg"
-sha256 = "d4266fe13c6e2e5c7c9fffd0fd8392f136701baabad1d2d7eb9df8f8ffa550a6"
+sha256 = "0c46add5d07b7562dfbae0da34356da22c577f4d64839a02448ea2af9193ba5f"
 
 [[asset]]
 file = "icon-3.svg"
-sha256 = "0a971e19dd704330027bba45d9bf24dea83cf3f1de9799d9a748db3815c90087"
+sha256 = "4015aa475fb5a01c0f10ccd053f686e4ffac37e6cd94f42612aeb7975b89fa57"
 
 [[asset]]
 file = "icon-4.svg"
-sha256 = "0546f7a46f5a902dee5517af1820fef37f466f8fc6e51f452f0bf2f196c75571"
+sha256 = "8b03cbfba85ceb400611171faa3d8ef11f7c923092db7ce96ee98a73737013ca"
 
 [[asset]]
 file = "icon-5.svg"
-sha256 = "93c632a38acffa0bb648913a453947ac609b04abbd1b2fb4ff12820c8f092a94"
+sha256 = "c613f6433af115cec7c6e21d8ee1011dde99ccf8e1a94f336e8a95a137499248"
 
 [[asset]]
 file = "icon-6.svg"
-sha256 = "c2c3990d52c4db6b6411159a6fcf10cce28d2be17a4acb1ac18c8c0a76fea87f"
+sha256 = "77e97b2a53c5c809c110fd8edb05b9495e53cc04d7e9637d3c14b4208541eb80"
 
 [[asset]]
 file = "icon-7.svg"
-sha256 = "4e708a576a05c4625219bd95010a900889baccd602ab1bbb881428c43db7bca7"
+sha256 = "4e4c9e4789efeba87e71e35563b759ab34ec66c1577d1bf8a49603a836532efd"
+
+[composition_asset]
+file = "composition.svg"
+sha256 = "8dddcf63c5961a7d523ef5a57dafcd99273a807340787b27383255197ac0f283"
+
+[[harness]]
+file = "vector_benchmark_test.odin"
+sha256 = "5a7cf1a050c5caea8da1415e020c895e4343a9259d9d922995051548b19c4cc2"
+
+[[harness]]
+file = "vector_benchmark_m8_test.odin"
+sha256 = "9389cfa7da6940018521e7c000142bc7c958400f14b9f72e3db288dc95b501f2"
+
+[[harness]]
+file = "vector_benchmark_contract_test.odin"
+sha256 = "791e5e5d580c29d53222aef15b50957504ea3d60cc47b532532ad75b142b2770"
+
+[[harness]]
+file = "vector_benchmark_isolation_test.odin"
+sha256 = "05df0e00ab0f378776c5ed7cfe627c41eb1f5c2d646c29407eb2705af9a2ef96"
+
+[[font]]
+file = "fixtures/fonts/Inter-VariableFont_opsz,wght.ttf"
+sha256 = "0be2399ea925f1f83ff974764761da9860ec50742ed29a5d4c1ffd0c5c7ac3a8"

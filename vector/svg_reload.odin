@@ -7,10 +7,7 @@ svg_asset_retire :: proc(asset: ^Svg_Asset) {
 	}
 
 	allocator := asset.allocator
-	if asset.arena != nil {
-		scratch_arena_destroy(asset.arena)
-		free(asset.arena, allocator)
-	}
+	svg_revision_release(asset.owner)
 
 	asset^ = {allocator = allocator}
 }

@@ -5,6 +5,29 @@ import "core:fmt"
 import "core:testing"
 
 @(test)
+svg_instances_pin_geometry_across_reload_and_asset_destruction :: proc(t: ^testing.T) {
+	for _ in 0 ..< 100 {
+		asset, loaded := svg_test_load(`<rect width="10" height="10"/>`)
+		Destroy_Svg_Load_Result(&loaded)
+		instance, prepared := Svg_Prepare_Instance(asset)
+		Destroy_Svg_Load_Result(&prepared)
+		testing.expect(t, instance != nil)
+		if instance == nil { Destroy_Svg_Asset(asset); return }
+		owner := asset.owner
+		testing.expect_value(t, owner.refs, i64(2))
+		reloaded := Reload_Svg_From_String(asset, `<svg xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20"/></svg>`)
+		testing.expect(t, reloaded.ok)
+		Destroy_Svg_Load_Result(&reloaded)
+		testing.expect_value(t, owner.refs, i64(1))
+		Destroy_Svg_Asset(asset)
+		bounds, err := Geometry_Bounds(instance.roots[0].item.commands)
+		testing.expect_value(t, err, Error.None)
+		testing.expect_value(t, bounds.max, Point{10, 10})
+		Destroy_Svg_Instance(instance)
+	}
+}
+
+@(test)
 svg_reload_success_replaces_content_and_bumps_revision :: proc(t: ^testing.T) {
 	asset, loaded := svg_test_load(`<rect id="a" width="10" height="10"/>`)
 	defer Destroy_Svg_Asset(asset)

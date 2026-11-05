@@ -5,6 +5,18 @@ import "core:testing"
 import o "./oni"
 
 @(test)
+gallery_status_survives_temporary_allocator_reset :: proc(t: ^testing.T) {
+	owner := new(Persistent)
+	defer free(owner)
+	saved := persistent
+	persistent = owner
+	defer persistent = saved
+	m8_status("Revision %d", 42)
+	free_all(context.temp_allocator)
+	testing.expect_value(t, persistent.m8_reload_status, "Revision 42")
+}
+
+@(test)
 gallery_tengu_tick_uses_seconds_and_requests_only_active_animation_frames :: proc(t: ^testing.T) {
 	state := new(Persistent)
 	defer free(state)
@@ -38,6 +50,7 @@ m7_space_visibility_snapshot_is_captured_on_layout_not_draw :: proc(t: ^testing.
 	defer persistent = saved
 	saved_state := o.state
 	defer o.state = saved_state
+	o.state = &state.engine
 	persistent.m7_show_spaces = true
 	o.state.ui.pass = .Layout
 	if o.ui_pass() == .Layout { persistent.m7_spaces_snapshot = persistent.m7_show_spaces }

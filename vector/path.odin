@@ -23,10 +23,16 @@ Limits :: struct {
 	max_triangles: int,
 	max_pair_tests: int,
 	max_work: int,
+	max_exact_ops: int,
+	max_integer_bits: int,
 	max_mesh_bytes: int,
 	max_coordinate: f64,
 	tolerance: f64,
 	max_subdivision: int,
+	// 0 = adaptive tolerance; >0 forces this many subdivision levels for curves
+	// so compatible morph remeshes keep stable vertex counts; <0 emits only
+	// each curve's endpoint (stable, cheapest morph remesh).
+	uniform_subdivision: int,
 }
 
 DEFAULT_LIMITS :: Limits{
@@ -34,6 +40,7 @@ DEFAULT_LIMITS :: Limits{
 	max_intersections = 262_144, max_events = 1_000_000, max_triangles = 1_000_000,
 	max_pair_tests = 16_000_000, max_coordinate = 1 << 20,
 	max_work = 16_000_000, max_mesh_bytes = 64 * 1024 * 1024,
+	max_exact_ops = 16_000_000, max_integer_bits = 4096,
 	tolerance = 0.25, max_subdivision = 32,
 }
 
@@ -76,6 +83,8 @@ Fill_Rule :: enum {
 Mesh :: struct {
 	vertices: [dynamic][2]f32,
 	indices: [dynamic]u32,
+	// Internal: vertices follow the original close-stripped contour slots.
+	contour_slots: bool,
 }
 
 Destroy_Path :: proc(path: ^Path) {
@@ -220,9 +229,18 @@ flatten_tolerance :: proc(limits: Limits) -> f64 {
 
 @(private)
 flatten_quadratic :: proc(flat: ^Flat_Path, a, b, c: Point, limits: Limits, depth: int) -> Error {
-	tolerance := flatten_tolerance(limits)
-	if point_segment_distance_squared(b, a, c) <= tolerance * tolerance {
+	if limits.uniform_subdivision < 0 {
 		return flat_append(flat, c, limits)
+	}
+	if limits.uniform_subdivision > 0 {
+		if depth >= limits.uniform_subdivision {
+			return flat_append(flat, c, limits)
+		}
+	} else {
+		tolerance := flatten_tolerance(limits)
+		if point_segment_distance_squared(b, a, c) <= tolerance * tolerance {
+			return flat_append(flat, c, limits)
+		}
 	}
 	if depth >= limits.max_subdivision {
 		return .Limit_Exceeded
@@ -238,9 +256,18 @@ flatten_quadratic :: proc(flat: ^Flat_Path, a, b, c: Point, limits: Limits, dept
 
 @(private)
 flatten_cubic :: proc(flat: ^Flat_Path, a, b, c, d: Point, limits: Limits, depth: int) -> Error {
-	tolerance := flatten_tolerance(limits)
-	if max(point_segment_distance_squared(b, a, d), point_segment_distance_squared(c, a, d)) <= tolerance * tolerance {
+	if limits.uniform_subdivision < 0 {
 		return flat_append(flat, d, limits)
+	}
+	if limits.uniform_subdivision > 0 {
+		if depth >= limits.uniform_subdivision {
+			return flat_append(flat, d, limits)
+		}
+	} else {
+		tolerance := flatten_tolerance(limits)
+		if max(point_segment_distance_squared(b, a, d), point_segment_distance_squared(c, a, d)) <= tolerance * tolerance {
+			return flat_append(flat, d, limits)
+		}
 	}
 	if depth >= limits.max_subdivision {
 		return .Limit_Exceeded
@@ -376,7 +403,10 @@ flatten_impl :: proc(commands: []Command, transform: Affine, limits: Limits) -> 
 				err = flatten_arc(&flat, current, command, transform, limits)
 				current = command.points[0]
 			case .Close:
-				if current != start {
+				// Depth-uniform morph remesh needs a fixed sample count; always
+				// emit the close vertex. Endpoint mode (-1) only emits when the
+				// curve end did not already land on the move point.
+				if limits.uniform_subdivision > 0 || current != start {
 					err = flat_append(&flat, Transform_Point(transform, start), limits)
 				}
 				flat.contours[contour].closed = true

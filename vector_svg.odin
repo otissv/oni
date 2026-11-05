@@ -1,6 +1,8 @@
 package oni
 
 import v "./vector"
+import "core:hash"
+import "core:mem"
 import "core:strings"
 import "core:fmt"
 
@@ -37,7 +39,8 @@ Svg_Lookup_Occurrence :: v.Svg_Asset_Lookup_Occurrence
 Destroy_Svg_Instance :: v.Destroy_Svg_Instance
 
 // Produces an independent owner and charges compilation work to this frame.
-// Frame-arena callers bulk-release it; heap callers destroy both returned owners.
+// Callers destroy both returned owners. Layout snapshots use the registered
+// Prepare_Svg_Frame_Instance path so cancellation also releases revision pins.
 Prepare_Svg_Instance :: proc(asset: Svg_Asset, overrides: []Svg_Override = nil, allocator := context.allocator) -> (^Svg_Instance, Svg_Load_Result) {
 	budget := v.DEFAULT_SVG_INSTANCE_BUDGET
 	if state != nil {
@@ -54,6 +57,145 @@ Prepare_Svg_Instance :: proc(asset: Svg_Asset, overrides: []Svg_Override = nil, 
 		vector_frame().svg_usage.decoded_bytes += usage.decoded_bytes
 	}
 	return instance, result
+}
+
+// Registers revision pins for release before the layout arena is reset, even
+// when a frame is cancelled without running Draw.
+Prepare_Svg_Frame_Instance :: proc(asset: Svg_Asset, overrides: []Svg_Override = nil, layout_key: u64 = 0, fit: u32 = 0) -> (^Svg_Instance, Svg_Load_Result) {
+	if state == nil {
+
+		return nil, {error = .Invalid_Handle}
+	}
+
+	if cached := vector_svg_layout_cache_get(layout_key, asset, fit, overrides); cached != nil {
+		if _, err := append(&state.ui.layout.svg_instances, cached); err != nil {
+
+			return nil, {error = .Allocation_Failed}
+		}
+
+		return cached, {ok = true}
+	}
+
+	// Cached snapshots outlive the layout arena; retain them on the heap.
+	// Ephemeral (uncached) snapshots use the frame arena and die at reset.
+	allocator := context.allocator if layout_key != 0 else layout_frame_allocator()
+	instance, result := Prepare_Svg_Instance(asset, overrides, allocator)
+	if instance != nil {
+		if _, err := append(&state.ui.layout.svg_instances, instance); err != nil {
+			Destroy_Svg_Instance(instance)
+			Destroy_Svg_Load_Result(&result)
+
+			return nil, {error = .Allocation_Failed, allocator = allocator}
+		}
+
+		if layout_key != 0 {
+			vector_svg_layout_cache_store(layout_key, asset, fit, overrides, instance)
+		}
+	}
+
+	return instance, result
+}
+
+@(private)
+vector_svg_overrides_hash :: proc(asset: Svg_Asset, overrides: []Svg_Override) -> u64 {
+	digest := u64(14695981039346656037)
+	if asset != nil {
+		revision := asset.revision
+		digest = hash.fnv64a(([^]u8)(&revision)[:size_of(u32)], digest)
+	}
+	for override in overrides {
+		words := [8]u64{
+			u64(override.target.index),
+			u64(override.target.revision),
+			u64(override.occurrence.element.index),
+			u64(override.occurrence.depth),
+			u64(override.property),
+			transmute(u64)override.opacity,
+			u64(len(override.commands)),
+			u64(len(override.stroke.dash)),
+		}
+		digest = hash.fnv64a(mem.slice_to_bytes(words[:]), digest)
+	}
+
+	return digest
+}
+
+@(private)
+vector_svg_layout_cache_get :: proc(key: u64, asset: Svg_Asset, fit: u32, overrides: []Svg_Override) -> ^Svg_Instance {
+	if state == nil || key == 0 || asset == nil {
+
+		return nil
+	}
+
+	entry, found := state.vector.svg_layout_cache[key]
+	if !found || entry.asset != asset || entry.revision != asset.revision || entry.fit != fit || entry.overrides_hash != vector_svg_overrides_hash(asset, overrides) {
+
+		return nil
+	}
+
+	return entry.instance
+}
+
+@(private)
+vector_svg_layout_cache_store :: proc(key: u64, asset: Svg_Asset, fit: u32, overrides: []Svg_Override, instance: ^Svg_Instance) {
+	if state == nil || key == 0 || instance == nil {
+
+		return
+	}
+
+	if old, found := state.vector.svg_layout_cache[key]; found && old.instance != instance {
+		Destroy_Svg_Instance(old.instance)
+	}
+
+	state.vector.svg_layout_cache[key] = {
+		asset = asset,
+		revision = asset.revision,
+		fit = fit,
+		overrides_hash = vector_svg_overrides_hash(asset, overrides),
+		instance = instance,
+	}
+}
+
+// Cached layout instances survive the layout arena reset; transient pins do not.
+@(private)
+vector_svg_layout_frame_end :: proc() {
+	if state == nil {
+
+		return
+	}
+
+	layout := &state.ui.layout
+	for instance in layout.svg_instances {
+		cached := false
+		for _, entry in state.vector.svg_layout_cache {
+			if entry.instance == instance {
+				cached = true
+
+				break
+			}
+		}
+
+		if !cached {
+			Destroy_Svg_Instance(instance)
+		}
+	}
+
+	clear(&layout.svg_instances)
+}
+
+@(private)
+vector_svg_layout_cache_shutdown :: proc() {
+	if state == nil {
+
+		return
+	}
+
+	for _, entry in state.vector.svg_layout_cache {
+		Destroy_Svg_Instance(entry.instance)
+	}
+
+	delete(state.vector.svg_layout_cache)
+	state.vector.svg_layout_cache = nil
 }
 
 Svg_Result_Error :: proc(result: Svg_Load_Result) -> Vector_Error {
@@ -81,7 +223,12 @@ svg_draw_diagnostic :: proc(output: ^Svg_Load_Result, error: Vector_Error, prope
 	}
 	output.allocator = context.allocator
 	output.diagnostics.allocator = context.allocator
-	diagnostic := Svg_Diagnostic{category = output.error, element = strings.clone("svg"), property = strings.clone(property), message = strings.clone(fmt.tprintf("SVG recording failed: %v", error))}
+	message := fmt.tprintf("SVG recording failed: %v", error)
+	if error == .Limit_Exceeded && state != nil {
+		f := vector_frame()
+		message = fmt.tprintf("SVG limit exceeded: segments %d/%d, triangles %d/%d, edge pairs %d/%d, exact limb operations %d/%d, geometry cache bytes %d/%d, GPU bytes %d/%d; last build exact operations %d/%d", f.new_segments, VECTOR_MAX_NEW_SEGMENTS, f.new_triangles, VECTOR_MAX_NEW_TRIANGLES, f.pair_tests, VECTOR_MAX_FRAME_PAIR_TESTS, f.exact_ops, VECTOR_MAX_FRAME_EXACT_OPS, state.vector.path_cache_bytes, VECTOR_CPU_CACHE_BUDGET, state.vector.gpu.bytes, VECTOR_GPU_BUDGET, state.vector.last_build_usage.exact_ops, state.vector.last_build_limits.max_exact_ops)
+	}
+	diagnostic := Svg_Diagnostic{category = output.error, element = strings.clone("svg"), property = strings.clone(property), message = strings.clone(message)}
 	if _, err := append(&output.diagnostics, diagnostic); err != nil {
 		delete(diagnostic.element); delete(diagnostic.property); delete(diagnostic.message)
 	}
@@ -119,34 +266,127 @@ Draw_Svg_Instance :: proc(instance: ^Svg_Instance, transform := Vector_Identity,
 
 @(private)
 draw_svg_roots :: proc(roots: []v.Svg_Draw_Node, transform: Vector_Transform, opacity: f32) -> Vector_Error {
-	handles := make([dynamic]Vector_Path_Handle, context.temp_allocator)
-	defer for handle in handles { _ = Vector_Destroy_Path(handle) }
+	items := make([dynamic]Vector_Path_Draw, context.temp_allocator)
+	if draw_svg_collect_paths(roots, transform, 1, &items) {
+		if len(items) == 0 {
+
+			return .None
+		}
+
+		for &item in items {
+			item.opacity *= opacity
+		}
+
+		return Draw_Vector_Paths(items[:])
+	}
+
 	nodes := make([dynamic]Vector_Node, context.temp_allocator)
-	if err := draw_svg_build_nodes(roots, transform, &nodes, &handles); err != .None { return err }
+	if err := draw_svg_build_nodes(roots, transform, &nodes); err != .None { return err }
+
 	return Draw_Vector_Scene({nodes = nodes[:], opacity = opacity})
 }
+
+// Returns false when clip/mask/opacity groups require full scene recording.
 @(private)
-draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Transform, out: ^[dynamic]Vector_Node, handles: ^[dynamic]Vector_Path_Handle) -> Vector_Error {
-	for node in nodes {
+draw_svg_collect_paths :: proc(
+	nodes: []v.Svg_Draw_Node,
+	root_transform: Vector_Transform,
+	group_opacity: f32,
+	out: ^[dynamic]Vector_Path_Draw,
+) -> bool {
+	for &node in nodes {
 		switch node.kind {
 		case .Path:
-			item := node.item
-			if !item.draw_fill && !item.draw_stroke { continue }
-			handle, err := Vector_Create_Path(item.commands)
-			if err != .None { return err }
-			if _, allocation_error := append(handles, handle); allocation_error != nil {
-				_ = Vector_Destroy_Path(handle)
-				return .Allocation_Failed
+			item := &node.item
+			if !item.draw_fill && !item.draw_stroke {
+
+				continue
 			}
+
+			handle, err := vector_svg_path(item.commands, item.commands_hash)
+			if err != .None {
+
+				return false
+			}
+
 			transform := v.Affine_Compose(root_transform, item.transform)
 			settings := Vector_Stroke{}
 			if item.draw_stroke {
 				settings, err = vector_stroke_from_cpu(item.stroke_settings)
 				if err != .None {
-					_ = Vector_Destroy_Path(handle)
-					if len(handles^) > 0 && handles[len(handles^) - 1] == handle {
-						ordered_remove(handles, len(handles^) - 1)
-					}
+
+					return false
+				}
+			}
+
+			opacity := f32(node.opacity * f64(group_opacity))
+			fill := Vector_Path_Draw{
+				handle = handle,
+				paint = item.fill,
+				transform = transform,
+				rule = item.fill_rule,
+				opacity = f32(item.fill_opacity) * opacity,
+			}
+			stroke := Vector_Path_Draw{
+				handle = handle,
+				paint = item.stroke,
+				transform = transform,
+				opacity = f32(item.stroke_opacity) * opacity,
+				op = .Stroke,
+				stroke = settings,
+			}
+			ordered := [2]Vector_Path_Draw{fill, stroke}
+			enabled := [2]bool{item.draw_fill, item.draw_stroke}
+			if item.paint_order == .Stroke_Fill {
+				ordered = {stroke, fill}
+				enabled = {item.draw_stroke, item.draw_fill}
+			}
+
+			for entry, i in ordered {
+				if !enabled[i] {
+
+					continue
+				}
+
+				if _, allocation_error := append(out, entry); allocation_error != nil {
+
+					return false
+				}
+			}
+		case .Group:
+			if node.opacity != 1 {
+
+				return false
+			}
+
+			if !draw_svg_collect_paths(node.children, root_transform, group_opacity * f32(node.opacity), out) {
+
+				return false
+			}
+		case .Clip, .Mask:
+
+			return false
+		}
+	}
+
+	return true
+}
+
+@(private)
+draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Transform, out: ^[dynamic]Vector_Node) -> Vector_Error {
+	for &node in nodes {
+		switch node.kind {
+		case .Path:
+			item := &node.item
+			if !item.draw_fill && !item.draw_stroke { continue }
+			handle, err := vector_svg_path(item.commands, item.commands_hash)
+			if err != .None { return err }
+
+			transform := v.Affine_Compose(root_transform, item.transform)
+			settings := Vector_Stroke{}
+			if item.draw_stroke {
+				settings, err = vector_stroke_from_cpu(item.stroke_settings)
+				if err != .None {
 
 					return err
 				}
@@ -159,10 +399,6 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 			for entry, i in ordered {
 				if enabled[i] {
 					if _, allocation_error := append(out, entry); allocation_error != nil {
-						_ = Vector_Destroy_Path(handle)
-						if len(handles^) > 0 && handles[len(handles^) - 1] == handle {
-							ordered_remove(handles, len(handles^) - 1)
-						}
 
 						return .Allocation_Failed
 					}
@@ -170,7 +406,7 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 			}
 		case .Group, .Clip, .Mask:
 			children := make([dynamic]Vector_Node, context.temp_allocator)
-			if err := draw_svg_build_nodes(node.children, root_transform, &children, handles); err != .None { return err }
+			if err := draw_svg_build_nodes(node.children, root_transform, &children); err != .None { return err }
 			if len(children) == 0 { continue }
 			group := Vector_Node{kind = .Group, opacity = f32(node.opacity), children = children[:]}
 			switch node.kind {
@@ -182,7 +418,7 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 				group = {kind = .Clip, opacity = 1, mesh = mesh, children = children[:]}
 			case .Mask:
 				mask := make([dynamic]Vector_Node, context.temp_allocator)
-				if err := draw_svg_build_nodes(node.mask_nodes, root_transform, &mask, handles); err != .None { return err }
+				if err := draw_svg_build_nodes(node.mask_nodes, root_transform, &mask); err != .None { return err }
 				group = {kind = .Mask, opacity = 1, mask_kind = node.mask_alpha ? .Alpha : .Luminance, children = children[:], mask = mask[:]}
 			case .Path:
 			}
@@ -208,6 +444,8 @@ draw_svg_clip_mesh :: proc(items: []v.Svg_Path_Item, root_transform: Vector_Tran
 		err := v.Tessellate_Into(&mesh, item.commands, v.Affine_Compose(device_transform, transform), item.fill_rule, limits, context.temp_allocator, &usage)
 		vector_frame().new_segments += usage.flattened_segments
 		vector_frame().new_triangles += usage.triangles
+		vector_frame().pair_tests += usage.pair_tests
+		vector_frame().exact_ops += usage.exact_ops
 		if err != .None { return {}, vector_path_error(err) }
 		if len(points) + len(mesh.vertices) > VECTOR_MAX_FRAME_VERTICES || len(indices) + len(mesh.indices) > VECTOR_MAX_FRAME_INDICES { return {}, .Limit_Exceeded }
 		base := u32(len(points))
@@ -275,6 +513,8 @@ draw_svg_clip_tree :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tran
 			intersect_err := v.Intersect_Meshes_Into(&intersection, a, b, limits, &usage)
 			vector_frame().new_segments += usage.flattened_segments
 			vector_frame().new_triangles += usage.triangles
+			vector_frame().pair_tests += usage.pair_tests
+			vector_frame().exact_ops += usage.exact_ops
 			if intersect_err != .None { return {}, vector_path_error(intersect_err) }
 			vertices, allocation_error := make([]Vec2, len(intersection.vertices), context.temp_allocator)
 			if allocation_error != nil { return {}, .Allocation_Failed }

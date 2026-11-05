@@ -2,7 +2,6 @@ package oni_vector
 
 import "core:math"
 import "core:mem"
-import big "core:math/big"
 import "core:slice"
 
 @(private)
@@ -28,6 +27,10 @@ Crossing :: struct {
 
 Build_Usage :: struct {
 	flattened_segments, triangles: int,
+	pair_tests, exact_ops: int,
+	// True when this build used stable uniform remesh or reposition so the
+	// engine can keep forcing uniform subdivision on the next morph update.
+	stable_remesh: bool,
 }
 
 @(private)
@@ -64,6 +67,7 @@ mesh_reserve :: proc(mesh: ^Mesh, vertices, indices: int, limits: Limits) -> Err
 	   index_capacity > (limits.max_mesh_bytes - vertex_capacity * size_of([2]f32)) / size_of(u32) {
 		return .Mesh_Memory_Limit
 	}
+	if vertex_capacity == cap(mesh.vertices) && index_capacity == cap(mesh.indices) { return .None }
 	// Grow geometrically when the budget permits, otherwise reserve exactly.
 	grown_vertices := vertices > cap(mesh.vertices) ? max(vertex_capacity, cap(mesh.vertices) * 2) : vertex_capacity
 	grown_indices := indices > cap(mesh.indices) ? max(index_capacity, cap(mesh.indices) * 2) : index_capacity
@@ -81,10 +85,12 @@ mesh_reserve :: proc(mesh: ^Mesh, vertices, indices: int, limits: Limits) -> Err
 Sort_Context :: struct {
 	err: Error,
 	remaining: int,
+	exact: ^Exact_Work,
 }
 
 @(private)
-rational_compare :: proc(a, b: Rational) -> (order: int, err: Error) {
+rational_compare :: proc(a, b: Rational, work: ^Exact_Work = nil) -> (order: int, err: Error) {
+	if !exact_charge(work, 4) { return 0, .Limit_Exceeded }
 	if a.den <= 0 || b.den <= 0 {
 		return 0, .Invalid_Value
 	}
@@ -110,18 +116,7 @@ rational_compare :: proc(a, b: Rational) -> (order: int, err: Error) {
 		r := b.num * a.den
 		return l < r ? -1 : (l > r ? 1 : 0), .None
 	}
-	l, r, denominator: big.Int
-	defer big.int_destroy(&l, &r, &denominator)
-	if big.int_set_from_integer(&l, a.num) != nil || big.int_set_from_integer(&denominator, b.den) != nil ||
-	   big.int_mul(&l, &l, &denominator) != nil || big.int_set_from_integer(&r, b.num) != nil ||
-	   big.int_set_from_integer(&denominator, a.den) != nil || big.int_mul(&r, &r, &denominator) != nil {
-		return 0, .Allocation_Failed
-	}
-	comparison, comparison_error := big.int_compare(&l, &r)
-	if comparison_error != nil {
-		return 0, .Allocation_Failed
-	}
-	return comparison, .None
+	return exact_compare_products(a.num, b.den, b.num, a.den, work)
 }
 
 @(private)
@@ -135,7 +130,7 @@ event_before :: proc(a, b: Rational, data: rawptr) -> bool {
 		context_data.err = .Limit_Exceeded
 		return false
 	}
-	order, err := rational_compare(a, b)
+	order, err := rational_compare(a, b, context_data.exact)
 	context_data.err = err
 	return order < 0
 }
@@ -151,12 +146,50 @@ crossing_before :: proc(a, b: Crossing, data: rawptr) -> bool {
 		context_data.err = .Limit_Exceeded
 		return false
 	}
-	order, err := rational_compare(a.x, b.x)
+	order, err := rational_compare(a.x, b.x, context_data.exact)
 	context_data.err = err
 	if order == 0 {
 		return a.edge < b.edge
 	}
 	return order < 0
+}
+
+// Small sweep lists dominate icon tessellation. Insertion sorting avoids the
+// generic sorter and comparator calls; large arrangements keep O(n log n).
+@(private)
+sort_events :: proc(events: []Rational, budget: ^Sort_Context) {
+	if len(events) > 128 {
+		slice.sort_by_with_data(events, event_before, budget)
+		return
+	}
+	for i in 1 ..< len(events) {
+		value := events[i]
+		j := i
+		for j > 0 && #force_inline event_before(value, events[j - 1], budget) {
+			events[j] = events[j - 1]
+			j -= 1
+		}
+		events[j] = value
+		if budget.err != .None { return }
+	}
+}
+
+@(private)
+sort_crossings :: proc(crossings: []Crossing, budget: ^Sort_Context) {
+	if len(crossings) > 16 {
+		slice.sort_by_with_data(crossings, crossing_before, budget)
+		return
+	}
+	for i in 1 ..< len(crossings) {
+		value := crossings[i]
+		j := i
+		for j > 0 && #force_inline crossing_before(value, crossings[j - 1], budget) {
+			crossings[j] = crossings[j - 1]
+			j -= 1
+		}
+		crossings[j] = value
+		if budget.err != .None { return }
+	}
 }
 
 @(private)
@@ -168,7 +201,7 @@ integer_cross :: proc(a, b: Integer_Point) -> i128 {
 }
 
 @(private)
-make_rational :: proc(num, den: i128) -> Rational {
+make_rational :: proc(num, den: i128, work: ^Exact_Work = nil) -> Rational {
 	n, d := num, den
 	if d < 0 {
 		n, d = -n, -d
@@ -176,6 +209,7 @@ make_rational :: proc(num, den: i128) -> Rational {
 	if d == 1 { return {num = n, den = d} }
 	a, b := abs(n), d
 	for b != 0 {
+		if !exact_charge(work, 8) { return {den = 1} }
 		a, b = b, a % b
 	}
 	if a > 0 {
@@ -203,14 +237,15 @@ rational_value :: proc(value: Rational) -> f64 {
 }
 
 @(private)
-emit_trapezoid :: proc(mesh: ^Mesh, left, right: Edge, low, high: Rational, limits: Limits) -> Error {
+emit_trapezoid :: proc(mesh: ^Mesh, left, right: Edge, low, high: Rational, limits: Limits, work: ^Exact_Work) -> Error {
+	if !exact_charge(work, 64) { return .Limit_Exceeded }
 	l0, r0 := edge_x(left, low), edge_x(right, low)
 	l1, r1 := edge_x(left, high), edge_x(right, high)
-	bottom_order, err := rational_compare(l0, r0)
+	bottom_order, err := rational_compare(l0, r0, work)
 	if err != .None {
 		return err
 	}
-	top_order, top_error := rational_compare(l1, r1)
+	top_order, top_error := rational_compare(l1, r1, work)
 	if top_error != .None {
 		return top_error
 	}
@@ -261,14 +296,28 @@ Tessellate :: proc(commands: []Command, transform: Affine, rule: Fill_Rule, limi
 // caller; no scratch allocation is retained in the returned mesh.
 Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits := DEFAULT_LIMITS, scratch_allocator: mem.Allocator = {}, usage: ^Build_Usage = nil) -> Error {
 	if mesh == nil { return .Invalid_Path }
-	clear(&mesh.vertices)
-	clear(&mesh.indices)
 	if usage != nil {
 		usage^ = {}
 	}
 	if rule < .Nonzero || rule > .Even_Odd || limits.max_mesh_bytes < 0 || limits.max_work < 0 ||
-	   limits.max_triangles < 0 || limits.max_events < 0 || limits.max_intersections < 0 || limits.max_pair_tests < 0 {
+	   limits.max_triangles < 0 || limits.max_events < 0 || limits.max_intersections < 0 || limits.max_pair_tests < 0 ||
+	   limits.max_exact_ops < 0 || limits.max_integer_bits <= 0 || limits.max_integer_bits > 4096 {
+		clear(&mesh.vertices)
+		clear(&mesh.indices)
 		return .Invalid_Value
+	}
+	if mesh.contour_slots && limits.uniform_subdivision < 0 && len(mesh.indices) > 0 {
+		work := Exact_Work{allowed = limits.max_exact_ops, width = limits.max_integer_bits}
+		charged := exact_charge(&work, 1)
+		ok, err := false, Error.Limit_Exceeded
+		if charged { ok, err = mesh_reposition_from_endpoint_commands(commands, transform, mesh, &work, limits) }
+		if ok || !charged {
+			if usage != nil {
+				usage^ = {triangles = len(mesh.indices) / 3, flattened_segments = len(mesh.vertices), exact_ops = work.used, stable_remesh = err == .None}
+			}
+			if err != .None { clear(&mesh.vertices); clear(&mesh.indices); mesh.contour_slots = false }
+			return err
+		}
 	}
 	arena := Scratch_Arena{backing = context.allocator}
 	scratch := scratch_allocator
@@ -278,6 +327,7 @@ Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rul
 	defer if scratch_allocator.procedure == nil {
 		scratch_arena_destroy(&arena)
 	}
+	// Keep prior vertices/indices so compatible morph remesh can reposition.
 	output, err := tessellate_impl(commands, transform, rule, limits, mesh^, scratch, usage)
 	mesh^ = output
 	if usage != nil {
@@ -297,7 +347,7 @@ flatten_scratch :: proc(commands: []Command, transform: Affine, limits: Limits, 
 }
 
 @(private)
-convex_mesh :: proc(flat: Flat_Path, mesh: ^Mesh, limits: Limits) -> (convex: bool, err: Error) {
+convex_mesh :: proc(flat: Flat_Path, mesh: ^Mesh, limits: Limits, work: ^Exact_Work) -> (convex: bool, err: Error) {
 	if len(flat.contours) != 1 {
 		return false, .None
 	}
@@ -305,13 +355,14 @@ convex_mesh :: proc(flat: Flat_Path, mesh: ^Mesh, limits: Limits) -> (convex: bo
 	if len(points) > 1 && points[0] == points[len(points) - 1] {
 		points = points[:len(points) - 1]
 	}
-	if len(points) < 3 || len(points) > 256 {
+	if len(points) < 3 || len(points) > 512 {
 		return false, .None
 	}
 	winding := i128(0)
 	first_x, last_x, first_y, last_y := 0, 0, 0, 0
 	x_reversals, y_reversals := 0, 0
 	for point, i in points {
+		if !exact_charge(work, 8) { return true, .Limit_Exceeded }
 		a := Integer_Point{i64(point.x * 1024), i64(point.y * 1024)}
 		next := points[(i + 1) % len(points)]
 		after := points[(i + 2) % len(points)]
@@ -369,6 +420,7 @@ convex_mesh :: proc(flat: Flat_Path, mesh: ^Mesh, limits: Limits) -> (convex: bo
 	}
 	index_count := 0
 	for i in 1 ..< len(points) - 1 {
+		if !exact_charge(work, 8) { return true, .Limit_Exceeded }
 		a, b, c := points[0], points[i], points[i + 1]
 		u := Integer_Point{i64((b.x - a.x) * 1024), i64((b.y - a.y) * 1024)}
 		v := Integer_Point{i64((c.x - a.x) * 1024), i64((c.y - a.y) * 1024)}
@@ -386,6 +438,16 @@ convex_mesh :: proc(flat: Flat_Path, mesh: ^Mesh, limits: Limits) -> (convex: bo
 @(private)
 tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule, limits: Limits, output: Mesh, scratch: mem.Allocator, usage: ^Build_Usage, clip_commands: []Command = nil) -> (mesh: Mesh, err: Error) {
 	mesh = output
+	work := Exact_Work{allowed = limits.max_exact_ops, width = limits.max_integer_bits}
+	pair_tests := 0
+	commit_usage := true
+	defer if usage != nil && commit_usage {
+		usage.pair_tests = pair_tests
+		usage.exact_ops = work.used
+	}
+	if !exact_charge(&work, 1) { return mesh, .Limit_Exceeded }
+	intersection := len(clip_commands) > 0
+	simple_work := 0
 	flat, flatten_error := flatten_scratch(commands, transform, limits, scratch)
 	if usage != nil {
 		usage.flattened_segments = len(flat.points)
@@ -393,7 +455,6 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 	if flatten_error != .None {
 		return mesh, flatten_error
 	}
-	intersection := len(clip_commands) > 0
 	operand_start := len(flat.points)
 	if intersection {
 		other_limits := limits
@@ -409,15 +470,61 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 		}
 	}
 	if !intersection {
-	if convex, convex_error := convex_mesh(flat, &mesh, limits); convex {
-		return mesh, convex_error
-	}
-	}
-	pair_tests, simple_work := 0, 0
-	if !intersection {
-	if simple, simple_error := simple_mesh(flat, &mesh, limits, &pair_tests, &simple_work); simple {
-		return mesh, simple_error
-	}
+		if mesh.contour_slots && len(mesh.indices) > 0 {
+			if ok, reposition_error := mesh_reposition_from_flat(flat, &mesh, &work); ok {
+				if usage != nil {
+					usage.triangles = len(mesh.indices) / 3
+					usage.stable_remesh = true
+				}
+				return mesh, reposition_error
+			}
+		}
+		clear(&mesh.vertices)
+		clear(&mesh.indices)
+		mesh.contour_slots = false
+		if limits.uniform_subdivision != 0 {
+			if stable, stable_error := stable_contour_mesh(flat, &mesh, limits, &pair_tests, &simple_work, &work); stable {
+				mesh.contour_slots = stable_error == .None
+				if usage != nil {
+					usage.stable_remesh = true
+				}
+				return mesh, stable_error
+			}
+			if handled, ring_error := stable_ring_mesh(flat, &mesh, rule, limits, &pair_tests, &work); handled {
+				mesh.contour_slots = ring_error == .None
+				if usage != nil {
+					usage.stable_remesh = true
+				}
+				return mesh, ring_error
+			}
+			// Convex close-strip layout matches mesh_reposition_from_flat.
+			if convex, convex_error := convex_mesh(flat, &mesh, limits, &work); convex {
+				if usage != nil {
+					usage.stable_remesh = true
+				}
+				return mesh, convex_error
+			}
+			// Self-intersecting morphs (figure-8): keep the forced flatten and
+			// fall through to sweep — cheaper than adaptive re-flatten.
+		}
+		if convex, convex_error := convex_mesh(flat, &mesh, limits, &work); convex {
+			return mesh, convex_error
+		}
+		if handled, ring_error := ring_mesh(flat, &mesh, rule, limits, &pair_tests, &work); handled {
+			return mesh, ring_error
+		}
+		if simple, simple_error := simple_mesh(flat, &mesh, limits, &pair_tests, &simple_work, &work); simple {
+			mesh.contour_slots = simple_error == .None && limits.uniform_subdivision != 0 && mesh_matches_contour_slots(flat, mesh)
+			return mesh, simple_error
+		}
+		if handled, split_error := split_mesh(flat, &mesh, limits, &pair_tests, &simple_work, &work, scratch); handled {
+			mesh.contour_slots = split_error == .None && limits.uniform_subdivision != 0 && mesh_matches_contour_slots(flat, mesh)
+			return mesh, split_error
+		}
+	} else {
+		clear(&mesh.vertices)
+		clear(&mesh.indices)
+		mesh.contour_slots = false
 	}
 	edges: [dynamic]Edge
 	events: [dynamic]Rational
@@ -452,7 +559,7 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 			}
 		}
 	}
-	sort_context := Sort_Context{remaining = limits.max_work - simple_work}
+	sort_context := Sort_Context{remaining = limits.max_work - simple_work, exact = &work}
 	slice.sort_by_with_data(edges[:], edge_before_with_budget, &sort_context)
 	if sort_context.err != .None { return mesh, sort_context.err }
 	intersections := 0
@@ -470,6 +577,7 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 			   max(a.a.y, a.b.y) < min(b.a.y, b.b.y) || max(b.a.y, b.b.y) < min(a.a.y, a.b.y) {
 				continue
 			}
+			if !exact_charge(&work, 48) { return mesh, .Limit_Exceeded }
 			r := a.b - a.a
 			s := b.b - b.a
 			q := b.a - a.a
@@ -485,19 +593,21 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 			if intersections > limits.max_intersections || len(events) >= limits.max_events {
 				return mesh, .Limit_Exceeded
 			}
-			if _, allocation_error := append(&events, make_rational(i128(a.a.y) * den + i128(r.y) * tnum, den)); allocation_error != nil {
+			event := make_rational(i128(a.a.y) * den + i128(r.y) * tnum, den, &work)
+			if work.err != .None { return mesh, work.err }
+			if _, allocation_error := append(&events, event); allocation_error != nil {
 				return mesh, .Allocation_Failed
 			}
 		}
 	}
-	slice.sort_by_with_data(events[:], event_before, &sort_context)
+	sort_events(events[:], &sort_context)
 	if sort_context.err != .None {
 		return mesh, sort_context.err
 	}
 	unique := 0
 	for event in events {
 		if unique > 0 {
-			order, comparison_error := rational_compare(events[unique - 1], event)
+			order, comparison_error := rational_compare(events[unique - 1], event, &work)
 			if comparison_error != .None {
 				return mesh, comparison_error
 			}
@@ -516,10 +626,12 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 	next_edge := 0
 	for strip := 1; strip < unique; strip += 1 {
 		low, high := events[strip - 1], events[strip]
-		middle := make_rational(low.num + high.num, low.den + high.den)
+		if !exact_charge(&work, 8) { return mesh, .Limit_Exceeded }
+		middle := make_rational(low.num + high.num, low.den + high.den, &work)
+		if work.err != .None { return mesh, work.err }
 		clear(&crossings)
 		for next_edge < len(edges) {
-			below, comparison_error := rational_compare(Rational{num = i128(min(edges[next_edge].a.y, edges[next_edge].b.y)), den = 1}, middle)
+			below, comparison_error := rational_compare(Rational{num = i128(min(edges[next_edge].a.y, edges[next_edge].b.y)), den = 1}, middle, &work)
 			if comparison_error != .None {
 				return mesh, comparison_error
 			}
@@ -540,22 +652,23 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 			}
 			min_y := Rational{num = i128(min(edge.a.y, edge.b.y)), den = 1}
 			max_y := Rational{num = i128(max(edge.a.y, edge.b.y)), den = 1}
-			above, above_error := rational_compare(middle, min_y)
-			below, below_error := rational_compare(middle, max_y)
+			above, above_error := rational_compare(middle, min_y, &work)
+			below, below_error := rational_compare(middle, max_y, &work)
 			if above_error != .None || below_error != .None {
-				return mesh, .Allocation_Failed
+				return mesh, above_error != .None ? above_error : below_error
 			}
 			if above <= 0 || below >= 0 {
 				continue
 			}
 			active[active_count] = i
 			active_count += 1
+			if !exact_charge(&work, 16) { return mesh, .Limit_Exceeded }
 			if _, allocation_error := append(&crossings, Crossing{x = edge_x(edge, middle), edge = i}); allocation_error != nil {
 				return mesh, .Allocation_Failed
 			}
 		}
 		resize(&active, active_count)
-		slice.sort_by_with_data(crossings[:], crossing_before, &sort_context)
+		sort_crossings(crossings[:], &sort_context)
 		if sort_context.err != .None {
 			return mesh, sort_context.err
 		}
@@ -567,13 +680,13 @@ tessellate_impl :: proc(commands: []Command, transform: Affine, rule: Fill_Rule,
 			inside := rule == .Nonzero ? winding[0] != 0 : winding[0] & 1 != 0
 			if intersection { inside = inside && winding[1] != 0 }
 			if inside && previous >= 0 {
-				if emit_error := emit_trapezoid(&mesh, edges[previous], edges[crossing.edge], low, high, limits); emit_error != .None {
+				if emit_error := emit_trapezoid(&mesh, edges[previous], edges[crossing.edge], low, high, limits, &work); emit_error != .None {
 					return mesh, emit_error
 				}
 			}
 			previous = crossing.edge
 			for cursor < len(crossings) {
-				order, comparison_error := rational_compare(crossing.x, crossings[cursor].x)
+				order, comparison_error := rational_compare(crossing.x, crossings[cursor].x, &work)
 				if comparison_error != .None {
 					return mesh, comparison_error
 				}

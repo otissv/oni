@@ -10,6 +10,10 @@ test_hook_vector_fail_buffer_after: int
 test_hook_vector_fail_transfer: bool
 @(private)
 test_hook_vector_fail_map: bool
+@(private)
+test_hook_vector_fail_solid_shader: bool
+@(private)
+test_hook_vector_fail_solid_pipeline_after: int
 
 /*
 Test-only injection points for branches that cannot be forced through real SDL /
@@ -144,6 +148,8 @@ clear_test_hooks :: proc() {
 	test_hook_vector_fail_buffer_after = 0
 	test_hook_vector_fail_transfer = false
 	test_hook_vector_fail_map = false
+	test_hook_vector_fail_solid_shader = false
+	test_hook_vector_fail_solid_pipeline_after = 0
 	test_hook_dpi_sync_fail_get_size = false
 	test_hook_dpi_sync_fail_get_pixels = false
 	test_hook_dpi_sync_force_logical_w_zero = false

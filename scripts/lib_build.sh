@@ -171,11 +171,13 @@ oni_build_shaders() {
 
 	local -a pids=()
 	local compiled=false
-	local vector_stage
-	for vector_stage in vert frag; do
-		if [[ ! -f "${SHADER_DIR}/vector.spv.${vector_stage}" || "${SHADER_DIR}/vector.${vector_stage}" -nt "${SHADER_DIR}/vector.spv.${vector_stage}" ]]; then
-			echo "Compiling vector.${vector_stage}"
-			glslc "${SHADER_DIR}/vector.${vector_stage}" -o "${SHADER_DIR}/vector.spv.${vector_stage}" &
+	local vector_shader vector_source vector_output
+	for vector_shader in vector.vert vector.frag vector_solid.vert; do
+		vector_source="${SHADER_DIR}/${vector_shader}"
+		vector_output="${SHADER_DIR}/${vector_shader%.*}.spv.${vector_shader##*.}"
+		if [[ ! -f "$vector_output" || "$vector_source" -nt "$vector_output" ]]; then
+			echo "Compiling ${vector_shader}"
+			glslc "$vector_source" -o "$vector_output" &
 			pids+=($!)
 			compiled=true
 		fi

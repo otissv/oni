@@ -123,17 +123,22 @@ vector_paint_nested_transform_compose :: proc(t: ^testing.T) {
 		testing.expect_value(t, Draw_Vector_Path(handle, paint, composed), Vector_Error.None)
 		testing.expect_value(t, len(vector_frame().instances), 1)
 		testing.expect_value(t, vector_frame().instances[0].paint[0], f32(1))
-		// mesh→user (inv linear scale 2) then OBB unit map, then inv(gradientTransform).
-		mesh_to_user := v.Affine{0.5, 0, 0, 0.5, 0, 0}
-		obb := v.Affine_Compose({0.1, 0, 0, 0.1, 0, 0}, mesh_to_user)
-		inv, ok := v.Affine_Invert({0, 1, -1, 0, 0, 0})
+		entry := vector_path_entry(handle)
+		testing.expect(t, entry != nil && len(entry.cache) == 1)
+		// Fill tessellation uses shared dpi×zoom basis; draw affine is GPU morph, not baked into combined_linear.
+		want, ok := vector_paint_combined_transform(
+			paint.linear.units,
+			paint.linear.transform,
+			entry.cache[0].linear,
+			entry.cache[0].local_bounds,
+		)
 		testing.expect(t, ok)
-		want := v.Affine_Compose(inv, obb)
 		got := vector_frame().instances[0]
 		testing.expect(t, abs(f64(got.combined_linear[0]) - want[0]) < 1e-5)
 		testing.expect(t, abs(f64(got.combined_linear[1]) - want[1]) < 1e-5)
 		testing.expect(t, abs(f64(got.combined_linear[2]) - want[2]) < 1e-5)
 		testing.expect(t, abs(f64(got.combined_linear[3]) - want[3]) < 1e-5)
+		testing.expect(t, got.morph_linear != [4]f32{1, 0, 0, 1})
 	})
 }
 
@@ -155,7 +160,7 @@ vector_paint_object_bbox_uses_path_local_bounds_under_rotation :: proc(t: ^testi
 			units = .Object_Bounding_Box,
 			stops = stops[:],
 		})
-		// 90° rotation expands the mesh AABB; OBB must still use 20×10 path space.
+		// 90° draw rotation is GPU morph; OBB gradients still use path-local 20×10 bounds.
 		testing.expect_value(
 			t,
 			Draw_Vector_Path(handle, paint, {0, 1, -1, 0, 0, 0}),
@@ -165,13 +170,21 @@ vector_paint_object_bbox_uses_path_local_bounds_under_rotation :: proc(t: ^testi
 		testing.expect(t, entry != nil && len(entry.cache) == 1)
 		testing.expect(t, abs(entry.cache[0].local_bounds.w - 20) < 0.5)
 		testing.expect(t, abs(entry.cache[0].local_bounds.h - 10) < 0.5)
-		// Rotated mesh AABB is ~10×20 — not the path-local 20×10 used for OBB.
-		testing.expect(t, abs(entry.cache[0].bounds.w - 10) < 1.5)
-		testing.expect(t, abs(entry.cache[0].bounds.h - 20) < 1.5)
+		// Basis fill mesh stays path-local 20×10; rotation is applied via GPU morph.
+		testing.expect(t, abs(entry.cache[0].bounds.w - 20) < 1.5)
+		testing.expect(t, abs(entry.cache[0].bounds.h - 10) < 1.5)
+		want, ok := vector_paint_combined_transform(
+			paint.linear.units,
+			paint.linear.transform,
+			entry.cache[0].linear,
+			entry.cache[0].local_bounds,
+		)
+		testing.expect(t, ok)
 		got := vector_frame().instances[0]
-		testing.expect(t, abs(f64(got.combined_linear[0]) - 0) < 1e-4)
-		testing.expect(t, abs(f64(got.combined_linear[1]) - (-0.1)) < 1e-4)
-		testing.expect(t, abs(f64(got.combined_linear[2]) - 0.05) < 1e-4)
-		testing.expect(t, abs(f64(got.combined_linear[3]) - 0) < 1e-4)
+		testing.expect(t, abs(f64(got.combined_linear[0]) - want[0]) < 1e-4)
+		testing.expect(t, abs(f64(got.combined_linear[1]) - want[1]) < 1e-4)
+		testing.expect(t, abs(f64(got.combined_linear[2]) - want[2]) < 1e-4)
+		testing.expect(t, abs(f64(got.combined_linear[3]) - want[3]) < 1e-4)
+		testing.expect(t, got.morph_linear != [4]f32{1, 0, 0, 1})
 	})
 }

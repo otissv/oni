@@ -4,6 +4,21 @@ package oni
 import "core:testing"
 
 @(test)
+theme_style_cache_observes_in_place_mutation_and_invalidation :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		theme_widget_style_invalidate()
+		theme.font_body.size_px = 14
+		first := theme_widget_style()
+		testing.expect_value(t, first.font_size, f32(14))
+		testing.expect_value(t, theme_widget_style().font_size, first.font_size)
+		theme.font_body.size_px = 27
+		testing.expect_value(t, theme_widget_style().font_size, f32(27))
+		theme_widget_style_invalidate()
+		testing.expect_value(t, theme_widget_style().font_size, f32(27))
+	})
+}
+
+@(test)
 style_length_resolve_and_definite :: proc(t: ^testing.T) {
 	expect_close(t, length_resolve({kind = .FIXED, value = 42}, 100), 42)
 	expect_close(t, length_resolve({kind = .PERCENT, value = 50}, 200), 100)

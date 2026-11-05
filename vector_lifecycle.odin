@@ -15,6 +15,34 @@ Vector_Stats :: struct {
 	encode_record_ms:   f64,
 	sample_work:        u64,
 	command_visits:     u64,
+	svg_path_bytes: u64,
+	pair_tests, exact_ops: int,
+	encode_attempts: int,
+	gpu_peak_bytes: u64,
+	gpu_current, gpu_peak: [Vector_Resource_Category]u64,
+}
+
+Vector_Resource_Category :: enum { Scene_Targets, Intermediate_Targets, Buffers, Gradient_Ramps, Other_Textures }
+
+@(private)
+vector_gpu_current_bytes :: proc() -> (bytes: [Vector_Resource_Category]u64) {
+	for frame in state.vector.gpu.frames {
+		bytes[.Scene_Targets] += frame.root.bytes
+		for target in frame.pool { bytes[.Intermediate_Targets] += target.bytes }
+		bytes[.Buffers] += frame.buffer_bytes
+		bytes[.Gradient_Ramps] += frame.ramp_bytes
+	}
+	if state.vector.gpu.white != nil { bytes[.Other_Textures] = 4 }
+	return
+}
+
+@(private)
+vector_gpu_note_peak :: proc(extra: u64, category: Vector_Resource_Category) {
+	g := &state.vector.gpu
+	current := vector_gpu_current_bytes()
+	current[category] += extra
+	for kind in Vector_Resource_Category { g.peak[kind] = max(g.peak[kind], current[kind]) }
+	g.peak_bytes = max(g.peak_bytes, g.bytes + extra)
 }
 
 vector_stats :: proc() -> Vector_Stats {
@@ -43,20 +71,22 @@ vector_stats :: proc() -> Vector_Stats {
 		encode_record_ms   = g.encode_record_ms,
 		sample_work        = g.sample_work,
 		command_visits     = g.command_visits,
+		svg_path_bytes = state.vector.svg_path_bytes,
+		pair_tests = vector_frame().pair_tests,
+		exact_ops = vector_frame().exact_ops,
+		encode_attempts = g.encode_attempts,
+		gpu_peak_bytes = g.peak_bytes,
+		gpu_current = vector_gpu_current_bytes(),
+		gpu_peak = g.peak,
 	}
 }
 
-// Invalidates GPU upload reuse after device recreation while retaining CPU path caches.
+// Tracks device recreation while retaining CPU path caches.
 vector_after_gpu_recreate :: proc() {
 	if state == nil {
 		return
 	}
 
 	state.vector.gpu.geometry_epoch += 1
-	for &frame in state.vector.gpu.frames {
-		frame.uploaded_geometry_epoch = 0
-		frame.uploaded_vertex_revision = 0
-		frame.uploaded_vertex_bytes = 0
-		frame.uploaded_index_bytes = 0
-	}
+	for &frame in state.vector.gpu.frames { frame.index_snapshot_valid = false }
 }

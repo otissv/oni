@@ -83,12 +83,17 @@ VECTOR_MAX_SAMPLE_WORK :: u64(64_000_000)
 VECTOR_MAX_NEW_SEGMENTS :: 1_000_000
 @(private)
 VECTOR_MAX_NEW_TRIANGLES :: 4_000_000
+@(private)
+VECTOR_MAX_FRAME_PAIR_TESTS :: 32_000_000
+@(private)
+VECTOR_MAX_FRAME_EXACT_OPS :: 32_000_000
 
 @(private)
 Vector_Vertex :: struct {
 	pos:    Vec2,
-	uv:     Vec2,
 }
+
+#assert(size_of(Vector_Vertex) == size_of(Vec2) && align_of(Vector_Vertex) == align_of(Vec2))
 
 @(private)
 Vector_Instance :: struct {
@@ -103,8 +108,31 @@ Vector_Instance :: struct {
 }
 
 @(private)
+Vector_Solid_Instance :: struct {
+	colour: [4]f32,
+	origin: Vec2,
+	morph_linear: [4]f32,
+	morph_shift: Vec2,
+}
+
+#assert(size_of(Vector_Solid_Instance) == 48 && offset_of(Vector_Instance, paint) == 48)
+#assert(offset_of(Vector_Solid_Instance, colour) == offset_of(Vector_Instance, colour))
+#assert(offset_of(Vector_Solid_Instance, origin) == offset_of(Vector_Instance, origin))
+#assert(offset_of(Vector_Solid_Instance, morph_linear) == offset_of(Vector_Instance, morph_linear))
+#assert(offset_of(Vector_Solid_Instance, morph_shift) == offset_of(Vector_Instance, morph_shift))
+
+@(private)
 Vector_Geometry_Range :: struct {
 	first_index, index_count: u32,
+	vertex_offset: i32,
+}
+
+@(private)
+Vector_Recorded_Geometry :: struct {
+	range: Vector_Geometry_Range,
+	geometry_id, epoch: u64,
+	slot: int,
+	valid: bool,
 }
 
 @(private)
@@ -132,28 +160,49 @@ Vector_Submission :: struct {
 }
 
 @(private)
-Vector_Frame :: struct {
+	Vector_Frame :: struct {
 	vertices: [dynamic]Vector_Vertex,
 	indices:  [dynamic]u32,
 	instances: [dynamic]Vector_Instance,
 	commands: [dynamic]sdl.GPUIndexedIndirectDrawCommand,
 	geometry: map[u64]Vector_Geometry_Range,
+	recording_epoch: u64,
+	// Packed frame geometry totals for diagnostics and limits.
+	atlas_vertex_count, atlas_index_count: int,
 	records:  [dynamic]Vector_Record,
 	draws:    [dynamic]Vector_Submission,
 	ramp_pixels: [dynamic]u8,
 	ramp_rows: int,
 	new_segments, new_triangles: int,
+	pair_tests, exact_ops: int,
 	svg_usage: v.Svg_Instance_Usage,
 	vertex_revision: u64,
 }
 
+Vector_Svg_Layout_Cache_Entry :: struct {
+	asset: Svg_Asset,
+	revision: u32,
+	fit: u32,
+	overrides_hash: u64,
+	instance: ^Svg_Instance,
+}
+
 Vector_State :: struct {
+	tess_jobs: [dynamic]Vector_Tess_Job,
+	tess_jobs_in_use: bool,
 	frames: [2]Vector_Frame,
 	gpu: Vector_GPU,
 	last_error: Vector_Error,
 	paths: [dynamic]Vector_Path_Entry,
+	path_free: [dynamic]u32,
 	path_cache_bytes: u64,
 	next_geometry_id: u64,
+	svg_paths: map[[2]u64]Vector_Path_Handle,
+	svg_path_bytes: u64,
+	svg_lru_first, svg_lru_last: Vector_Path_Handle,
+	svg_layout_cache: map[u64]Vector_Svg_Layout_Cache_Entry,
+	last_build_usage: v.Build_Usage,
+	last_build_limits: v.Limits,
 	tess_pool:    ^Vector_Tess_Pool,
 	tess_workers: int,
 }
@@ -192,6 +241,9 @@ vector_scene_shutdown :: proc() {
 
 @(private)
 vector_scene_reset :: proc() {
+	vector_scene_invalidate_recording_memos()
+	state.vector.last_build_usage = {}
+	state.vector.last_build_limits = {}
 	clear(&vector_frame().vertices)
 	clear(&vector_frame().indices)
 	clear(&vector_frame().instances)
@@ -200,16 +252,44 @@ vector_scene_reset :: proc() {
 	clear(&vector_frame().records)
 	clear(&vector_frame().draws)
 	clear(&vector_frame().ramp_pixels)
+	vector_frame().atlas_vertex_count = 0
+	vector_frame().atlas_index_count = 0
 	vector_frame().ramp_rows = 0
 	vector_frame().new_segments = 0
 	vector_frame().new_triangles = 0
+	vector_frame().pair_tests = 0
+	vector_frame().exact_ops = 0
 	vector_frame().svg_usage = {}
 	vector_frame().vertex_revision += 1
 }
 
 @(private)
+vector_scene_invalidate_recording_memos :: proc() {
+	f := vector_frame()
+	if f.recording_epoch == max(u64) {
+		for &entry in state.vector.paths { for &cached in entry.cache { cached.recorded_geometry.valid = false } }
+		f.recording_epoch = 0
+	} else { f.recording_epoch += 1 }
+}
+
+// Ordinary UI remains presentable when vector-only allocations or encoding fail.
+@(private)
+vector_discard_frame_submissions :: proc() {
+	for &draw in vector_frame().draws { draw.failed = true }
+	segments := &batch_current().segments
+	count := 0
+	for segment in segments^ {
+		if !segment.vector { segments[count] = segment; count += 1 }
+	}
+	resize(segments, count)
+	clear(&vector_frame().draws)
+}
+
+@(private)
 vector_scene_bump_geometry :: proc() {
 	vector_frame().vertex_revision += 1
+	vector_frame().atlas_vertex_count = len(vector_frame().vertices)
+	vector_frame().atlas_index_count = len(vector_frame().indices)
 }
 
 // Restores frame recording arrays and drops geometry cache entries that point
@@ -226,7 +306,7 @@ vector_scene_rollback_recording :: proc(
 	if len(f.geometry) > 0 {
 		stale := make([dynamic]u64, context.temp_allocator)
 		for id, geometry in f.geometry {
-			if int(geometry.first_index) >= saved_indices {
+			if int(geometry.first_index) >= saved_indices || int(geometry.vertex_offset) >= saved_vertices {
 				append(&stale, id)
 			}
 		}
@@ -234,8 +314,10 @@ vector_scene_rollback_recording :: proc(
 			delete_key(&f.geometry, id)
 		}
 	}
-	resize(&f.vertices, saved_vertices)
-	resize(&f.indices, saved_indices)
+	f.atlas_vertex_count = min(f.atlas_vertex_count, saved_vertices)
+	f.atlas_index_count = min(f.atlas_index_count, saved_indices)
+	resize(&f.vertices, min(len(f.vertices), saved_vertices))
+	resize(&f.indices, min(len(f.indices), saved_indices))
 	resize(&f.instances, saved_instances)
 	resize(&f.commands, saved_commands)
 	resize(&f.records, saved_records)
@@ -244,6 +326,7 @@ vector_scene_rollback_recording :: proc(
 	f.ramp_rows = saved_ramp_rows
 	f.vertex_revision = saved_revision
 	resize(&batch_current().segments, saved_segments)
+	vector_scene_invalidate_recording_memos()
 }
 
 @(private)
@@ -538,27 +621,32 @@ vector_record_quad :: proc(bounds: Rect, opacity: f32) -> (first: u32) {
 	base := u32(len(f.vertices))
 	first_index := u32(len(f.indices))
 	append(&f.vertices,
-		Vector_Vertex{pos = {bounds.x, bounds.y}, uv = {0, 0}},
-		Vector_Vertex{pos = {bounds.x + bounds.w, bounds.y}, uv = {1, 0}},
-		Vector_Vertex{pos = {bounds.x + bounds.w, bounds.y + bounds.h}, uv = {1, 1}},
-		Vector_Vertex{pos = {bounds.x, bounds.y + bounds.h}, uv = {0, 1}},
+		Vector_Vertex{pos = {bounds.x, bounds.y}},
+		Vector_Vertex{pos = {bounds.x + bounds.w, bounds.y}},
+		Vector_Vertex{pos = {bounds.x + bounds.w, bounds.y + bounds.h}},
+		Vector_Vertex{pos = {bounds.x, bounds.y + bounds.h}},
 	)
 	append(&f.indices, base, base + 1, base + 2, base, base + 2, base + 3)
 	vector_scene_bump_geometry()
-	return vector_record_command(first_index, 6, {}, {colour = {1, 1, 1, opacity}})
+	return vector_record_command(first_index, 6, {}, {
+		mode = 3, colour = {1, 1, 1, opacity},
+		grad0 = {bounds.x, bounds.y, bounds.w, bounds.h},
+	})
 }
 
 @(private)
-vector_record_command :: proc(
+vector_record_command :: #force_inline proc(
 	first_index, index_count: u32,
 	origin: Vec2,
-	paint: Vector_Paint_GPU,
+	#by_ptr paint: Vector_Paint_GPU,
 	morph: Vector_Transform = Vector_Identity,
+	vertex_offset: i32 = 0,
 ) -> u32 {
 	f := vector_frame()
 	first := u32(len(f.commands))
 	append(&f.commands, sdl.GPUIndexedIndirectDrawCommand{
 		num_indices = index_count, num_instances = 1, first_index = first_index,
+		vertex_offset = vertex_offset,
 		first_instance = u32(len(f.instances)),
 	})
 	append(&f.instances, Vector_Instance{
@@ -807,11 +895,12 @@ vector_record_path_node :: proc(record: ^Vector_Record, draw: Vector_Path_Draw, 
 	}
 
 	instance_morph := vector_path_normalize_morph(draw.instance_morph)
-	linear := vector_path_draw_linear(draw.transform)
+	tess_linear := vector_path_tess_linear(draw.op, draw.transform)
+	draw_linear := vector_path_draw_linear(draw.transform)
 	morph := vector_stroke_draw_morph(entry, instance_morph) if draw.op == .Stroke else Vector_Identity
-	cache_index := vector_path_find_cache_index(entry, linear, draw.rule, draw.op, draw.stroke, morph)
+	cache_index := vector_path_find_cache_index(entry, tess_linear, draw.rule, draw.op, draw.stroke, morph)
 	if cache_index < 0 || !entry.cache[cache_index].valid {
-		job, need, build_err := vector_path_build_miss_job(draw.handle, entry, linear, draw.rule, draw.op, draw.stroke, morph)
+		job, need, build_err := vector_path_build_miss_job(draw.handle, entry, tess_linear, draw.rule, draw.op, draw.stroke, morph)
 		if build_err != .None {
 			return build_err
 		}
@@ -823,7 +912,7 @@ vector_record_path_node :: proc(record: ^Vector_Record, draw: Vector_Path_Draw, 
 			}
 			cache_index = jobs[0].cache_index
 		} else {
-			cache_index = vector_path_find_cache_index(entry, linear, draw.rule, draw.op, draw.stroke, morph)
+			cache_index = vector_path_find_cache_index(entry, tess_linear, draw.rule, draw.op, draw.stroke, morph)
 		}
 	}
 	if cache_index < 0 || !entry.cache[cache_index].valid {
@@ -834,27 +923,26 @@ vector_record_path_node :: proc(record: ^Vector_Record, draw: Vector_Path_Draw, 
 	mesh := entry.cache[cache_index].mesh
 	origin := view_transform_point({f32(draw.transform[4]), f32(draw.transform[5])}) * state.dpi.scale
 	gpu_morph := Vector_Identity
-	if entry.cache[cache_index].op != .Stroke {
-		gpu_morph = v.Affine_Compose(entry.morph, instance_morph)
-		if gpu_morph != Vector_Identity {
-			linear_affine := v.Affine{
-				entry.cache[cache_index].linear[0],
-				entry.cache[cache_index].linear[1],
-				entry.cache[cache_index].linear[2],
-				entry.cache[cache_index].linear[3],
-				0,
-				0,
-			}
-			if linear_affine != v.IDENTITY {
-				if inverse, ok := v.Affine_Invert(linear_affine); ok {
-					gpu_morph = v.Affine_Compose(linear_affine, v.Affine_Compose(gpu_morph, inverse))
-				} else {
-					gpu_morph = Vector_Identity
-				}
-			}
+	if entry.cache[cache_index].op == .Stroke {
+		path_morph := v.Affine_Compose(entry.morph, instance_morph)
+		basis_affine := v.Affine{
+			entry.cache[cache_index].linear[0],
+			entry.cache[cache_index].linear[1],
+			entry.cache[cache_index].linear[2],
+			entry.cache[cache_index].linear[3],
+			0,
+			0,
 		}
+		gpu_morph = vector_path_rebase_morph(basis_affine, path_morph)
+	} else {
+		gpu_morph = vector_path_fill_gpu_morph(entry, instance_morph, draw_linear, entry.cache[cache_index].linear)
 	}
 
+	if draw.paint.kind == .Linear_Gradient || draw.paint.kind == .Radial_Gradient {
+		bounds, err := vector_path_entry_local_bounds(entry, entry.commands)
+		if err != .None { return vector_path_error(err) }
+		entry.cache[cache_index].local_bounds = bounds
+	}
 	gpu_paint, skip, paint_err := vector_paint_resolve(
 		draw.paint,
 		opacity,
@@ -874,20 +962,20 @@ vector_record_path_node :: proc(record: ^Vector_Record, draw: Vector_Path_Draw, 
 	f := vector_frame()
 	geometry, shared := f.geometry[entry.cache[cache_index].geometry_id]
 	if !shared {
-		base := u32(len(f.vertices))
-		geometry = {first_index = u32(len(f.indices)), index_count = u32(len(mesh.indices))}
-		if !vector_reserve(&f.vertices, len(f.vertices) + len(mesh.vertices), VECTOR_MAX_FRAME_VERTICES) ||
-		   !vector_reserve(&f.indices, len(f.indices) + len(mesh.indices), VECTOR_MAX_FRAME_INDICES) {
+		if f.atlas_vertex_count + len(mesh.vertices) > VECTOR_MAX_FRAME_VERTICES ||
+		   f.atlas_index_count + len(mesh.indices) > VECTOR_MAX_FRAME_INDICES {
 			return .Allocation_Failed
 		}
-		resize(&f.vertices, int(base) + len(mesh.vertices))
-		resize(&f.indices, int(geometry.first_index) + len(mesh.indices))
-		for point, i in mesh.vertices {
-			f.vertices[int(base) + i] = {pos = point}
+		if !vector_reserve(&f.vertices, len(f.vertices) + len(mesh.vertices), VECTOR_MAX_FRAME_VERTICES) ||
+		   !vector_reserve(&f.indices, len(f.indices) + len(mesh.indices), VECTOR_MAX_FRAME_INDICES) { return .Allocation_Failed }
+		geometry = {
+			first_index = u32(len(f.indices)),
+			index_count = u32(len(mesh.indices)),
+			vertex_offset = i32(len(f.vertices)),
 		}
-		for index, i in mesh.indices {
-			f.indices[int(geometry.first_index) + i] = base + index
-		}
+		for point in mesh.vertices { append(&f.vertices, Vector_Vertex{pos = point}) }
+		append(&f.indices, ..mesh.indices[:])
+		f.atlas_vertex_count, f.atlas_index_count = len(f.vertices), len(f.indices)
 		if reserve(&f.geometry, len(f.geometry) + 1) != nil {
 			return .Allocation_Failed
 		}
@@ -911,7 +999,7 @@ vector_record_path_node :: proc(record: ^Vector_Record, draw: Vector_Path_Draw, 
 		morph_bounds = {lo.x, lo.y, hi.x - lo.x, hi.y - lo.y}
 	}
 	placed := Rect{morph_bounds.x + origin.x, morph_bounds.y + origin.y, morph_bounds.w, morph_bounds.h}
-	record.command = vector_record_command(geometry.first_index, geometry.index_count, origin, gpu_paint, gpu_morph)
+	record.command = vector_record_command(geometry.first_index, geometry.index_count, origin, gpu_paint, gpu_morph, geometry.vertex_offset)
 	record.bounds = placed
 	record.geometry_bounds = placed
 	record.kind = .Path
@@ -947,9 +1035,10 @@ vector_record_cached_mesh :: proc(
 	indices: []u32,
 	bounds: Rect,
 	origin: Vec2,
-	paint: Vector_Paint_GPU,
+	#by_ptr paint: Vector_Paint_GPU,
 	geometry_id: u64,
 	morph: Vector_Transform = Vector_Identity,
+	memo: ^Vector_Recorded_Geometry = nil,
 ) -> Vector_Error {
 	if !(abs(bounds.x + origin.x) <= VECTOR_MAX_COORDINATE && abs(bounds.y + origin.y) <= VECTOR_MAX_COORDINATE &&
 	     abs(bounds.x + bounds.w + origin.x) <= VECTOR_MAX_COORDINATE && abs(bounds.y + bounds.h + origin.y) <= VECTOR_MAX_COORDINATE) {
@@ -959,7 +1048,13 @@ vector_record_cached_mesh :: proc(
 		return .None
 	}
 	f := vector_frame()
-	geometry, shared := f.geometry[geometry_id]
+	geometry: Vector_Geometry_Range
+	shared := false
+	memo_hit := memo != nil && memo.valid && memo.geometry_id == geometry_id &&
+	   memo.epoch == f.recording_epoch && memo.slot == state.gpu_state.batch_index
+	if memo_hit {
+		geometry, shared = memo.range, true
+	} else { geometry, shared = f.geometry[geometry_id] }
 	new_vertices := shared ? 0 : len(points)
 	new_indices := shared ? 0 : len(indices)
 	clip := batch_current_clip()
@@ -979,14 +1074,13 @@ vector_record_cached_mesh :: proc(
 		   draw.first >= 0 {
 			record := f.records[draw.first]
 			count := draw.merged_commands > 0 ? draw.merged_commands : 1
-			coalesce = record.kind == .Mesh && record.next < 0 && record.command + count == u32(len(f.commands))
+			coalesce = vector_merge_draw_kind(record.kind) && record.next < 0 && record.command + count == u32(len(f.commands))
 		}
 	}
-	if !vector_reserve(&f.vertices, len(f.vertices) + new_vertices, VECTOR_MAX_FRAME_VERTICES) ||
-	   !vector_reserve(&f.indices, len(f.indices) + new_indices, VECTOR_MAX_FRAME_INDICES) ||
+	if (!shared && (f.atlas_vertex_count + new_vertices > VECTOR_MAX_FRAME_VERTICES || f.atlas_index_count + new_indices > VECTOR_MAX_FRAME_INDICES)) ||
 	   !vector_reserve(&f.instances, len(f.instances) + 1, VECTOR_MAX_FRAME_NODES) ||
 	   !vector_reserve(&f.commands, len(f.commands) + 1, VECTOR_MAX_FRAME_NODES) ||
-	   !vector_reserve(&f.records, len(f.records) + 1, VECTOR_MAX_FRAME_NODES) ||
+	   (!coalesce && !vector_reserve(&f.records, len(f.records) + 1, VECTOR_MAX_FRAME_NODES)) ||
 	   (!coalesce &&
 	    (!vector_reserve(&f.draws, len(f.draws) + 1, VECTOR_MAX_FRAME_NODES) ||
 	     !vector_reserve(&batch_current().segments, len(batch_current().segments) + 1, max(VECTOR_MAX_FRAME_NODES * 2, len(batch_current().segments) + 1)))) {
@@ -994,16 +1088,27 @@ vector_record_cached_mesh :: proc(
 	}
 	if !shared && reserve(&f.geometry, len(f.geometry) + 1) != nil { return .Allocation_Failed }
 	if !shared {
-		base := u32(len(f.vertices))
-		geometry = {first_index = u32(len(f.indices)), index_count = u32(len(indices))}
-		resize(&f.vertices, int(base) + len(points))
-		resize(&f.indices, int(geometry.first_index) + len(indices))
-		for point, i in points { f.vertices[int(base) + i] = {pos = point} }
-		for index, i in indices { f.indices[int(geometry.first_index) + i] = base + index }
+		if f.atlas_vertex_count + len(points) > VECTOR_MAX_FRAME_VERTICES ||
+		   f.atlas_index_count + len(indices) > VECTOR_MAX_FRAME_INDICES {
+			return .Allocation_Failed
+		}
+		if !vector_reserve(&f.vertices, len(f.vertices) + len(points), VECTOR_MAX_FRAME_VERTICES) ||
+		   !vector_reserve(&f.indices, len(f.indices) + len(indices), VECTOR_MAX_FRAME_INDICES) { return .Allocation_Failed }
+		geometry = {
+			first_index = u32(len(f.indices)),
+			index_count = u32(len(indices)),
+			vertex_offset = i32(len(f.vertices)),
+		}
+		if _, err := append(&f.vertices, ..transmute([]Vector_Vertex)points); err != nil { return .Allocation_Failed }
+		append(&f.indices, ..indices)
+		f.atlas_vertex_count, f.atlas_index_count = len(f.vertices), len(f.indices)
 		f.geometry[geometry_id] = geometry
 		vector_scene_bump_geometry()
 	}
-	command := vector_record_command(geometry.first_index, geometry.index_count, origin, paint, morph)
+	if memo != nil && !memo_hit {
+		memo^ = {range = geometry, geometry_id = geometry_id, epoch = f.recording_epoch, slot = state.gpu_state.batch_index, valid = true}
+	}
+	command := vector_record_command(geometry.first_index, geometry.index_count, origin, paint, morph, geometry.vertex_offset)
 	morph_bounds := bounds
 	if morph[0] != 1 || morph[1] != 0 || morph[2] != 0 || morph[3] != 1 || morph[4] != 0 || morph[5] != 0 {
 		a, b, c, d := f32(morph[0]), f32(morph[1]), f32(morph[2]), f32(morph[3])
@@ -1018,18 +1123,22 @@ vector_record_cached_mesh :: proc(
 		hi := Vec2{max(p00.x, p10.x, p11.x, p01.x), max(p00.y, p10.y, p11.y, p01.y)}
 		morph_bounds = {lo.x, lo.y, hi.x - lo.x, hi.y - lo.y}
 	}
-	root := len(f.records)
-	append(&f.records, Vector_Record{
-		kind = .Mesh, first_child = -1, first_mask = -1, next = -1,
-		bounds = {morph_bounds.x + origin.x, morph_bounds.y + origin.y, morph_bounds.w, morph_bounds.h},
-		opacity = 1, command = command,
-	})
+	placed := Rect{morph_bounds.x + origin.x, morph_bounds.y + origin.y, morph_bounds.w, morph_bounds.h}
 	if coalesce {
 		draw := &f.draws[len(f.draws) - 1]
 		count := draw.merged_commands > 0 ? draw.merged_commands : 1
 		draw.merged_commands = count + 1
+		record := &f.records[draw.first]
+		record.bounds = vector_bounds_union(record.bounds, placed)
+		record.geometry_bounds = vector_bounds_union(record.geometry_bounds, placed)
 		return .None
 	}
+	root := len(f.records)
+	append(&f.records, Vector_Record{
+		kind = .Mesh, first_child = -1, first_mask = -1, next = -1,
+		bounds = placed, geometry_bounds = placed,
+		opacity = 1, command = command,
+	})
 	draw_index := len(f.draws)
 	append(&f.draws, Vector_Submission{first = root, opacity = paint.colour[3], clip = clip, merged_commands = 1})
 	batch_close_segment()
@@ -1133,6 +1242,11 @@ vector_reserve :: proc(array: ^$T/[dynamic]$E, needed, limit: int) -> bool {
 }
 
 @(private)
+vector_merge_draw_kind :: proc(kind: Vector_Node_Kind) -> bool {
+	return kind == .Mesh || kind == .Path
+}
+
+@(private)
 vector_merge_submissions :: proc(first, second: int) -> bool {
 	f := vector_frame()
 	a, b := f.draws[first], f.draws[second]
@@ -1140,7 +1254,7 @@ vector_merge_submissions :: proc(first, second: int) -> bool {
 		return false
 	}
 	ra, rb := f.records[a.first], f.records[b.first]
-	if ra.kind != .Mesh || rb.kind != .Mesh || ra.next >= 0 || rb.next >= 0 ||
+	if !vector_merge_draw_kind(ra.kind) || !vector_merge_draw_kind(rb.kind) || ra.next >= 0 || rb.next >= 0 ||
 	   ra.bounds.w <= 0 || ra.bounds.h <= 0 || rb.bounds.w <= 0 || rb.bounds.h <= 0 || ra.opacity <= 0 || rb.opacity <= 0 {
 		return false
 	}

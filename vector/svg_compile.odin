@@ -36,13 +36,26 @@ svg_emit_shape :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Sty
 	limits := DEFAULT_LIMITS
 	limits.max_commands = ctx.limits.max_path_commands - ctx.emitted_commands
 	path_override, has_path := svg_find_override(ctx, node, .Path)
-	if has_path { path.commands = make([dynamic]Command); append(&path.commands, ..path_override.commands) }
-	if err := Error.None if has_path else svg_shape_path(node, &path, ctx.viewport, limits); err != .None {
+	key := Svg_Geometry_Key{node, ctx.viewport}
+	geometry, cached := ctx.geometry[key]
+	shape_error := Error.None
+	commands := path.commands[:]
+	if has_path { commands = path_override.commands }
+	if !has_path {
+		if cached {
+			commands = geometry
+		} else {
+			shape_error = svg_shape_path(node, &path, ctx.viewport, limits)
+			commands = path.commands[:]
+			if shape_error == .None && ctx.retain_geometry { ctx.geometry[key] = path.commands[:] }
+		}
+	}
+	if err := shape_error; err != .None {
 		svg_push(ctx.result, err == .Limit_Exceeded ? .Limit_Exceeded : .Invalid_Value, "shape preparation failed", node.line, node.column, node.name)
 		return false
 	}
-	if len(path.commands) == 0 { return true }
-	ctx.emitted_commands += len(path.commands)
+	if len(commands) == 0 { return true }
+	ctx.emitted_commands += len(commands)
 	if ctx.emitted_commands > ctx.limits.max_path_commands { svg_push(ctx.result, .Limit_Exceeded, fmt.tprintf("expanded commands consumed %d, allowed %d", ctx.emitted_commands, ctx.limits.max_path_commands), node.line, node.column, node.name); return false }
 	fill, fill_ok := svg_resolve_shape_paint(ctx, style.fill_value, style.fill, style.color)
 	stroke, stroke_ok := svg_resolve_shape_paint(ctx, style.stroke_value, style.stroke, style.color)
@@ -52,11 +65,17 @@ svg_emit_shape :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Sty
 	if ctx.clip_mode {
 		fill, stroke, rule = Solid_Paint({255, 255, 255, 255}), None_Paint(), style.clip_rule
 	}
+	element_index: u32
+	if idx, ok := ctx.element_indices[node]; ok {
+		element_index = idx
+	}
+
 	append(&ctx.roots, Svg_Draw_Node{kind = .Path, opacity = 1, item = {
-		commands = path.commands[:], transform = transform, fill = fill, stroke = stroke,
+		commands = commands, commands_hash = Commands_Hash(commands), transform = transform, fill = fill, stroke = stroke,
 		fill_rule = rule, opacity = 1, fill_opacity = ctx.clip_mode ? 1 : style.fill_opacity, stroke_opacity = style.stroke_opacity,
 		stroke_settings = settings, draw_fill = fill.kind != .None, draw_stroke = stroke.kind != .None && settings.width > 0,
 		paint_order = style.paint_order,
+		element_index = element_index,
 	}})
 	return true
 }
@@ -96,6 +115,7 @@ svg_compile_definition :: proc(ctx: ^Svg_Build_Ctx, target: ^Xml_Node, transform
 @(private)
 svg_wrap_effects :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Style, transform: Affine, before: int) -> bool {
 	if len(ctx.roots) == before { return true }
+	if style.clip_path_id == "" && (ctx.clip_mode || style.mask_id == "" && style.opacity == 1) { return true }
 	children := slice.clone(ctx.roots[before:])
 	resize(&ctx.roots, before)
 	if style.clip_path_id != "" {

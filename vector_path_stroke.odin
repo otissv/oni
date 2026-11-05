@@ -111,17 +111,19 @@ vector_stroke_copy_dash :: proc(stroke: Vector_Stroke, allocator: mem.Allocator)
 }
 
 @(private)
-vector_stroke_release_dash :: proc(stroke: ^Vector_Stroke) {
+vector_stroke_release_dash :: proc(stroke: ^Vector_Stroke, allocator := context.allocator) {
 	if stroke == nil || stroke.dash == nil {
 		return
 	}
 
-	delete(stroke.dash)
+	owner := allocator
+	if owner.procedure == nil { owner = context.allocator }
+	delete(stroke.dash, owner)
 	stroke.dash = nil
 }
 
 @(private)
-vector_stroke_validate_draw :: proc(op: Vector_Path_Op, stroke: Vector_Stroke) -> Vector_Error {
+vector_stroke_validate_draw :: proc(op: Vector_Path_Op, #by_ptr stroke: Vector_Stroke) -> Vector_Error {
 	if op == .Fill {
 		return .None
 	}

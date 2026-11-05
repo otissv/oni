@@ -52,24 +52,27 @@ Radial_Gradient :: struct {
 
 Paint :: struct {
 	kind:   Paint_Kind,
-	solid:  Color,
-	linear: Linear_Gradient,
-	radial: Radial_Gradient,
+	// Only the payload selected by kind is live.
+	using payload: struct #raw_union {
+		solid:  Color,
+		linear: Linear_Gradient,
+		radial: Radial_Gradient,
+	},
 }
 
-Solid_Paint :: proc(color: Color) -> Paint {
+Solid_Paint :: #force_inline proc(color: Color) -> Paint {
 	return {kind = .Solid, solid = color}
 }
 
-None_Paint :: proc() -> Paint {
+None_Paint :: #force_inline proc() -> Paint {
 	return {kind = .None}
 }
 
-Current_Color_Paint :: proc() -> Paint {
+Current_Color_Paint :: #force_inline proc() -> Paint {
 	return {kind = .Current_Color}
 }
 
-Linear_Paint :: proc(gradient: Linear_Gradient) -> Paint {
+Linear_Paint :: #force_inline proc(gradient: Linear_Gradient) -> Paint {
 	g := gradient
 	if g.transform == {} {
 		g.transform = IDENTITY
@@ -78,7 +81,7 @@ Linear_Paint :: proc(gradient: Linear_Gradient) -> Paint {
 	return {kind = .Linear_Gradient, linear = g}
 }
 
-Radial_Paint :: proc(gradient: Radial_Gradient) -> Paint {
+Radial_Paint :: #force_inline proc(gradient: Radial_Gradient) -> Paint {
 	g := gradient
 	if g.transform == {} {
 		g.transform = IDENTITY
@@ -91,7 +94,7 @@ Radial_Paint :: proc(gradient: Radial_Gradient) -> Paint {
 Validates paint geometry, stop offsets and colour-space fields.
 Gradient paints require at least one finite stop. Empty stop lists are invalid.
 */
-Validate_Paint :: proc(paint: Paint) -> Error {
+Validate_Paint :: proc(#by_ptr paint: Paint) -> Error {
 	switch paint.kind {
 	case .None, .Current_Color:
 		return .None
@@ -110,7 +113,7 @@ Validate_Paint :: proc(paint: Paint) -> Error {
 Copies borrowed gradient stop slices into allocator-owned storage.
 Caller must Destroy_Paint the result. Solid/none/currentColor need no free.
 */
-Clone_Paint :: proc(paint: Paint, allocator := context.allocator) -> (Paint, Error) {
+Clone_Paint :: proc(#by_ptr paint: Paint, allocator := context.allocator) -> (Paint, Error) {
 	if err := Validate_Paint(paint); err != .None {
 		return {}, err
 	}

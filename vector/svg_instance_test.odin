@@ -2,6 +2,68 @@
 package oni_vector
 
 import "core:testing"
+import "core:mem"
+
+@(test)
+svg_compiled_leaf_patch_reports_allocation_failures_and_cleans_up :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	shape, _ := Svg_Asset_Lookup(asset, "p")
+	stops := [2]Gradient_Stop{{0, {255, 0, 0, 255}}, {1, {0, 0, 255, 255}}}
+	overrides := [1]Svg_Override{{target = shape, property = .Fill, paint = Linear_Paint({x2 = 10, stops = stops[:]})}}
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+	success := false
+	for allowed in 0 ..< 128 {
+		failing := Test_Failing_Allocator{backing = mem.tracking_allocator(&tracking), remaining = allowed}
+		instance, result := Svg_Prepare_Instance(asset, overrides[:], allocator = {procedure = test_failing_allocator_proc, data = &failing})
+		if failing.rejected { testing.expect_value(t, result.error, Svg_Diagnostic_Category.Allocation_Failed) } else { testing.expect(t, result.ok); success = true }
+		Destroy_Svg_Instance(instance)
+		Destroy_Svg_Load_Result(&result)
+		testing.expect_value(t, tracking.current_memory_allocated, i64(0))
+		if success { break }
+	}
+	testing.expect(t, success)
+}
+
+@(test)
+svg_flat_path_patch_owns_commands_and_preserves_compiled_style :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z" fill="red" transform="translate(3 4)"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	shape, _ := Svg_Asset_Lookup(asset, "p")
+	commands := [4]Command{{kind = .Move}, {kind = .Line, points = {{20, 0}, {}, {}}}, {kind = .Line, points = {{0, 20}, {}, {}}}, {kind = .Close}}
+	overrides := [2]Svg_Override{
+		{target = shape, property = .Path, commands = commands[:]},
+		{target = shape, property = .Fill, paint = Solid_Paint({0, 0, 255, 255})},
+	}
+	testing.expect(t, svg_overrides_can_patch_compiled_roots(asset, overrides[:]))
+	instance, result := Svg_Prepare_Instance(asset, overrides[:])
+	defer Destroy_Svg_Instance(instance)
+	defer Destroy_Svg_Load_Result(&result)
+	testing.expect(t, result.ok && instance != nil)
+	if instance == nil { return }
+	commands[1].points[0].x = 100
+	testing.expect_value(t, instance.roots[0].item.commands[1].points[0].x, f64(20))
+	testing.expect_value(t, instance.roots[0].item.commands_hash, Commands_Hash(instance.roots[0].item.commands))
+	testing.expect_value(t, instance.roots[0].item.fill.solid, Color{0, 0, 255, 255})
+	testing.expect_value(t, instance.roots[0].item.transform, asset.roots[0].item.transform)
+	testing.expect_value(t, asset.roots[0].item.commands[1].points[0].x, f64(10))
+	testing.expect_value(t, asset.roots[0].item.commands_hash, Commands_Hash(asset.roots[0].item.commands))
+	testing.expect_value(t, asset.roots[0].item.fill.solid, Color{255, 0, 0, 255})
+	overrides[0].commands = nil
+	testing.expect(t, !svg_overrides_can_patch_compiled_roots(asset, overrides[:]))
+	limited := asset.limits
+	asset.limits.max_path_commands = 3
+	overrides[0].commands = commands[:]
+	failed, rejected := Svg_Prepare_Instance(asset, overrides[:])
+	defer Destroy_Svg_Instance(failed)
+	testing.expect(t, !rejected.ok && failed == nil)
+	Destroy_Svg_Load_Result(&rejected)
+	asset.limits = limited
+}
 
 @(test)
 svg_instances_apply_local_overrides_before_inheritance_without_mutating_asset :: proc(t: ^testing.T) {

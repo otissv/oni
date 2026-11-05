@@ -158,7 +158,7 @@ self_intersecting_star_is_not_classified_as_a_convex_polygon :: proc(t: ^testing
 	testing.expect_value(t, err, Error.None)
 	mesh: Mesh
 	defer Destroy_Mesh(&mesh)
-	convex, convex_error := convex_mesh(flat, &mesh, DEFAULT_LIMITS)
+	convex, convex_error := convex_mesh(flat, &mesh, DEFAULT_LIMITS, nil)
 	testing.expect_value(t, convex_error, Error.None)
 	testing.expect(t, !convex)
 	for rule in Fill_Rule {

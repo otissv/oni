@@ -66,8 +66,10 @@ Batch_State :: struct {
 	next_sequence:       u64,
 	vertex_buffer:       ^sdl.GPUBuffer,
 	index_buffer:        ^sdl.GPUBuffer,
+	transfer:            ^sdl.GPUTransferBuffer,
 	vertex_capacity:     u32,
 	index_capacity:      u32,
+	transfer_capacity:   u32,
 	cmd:                 ^sdl.GPUCommandBuffer,
 	pass:                ^sdl.GPURenderPass,
 	dpi:                 Dpi_Info,
@@ -208,7 +210,12 @@ batch_destroy :: proc() {
 				sdl.ReleaseGPUBuffer(state.gpu, b.index_buffer)
 				b.index_buffer = nil
 			}
+			if b.transfer != nil {
+				sdl.ReleaseGPUTransferBuffer(state.gpu, b.transfer)
+				b.transfer = nil
+			}
 		}
+		b.transfer_capacity = 0
 
 		delete(b.vertices)
 		delete(b.indices)
@@ -757,27 +764,37 @@ Finalizes segments first. Returns true when there is nothing to upload or
 the copy succeeds; false on buffer or SDL transfer failure.
 */
 batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
-	if len(batch_current().vertices) == 0 || len(batch_current().indices) == 0 do return true
-	if batch_current().vertex_buffer == nil || batch_current().index_buffer == nil do return false
+	b := batch_current()
+	if len(b.vertices) == 0 || len(b.indices) == 0 do return true
+	if b.vertex_buffer == nil || b.index_buffer == nil do return false
 
 	batch_finalize_segments()
 
-	vertex_bytes := u32(len(batch_current().vertices) * size_of(UI_Vertex))
-	index_bytes := u32(len(batch_current().indices) * size_of(u16))
-
+	vertex_bytes := u32(len(b.vertices) * size_of(UI_Vertex))
+	index_bytes := u32(len(b.indices) * size_of(u16))
 	transfer_size := vertex_bytes + index_bytes
-	transfer := sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = transfer_size})
-	if test_hook_batch_upload_fail_transfer && transfer != nil {
-		sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
-		transfer = nil
+	transfer := b.transfer
+	if transfer == nil || b.transfer_capacity < transfer_size {
+		if transfer != nil {
+			sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+			b.transfer = nil
+			b.transfer_capacity = 0
+		}
+		transfer = sdl.CreateGPUTransferBuffer(state.gpu, {usage = .UPLOAD, size = transfer_size})
+		if test_hook_batch_upload_fail_transfer && transfer != nil {
+			sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
+			transfer = nil
+		}
+		if transfer == nil {
+			fmt.eprintln("SDL_CreateGPUTransferBuffer failed:", sdl.GetError())
+			return false
+		}
+		b.transfer = transfer
+		b.transfer_capacity = transfer_size
 	}
-	if transfer == nil {
-		fmt.eprintln("SDL_CreateGPUTransferBuffer failed:", sdl.GetError())
-		return false
-	}
-	defer sdl.ReleaseGPUTransferBuffer(state.gpu, transfer)
 
-	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
+	// Cycle on first map of the frame so in-flight uploads from the prior submit stay intact.
+	mapped := sdl.MapGPUTransferBuffer(state.gpu, transfer, true)
 	if test_hook_batch_upload_fail_map {
 		if mapped != nil {
 			sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
@@ -790,21 +807,21 @@ batch_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	}
 
 	dst_bytes := cast([^]u8)mapped
-	mem.copy(dst_bytes, raw_data(batch_current().vertices), int(vertex_bytes))
-	mem.copy(dst_bytes[vertex_bytes:], raw_data(batch_current().indices), int(index_bytes))
+	mem.copy(dst_bytes, raw_data(b.vertices), int(vertex_bytes))
+	mem.copy(dst_bytes[vertex_bytes:], raw_data(b.indices), int(index_bytes))
 	sdl.UnmapGPUTransferBuffer(state.gpu, transfer)
 
 	copy_pass := sdl.BeginGPUCopyPass(cmd)
 	sdl.UploadToGPUBuffer(
 		copy_pass,
 		{transfer_buffer = transfer, offset = 0},
-		{buffer = batch_current().vertex_buffer, offset = 0, size = vertex_bytes},
+		{buffer = b.vertex_buffer, offset = 0, size = vertex_bytes},
 		true,
 	)
 	sdl.UploadToGPUBuffer(
 		copy_pass,
 		{transfer_buffer = transfer, offset = vertex_bytes},
-		{buffer = batch_current().index_buffer, offset = 0, size = index_bytes},
+		{buffer = b.index_buffer, offset = 0, size = index_bytes},
 		true,
 	)
 	sdl.EndGPUCopyPass(copy_pass)

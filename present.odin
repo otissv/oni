@@ -32,12 +32,24 @@ present_frame :: proc(draw: Draw_Proc) {
 	_ = texture_uploads_flush(state.gpu)
 
 	if len(vector_frame().draws) > 0 {
-		vector_gpu_present()
+		if !vector_gpu_present() {
+			vector_discard_frame_submissions()
+			visits := u64(len(batch_current().segments))
+			if visits > VECTOR_MAX_COMMAND_VISITS - min(state.vector.gpu.command_visits, VECTOR_MAX_COMMAND_VISITS) { batch_reset(); batch_flip(); return }
+			state.vector.gpu.command_visits += visits
+			state.vector.gpu.encode_attempts += 1
+			present_ui_frame()
+			return
+		}
 		batch_reset()
 		batch_flip()
 		return
 	}
+	present_ui_frame()
+}
 
+@(private)
+present_ui_frame :: proc() {
 	cmd_buf := sdl.AcquireGPUCommandBuffer(state.gpu)
 	if test_hook_present_fail_acquire_cmd && cmd_buf != nil {
 		_ = sdl.CancelGPUCommandBuffer(cmd_buf)

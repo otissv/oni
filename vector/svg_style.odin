@@ -288,8 +288,11 @@ svg_merge_property :: proc(style: ^Computed_Style, name, value: string, viewport
 
 @(private)
 svg_css_wide :: proc(value: string) -> (string, bool) {
-	lower := strings.to_lower(strings.trim_space(value), context.temp_allocator)
-	return lower, lower == "inherit" || lower == "initial" || lower == "unset"
+	trimmed := strings.trim_space(value)
+	for keyword in ([]string{"inherit", "initial", "unset"}) {
+		if strings.equal_fold(trimmed, keyword) { return keyword, true }
+	}
+	return "", false
 }
 svg_resolve_element_style :: proc(node: ^Xml_Node, inherited: Computed_Style, viewport: [2]f64, ctx: ^Svg_Build_Ctx) -> (style: Computed_Style, ok: bool) {
 	style = Default_Computed_Style()

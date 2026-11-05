@@ -5,7 +5,7 @@ import "core:mem"
 import "core:sync"
 import "core:thread"
 
-VECTOR_TESS_PARALLEL_THRESHOLD :: 4
+VECTOR_TESS_PARALLEL_THRESHOLD :: 64
 VECTOR_TESS_MAX_WORKERS :: 4
 VECTOR_TESS_MAX_JOBS_PER_BURST :: 4096
 VECTOR_TESS_BURST_MEMORY :: u64(128 * 1024 * 1024)
@@ -13,10 +13,11 @@ VECTOR_TESS_BURST_MEMORY :: u64(128 * 1024 * 1024)
 VECTOR_TESS_WORKER_SCRATCH :: 1 * 1024 * 1024
 
 /*
-One tessellation job: owner copies commands; workers fill mesh/usage/err only.
+One tessellation job: workers read borrowed commands and fill mesh/bounds/usage/err.
 */
 Vector_Tess_Job :: struct {
 	commands:    []Vector_Path_Command,
+	commands_owned: bool,
 	linear:      [4]f64,
 	rule:        Vector_Fill_Rule,
 	op:          Vector_Path_Op,
@@ -24,6 +25,7 @@ Vector_Tess_Job :: struct {
 	morph:       Vector_Transform,
 	limits:      v.Limits,
 	mesh:        v.Mesh,
+	bounds:      Rect,
 	usage:       v.Build_Usage,
 	err:         v.Error,
 	handle:      Vector_Path_Handle,
@@ -98,7 +100,7 @@ vector_tess_pool_ensure :: proc() -> bool {
 		return false
 	}
 
-	if state.vector.tess_pool != nil && state.vector.tess_pool.started_count == VECTOR_TESS_MAX_WORKERS {
+	if state.vector.tess_pool != nil && state.vector.tess_pool.started_count == VECTOR_TESS_MAX_WORKERS - 1 {
 		return true
 	}
 
@@ -126,6 +128,7 @@ vector_tess_pool_ensure :: proc() -> bool {
 
 		mem.arena_init(&slot.chunk.scratch, backing)
 		slot.chunk.scratch_backing = backing
+		if i == VECTOR_TESS_MAX_WORKERS - 1 { continue }
 		slot.thread = thread.create_and_start_with_poly_data(slot, vector_tess_pool_worker)
 		if slot.thread == nil {
 			delete(slot.chunk.scratch_backing)
@@ -158,7 +161,7 @@ vector_tess_pool_shutdown :: proc() {
 		sync.sema_post(&pool.slots[i].work_sema)
 	}
 
-	for i in 0 ..< pool.started_count {
+	for i in 0 ..< VECTOR_TESS_MAX_WORKERS {
 		slot := &pool.slots[i]
 		if slot.thread != nil {
 			thread.join(slot.thread)
@@ -208,9 +211,11 @@ vector_tess_worker_chunk :: proc(args: ^Vector_Tess_Worker_Chunk) {
 	}
 
 	scratch_alloc := mem.arena_allocator(&args.scratch)
+	quota := vector_tess_chunk_quota(args.jobs)
 
 	for &job in args.jobs {
 		mem.arena_free_all(&args.scratch)
+		vector_tess_apply_chunk_quota(&job, quota)
 		job.usage = {}
 		if job.op == .Stroke {
 			stroke_transform := vector_stroke_tess_transform(job.linear, job.morph)
@@ -235,14 +240,18 @@ vector_tess_worker_chunk :: proc(args: ^Vector_Tess_Worker_Chunk) {
 				&job.usage,
 			)
 		}
+		vector_tess_consume_chunk_quota(&quota, job.usage)
+		job.bounds = vector_path_mesh_bounds(job.mesh)
 	}
 }
 
 @(private)
 vector_tessellate_jobs_serial :: proc(jobs: []Vector_Tess_Job) {
 	vector_owner_assert_no_tess_workers()
+	quota := vector_tess_chunk_quota(jobs)
 
 	for &job in jobs {
+		vector_tess_apply_chunk_quota(&job, quota)
 		job.usage = {}
 		if job.op == .Stroke {
 			stroke_transform := vector_stroke_tess_transform(job.linear, job.morph)
@@ -267,7 +276,38 @@ vector_tessellate_jobs_serial :: proc(jobs: []Vector_Tess_Job) {
 				&job.usage,
 			)
 		}
+		vector_tess_consume_chunk_quota(&quota, job.usage)
+		job.bounds = vector_path_mesh_bounds(job.mesh)
 	}
+}
+
+// Each worker owns a disjoint quota, shared by its sequential jobs. Expensive
+// paths can use headroom left by cheap paths without racing a frame counter.
+@(private)
+vector_tess_chunk_quota :: proc(jobs: []Vector_Tess_Job) -> (quota: v.Build_Usage) {
+	for job in jobs {
+		quota.flattened_segments += job.limits.max_flattened_segments
+		quota.triangles += job.limits.max_triangles
+		quota.pair_tests += job.limits.max_pair_tests
+		quota.exact_ops += job.limits.max_exact_ops
+	}
+	return
+}
+
+@(private)
+vector_tess_apply_chunk_quota :: proc(job: ^Vector_Tess_Job, quota: v.Build_Usage) {
+	job.limits.max_flattened_segments = min(v.DEFAULT_LIMITS.max_flattened_segments, max(0, quota.flattened_segments))
+	job.limits.max_triangles = min(v.DEFAULT_LIMITS.max_triangles, max(0, quota.triangles))
+	job.limits.max_pair_tests = min(v.DEFAULT_LIMITS.max_pair_tests, max(0, quota.pair_tests))
+	job.limits.max_exact_ops = min(v.DEFAULT_LIMITS.max_exact_ops, max(0, quota.exact_ops))
+}
+
+@(private)
+vector_tess_consume_chunk_quota :: proc(quota: ^v.Build_Usage, usage: v.Build_Usage) {
+	quota.flattened_segments -= usage.flattened_segments
+	quota.triangles -= usage.triangles
+	quota.pair_tests -= usage.pair_tests
+	quota.exact_ops -= usage.exact_ops
 }
 
 /*
@@ -295,12 +335,12 @@ vector_tessellate_jobs :: proc(jobs: []Vector_Tess_Job) {
 	}
 
 	pool := state.vector.tess_pool
-	n_workers := min(VECTOR_TESS_MAX_WORKERS, len(jobs))
+	n_workers := min(VECTOR_TESS_MAX_WORKERS - 1, len(jobs) - 1)
 
 	base := 0
 	for w in 0 ..< n_workers {
 		remaining := len(jobs) - base
-		chunks_left := n_workers - w
+		chunks_left := n_workers + 1 - w
 		count := remaining / chunks_left
 		slot := &pool.slots[w]
 		mem.arena_free_all(&slot.chunk.scratch)
@@ -308,12 +348,16 @@ vector_tessellate_jobs :: proc(jobs: []Vector_Tess_Job) {
 		base += count
 	}
 
-	vector_owner_begin_tess_workers(n_workers)
+	owner := &pool.slots[VECTOR_TESS_MAX_WORKERS - 1].chunk
+	mem.arena_free_all(&owner.scratch)
+	owner.jobs = jobs[base:]
+	vector_owner_begin_tess_workers(n_workers + 1)
 	defer vector_owner_end_tess_workers()
 
 	for w in 0 ..< n_workers {
 		sync.sema_post(&pool.slots[w].work_sema)
 	}
+	vector_tess_worker_chunk(owner)
 
 	for w in 0 ..< n_workers {
 		_ = w
@@ -334,6 +378,8 @@ vector_tess_assign_exclusive_quotas :: proc(jobs: []Vector_Tess_Job) {
 
 	seg_remain := VECTOR_MAX_NEW_SEGMENTS - vector_frame().new_segments
 	tri_remain := VECTOR_MAX_NEW_TRIANGLES - vector_frame().new_triangles
+	pair_remain := max(0, VECTOR_MAX_FRAME_PAIR_TESTS - vector_frame().pair_tests)
+	exact_remain := max(0, VECTOR_MAX_FRAME_EXACT_OPS - vector_frame().exact_ops)
 	if seg_remain < 0 {
 		seg_remain = 0
 	}
@@ -346,9 +392,15 @@ vector_tess_assign_exclusive_quotas :: proc(jobs: []Vector_Tess_Job) {
 		left := len(jobs) - i
 		seg_share := seg_remain / left
 		tri_share := tri_remain / left
-		limits := v.DEFAULT_LIMITS
-		limits.max_flattened_segments = min(limits.max_flattened_segments, seg_share)
-		limits.max_triangles = min(limits.max_triangles, tri_share)
+		// Preserve job policy fields (tolerance, uniform_subdivision, …); only
+		// clamp the exclusive frame budgets onto the existing Limits.
+		limits := jobs[i].limits
+		limits.max_flattened_segments = min(v.DEFAULT_LIMITS.max_flattened_segments, seg_share)
+		limits.max_triangles = min(v.DEFAULT_LIMITS.max_triangles, tri_share)
+		limits.max_pair_tests = min(v.DEFAULT_LIMITS.max_pair_tests, pair_remain / left)
+		limits.max_exact_ops = min(v.DEFAULT_LIMITS.max_exact_ops, exact_remain / left)
+		pair_remain -= pair_remain / left
+		exact_remain -= exact_remain / left
 		limits.max_mesh_bytes = int(VECTOR_CPU_CACHE_BUDGET - state.vector.path_cache_bytes)
 		jobs[i].limits = limits
 		seg_remain -= seg_share

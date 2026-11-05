@@ -1714,27 +1714,25 @@ font_text_segment_advance_estimate :: proc(
 		r, w := utf8.decode_rune_in_string(text[i:])
 		if w == 0 do break
 
-		glyph_index := Get_Char_Index(face.ft_face, c.ulong(r))
-		if glyph_index == 0 {
-			i += w
-			continue
-		}
-
-		if !ft_ok(Load_Glyph(face.ft_face, glyph_index, font_load_flags(face.pixel_size, c.int(FT_LOAD_DEFAULT)))) {
-			i += w
-			continue
-		}
-
-		slot := ft_glyph_slot(face.ft_face)
-		if face.fake_bold {
-			GlyphSlot_Embolden(slot)
+		key := [2]u32{u32(r), u32(face.fake_bold)}
+		advance, cached := face.advance_cache[key]
+		if !cached {
+			glyph_index := Get_Char_Index(face.ft_face, c.ulong(r))
+			if glyph_index == 0 || !ft_ok(Load_Glyph(face.ft_face, glyph_index, font_load_flags(face.pixel_size, c.int(FT_LOAD_DEFAULT)))) {
+				i += w
+				continue
+			}
+			slot := ft_glyph_slot(face.ft_face)
+			if face.fake_bold { GlyphSlot_Embolden(slot) }
+			advance = ft_pos_to_f32(ft_slot_metrics(slot).hori_advance)
+			if len(face.advance_cache) < 4096 { face.advance_cache[key] = advance }
 		}
 
 		if glyph_count > 0 {
 			width += letter_spacing
 		}
 
-		width += font_device_to_logical(ft_pos_to_f32(ft_slot_metrics(slot).hori_advance))
+		width += font_device_to_logical(advance)
 
 		if r == ' ' || r == '\t' {
 			width += word_spacing
@@ -1899,6 +1897,14 @@ Draws layout-owned shaped text using precomputed glyph quads and decoration stro
 Does not reshape, wrap, align, or position — layout owns those.
 Uses should_use_lcd for raster mode and Batch_Key.lcd (same gate as layout).
 */
+@(private)
+Font_Draw_Glyph :: struct {
+	entry: Font_Glyph_Entry,
+	tint: RGBA,
+	mode: Font_Glyph_Render_Mode,
+	live: bool,
+}
+
 font_draw_layout_text :: proc(
 	laid: ^Layout_Text,
 	color: RGBA,
@@ -1908,52 +1914,28 @@ font_draw_layout_text :: proc(
 	if laid == nil || len(laid.lines) == 0 do return {}
 
 	opacity := draw_effective_opacity()
+	storage: [32]Font_Draw_Glyph = ---
+	resolved := storage[:min(len(laid.glyphs), len(storage))]
+	if len(laid.glyphs) > len(storage) {
+		allocation_error: mem.Allocator_Error
+		resolved, allocation_error = make([]Font_Draw_Glyph, len(laid.glyphs), context.temp_allocator)
+		if allocation_error != nil { return {} }
+	}
 
 	if len(laid.glyphs) > 0 {
-		if !font_ensure_glyphs_from_paint_for_draw(laid.glyphs, color, run_colors, opacity) {
+		if !font_prepare_glyphs_for_draw(laid.glyphs, color, run_colors, opacity, resolved) {
 			return {}
 		}
 	}
 
-	glyph_color :: proc(
-		paint: Layout_Glyph_Paint,
-		default_color: RGBA,
-		run_colors: []RGBA,
-	) -> RGBA {
-		if len(run_colors) == 0 do return default_color
-
-		idx := int(paint.run_index)
-
-		if idx < 0 || idx >= len(run_colors) do return default_color
-
-		return run_colors[idx]
-	}
-
 	nearest := font_text_uses_nearest_filter()
 
-	for paint in laid.glyphs {
-		tint := glyph_color(paint, color, run_colors)
-		mode := font_glyph_render_mode_for_draw(
-			{tint_a = tint.a, effective_opacity = opacity, axis_aligned = true},
-		)
-		lcd := mode == .LCD
-
-		key := Font_Glyph_Key {
-			face_id     = paint.face_id,
-			glyph_id    = paint.glyph_id,
-			render_mode = mode,
-		}
-		entry_ptr, ok := &state.fonts.glyph_cache[key]
-		if !ok {
-			continue
-		}
-
-		if !font_glyph_entry_is_live(entry_ptr^) {
-			continue
-		}
-
-		font_glyph_entry_touch(entry_ptr)
-		entry := entry_ptr^
+	for paint, i in laid.glyphs {
+		glyph := &resolved[i]
+		if !glyph.live { continue }
+		tint := glyph.tint
+		lcd := glyph.mode == .LCD
+		entry := glyph.entry
 
 		// Standalone oversize glyphs are not in the multi-atlas sampler set.
 		if .Standalone in entry.flags || state.textures.atlas_draw_mode != .Multi_Texture {
@@ -2012,12 +1994,14 @@ font_draw_layout_text :: proc(
 /*
 Ensures atlas glyphs for paint quads using each glyph's gated render mode at draw.
 */
-font_ensure_glyphs_from_paint_for_draw :: proc(
+font_prepare_glyphs_for_draw :: proc(
 	glyphs: []Layout_Glyph_Paint,
 	default_color: RGBA,
 	run_colors: []RGBA,
 	effective_opacity: f32,
+	resolved: []Font_Draw_Glyph,
 ) -> bool {
+	if len(resolved) != len(glyphs) { return false }
 	if len(glyphs) == 0 do return true
 
 	atlas_owner_lock()
@@ -2032,7 +2016,8 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 
 	face_missing := make(map[Face_Mode][dynamic]u32, context.temp_allocator)
 
-	for paint in glyphs {
+	uniform_mode := font_glyph_render_mode_for_draw({tint_a = default_color.a, effective_opacity = effective_opacity, axis_aligned = true})
+	for paint, i in glyphs {
 		tint := default_color
 		if len(run_colors) > 0 {
 			idx := int(paint.run_index)
@@ -2041,9 +2026,9 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 			}
 		}
 
-		mode := font_glyph_render_mode_for_draw(
-			{tint_a = tint.a, effective_opacity = effective_opacity, axis_aligned = true},
-		)
+		mode := uniform_mode
+		if len(run_colors) > 0 { mode = font_glyph_render_mode_for_draw({tint_a = tint.a, effective_opacity = effective_opacity, axis_aligned = true}) }
+		resolved[i] = {tint = tint, mode = mode}
 		key := Font_Glyph_Key {
 			face_id     = paint.face_id,
 			glyph_id    = paint.glyph_id,
@@ -2053,6 +2038,7 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 		if entry, ok := &state.fonts.glyph_cache[key]; ok {
 			if font_glyph_entry_is_live(entry^) {
 				font_glyph_entry_touch(entry)
+				resolved[i].entry, resolved[i].live = entry^, true
 				continue
 			}
 
@@ -2092,6 +2078,17 @@ font_ensure_glyphs_from_paint_for_draw :: proc(
 
 		if !font_rasterize_and_cache_missing(face, fm.face_id, missing[:], fm.render_mode) {
 			return false
+		}
+	}
+	if len(face_missing) > 0 {
+		// Rasterization may evict an earlier hit; refresh every resolved entry.
+		for paint, i in glyphs {
+			resolved[i].live = false
+			key := Font_Glyph_Key{face_id = paint.face_id, glyph_id = paint.glyph_id, render_mode = resolved[i].mode}
+			if entry, ok := &state.fonts.glyph_cache[key]; ok && font_glyph_entry_is_live(entry^) {
+				font_glyph_entry_touch(entry)
+				resolved[i].entry, resolved[i].live = entry^, true
+			}
 		}
 	}
 

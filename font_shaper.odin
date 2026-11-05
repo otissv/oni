@@ -67,6 +67,7 @@ Font_Shape_Cache_Entry :: struct {
 Loaded font face pairing FreeType and HarfBuzz handles with metrics.
 */
 Font_Face :: struct {
+	advance_cache: map[[2]u32]f32,
 	ft_face:              FT_Face,
 	hb_font:              hb_font_t,
 	path:                 string,
@@ -712,6 +713,8 @@ Releases FreeType, HarfBuzz, and path resources for a single face.
 */
 font_destroy_face :: proc(face: ^Font_Face) {
 	if face == nil do return
+	delete(face.advance_cache)
+	face.advance_cache = nil
 
 	if face.hb_font != nil {
 		font_destroy(face.hb_font)

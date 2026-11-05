@@ -9,6 +9,7 @@ import "core:sync"
 Svg_Element_Handle :: struct { revision, index: u32 }
 Svg_Path_Item :: struct {
 	commands: []Command,
+	commands_hash: [2]u64, // retained with immutable compiled command data
 	transform: Affine,
 	fill, stroke: Paint,
 	fill_rule: Fill_Rule,
@@ -16,6 +17,7 @@ Svg_Path_Item :: struct {
 	stroke_settings: Stroke,
 	draw_fill, draw_stroke: bool,
 	paint_order: Svg_Paint_Order,
+	element_index: u32, // source element index for paint-only override patching
 }
 Svg_Asset :: struct {
 	revision: u32,
@@ -32,6 +34,27 @@ Svg_Asset :: struct {
 	ids: map[string]^Xml_Node,
 	css: Css_Table,
 	limits: Svg_Limits,
+	owner: ^Svg_Revision_Owner,
+	geometry: map[Svg_Geometry_Key][]Command,
+	cascade_cache: map[^Xml_Node][]Css_Declaration,
+}
+
+@(private)
+Svg_Revision_Owner :: struct {
+	refs: i64,
+	arena: ^Scratch_Arena,
+	allocator: mem.Allocator,
+}
+
+@(private)
+Svg_Geometry_Key :: struct { node: ^Xml_Node, viewport: [2]f64 }
+
+@(private)
+svg_revision_release :: proc(owner: ^Svg_Revision_Owner) {
+	if owner == nil || sync.atomic_add(&owner.refs, -1) != 1 { return }
+	scratch_arena_destroy(owner.arena)
+	free(owner.arena, owner.allocator)
+	free(owner, owner.allocator)
 }
 Svg_Load_Options :: struct { limits: Svg_Limits }
 @(private)
@@ -78,10 +101,14 @@ Svg_Build_Ctx :: struct {
 	definition_target, instance_target: ^Xml_Node,
 	elements: [dynamic]^Xml_Node,
 	element_indices: map[^Xml_Node]u32,
-	overrides: map[Svg_Override_Key]Svg_Override,
+	overrides: map[Svg_Override_Key]Svg_Override_Value,
+	definition_overrides: map[[2]u32]Svg_Override_Value,
 	use_chain: [128]u32,
 	use_depth: int,
 	max_compile_nodes: int,
+	geometry: map[Svg_Geometry_Key][]Command,
+	retain_geometry: bool,
+	cascade_cache: map[^Xml_Node][]Css_Declaration,
 }
 @(private)
 svg_find_def :: proc(ctx: ^Svg_Build_Ctx, id: string) -> ^Xml_Node { return ctx.ids[id] }
@@ -163,14 +190,19 @@ Load_Svg_From_String :: proc(source: string, opts := Svg_Load_Options{}, allocat
 		svg_push(&result, .Limit_Exceeded, fmt.tprintf("source bytes consumed %d, allowed %d; decoded allowance %d", len(source), limits.max_source_bytes, limits.max_decoded_bytes), 1, 1)
 		return nil, result
 	}
+	owner_bytes := size_of(Svg_Asset) + size_of(Scratch_Arena) + size_of(Svg_Revision_Owner)
+	if limits.max_decoded_bytes <= owner_bytes {
+		svg_push(&result, .Limit_Exceeded, fmt.tprintf("decoded owner bytes required %d, allowed %d", owner_bytes, limits.max_decoded_bytes), 1, 1)
+		return nil, result
+	}
 	arena, alloc_err := new(Scratch_Arena, allocator)
 	if alloc_err != nil { svg_push(&result, .Allocation_Failed, "cannot allocate SVG owner", 1, 1); return nil, result }
-	arena^ = {backing = allocator, limit = limits.max_decoded_bytes}
+	arena^ = {backing = allocator, limit = limits.max_decoded_bytes - owner_bytes}
 	success := false
 	defer if !success { scratch_arena_destroy(arena); free(arena, allocator) }
 	context.allocator = {procedure = scratch_allocator_proc, data = arena}
 	context.temp_allocator = context.allocator
-	ctx := Svg_Build_Ctx{result = &result, limits = limits, arena = arena, viewport = {300, 150}}
+	ctx := Svg_Build_Ctx{result = &result, limits = limits, arena = arena, viewport = {300, 150}, retain_geometry = true}
 	parsed, valid := Parse_Xml_Document(source, limits, &result)
 	if !valid || arena.failed {
 		if arena.failed { svg_push(&result, .Limit_Exceeded, "decoded SVG allocation budget exhausted", 1, 1) }
@@ -200,6 +232,11 @@ Load_Svg_From_String :: proc(source: string, opts := Svg_Load_Options{}, allocat
 	asset.parents, asset.ids, asset.css, asset.limits = ctx.parents, ctx.ids, ctx.css, limits
 	for id, node in ctx.ids { asset.id_to_handle[id] = {revision = asset.revision, index = ctx.element_indices[node]} }
 	if arena.failed { free(asset, allocator); asset = nil; svg_push(&result, .Limit_Exceeded, "decoded SVG allocation budget exhausted", 0, 0); svg_load_failure(&result, arena, allocator); return nil, result }
+	owner, owner_err := new(Svg_Revision_Owner, allocator)
+	if owner_err != nil { free(asset, allocator); asset = nil; svg_push(&result, .Allocation_Failed, "cannot allocate SVG revision owner", 0, 0); return nil, result }
+	owner^ = {refs = 1, arena = arena, allocator = allocator}
+	asset.owner, asset.geometry = owner, ctx.geometry
+	asset.cascade_cache = ctx.cascade_cache
 	success, result.ok = true, true
 	return asset, result
 }
@@ -224,8 +261,7 @@ Load_Svg_From_File :: proc(path: string, opts := Svg_Load_Options{}, allocator :
 Destroy_Svg_Asset :: proc(asset: ^Svg_Asset) {
 	if asset == nil { return }
 	allocator := asset.allocator
-	scratch_arena_destroy(asset.arena)
-	free(asset.arena, allocator)
+	svg_revision_release(asset.owner)
 	free(asset, allocator)
 }
 Svg_Asset_Intrinsic_Size :: proc(asset: ^Svg_Asset) -> (f64, f64) {

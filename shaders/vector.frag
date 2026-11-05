@@ -1,15 +1,15 @@
 #version 460
 layout(location = 0) in vec2 v_uv;
-layout(location = 1) in vec4 v_colour;
+layout(location = 1) flat in vec4 v_colour;
 layout(location = 2) in vec2 v_pos;
-layout(location = 3) in vec4 v_paint;
-layout(location = 4) in vec4 v_grad0;
-layout(location = 5) in vec4 v_combined_linear;
-layout(location = 6) in vec4 v_combined_shift_focal;
+layout(location = 3) flat in vec4 v_paint;
+layout(location = 4) flat in vec4 v_grad0;
+layout(location = 5) flat in vec4 v_combined_linear;
+layout(location = 6) flat in vec4 v_combined_shift_focal;
 layout(set = 2, binding = 0) uniform sampler2D content_texture;
 layout(set = 2, binding = 1) uniform sampler2D mask_texture;
 layout(set = 2, binding = 2) uniform sampler2D ramp_texture;
-layout(set = 3, binding = 0) uniform Paint { vec4 mode; };
+layout(set = 3, binding = 0) uniform Paint { vec4 mode; vec4 uv_scale; };
 layout(location = 0) out vec4 result;
 
 // Matches Gradient_Spread: Pad=0, Reflect=1, Repeat=2.
@@ -125,8 +125,8 @@ float mask_luminance(vec4 mask_value) {
 
 void main() {
     if (mode.x >= 0.5) {
-        vec4 content = texture(content_texture, v_uv);
-        vec4 mask_value = texture(mask_texture, v_uv);
+        vec4 content = texture(content_texture, v_uv * uv_scale.xy);
+        vec4 mask_value = texture(mask_texture, v_uv * uv_scale.zw);
         float coverage = 1.0;
         if (mode.y > 1.5) {
             coverage = mask_luminance(mask_value);

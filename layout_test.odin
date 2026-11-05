@@ -1,6 +1,7 @@
 #+test
 package oni
 
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sync"
@@ -272,6 +273,83 @@ layout_test_end :: proc(layout: ^Layout_State) {
 	delete(layout.id_to_node)
 	layout.id_to_node = nil
 	layout_frame_arena_destroy(layout)
+}
+
+@(private)
+layout_test_begin_small_frame_arena :: proc() -> Layout_State {
+	layout := Layout_State {
+		table_tracks = make(map[int]Layout_Table_Tracks),
+		id_to_node   = make(map[UI_Id]int),
+	}
+	layout_frame_arena_chain_rebuild(&layout.frame_arena, 4096)
+	return layout
+}
+
+@(test)
+layout_frame_arena_grows_mid_frame_without_invalidating_live_pointers :: proc(t: ^testing.T) {
+	layout := layout_test_begin_small_frame_arena()
+	defer layout_test_end(&layout)
+
+	chunk := 2048
+	alloc := layout_frame_allocator_for(&layout)
+
+	first, err := mem.alloc(chunk, mem.DEFAULT_ALIGNMENT, alloc)
+	testing.expectf(t, err == nil, "first alloc: %v", err)
+	first_bytes := ([^]byte)(first)[:chunk]
+	first_bytes[0] = 0xAB
+	first_bytes[chunk - 1] = 0xCD
+
+	second, err2 := mem.alloc(chunk, mem.DEFAULT_ALIGNMENT, alloc)
+	testing.expectf(t, err2 == nil, "second alloc: %v", err2)
+
+	testing.expect_value(t, len(layout.frame_arena.blocks), 2)
+	testing.expect_value(t, first_bytes[0], u8(0xAB))
+	testing.expect_value(t, first_bytes[chunk - 1], u8(0xCD))
+	_ = second
+}
+
+@(test)
+layout_frame_arena_reset_retains_peak_capacity :: proc(t: ^testing.T) {
+	layout := layout_test_begin_small_frame_arena()
+	defer layout_test_end(&layout)
+
+	chunk := 2048
+	alloc := layout_frame_allocator_for(&layout)
+
+	for _ in 0 ..< 5 {
+		_, err := mem.alloc(chunk, mem.DEFAULT_ALIGNMENT, alloc)
+		testing.expectf(t, err == nil, "alloc: %v", err)
+	}
+
+	peak := layout_frame_arena_chain_peak_used(&layout.frame_arena)
+	cap_before := layout_frame_arena_chain_total_capacity(&layout.frame_arena)
+	testing.expect(t, peak > cap_before / 2)
+
+	layout_frame_arena_reset(&layout)
+
+	cap_after := layout_frame_arena_chain_total_capacity(&layout.frame_arena)
+	want := max(cap_before * 2, peak * 2, LAYOUT_FRAME_ARENA_INITIAL)
+	testing.expect_value(t, cap_after, want)
+	testing.expect_value(t, len(layout.frame_arena.blocks), 1)
+}
+
+@(test)
+layout_frame_arena_destroy_frees_all_blocks :: proc(t: ^testing.T) {
+	layout := layout_test_begin_small_frame_arena()
+	defer layout_test_end(&layout)
+
+	chunk := 2048
+	alloc := layout_frame_allocator_for(&layout)
+
+	for _ in 0 ..< 5 {
+		_, err := mem.alloc(chunk, mem.DEFAULT_ALIGNMENT, alloc)
+		testing.expectf(t, err == nil, "alloc: %v", err)
+	}
+
+	testing.expect(t, len(layout.frame_arena.blocks) >= 2)
+	layout_frame_arena_destroy(&layout)
+	testing.expect_value(t, len(layout.frame_arena.blocks), 0)
+	testing.expect_value(t, layout.frame_arena.active, 0)
 }
 
 @(test)

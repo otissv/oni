@@ -9,6 +9,8 @@ import sdl "vendor:sdl3"
 @(private)
 vector_vert_code := #load("shaders/vector.spv.vert")
 @(private)
+vector_solid_vert_code := #load("shaders/vector_solid.spv.vert")
+@(private)
 vector_frag_code := #load("shaders/vector.spv.frag")
 @(private)
 VECTOR_GPU_BUDGET :: u64(256 * 1024 * 1024)
@@ -28,6 +30,7 @@ Vector_Target :: struct {
 	bytes: u64,
 	has_depth: bool,
 	msaa: bool,
+	in_use, used_this_encode: bool,
 }
 
 @(private)
@@ -37,6 +40,9 @@ Vector_GPU_Record :: struct {
 
 @(private)
 Vector_GPU_Frame :: struct {
+	solid_instances: bool,
+	index_snapshot: [dynamic]u32,
+	index_snapshot_valid: bool,
 	// Shared 4× MSAA scene target (vectors + UI).
 	root: Vector_Target,
 	pool: [dynamic]Vector_Target,
@@ -48,9 +54,6 @@ Vector_GPU_Frame :: struct {
 	capacities: [Vector_Buffer]u64,
 	transfer_capacity: u64,
 	fence: ^sdl.GPUFence,
-	uploaded_geometry_epoch: u64,
-	uploaded_vertex_revision: u64,
-	uploaded_vertex_bytes, uploaded_index_bytes: u64,
 	root_view_origin: Vec2,
 	root_view_origin_set: bool,
 	ramp: ^sdl.GPUTexture,
@@ -70,23 +73,26 @@ Vector_Stencil_Mode :: enum {
 
 @(private)
 Vector_GPU :: struct {
+	solid_pipelines: [2][5]^sdl.GPUGraphicsPipeline,
 	pipeline, pipeline_depth: ^sdl.GPUGraphicsPipeline,
 	pipeline_stencil_test, pipeline_stencil_write, pipeline_stencil_pop: ^sdl.GPUGraphicsPipeline,
-	pipeline_ss, pipeline_ss_stencil_test, pipeline_ss_stencil_write, pipeline_ss_stencil_pop: ^sdl.GPUGraphicsPipeline,
+	pipeline_ss, pipeline_ss_depth, pipeline_ss_stencil_test, pipeline_ss_stencil_write, pipeline_ss_stencil_pop: ^sdl.GPUGraphicsPipeline,
 	ui_pipeline, ui_pipeline_depth, lcd_pipeline, lcd_pipeline_depth: ^sdl.GPUGraphicsPipeline,
 	white: ^sdl.GPUTexture,
 	sampler: ^sdl.GPUSampler,
 	format, depth_format: sdl.GPUTextureFormat,
-	// Five colour-only MSAA root slots hide UHD fence latency within the 256 MiB
-	// budget when roots stay content-bounded; group targets keep depth in the pool.
-	frames: [5]Vector_GPU_Frame,
+	frames: [2]Vector_GPU_Frame,
 	frame_index: int,
 	bytes, pool_bytes: u64,
+	peak_bytes: u64,
+	peak: [Vector_Resource_Category]u64,
 	sample_work: u64,
 	command_visits: u64,
+	encode_attempts: int,
 	geometry_epoch: u64,
 	// Last successful encode breakdown (milliseconds); for harness / diagnostics.
 	encode_fence_ms, encode_upload_ms, encode_record_ms: f64,
+	target_creates, target_reuses, target_releases: u64,
 }
 
 @(private)
@@ -105,6 +111,9 @@ vector_gpu_advance_frame :: proc() {
 
 @(private)
 vector_target_release :: proc(target: ^Vector_Target, pooled: bool) {
+	if target.colour != nil {
+		state.vector.gpu.target_releases += 1
+	}
 	vector_target_release_textures(target.colour, target.depth, target.resolved)
 	state.vector.gpu.bytes -= target.bytes
 	if pooled {
@@ -150,13 +159,19 @@ vector_gpu_shutdown :: proc() {
 		}
 		delete(frame.pool)
 		delete(frame.outputs)
+		delete(frame.index_snapshot)
 		frame = {}
 	}
 	if state.gpu != nil {
+		for &family in g.solid_pipelines {
+			for &pipeline in family {
+				if pipeline != nil { sdl.ReleaseGPUGraphicsPipeline(state.gpu, pipeline); pipeline = nil }
+			}
+		}
 		pipelines := [?]^^sdl.GPUGraphicsPipeline{
 			&g.pipeline, &g.pipeline_depth,
 			&g.pipeline_stencil_test, &g.pipeline_stencil_write, &g.pipeline_stencil_pop,
-			&g.pipeline_ss, &g.pipeline_ss_stencil_test, &g.pipeline_ss_stencil_write, &g.pipeline_ss_stencil_pop,
+			&g.pipeline_ss, &g.pipeline_ss_depth, &g.pipeline_ss_stencil_test, &g.pipeline_ss_stencil_write, &g.pipeline_ss_stencil_pop,
 			&g.ui_pipeline, &g.ui_pipeline_depth, &g.lcd_pipeline, &g.lcd_pipeline_depth,
 		}
 		for pipeline in pipelines {
@@ -203,8 +218,14 @@ vector_gpu_init :: proc(format: sdl.GPUTextureFormat) -> bool {
 	}
 
 	vert := gpu_load_shader(state.gpu, vector_vert_code, .VERTEX, 1, 0)
+	solid_vert := gpu_load_shader(state.gpu, vector_solid_vert_code, .VERTEX, 1, 0)
+	if test_hook_vector_fail_solid_shader && solid_vert != nil {
+		sdl.ReleaseGPUShader(state.gpu, solid_vert)
+		solid_vert = nil
+	}
 	frag := gpu_load_shader(state.gpu, vector_frag_code, .FRAGMENT, 1, 3)
 	defer {
+		if solid_vert != nil { sdl.ReleaseGPUShader(state.gpu, solid_vert) }
 		if vert != nil {
 			sdl.ReleaseGPUShader(state.gpu, vert)
 		}
@@ -212,7 +233,7 @@ vector_gpu_init :: proc(format: sdl.GPUTextureFormat) -> bool {
 			sdl.ReleaseGPUShader(state.gpu, frag)
 		}
 	}
-	if vert == nil || frag == nil {
+	if vert == nil || solid_vert == nil || frag == nil {
 		return false
 	}
 	stencil_keep := vector_gpu_stencil_state(.KEEP)
@@ -223,19 +244,34 @@ vector_gpu_init :: proc(format: sdl.GPUTextureFormat) -> bool {
 	g.pipeline_stencil_test = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._4, true, stencil_keep, true)
 	g.pipeline_stencil_write = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._4, true, stencil_inc, false)
 	g.pipeline_stencil_pop = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._4, true, stencil_dec, false)
-	g.pipeline_ss = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, true, {}, true)
+	g.pipeline_ss = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, false, {}, true)
+	g.pipeline_ss_depth = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, true, {}, true)
 	g.pipeline_ss_stencil_test = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, true, stencil_keep, true)
 	g.pipeline_ss_stencil_write = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, true, stencil_inc, false)
 	g.pipeline_ss_stencil_pop = vector_gpu_create_mesh_pipeline(vert, frag, format, depth_format, ._1, true, stencil_dec, false)
+	for &family, sample_index in g.solid_pipelines {
+		for &pipeline, kind in family {
+			stencil := kind == 2 ? stencil_keep : kind == 3 ? stencil_inc : kind == 4 ? stencil_dec : sdl.GPUDepthStencilState{}
+			pipeline = vector_gpu_create_mesh_pipeline(solid_vert, frag, format, depth_format,
+				sample_index == 0 ? ._4 : ._1, kind != 0, stencil, kind < 3, solid = true)
+			if pipeline == nil { return false }
+			if test_hook_vector_fail_solid_pipeline_after > 0 {
+				test_hook_vector_fail_solid_pipeline_after -= 1
+				if test_hook_vector_fail_solid_pipeline_after == 0 { return false }
+			}
+		}
+	}
 	g.white = gpu_create_white_texture(state.gpu)
 	g.sampler = gpu_create_sampler(state.gpu)
 	if g.pipeline == nil || g.pipeline_depth == nil ||
 	   g.pipeline_stencil_test == nil || g.pipeline_stencil_write == nil || g.pipeline_stencil_pop == nil ||
-	   g.pipeline_ss == nil || g.pipeline_ss_stencil_test == nil || g.pipeline_ss_stencil_write == nil || g.pipeline_ss_stencil_pop == nil ||
+	   g.pipeline_ss == nil || g.pipeline_ss_depth == nil || g.pipeline_ss_stencil_test == nil || g.pipeline_ss_stencil_write == nil || g.pipeline_ss_stencil_pop == nil ||
 	   g.white == nil || g.sampler == nil {
 		return false
 	}
 	success = true
+	g.bytes += 4
+	vector_gpu_note_peak(0, .Other_Textures)
 	return true
 }
 
@@ -249,6 +285,13 @@ vector_target_quantized_size :: proc(span: f32) -> f32 {
 	}
 
 	return math.ceil(span / VECTOR_TARGET_SIZE_QUANTUM) * VECTOR_TARGET_SIZE_QUANTUM
+}
+
+@(private)
+vector_gpu_limit :: proc(resource: string, consumed, allowed: u64) -> bool {
+	state.vector.last_error = .Limit_Exceeded
+	log_errorf("Vector %s consumed %d, allowed %d", resource, consumed, allowed)
+	return false
 }
 
 @(private)
@@ -296,10 +339,10 @@ vector_gpu_create_mesh_pipeline :: proc(
 	with_depth: bool,
 	stencil: sdl.GPUDepthStencilState,
 	write_colour: bool,
+	solid := false,
 ) -> ^sdl.GPUGraphicsPipeline {
-	attributes := [10]sdl.GPUVertexAttribute{
+	attributes := [9]sdl.GPUVertexAttribute{
 		{location = 0, buffer_slot = 0, format = .FLOAT2, offset = u32(offset_of(Vector_Vertex, pos))},
-		{location = 1, buffer_slot = 0, format = .FLOAT2, offset = u32(offset_of(Vector_Vertex, uv))},
 		{location = 2, buffer_slot = 1, format = .FLOAT4, offset = u32(offset_of(Vector_Instance, colour))},
 		{location = 3, buffer_slot = 1, format = .FLOAT2, offset = u32(offset_of(Vector_Instance, origin))},
 		{location = 4, buffer_slot = 1, format = .FLOAT4, offset = u32(offset_of(Vector_Instance, morph_linear))},
@@ -311,7 +354,7 @@ vector_gpu_create_mesh_pipeline :: proc(
 	}
 	vertex_layout := [2]sdl.GPUVertexBufferDescription{
 		{slot = 0, pitch = u32(size_of(Vector_Vertex))},
-		{slot = 1, pitch = u32(size_of(Vector_Instance)), input_rate = .INSTANCE},
+		{slot = 1, pitch = u32(solid ? size_of(Vector_Solid_Instance) : size_of(Vector_Instance)), input_rate = .INSTANCE},
 	}
 	blend := gpu_vector_blend_state()
 	if !write_colour {
@@ -326,7 +369,7 @@ vector_gpu_create_mesh_pipeline :: proc(
 			vertex_buffer_descriptions = raw_data(vertex_layout[:]),
 			num_vertex_buffers = 2,
 			vertex_attributes = raw_data(attributes[:]),
-			num_vertex_attributes = 10,
+			num_vertex_attributes = solid ? 5 : u32(len(attributes)),
 		},
 		primitive_type = .TRIANGLELIST,
 		rasterizer_state = {cull_mode = .NONE},
@@ -344,17 +387,16 @@ vector_gpu_create_mesh_pipeline :: proc(
 @(private)
 vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool, with_depth: bool, msaa := true) -> bool {
 	g := &state.vector.gpu
+	if g.format == .INVALID || with_depth && g.depth_format == .INVALID { return false }
 	if bounds.w <= 0 || bounds.h <= 0 {
 		return false
 	}
 
 	// Root scenes grow-only so morphing AABBs do not thrash MSAA allocations.
-	// Pooled group/mask targets stay exact so sampling UVs match.
-	need_w := math.ceil(bounds.w)
-	need_h := math.ceil(bounds.h)
+	// Pooled group/mask targets reuse quantized size classes with grow-only slots.
+	need_w := vector_target_quantized_size(math.ceil(bounds.w))
+	need_h := vector_target_quantized_size(math.ceil(bounds.h))
 	if !pooled {
-		need_w = vector_target_quantized_size(need_w)
-		need_h = vector_target_quantized_size(need_h)
 		fb := vector_gpu_framebuffer_bounds()
 		need_w = min(need_w, math.ceil(fb.w))
 		need_h = min(need_h, math.ceil(fb.h))
@@ -363,9 +405,11 @@ vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool,
 		if target.colour != nil &&
 		   target.has_depth == with_depth &&
 		   target.msaa == msaa &&
-		   target.alloc_w == need_w &&
-		   target.alloc_h == need_h {
+		   target.alloc_w >= need_w &&
+		   target.alloc_h >= need_h {
 			target.bounds = bounds
+			state.vector.gpu.target_reuses += 1
+
 			return true
 		}
 	} else if target.colour != nil &&
@@ -377,8 +421,8 @@ vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool,
 		return true
 	}
 
-	alloc_w := pooled ? need_w : max(need_w, target.alloc_w)
-	alloc_h := pooled ? need_h : max(need_h, target.alloc_h)
+	alloc_w := pooled ? max(need_w, target.alloc_w) : max(need_w, target.alloc_w)
+	alloc_h := pooled ? max(need_h, target.alloc_h) : max(need_h, target.alloc_h)
 	colour_size := u64(sdl.GPUTextureFormatTexelBlockSize(g.format))
 	depth_size := with_depth ? u64(sdl.GPUTextureFormatTexelBlockSize(g.depth_format)) : 0
 	colour_samples := msaa ? u64(5) : u64(1)
@@ -386,10 +430,8 @@ vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool,
 	bytes := u64(alloc_w) * u64(alloc_h) * (colour_size * colour_samples + depth_size * (with_depth ? depth_samples : 0))
 	// Old and replacement targets coexist until the new textures succeed — reserve peak.
 	// Equal-size pooled replaces still allocate a second target before releasing the first.
-	if g.bytes + bytes > VECTOR_GPU_BUDGET ||
-	   (pooled && g.pool_bytes + bytes > VECTOR_TARGET_POOL_BUDGET) {
-		return false
-	}
+	if g.bytes + bytes > VECTOR_GPU_BUDGET { return vector_gpu_limit("GPU bytes", g.bytes + bytes, VECTOR_GPU_BUDGET) }
+	if pooled && g.pool_bytes + bytes > VECTOR_TARGET_POOL_BUDGET { return vector_gpu_limit("intermediate bytes", g.pool_bytes + bytes, VECTOR_TARGET_POOL_BUDGET) }
 
 	sample_count: sdl.GPUSampleCount = msaa ? ._4 : ._1
 	info := sdl.GPUTextureCreateInfo{
@@ -420,9 +462,12 @@ vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool,
 	}
 	if colour == nil || resolved == nil || (with_depth && depth == nil) {
 		vector_target_release_textures(colour, depth, msaa ? resolved : nil)
+
 		return false
 	}
 
+	state.vector.gpu.target_creates += 1
+	vector_gpu_note_peak(bytes, pooled ? .Intermediate_Targets : .Scene_Targets)
 	vector_target_release(target, pooled)
 	if !pooled {
 		frame := vector_gpu_frame()
@@ -447,30 +492,56 @@ vector_target_ensure :: proc(target: ^Vector_Target, bounds: Rect, pooled: bool,
 }
 
 @(private)
+Vector_Index_Upload :: struct { offset, size: u64 }
+
+@(private)
+vector_gpu_index_upload_ranges :: proc(indices, previous: []u32, valid: bool) -> (ranges: [dynamic]Vector_Index_Upload, bytes: u64, ok: bool) {
+	if len(indices) == 0 { return nil, 0, true }
+	allocation_error: mem.Allocator_Error
+	ranges, allocation_error = make([dynamic]Vector_Index_Upload, 0, 16, context.temp_allocator)
+	if allocation_error != nil { return nil, 0, false }
+	bytes = u64(len(indices)) * size_of(u32)
+	if !valid || len(indices) != len(previous) {
+		_, err := append(&ranges, Vector_Index_Upload{size = bytes})
+		return ranges, bytes, err == nil
+	}
+	total := bytes
+	bytes = 0
+	for offset := u64(0); offset < total; offset += 4096 {
+		size := min(u64(4096), total - offset)
+		current := (cast([^]u8)raw_data(indices))[offset:]
+		old := (cast([^]u8)raw_data(previous))[offset:]
+		if mem.compare_byte_ptrs(current, old, int(size)) == 0 { continue }
+		if len(ranges) > 0 && ranges[len(ranges) - 1].offset + ranges[len(ranges) - 1].size == offset {
+			ranges[len(ranges) - 1].size += size
+		} else if _, err := append(&ranges, Vector_Index_Upload{offset, size}); err != nil { return ranges, bytes, false }
+		bytes += size
+	}
+	return ranges, bytes, true
+}
+
+@(private)
 vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	f := vector_frame()
 	frame := vector_gpu_frame()
+	solid := true
+	for &instance in f.instances { if instance.paint[0] != 0 { solid = false; break } }
+	vertex_count := len(f.vertices)
+	index_count := len(f.indices)
+	vertex_bytes := u64(vertex_count) * size_of(Vector_Vertex)
+	index_bytes := u64(index_count) * size_of(u32)
+	index_ranges, index_upload_bytes, index_ok := vector_gpu_index_upload_ranges(f.indices[:], frame.index_snapshot[:], frame.index_snapshot_valid && frame.buffers[.Index] != nil)
+	if !index_ok || !vector_reserve(&frame.index_snapshot, index_count, VECTOR_MAX_FRAME_INDICES) { return false }
 	sizes := [Vector_Buffer]u64{
-		.Vertex = u64(len(f.vertices)) * size_of(Vector_Vertex),
-		.Index = u64(len(f.indices)) * size_of(u32),
-		.Instance = u64(len(f.instances)) * size_of(Vector_Instance),
+		.Vertex = vertex_bytes,
+		.Index = index_upload_bytes,
+		.Instance = u64(len(f.instances)) * u64(solid ? size_of(Vector_Solid_Instance) : size_of(Vector_Instance)),
 		.Indirect = u64(len(f.commands)) * size_of(sdl.GPUIndexedIndirectDrawCommand),
 	}
 	sources := [Vector_Buffer]rawptr{
-		.Vertex = raw_data(f.vertices), .Index = raw_data(f.indices),
+		.Vertex = raw_data(f.vertices) if len(f.vertices) > 0 else nil,
+		.Index = raw_data(f.indices) if len(f.indices) > 0 else nil,
 		.Instance = raw_data(f.instances), .Indirect = raw_data(f.commands),
-	}
-	reuse_geometry := frame.buffers[.Vertex] != nil &&
-		frame.buffers[.Index] != nil &&
-		frame.uploaded_geometry_epoch == state.vector.gpu.geometry_epoch &&
-		frame.uploaded_vertex_revision == vector_frame().vertex_revision &&
-		frame.uploaded_vertex_bytes == sizes[.Vertex] &&
-		frame.uploaded_index_bytes == sizes[.Index]
-	if reuse_geometry {
-		sizes[.Vertex] = 0
-		sizes[.Index] = 0
-		sources[.Vertex] = nil
-		sources[.Index] = nil
 	}
 	usages := [Vector_Buffer]sdl.GPUBufferUsageFlags{
 		.Vertex = {.VERTEX}, .Index = {.INDEX}, .Instance = {.VERTEX}, .Indirect = {.INDIRECT},
@@ -479,7 +550,8 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	capacities := frame.capacities
 	for kind in Vector_Buffer {
 		bytes += sizes[kind]
-		capacities[kind] = max(capacities[kind], sizes[kind])
+		needed := index_bytes if kind == .Index else sizes[kind]
+		capacities[kind] = max(capacities[kind], needed)
 	}
 	ramp_upload_bytes := u64(len(f.ramp_pixels))
 	needed_ramp_rows := f.ramp_rows
@@ -497,10 +569,14 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 		rows := allocated_ramp_rows if allocated_ramp_rows > 0 else frame.ramp_rows
 		new_ramp_bytes = u64(VECTOR_RAMP_WIDTH) * u64(rows) * 4
 	}
-	budget_delta := new_buffer_bytes + new_ramp_bytes
+	budget_delta := u64(0)
+	for kind in Vector_Buffer { if sizes[kind] > frame.capacities[kind] { budget_delta += capacities[kind] } }
+	if bytes + ramp_upload_bytes > frame.transfer_capacity { budget_delta += new_transfer_capacity }
+	ramp_delta := needed_ramp_rows > 0 && (frame.ramp == nil || frame.ramp_rows < needed_ramp_rows) ? new_ramp_bytes : 0
+	budget_delta += ramp_delta
 	// Replacement buffers/ramps coexist with live ones until install succeeds.
 	if state.vector.gpu.bytes + budget_delta > VECTOR_GPU_BUDGET {
-		return false
+		return vector_gpu_limit("GPU bytes", state.vector.gpu.bytes + budget_delta, VECTOR_GPU_BUDGET)
 	}
 	buffers := frame.buffers
 	transfer := frame.transfer
@@ -549,13 +625,30 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	// live frame buffers untouched and the defer releases only locals.
 	if test_hook_vector_fail_map { return false }
 	if need_transfer > 0 {
+		// The slot fence has completed before upload, so its staging storage is reusable.
 		data := sdl.MapGPUTransferBuffer(state.gpu, transfer, false)
 		if data == nil {
 			return false
 		}
+		// Tight pack only the buffers that upload this frame, in Vector_Buffer order.
 		offset := u64(0)
 		for kind in Vector_Buffer {
-			if sizes[kind] > 0 { mem.copy((cast([^]u8)data)[offset:], sources[kind], int(sizes[kind])) }
+			if sizes[kind] == 0 {
+				continue
+			}
+			dst := (cast([^]u8)data)[offset:]
+			if kind == .Index {
+				packed := u64(0)
+				for region in index_ranges {
+					mem.copy(dst[packed:], (cast([^]u8)sources[kind])[region.offset:], int(region.size))
+					packed += region.size
+				}
+			} else if kind == .Instance && solid {
+				instances := cast([^]Vector_Solid_Instance)dst
+				for &instance, i in f.instances {
+					instances[i] = {colour = instance.colour, origin = instance.origin, morph_linear = instance.morph_linear, morph_shift = instance.morph_shift}
+				}
+			} else if sources[kind] != nil { mem.copy(dst, sources[kind], int(sizes[kind])) }
 			offset += sizes[kind]
 		}
 		if ramp_upload_bytes > 0 {
@@ -569,9 +662,15 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 		offset = 0
 		for kind in Vector_Buffer {
 			if sizes[kind] > 0 {
-				sdl.UploadToGPUBuffer(copy_pass, {transfer_buffer = transfer, offset = u32(offset)}, {buffer = buffers[kind], size = u32(sizes[kind])}, false)
+				if kind == .Index {
+					packed := offset
+					for region in index_ranges {
+						sdl.UploadToGPUBuffer(copy_pass, {transfer_buffer = transfer, offset = u32(packed)}, {buffer = buffers[kind], offset = u32(region.offset), size = u32(region.size)}, false)
+						packed += region.size
+					}
+				} else { sdl.UploadToGPUBuffer(copy_pass, {transfer_buffer = transfer, offset = u32(offset)}, {buffer = buffers[kind], size = u32(sizes[kind])}, false) }
+				offset += sizes[kind]
 			}
-			offset += sizes[kind]
 		}
 		if ramp_upload_bytes > 0 && ramp_texture != nil && needed_ramp_rows > 0 {
 			sdl.UploadToGPUTexture(
@@ -591,6 +690,9 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 	for kind in Vector_Buffer {
 		if frame.buffers[kind] != nil && buffers[kind] != frame.buffers[kind] { sdl.ReleaseGPUBuffer(state.gpu, frame.buffers[kind]) }
 	}
+	vector_gpu_note_peak(budget_delta - ramp_delta, .Buffers)
+	vector_gpu_note_peak(ramp_delta, .Gradient_Ramps)
+	state.vector.gpu.peak_bytes = max(state.vector.gpu.peak_bytes, state.vector.gpu.bytes + budget_delta)
 	if frame.transfer != nil && transfer != frame.transfer { sdl.ReleaseGPUTransferBuffer(state.gpu, frame.transfer) }
 	if frame.ramp != nil && ramp_texture != frame.ramp {
 		sdl.ReleaseGPUTexture(state.gpu, frame.ramp)
@@ -608,30 +710,56 @@ vector_gpu_upload :: proc(cmd: ^sdl.GPUCommandBuffer) -> bool {
 		frame.ramp_bytes = 0
 	}
 	state.vector.gpu.bytes += frame.buffer_bytes + frame.ramp_bytes
+	resize(&frame.index_snapshot, index_count)
+	for region in index_ranges { mem.copy((cast([^]u8)raw_data(frame.index_snapshot))[region.offset:], (cast([^]u8)raw_data(f.indices))[region.offset:], int(region.size)) }
+	frame.index_snapshot_valid = true
+	frame.solid_instances = solid
 	success = true
-	if !reuse_geometry {
-		frame.uploaded_geometry_epoch = state.vector.gpu.geometry_epoch
-		frame.uploaded_vertex_revision = f.vertex_revision
-		frame.uploaded_vertex_bytes = u64(len(f.vertices)) * size_of(Vector_Vertex)
-		frame.uploaded_index_bytes = u64(len(f.indices)) * size_of(u32)
-	}
 
 	return true
 }
 
 @(private)
-vector_gpu_pool_target :: proc(bounds: Rect, msaa: bool) -> (index: int, ok: bool) {
+vector_gpu_pool_target :: proc(bounds: Rect, msaa, with_depth: bool) -> (index: int, ok: bool) {
 	frame := vector_gpu_frame()
-	index = frame.pool_cursor
+	need_w := vector_target_quantized_size(math.ceil(bounds.w))
+	need_h := vector_target_quantized_size(math.ceil(bounds.h))
+	index = -1
+	best_waste: f32 = max(f32)
+	for target, i in frame.pool {
+		if target.in_use || target.msaa != msaa || target.has_depth != with_depth {
+
+			continue
+		}
+
+		if target.alloc_w >= need_w && target.alloc_h >= need_h {
+			waste := (target.alloc_w - need_w) + (target.alloc_h - need_h)
+			if waste < best_waste {
+				best_waste = waste
+				index = i
+			}
+		}
+	}
+	if index < 0 {
+		for target, i in frame.pool {
+			if !target.in_use && !target.used_this_encode {
+				index = i
+
+				break
+			}
+		}
+	}
+	if index < 0 { index = len(frame.pool) }
 	if index == len(frame.pool) {
 		if _, err := append(&frame.pool, Vector_Target{}); err != nil {
 			return -1, false
 		}
 	}
-	if !vector_target_ensure(&frame.pool[index], bounds, true, true, msaa) {
+	if !vector_target_ensure(&frame.pool[index], bounds, true, with_depth, msaa) {
 		return -1, false
 	}
 	frame.pool_cursor += 1
+	frame.pool[index].in_use, frame.pool[index].used_this_encode = true, true
 	return index, true
 }
 
@@ -643,6 +771,10 @@ vector_gpu_select_pipeline :: proc(
 	mode: Vector_Stencil_Mode,
 ) -> ^sdl.GPUGraphicsPipeline {
 	g := &state.vector.gpu
+	if vector_gpu_frame().solid_instances {
+		kind := mode == .Write ? 3 : mode == .Pop ? 4 : stencil_depth > 0 ? 2 : with_depth ? 1 : 0
+		return g.solid_pipelines[msaa ? 0 : 1][kind]
+	}
 	if !msaa {
 		switch mode {
 		case .Write:
@@ -653,6 +785,7 @@ vector_gpu_select_pipeline :: proc(
 			if stencil_depth > 0 {
 				return g.pipeline_ss_stencil_test
 			}
+			if with_depth { return g.pipeline_ss_depth }
 			return g.pipeline_ss
 		}
 	}
@@ -728,7 +861,7 @@ vector_gpu_draw_clip_mesh :: proc(
 		{texture = ramp, sampler = g.sampler},
 	}
 	sdl.BindGPUFragmentSamplers(pass, 0, raw_data(bindings[:]), 3)
-	paint := [4]f32{}
+	paint := [8]f32{}
 	sdl.PushGPUFragmentUniformData(cmd, 0, &paint, u32(size_of(paint)))
 	sdl.DrawGPUIndexedPrimitivesIndirect(
 		pass,
@@ -787,7 +920,7 @@ vector_gpu_draw_list :: proc(
 					)
 				}
 			} else {
-				paint := [4]f32{}
+				paint := [8]f32{4 = 1, 5 = 1, 6 = 1, 7 = 1}
 				content, mask := g.white, g.white
 				draw_clip := clip
 				if record.kind == .Group || record.kind == .Mask {
@@ -797,9 +930,13 @@ vector_gpu_draw_list :: proc(
 						continue
 					}
 					content = frame.pool[output.content].resolved
+					content_target := frame.pool[output.content]
+					paint[4], paint[5] = record.bounds.w / content_target.alloc_w, record.bounds.h / content_target.alloc_h
 					paint[0] = 1
 					if record.kind == .Mask {
 						mask = frame.pool[output.mask].resolved
+						mask_target := frame.pool[output.mask]
+						paint[6], paint[7] = record.bounds.w / mask_target.alloc_w, record.bounds.h / mask_target.alloc_h
 						paint[1] = record.mask_kind == .Alpha ? 1 : 2
 						if record.clip.w > 0 && record.clip.h > 0 {
 							draw_clip = rect_intersect(draw_clip, record.clip)
@@ -843,13 +980,14 @@ vector_gpu_render_target :: proc(cmd: ^sdl.GPUCommandBuffer, target_index, first
 	samples := target.msaa ? u64(4) : u64(1)
 	work := u64(target.alloc_w) * u64(target.alloc_h) * samples
 	if work > VECTOR_MAX_SAMPLE_WORK - min(state.vector.gpu.sample_work, VECTOR_MAX_SAMPLE_WORK) {
-		return false
+		return vector_gpu_limit("sample-pixels", state.vector.gpu.sample_work + work, VECTOR_MAX_SAMPLE_WORK)
 	}
 	state.vector.gpu.sample_work += work
 	state.vector.gpu.command_visits += 1
 	if state.vector.gpu.command_visits > VECTOR_MAX_COMMAND_VISITS {
 		return false
 	}
+
 	colour := sdl.GPUColorTargetInfo{
 		texture = target.colour,
 		load_op = .CLEAR,
@@ -863,7 +1001,7 @@ vector_gpu_render_target :: proc(cmd: ^sdl.GPUCommandBuffer, target_index, first
 		stencil_load_op = .CLEAR,
 		stencil_store_op = .DONT_CARE,
 	}
-	pass := sdl.BeginGPURenderPass(cmd, &colour, 1, &depth)
+	pass := sdl.BeginGPURenderPass(cmd, &colour, 1, target.has_depth ? &depth : nil)
 	if pass == nil {
 		return false
 	}
@@ -871,7 +1009,8 @@ vector_gpu_render_target :: proc(cmd: ^sdl.GPUCommandBuffer, target_index, first
 	if scissor.w > 0 && scissor.h > 0 {
 		clip = rect_intersect(clip, scissor)
 	}
-	vector_gpu_draw_list(cmd, pass, first, target.bounds, clip, msaa = target.msaa, with_depth = true)
+	view := Rect{target.bounds.x, target.bounds.y, target.alloc_w, target.alloc_h}
+	vector_gpu_draw_list(cmd, pass, first, view, clip, msaa = target.msaa, with_depth = target.has_depth)
 	sdl.EndGPURenderPass(pass)
 	return true
 }
@@ -895,18 +1034,21 @@ vector_gpu_prepare_list :: proc(cmd: ^sdl.GPUCommandBuffer, first: int) -> bool 
 				if state.vector.gpu.command_visits > VECTOR_MAX_COMMAND_VISITS {
 					return false
 				}
-				content, ok := vector_gpu_pool_target(record.bounds, true)
+				content_msaa := vector_gpu_list_needs_msaa(record.first_child)
+				content, ok := vector_gpu_pool_target(record.bounds, content_msaa, vector_gpu_list_needs_stencil(record.first_child))
 				if !ok || !vector_gpu_render_target(cmd, content, record.first_child) {
 					return false
 				}
+				vector_gpu_release_list_outputs(record.first_child)
 				vector_gpu_frame().outputs[index] = {content = content, mask = -1}
 				if record.kind == .Mask {
 					// Masks keep 4× MSAA so curved boundaries retain coverage quality.
-					mask, mask_ok := vector_gpu_pool_target(record.bounds, true)
+					mask, mask_ok := vector_gpu_pool_target(record.bounds, true, vector_gpu_list_needs_stencil(record.first_mask))
 					mask_scissor := record.clip
 					if !mask_ok || !vector_gpu_render_target(cmd, mask, record.first_mask, mask_scissor) {
 						return false
 					}
+					vector_gpu_release_list_outputs(record.first_mask)
 					vector_gpu_frame().outputs[index].mask = mask
 				}
 			}
@@ -946,13 +1088,45 @@ and geometric clips keep the cleared attachment for stencil nesting.
 */
 @(private)
 vector_gpu_frame_needs_depth_clear :: proc() -> bool {
-	for record in vector_frame().records {
-		if record.kind == .Group || record.kind == .Mask || record.geometric {
-			return true
-		}
-	}
+	for draw in vector_frame().draws { if !draw.failed && vector_gpu_list_needs_stencil(draw.first) { return true } }
 
 	return false
+}
+
+@(private)
+vector_gpu_list_needs_msaa :: proc(first: int) -> bool {
+	for index := first; index >= 0; index = vector_frame().records[index].next {
+		record := vector_frame().records[index]
+		if record.kind == .Mesh || record.kind == .Path { return true }
+		if record.kind == .Clip && (record.geometric || vector_gpu_list_needs_msaa(record.first_child)) { return true }
+	}
+	return false
+}
+
+@(private)
+vector_gpu_list_needs_stencil :: proc(first: int) -> bool {
+	for index := first; index >= 0; index = vector_frame().records[index].next {
+		record := vector_frame().records[index]
+		if record.kind == .Clip && (record.geometric || vector_gpu_list_needs_stencil(record.first_child)) { return true }
+	}
+	return false
+}
+
+// A parent's completed render pass has consumed these resolved child images.
+// Reuse exact-sized textures in later passes; never replace an image already
+// referenced by this command buffer, so allocation accounting stays fence-safe.
+@(private)
+vector_gpu_release_list_outputs :: proc(first: int) {
+	frame := vector_gpu_frame()
+	for index := first; index >= 0; index = vector_frame().records[index].next {
+		record := vector_frame().records[index]
+		if record.kind == .Group || record.kind == .Mask {
+			output := frame.outputs[index]
+			if output.content >= 0 { frame.pool[output.content].in_use = false }
+			if output.mask >= 0 { frame.pool[output.mask].in_use = false }
+			frame.outputs[index] = {content = -1, mask = -1}
+		} else if record.kind == .Clip { vector_gpu_release_list_outputs(record.first_child) }
+	}
 }
 
 /*
@@ -1123,10 +1297,10 @@ vector_gpu_encode_frame :: proc(cmd: ^sdl.GPUCommandBuffer, format: sdl.GPUTextu
 	fence_ms := time.duration_milliseconds(time.tick_since(fence_start))
 
 	frame.pool_cursor = 0
+	for &target in frame.pool { target.in_use, target.used_this_encode = false, false }
 	content := vector_gpu_compute_composite_bounds()
 	needs_depth_clear := vector_gpu_frame_needs_depth_clear()
-	// Root stays colour-only so five in-flight slots fit the GPU budget; groups
-	// keep depth attachments via the pooled target path.
+	// Geometric clips need root stencil; other composition uses pooled targets.
 	if !vector_target_ensure(&frame.root, content, false, needs_depth_clear) {
 		return false
 	}
@@ -1140,13 +1314,18 @@ vector_gpu_encode_frame :: proc(cmd: ^sdl.GPUCommandBuffer, format: sdl.GPUTextu
 	bounds := frame.root.bounds
 	root_samples := u64(frame.root.alloc_w) * u64(frame.root.alloc_h) * 4
 	if root_samples > VECTOR_MAX_SAMPLE_WORK - min(state.vector.gpu.sample_work, VECTOR_MAX_SAMPLE_WORK) {
-		return false
+		return vector_gpu_limit("sample-pixels", state.vector.gpu.sample_work + root_samples, VECTOR_MAX_SAMPLE_WORK)
 	}
 	state.vector.gpu.sample_work += root_samples
 	state.vector.gpu.command_visits += 1
 	if state.vector.gpu.command_visits > VECTOR_MAX_COMMAND_VISITS {
 		return false
 	}
+
+	// Every ordered batch entry is visited on every replay, including UI.
+	visits := u64(len(batch_current().segments))
+	if visits > VECTOR_MAX_COMMAND_VISITS - state.vector.gpu.command_visits { return false }
+	state.vector.gpu.command_visits += visits
 
 	clear(&frame.outputs)
 	if resize(&frame.outputs, len(vector_frame().records)) != nil {
@@ -1213,21 +1392,13 @@ vector_gpu_encode_frame :: proc(cmd: ^sdl.GPUCommandBuffer, format: sdl.GPUTextu
 }
 
 /*
-Clears CPU upload bookkeeping and pooled targets after a cancelled encode.
-
-`vector_gpu_upload` records copy passes on the command buffer and may mark
-geometry as uploaded before prepare finishes. Cancelling that buffer means the
-GPU never received the copies, so the next encode must not skip vertex/index
-uploads. Pooled MSAA targets from the aborted buffer are released for the same
-reason.
+Releases pooled targets after a cancelled encode. A retry uploads the immutable
+frame buffers again and rebuilds intermediate images from the remaining draws.
 */
 @(private)
 vector_gpu_reset_after_cancelled_encode :: proc() {
 	frame := vector_gpu_frame()
-	frame.uploaded_geometry_epoch = 0
-	frame.uploaded_vertex_revision = 0
-	frame.uploaded_vertex_bytes = 0
-	frame.uploaded_index_bytes = 0
+	frame.index_snapshot_valid = false
 	for &target in frame.pool {
 		vector_target_release(&target, true)
 		target = {}
@@ -1243,7 +1414,9 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 	attempts := VECTOR_MAX_ENCODE_ATTEMPTS
 	state.vector.gpu.sample_work = 0
 	state.vector.gpu.command_visits = 0
+	state.vector.gpu.encode_attempts = 0
 	for _ in 0 ..< attempts {
+		state.vector.gpu.encode_attempts += 1
 		cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
 		if cmd == nil {
 			state.vector.last_error = .GPU_Failed
@@ -1279,18 +1452,20 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 }
 
 @(private)
-vector_gpu_present :: proc() {
+vector_gpu_present :: proc() -> bool {
 	format := sdl.GetGPUSwapchainTextureFormat(state.gpu, state.window)
 	background := sdl.FColor(color_to_f32(theme.background))
 	cmd := vector_gpu_prepare_frame(format, background)
 	if cmd == nil {
 		log_errorf("Vector frame encoding failed: %s", sdl.GetError())
-		return
+		if state.vector.gpu.command_visits >= VECTOR_MAX_COMMAND_VISITS || state.vector.gpu.encode_attempts >= VECTOR_MAX_ENCODE_ATTEMPTS { return true }
+		return false
 	}
 	target: ^sdl.GPUTexture
 	if !sdl.WaitAndAcquireGPUSwapchainTexture(cmd, state.window, &target, nil, nil) || target == nil {
 		_ = sdl.CancelGPUCommandBuffer(cmd)
-		return
+		vector_gpu_reset_after_cancelled_encode()
+		return true
 	}
 
 	// Clear the full swapchain, then blit the resolved MSAA root to its origin.
@@ -1302,10 +1477,9 @@ vector_gpu_present :: proc() {
 	}
 	clear_pass := sdl.BeginGPURenderPass(cmd, &clear_target, 1, nil)
 	if clear_pass == nil {
-		// Swapchain was acquired; Cancel is illegal — submit the empty buffer.
 		log_errorf("Vector swapchain clear failed: %s", sdl.GetError())
-		_ = sdl.SubmitGPUCommandBuffer(cmd)
-		return
+		vector_gpu_submit_frame(cmd)
+		return true
 	}
 	sdl.EndGPURenderPass(clear_pass)
 
@@ -1322,6 +1496,12 @@ vector_gpu_present :: proc() {
 		load_op = .LOAD,
 		filter = .NEAREST,
 	})
+	vector_gpu_submit_frame(cmd)
+	return true
+}
+
+@(private)
+vector_gpu_submit_frame :: proc(cmd: ^sdl.GPUCommandBuffer) {
 	frame := vector_gpu_frame()
 	frame.fence = sdl.SubmitGPUCommandBufferAndAcquireFence(cmd)
 	if frame.fence == nil {

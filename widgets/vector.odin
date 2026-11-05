@@ -146,7 +146,7 @@ vector_content :: proc(data: rawptr, id: o.UI_Id, frame: rawptr) {
 			if content.asset == nil { snapshot.error = .Invalid_Handle } else {
 				width, height := o.Svg_Intrinsic_Size(content.asset)
 				snapshot.viewport = {0, 0, f32(width), f32(height)}
-				instance, result := o.Prepare_Svg_Instance(content.asset, content.overrides, allocator)
+				instance, result := o.Prepare_Svg_Frame_Instance(content.asset, content.overrides, u64(id), u32(content.fit))
 				snapshot.instance, snapshot.diagnostics = instance, result
 				if !result.ok { snapshot.error = o.Svg_Result_Error(result) }
 				if result.ok && width > 0 && height > 0 && !vector_viewport_valid(snapshot.viewport) { snapshot.error = .Invalid_Value }

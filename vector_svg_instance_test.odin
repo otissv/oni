@@ -6,23 +6,20 @@ import "core:mem"
 import v "./vector"
 
 @(test)
-svg_recording_list_allocation_failure_rejects_submission_and_releases_paths :: proc(t: ^testing.T) {
+svg_recording_node_allocation_failure_is_atomic :: proc(t: ^testing.T) {
 	with_ui_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()
 		asset, loaded := Load_Svg_Memory(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8"/></svg>`)
 		defer Destroy_Svg_Asset(asset)
 		defer Destroy_Svg_Load_Result(&loaded)
-		for allowed in 0 ..< 2 {
+		for allowed in 0 ..< 1 {
 			fault := Test_Vector_Failing_Allocator{backing = context.allocator, remaining = allowed}
 			allocator := mem.Allocator{procedure = test_vector_failing_allocator, data = &fault}
-			handles := make([dynamic]Vector_Path_Handle, allocator)
 			nodes := make([dynamic]Vector_Node, allocator)
-			err := draw_svg_build_nodes(asset.roots, Vector_Identity, &nodes, &handles)
-			for handle in handles { _ = Vector_Destroy_Path(handle) }
-			delete(handles)
+			err := draw_svg_build_nodes(asset.roots, Vector_Identity, &nodes)
 			delete(nodes)
 			testing.expect_value(t, err, Vector_Error.Allocation_Failed)
-			for entry in state.vector.paths { testing.expect(t, !entry.live) }
+			vector_expect_owned_svg_cache(t)
 		}
 	})
 }
@@ -59,7 +56,7 @@ svg_recording_scratch_failure_sweep_is_atomic_for_overridden_composition :: proc
 				testing.expect_value(t, err, Vector_Error.Allocation_Failed)
 				testing.expect_value(t, len(vector_frame().draws), 0)
 			} else { testing.expect_value(t, err, Vector_Error.None); success = true }
-			for entry in state.vector.paths { testing.expect(t, !entry.live) }
+			vector_expect_owned_svg_cache(t)
 			vector_scene_reset()
 			if success { break }
 		}
@@ -173,7 +170,7 @@ svg_gpu_override_snapshots_survive_replay_after_an_earlier_instance_rendered :: 
 		defer vector_gpu_shutdown()
 		if !vector_composition_gpu_setup(t, 64, 32) { return }
 		state.ui.pass = .Draw
-		asset, loaded := Load_Svg_Memory(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><g id="g"><rect x="2" y="2" width="20" height="20"/></g></svg>`)
+		asset, loaded := Load_Svg_Memory(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><g id="g"><rect x="2" y="2" width="20" height="20"/><rect x="12" y="2" width="10" height="20"/></g></svg>`)
 		defer Destroy_Svg_Load_Result(&loaded)
 		testing.expect(t, asset != nil && loaded.ok)
 		if asset == nil { return }

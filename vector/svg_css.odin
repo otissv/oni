@@ -235,6 +235,9 @@ css_wins :: proc(a, b: Css_Cascade_Winner) -> bool {
 	return a.order >= b.order
 }
 Apply_Css_Cascade :: proc(node: ^Xml_Node, style: ^Computed_Style, viewport: [2]f64, ctx: ^Svg_Build_Ctx, inherited: Computed_Style) -> bool {
+	if declarations, found := ctx.cascade_cache[node]; found {
+		return svg_apply_cascade_declarations(declarations, node, style, viewport, ctx, inherited, false)
+	}
 	winners := make(map[string]Css_Cascade_Winner, context.temp_allocator)
 	for attr in node.attrs {
 		if attr.namespace == "" && svg_is_property(attr.name) { winners[attr.name] = {decl = {property = attr.name, value = attr.value}, order = -1} }
@@ -261,12 +264,23 @@ Apply_Css_Cascade :: proc(node: ^Xml_Node, style: ^Computed_Style, viewport: [2]
 			if !found || css_wins(candidate, previous) { winners[decl.property] = candidate }
 		}
 	}
+	declarations := make([dynamic]Css_Declaration)
 	for name in SVG_PROPERTIES {
 		winner, found := winners[name]
 		if !found { continue }
-		value := winner.decl.value
+		if _, err := append(&declarations, winner.decl); err != nil { return false }
+	}
+	if !svg_apply_cascade_declarations(declarations[:], node, style, viewport, ctx, inherited, true) { return false }
+	if ctx.retain_geometry { ctx.cascade_cache[node] = declarations[:] }
+	return !ctx.arena.failed
+}
+
+@(private)
+svg_apply_cascade_declarations :: proc(declarations: []Css_Declaration, node: ^Xml_Node, style: ^Computed_Style, viewport: [2]f64, ctx: ^Svg_Build_Ctx, inherited: Computed_Style, validate: bool) -> bool {
+	for declaration in declarations {
+		name, value := declaration.property, declaration.value
 		if keyword, is_wide := svg_css_wide(value); is_wide { value = keyword }
-		if !svg_validate_property(name, value, node, ctx) { return false }
+		if validate && !svg_validate_property(name, value, node, ctx) { return false }
 		if value == "inherit" || value == "unset" && svg_inherited_property(name) { svg_copy_property(style, inherited, name) }
 		else if value == "initial" || value == "unset" { svg_copy_property(style, Default_Computed_Style(), name) }
 		else if !svg_merge_property(style, name, value, viewport) {

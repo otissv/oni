@@ -1,0 +1,1 @@
+- [dead-code] Remove obsolete helpers and write-only fields when replacing a path. Bad: retain upload hashes after removing reuse. Good: remove the hash helper, fields, and every reset together.

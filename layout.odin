@@ -215,18 +215,224 @@ Layout_State :: struct {
 	stack_counter:       u32,
 	anchors_below:       [dynamic]Layout_Anchor_Below,
 	popup_anchors:       [dynamic]Layout_Popup_Anchor,
-	frame_arena:         mem.Arena,
-	frame_backing:       [dynamic]byte,
+	frame_arena:         Layout_Frame_Arena_Chain,
+	svg_instances:       [dynamic]^Svg_Instance,
 	// Artboard zoom captured once per layout frame / view change.
 	artboard_zoom:       f32,
 	artboard_zoom_valid: bool,
+}
+
+@(private)
+Layout_Frame_Arena_Block :: struct {
+	backing: [dynamic]byte,
+	arena:   mem.Arena,
+}
+
+/*
+Chained bump allocators: when the active block fills mid-frame, a new block is
+appended and prior blocks stay valid until reset/destroy.
+*/
+@(private)
+Layout_Frame_Arena_Chain :: struct {
+	blocks: [dynamic]Layout_Frame_Arena_Block,
+	active: int,
+}
+
+@(private)
+layout_frame_arena_chain_peak_used :: proc(chain: ^Layout_Frame_Arena_Chain) -> int {
+	total := 0
+	for &block in chain.blocks {
+		total += block.arena.peak_used
+	}
+
+	return total
+}
+
+@(private)
+layout_frame_arena_chain_total_capacity :: proc(chain: ^Layout_Frame_Arena_Chain) -> int {
+	total := 0
+	for &block in chain.blocks {
+		total += len(block.backing)
+	}
+
+	return total
+}
+
+@(private)
+layout_frame_arena_chain_active_block :: proc(
+	chain: ^Layout_Frame_Arena_Chain,
+) -> ^Layout_Frame_Arena_Block {
+	return &chain.blocks[chain.active]
+}
+
+@(private)
+layout_frame_arena_block_for_ptr :: proc(
+	chain: ^Layout_Frame_Arena_Chain,
+	ptr: rawptr,
+) -> ^Layout_Frame_Arena_Block {
+	if ptr == nil {
+
+		return layout_frame_arena_chain_active_block(chain)
+	}
+
+	for &block in chain.blocks {
+		start := raw_data(block.backing)
+		end := uintptr(start) + uintptr(len(block.backing))
+
+		if uintptr(ptr) >= uintptr(start) && uintptr(ptr) < end {
+
+			return &block
+		}
+	}
+
+	return layout_frame_arena_chain_active_block(chain)
+}
+
+@(private)
+layout_frame_arena_push_block :: proc(chain: ^Layout_Frame_Arena_Chain, min_bytes: int) {
+	need := min_bytes + mem.DEFAULT_ALIGNMENT * 2
+	cap: int
+
+	if len(chain.blocks) == 0 {
+		cap = max(LAYOUT_FRAME_ARENA_INITIAL, need)
+	} else {
+		active := layout_frame_arena_chain_active_block(chain)
+		cap = max(len(active.backing), need)
+	}
+
+	block: Layout_Frame_Arena_Block
+	resize(&block.backing, cap)
+	mem.arena_init(&block.arena, block.backing[:])
+	append(&chain.blocks, block)
+	chain.active = len(chain.blocks) - 1
+}
+
+@(private)
+layout_frame_arena_chain_rebuild :: proc(chain: ^Layout_Frame_Arena_Chain, retained_cap: int) {
+	for &block in chain.blocks {
+		delete(block.backing)
+	}
+	clear(&chain.blocks)
+	chain.active = 0
+
+	block: Layout_Frame_Arena_Block
+	resize(&block.backing, retained_cap)
+	mem.arena_init(&block.arena, block.backing[:])
+	append(&chain.blocks, block)
+}
+
+@(private)
+layout_frame_arena_chain_free_blocks :: proc(chain: ^Layout_Frame_Arena_Chain) {
+	for &block in chain.blocks {
+		delete(block.backing)
+	}
+	delete(chain.blocks)
+	chain.blocks = nil
+	chain.active = 0
+}
+
+@(private)
+layout_frame_arena_allocator_proc :: proc(
+	allocator_data: rawptr,
+	mode: mem.Allocator_Mode,
+	size, alignment: int,
+	old_memory: rawptr,
+	old_size: int,
+	loc := #caller_location,
+) -> ([]byte, mem.Allocator_Error) {
+	chain := cast(^Layout_Frame_Arena_Chain)allocator_data
+
+	if len(chain.blocks) == 0 {
+
+		return nil, .Invalid_Argument
+	}
+
+	switch mode {
+	case .Alloc, .Alloc_Non_Zeroed:
+		for {
+			block := layout_frame_arena_chain_active_block(chain)
+			sub := mem.arena_allocator(&block.arena)
+			bytes, err := sub.procedure(sub.data, mode, size, alignment, old_memory, old_size, loc)
+
+			if err != .Out_Of_Memory {
+
+				return bytes, err
+			}
+
+			layout_frame_arena_push_block(chain, size + alignment)
+		}
+	case .Free:
+		return nil, .Mode_Not_Implemented
+	case .Free_All:
+		for &block in chain.blocks {
+			mem.arena_free_all(&block.arena)
+		}
+		chain.active = 0
+
+		return nil, nil
+	case .Resize, .Resize_Non_Zeroed:
+		block := layout_frame_arena_block_for_ptr(chain, old_memory)
+		sub := mem.arena_allocator(&block.arena)
+		bytes, err := sub.procedure(sub.data, mode, size, alignment, old_memory, old_size, loc)
+
+		if err != .Out_Of_Memory {
+
+			return bytes, err
+		}
+
+		layout_frame_arena_push_block(chain, size + alignment)
+		new_block := layout_frame_arena_chain_active_block(chain)
+		new_sub := mem.arena_allocator(&new_block.arena)
+
+		if mode == .Resize {
+			bytes, err = mem.alloc_bytes(size, alignment, new_sub, loc)
+		} else {
+			bytes, err = mem.alloc_bytes_non_zeroed(size, alignment, new_sub, loc)
+		}
+
+		if err != nil {
+
+			return bytes, err
+		}
+
+		if old_memory != nil && old_size > 0 {
+			old_bytes := mem.byte_slice(old_memory, old_size)
+			copy(bytes, old_bytes)
+		}
+
+		return bytes, nil
+	case .Query_Features:
+		set := (^mem.Allocator_Mode_Set)(old_memory)
+
+		if set != nil {
+			set^ = {
+				.Alloc,
+				.Alloc_Non_Zeroed,
+				.Free_All,
+				.Resize,
+				.Resize_Non_Zeroed,
+				.Query_Features,
+			}
+		}
+
+		return nil, nil
+	case .Query_Info:
+		return nil, .Mode_Not_Implemented
+	}
+
+	return nil, nil
+}
+
+@(private)
+layout_frame_arena_chain_allocator :: proc(chain: ^Layout_Frame_Arena_Chain) -> mem.Allocator {
+	return mem.Allocator{procedure = layout_frame_arena_allocator_proc, data = chain}
 }
 
 /*
 True when a layout's frame arena has been initialized.
 */
 layout_uses_frame_arena_in :: proc(layout: ^Layout_State) -> bool {
-	return layout != nil && layout.frame_arena.data != nil
+	return layout != nil && len(layout.frame_arena.blocks) > 0
 }
 
 /*
@@ -241,8 +447,10 @@ Allocator for frame-owned data on a specific layout state.
 */
 layout_frame_allocator_for :: proc(layout: ^Layout_State) -> mem.Allocator {
 	if layout_uses_frame_arena_in(layout) {
-		return mem.arena_allocator(&layout.frame_arena)
+
+		return layout_frame_arena_chain_allocator(&layout.frame_arena)
 	}
+
 	return context.allocator
 }
 
@@ -258,34 +466,47 @@ layout_frame_allocator :: proc() -> mem.Allocator {
 
 @(private)
 layout_frame_arena_ensure :: proc(layout: ^Layout_State) {
-	if layout.frame_arena.data != nil do return
-	if len(layout.frame_backing) == 0 {
-		resize(&layout.frame_backing, LAYOUT_FRAME_ARENA_INITIAL)
-	}
-	mem.arena_init(&layout.frame_arena, layout.frame_backing[:])
+	if len(layout.frame_arena.blocks) > 0 do return
+
+	layout_frame_arena_push_block(&layout.frame_arena, 0)
+	layout.frame_arena.active = 0
 }
 
 @(private)
 layout_frame_arena_reset :: proc(layout: ^Layout_State) {
+	vector_svg_layout_frame_end()
 	layout_frame_arena_ensure(layout)
-	used := layout.frame_arena.peak_used
-	backing_len := len(layout.frame_backing)
-	// Grow before the next frame when the last pass used most of the backing.
-	// The arena cannot expand mid-frame without invalidating live pointers.
+	chain := &layout.frame_arena
+	used := layout_frame_arena_chain_peak_used(chain)
+	backing_len := layout_frame_arena_chain_total_capacity(chain)
+
 	if used > 0 && used > backing_len * 1 / 2 {
 		new_cap := max(backing_len * 2, used * 2, LAYOUT_FRAME_ARENA_INITIAL)
-		resize(&layout.frame_backing, new_cap)
-		mem.arena_init(&layout.frame_arena, layout.frame_backing[:])
+		layout_frame_arena_chain_rebuild(chain, new_cap)
 	} else {
-		mem.arena_free_all(&layout.frame_arena)
+		for &block in chain.blocks {
+			mem.arena_free_all(&block.arena)
+		}
+		chain.active = 0
+
+		if len(chain.blocks) > 1 {
+			layout_frame_arena_chain_rebuild(chain, max(backing_len, LAYOUT_FRAME_ARENA_INITIAL))
+		}
 	}
 }
 
 @(private)
 layout_frame_arena_destroy :: proc(layout: ^Layout_State) {
-	delete(layout.frame_backing)
-	layout.frame_backing = nil
-	layout.frame_arena = {}
+	vector_svg_layout_cache_shutdown()
+	if layout.svg_instances != nil {
+		for instance in layout.svg_instances { Destroy_Svg_Instance(instance) }
+		delete(layout.svg_instances)
+		layout.svg_instances = nil
+	}
+
+	if len(layout.frame_arena.blocks) > 0 {
+		layout_frame_arena_chain_free_blocks(&layout.frame_arena)
+	}
 }
 
 @(private)
@@ -2524,7 +2745,7 @@ layout_sort_children_by_order :: proc(node: ^Layout_Node) {
 /*
 Creates a layout node, links it to the parent, and pushes it on the stack.
 */
-layout_push_node :: proc(ui_id: UI_Id, config: Resolved_Widget_Config) -> ^Layout_Node {
+layout_push_node :: proc(ui_id: UI_Id, #by_ptr config: Resolved_Widget_Config) -> ^Layout_Node {
 	parent_index := -1
 	if len(state.ui.layout.node_stack) > 0 {
 		parent_index = state.ui.layout.node_stack[len(state.ui.layout.node_stack) - 1]

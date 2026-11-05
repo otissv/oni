@@ -1,6 +1,7 @@
 #+test
 package oni
 
+import "core:math"
 import "core:testing"
 import "core:mem"
 
@@ -116,15 +117,15 @@ vector_path_eviction_preserves_a_moved_protected_cache_and_recordings :: proc(t:
 		for scale in 1 ..= 3 {
 			transform := Vector_Transform{f64(scale), 0, 0, f64(scale), 0, 0}
 			testing.expect_value(t, Draw_Vector_Path(handle, {255, 0, 0, 255}, transform), Vector_Error.None)
-			state.vector.paths[handle.index - 1].cache[scale - 1].last_used = u64(scale)
+			state.vector.paths[handle.index - 1].cache[0].last_used = u64(scale)
 		}
 		before := vector_frame().vertices[0]
-		protected := 2
+		protected := 0
 		testing.expect(t, !vector_path_evict_cache(VECTOR_CPU_CACHE_BUDGET, int(handle.index - 1), &protected))
 		testing.expect_value(t, protected, 0)
 		entry := vector_path_entry(handle)
 		testing.expect_value(t, len(entry.cache), 1)
-		testing.expect_value(t, entry.cache[protected].linear[0], f64(3))
+		testing.expect_value(t, entry.cache[protected].linear[0], entry.cache[protected].linear[3])
 		testing.expect_value(t, vector_frame().vertices[0], before)
 		testing.expect_value(t, state.vector.path_cache_bytes, u64(cap(entry.cache)) * size_of(Vector_Path_Cache) + vector_path_cache_bytes(entry.cache[0].mesh))
 	})
@@ -164,6 +165,35 @@ vector_path_instances_share_snapshot_geometry_until_the_source_changes :: proc(t
 		testing.expect(t, vector_frame().instances[2].morph_linear != [4]f32{1, 0, 0, 1})
 		testing.expect_value(t, Vector_Destroy_Path(handle), Vector_Error.None)
 		testing.expect_value(t, len(vector_frame().commands), 3)
+	})
+}
+
+@(test)
+vector_path_fill_animated_linears_share_basis_cache :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer vector_scene_shutdown()
+		state.ui.pass = .Draw
+		commands := [4]Vector_Path_Command{
+			{kind = .Move, points = {{0, 0}, {}, {}}},
+			{kind = .Line, points = {{10, 0}, {}, {}}},
+			{kind = .Line, points = {{0, 10}, {}, {}}},
+			{kind = .Close},
+		}
+		handle, err := Vector_Create_Path(commands[:])
+		testing.expect_value(t, err, Vector_Error.None)
+		angles := [4]f64{0, math.PI * 0.25, math.PI * 0.5, math.PI * 0.75}
+		for angle in angles {
+			c := math.cos(angle)
+			s := math.sin(angle)
+			transform := Vector_Transform{c, s, -s, c, 0, 0}
+			testing.expect_value(t, Draw_Vector_Path(handle, {255, 0, 0, 255}, transform), Vector_Error.None)
+		}
+		entry := vector_path_entry(handle)
+		testing.expect_value(t, len(entry.cache), 1)
+		testing.expect(t, entry.cache[0].valid)
+		basis := vector_path_fill_tess_linear()
+		testing.expect_value(t, entry.cache[0].linear, basis)
+		testing.expect(t, vector_frame().instances[len(vector_frame().instances) - 1].morph_linear != [4]f32{1, 0, 0, 1})
 	})
 }
 

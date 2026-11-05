@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">
+  <defs>
+    <mask id="alpha" mask-type="alpha" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="48">
+      <ellipse id="alpha-shape" cx="32" cy="24" rx="29" ry="21" fill="white"/>
+    </mask>
+    <mask id="luma" mask-type="luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="48">
+      <ellipse id="luma-shape" cx="32" cy="24" rx="28" ry="20" fill="#b4b4b4"/>
+    </mask>
+  </defs>
+  <g mask="url(#luma)">
+    <g id="outer" opacity=".8">
+      <g mask="url(#alpha)">
+        <g id="inner" opacity=".7">
+          <path d="M4 24 C4 0 42 0 46 24 C46 48 4 48 4 24Z" fill="#dc5050"/>
+          <path d="M18 24 C18 2 60 2 60 24 C60 46 18 46 18 24Z" fill="#508cdc"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

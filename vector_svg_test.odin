@@ -24,7 +24,7 @@ svg_scene_records_masks_strokes_and_isolated_opacity :: proc(t: ^testing.T) {
 		testing.expect_value(t, root.kind, Vector_Node_Kind.Group)
 		testing.expect_value(t, root.opacity, f32(.5))
 		testing.expect_value(t, f.records[root.first_child].kind, Vector_Node_Kind.Mask)
-		for path in state.vector.paths { testing.expect(t, !path.live) }
+		vector_expect_owned_svg_cache(t)
 	})
 }
 
@@ -61,7 +61,7 @@ svg_recording_owns_paints_after_asset_release :: proc(t: ^testing.T) {
 		Destroy_Svg_Asset(asset)
 		testing.expect_value(t, len(vector_frame().draws), 1)
 		testing.expect_value(t, vector_frame().ramp_rows, 1)
-		for path in state.vector.paths { testing.expect(t, !path.live) }
+		vector_expect_owned_svg_cache(t)
 	})
 }
 
@@ -78,7 +78,7 @@ svg_clip_preparation_respects_aggregate_frame_budget :: proc(t: ^testing.T) {
 		vector_frame().new_segments = VECTOR_MAX_NEW_SEGMENTS
 		testing.expect_value(t, Draw_Svg_Asset(asset), Vector_Error.Limit_Exceeded)
 		testing.expect_value(t, len(vector_frame().draws), 0)
-		for path in state.vector.paths { testing.expect(t, !path.live) }
+		vector_expect_owned_svg_cache(t)
 	})
 }
 
@@ -95,7 +95,7 @@ svg_gpu_numeric_overflow_rejects_entire_submission :: proc(t: ^testing.T) {
 		testing.expect_value(t, Draw_Svg_Asset(asset), Vector_Error.Invalid_Value)
 		testing.expect_value(t, len(vector_frame().draws), 0)
 		testing.expect_value(t, len(vector_frame().vertices), 0)
-		for path in state.vector.paths { testing.expect(t, !path.live) }
+		vector_expect_owned_svg_cache(t)
 	})
 }
 
