@@ -65,8 +65,11 @@ Vector_Path_Entry :: struct #align(64) {
 	// non-convex rings); subsequent morph remeshes stay adaptive.
 	morph_uniform_ok: bool,
 	svg_retained: bool,
+	// Mesh-only SVG entries borrow commands only during synchronous recording.
+	svg_mesh_only: bool,
 	svg_key: [2]u64,
 	svg_command_hash: [2]u64,
+	svg_structure: [2]u64,
 	svg_lru_prev, svg_lru_next: Vector_Path_Handle,
 	last_used: u64,
 }
@@ -283,7 +286,7 @@ vector_path_error :: proc(err: v.Error) -> Vector_Error {
 }
 
 @(private)
-vector_path_entry :: proc(handle: Vector_Path_Handle) -> ^Vector_Path_Entry {
+vector_path_entry :: #force_inline proc(handle: Vector_Path_Handle) -> ^Vector_Path_Entry {
 	if state == nil || handle.index == 0 || u64(handle.index) > u64(len(state.vector.paths)) {
 		return nil
 	}
@@ -324,7 +327,7 @@ vector_paths_shutdown :: proc() {
 	state.vector.tess_jobs_in_use = false
 	for &entry in state.vector.paths {
 		vector_path_clear_cache(&entry)
-		delete(entry.commands, entry.command_allocator)
+		if !entry.svg_mesh_only { delete(entry.commands, entry.command_allocator) }
 		delete(entry.basis_commands, entry.command_allocator)
 	}
 	delete(state.vector.paths)
@@ -467,6 +470,7 @@ vector_path_mesh_bounds :: proc(mesh: v.Mesh) -> Rect {
 
 @(private)
 vector_path_ensure_basis_commands :: proc(entry: ^Vector_Path_Entry) -> Vector_Error {
+	if entry.svg_mesh_only { return .None }
 	if len(entry.basis_commands) > 0 {
 		return .None
 	}
@@ -606,6 +610,8 @@ vector_path_frame_tess_limits :: proc() -> (limits: v.Limits, err: Vector_Error)
 	}
 
 	limits.max_mesh_bytes = int(VECTOR_CPU_CACHE_BUDGET - state.vector.path_cache_bytes)
+	limits.max_pair_tests = min(limits.max_pair_tests, max(0, VECTOR_MAX_FRAME_PAIR_TESTS - vector_frame().pair_tests))
+	limits.max_exact_ops = min(limits.max_exact_ops, max(0, VECTOR_MAX_FRAME_EXACT_OPS - vector_frame().exact_ops))
 
 	return limits, .None
 }
@@ -1036,7 +1042,7 @@ vector_path_record_cached :: proc(
 // Hit-record fast path for Draw_Vector_Paths: hoisted dpi/zoom/opacity, solid-paint
 // and identity-morph shortcuts, caller-warmed instance/command/record capacity.
 @(private)
-vector_path_record_cached_fast :: proc(
+vector_path_record_cached_fast :: #force_inline proc(
 	entry: ^Vector_Path_Entry,
 	cache_index: int,
 	#by_ptr paint: Vector_Paint,
@@ -1046,6 +1052,7 @@ vector_path_record_cached_fast :: proc(
 	current_color: RGBA,
 	dpi_zoom: f64,
 	draw_opacity_scale: f32,
+	recording: ^Vector_Path_Record_Context = nil,
 ) -> Vector_Error {
 	if !(opacity >= 0 && opacity <= 1) {
 		return .Invalid_Value
@@ -1104,7 +1111,46 @@ vector_path_record_cached_fast :: proc(
 		cached.geometry_id,
 		morph,
 		&cached.recorded_geometry,
+		recording,
 	)
+}
+
+// A retained endpoint mesh can be refreshed on the owner without constructing
+// and installing a one-job burst. Failed work stays charged to the frame.
+@(private)
+vector_path_refresh_cached_fill :: proc(entry: ^Vector_Path_Entry, linear: [4]f64, rule: Vector_Fill_Rule) -> (index: int, handled: bool, err: Vector_Error) {
+	index = vector_path_find_cache_index(entry, linear, rule, require_valid = false)
+	if index < 0 || entry.affine_solvable || !entry.morph_uniform_ok || linear[0] <= 0 { return index, false, .None }
+	cached := &entry.cache[index]
+	if !cached.mesh.contour_slots || !entry.svg_mesh_only && len(entry.basis_commands) == 0 { return index, false, .None }
+	if state.vector.next_geometry_id == max(u64) { return index, true, .Limit_Exceeded }
+	limits, limit_error := vector_path_frame_tess_limits()
+	if limit_error != .None { return index, true, limit_error }
+	before := vector_path_cache_bytes(cached.mesh)
+	limits.max_mesh_bytes += int(before)
+	limits.uniform_subdivision = -1
+	usage: v.Build_Usage
+	handled_refresh, tess_error := v.Try_Refresh_Endpoint_Mesh(&cached.mesh, entry.commands,
+		{linear[0], linear[1], linear[2], linear[3], 0, 0}, rule, limits, &usage)
+	if !handled_refresh { return index, false, .None }
+	vector_path_charge_tess_work(usage, limits, tess_error != .None)
+	state.vector.path_cache_bytes = state.vector.path_cache_bytes - before + vector_path_cache_bytes(cached.mesh)
+	if tess_error == .Mesh_Memory_Limit { return index, false, .None }
+	if tess_error != .None { return index, true, vector_path_error(tess_error) }
+	_, recorded := vector_frame().geometry[cached.geometry_id]
+	if recorded || len(cached.mesh.vertices) != cached.geometry_vertex_count || len(cached.mesh.indices) != cached.geometry_index_count {
+		state.vector.next_geometry_id += 1
+		state.vector.gpu.geometry_epoch += 1
+		cached.geometry_id = state.vector.next_geometry_id
+	}
+	cached.bounds = vector_path_mesh_bounds(cached.mesh)
+	scale := f32(linear[0])
+	cached.local_bounds = {cached.bounds.x / scale, cached.bounds.y / scale, cached.bounds.w / scale, cached.bounds.h / scale}
+	cached.geometry_vertex_count = len(cached.mesh.vertices)
+	cached.geometry_index_count = len(cached.mesh.indices)
+	cached.last_used = state.ui.frame
+	cached.valid = true
+	return index, true, .None
 }
 
 /*
@@ -1113,12 +1159,13 @@ On any item failure after recording has begun, rolls the frame back so no partia
 batch (including half an SVG) remains visible to later submissions.
 */
 @(private)
-vector_path_record_cache_hits :: proc(items: []Vector_Path_Draw) -> (complete: bool, err: Vector_Error) {
+vector_path_record_cache_hits :: proc(items: []Vector_Path_Draw, recording: ^Vector_Path_Record_Context) -> (complete: bool, err: Vector_Error) {
 	f := vector_frame()
 	if !vector_reserve(&f.instances, len(f.instances) + len(items), VECTOR_MAX_FRAME_NODES) ||
 	   !vector_reserve(&f.commands, len(f.commands) + len(items), VECTOR_MAX_FRAME_NODES) {
 		return true, .Allocation_Failed
 	}
+	recording.capacity_reserved = true
 	linear := vector_path_fill_tess_linear()
 	dpi_zoom := f64(state.dpi.scale * view_artboard_zoom())
 	opacity_scale := draw_effective_opacity()
@@ -1131,9 +1178,30 @@ vector_path_record_cache_hits :: proc(items: []Vector_Path_Draw) -> (complete: b
 		if entry == nil { return true, .Invalid_Handle }
 		if item.op != .Fill { return false, .None }
 		cache_index := vector_path_find_cache_index(entry, linear, item.rule)
-		if cache_index < 0 { return false, .None }
+		if cache_index < 0 {
+			if len(items) >= VECTOR_TESS_PARALLEL_THRESHOLD { return false, .None }
+			refreshed, handled, refresh_error := vector_path_refresh_cached_fill(entry, linear, item.rule)
+			if refresh_error != .None { return true, refresh_error }
+			if handled {
+				cache_index = refreshed
+			} else {
+				// Small batches cannot use the worker pool. Resolve each miss in place
+				// instead of allocating a job list, dedup map and index array.
+				job, need, build_error := vector_path_build_miss_job(item.handle, entry, linear, item.rule)
+				if build_error != .None { return true, build_error }
+				if need {
+					jobs := [1]Vector_Tess_Job{job}
+					vector_tessellate_jobs_serial(jobs[:])
+					if install_error := vector_path_install_tess_job(&jobs[0]); install_error != .None { return true, install_error }
+					cache_index = jobs[0].cache_index
+				} else {
+					cache_index = vector_path_find_cache_index(entry, linear, item.rule)
+				}
+				if cache_index < 0 { return true, .Invalid_Path }
+			}
+		}
 		if record_err := vector_path_record_cached_fast(entry, cache_index, item.paint, item.transform,
-			item.opacity, item.instance_morph, item.current_color, dpi_zoom, opacity_scale); record_err != .None {
+			item.opacity, item.instance_morph, item.current_color, dpi_zoom, opacity_scale, recording); record_err != .None {
 			return true, record_err
 		}
 	}
@@ -1181,7 +1249,8 @@ Draw_Vector_Paths :: proc(items: []Vector_Path_Draw) -> Vector_Error {
 	saved_ramp_rows := f.ramp_rows
 	saved_revision := f.vertex_revision
 	saved_segments := len(batch_current().segments)
-	complete, hit_error := vector_path_record_cache_hits(items)
+	recording := Vector_Path_Record_Context{clip = batch_current_clip(), draw_space = draw_current_space(), stack_index = batch_current().current_stack}
+	complete, hit_error := vector_path_record_cache_hits(items, &recording)
 	if complete && hit_error == .None { return .None }
 	vector_scene_rollback_recording(saved_vertices, saved_indices, saved_instances, saved_commands,
 		saved_records, saved_draws, saved_ramps, saved_ramp_rows, saved_revision, saved_segments)
@@ -1190,6 +1259,7 @@ Draw_Vector_Paths :: proc(items: []Vector_Path_Draw) -> Vector_Error {
 		if saved_last_draw.first >= 0 && saved_last_draw.first < saved_records { f.records[saved_last_draw.first] = saved_last_record }
 	}
 	if complete { return hit_error }
+	recording.coalesce = false
 
 	jobs, buffer_error := vector_path_begin_jobs()
 	if buffer_error != .None { return buffer_error }
@@ -1344,6 +1414,7 @@ Draw_Vector_Paths :: proc(items: []Vector_Path_Draw) -> Vector_Error {
 			item.current_color,
 			dpi_zoom,
 			draw_opacity_scale,
+			&recording,
 		); err != .None && first_err == .None {
 			first_err = err
 		}
@@ -1397,20 +1468,27 @@ Vector_Create_Path :: proc(commands: []Vector_Path_Command) -> (handle: Vector_P
 	if copy_error != .None {
 		return {}, copy_error
 	}
+	return vector_register_path(owned, context.allocator, false)
+}
+
+@(private)
+vector_register_path :: proc(commands: []Vector_Path_Command, allocator: mem.Allocator, mesh_only: bool) -> (Vector_Path_Handle, Vector_Error) {
 	for len(state.vector.path_free) > 0 {
 		i := state.vector.path_free[len(state.vector.path_free) - 1]
 		resize(&state.vector.path_free, len(state.vector.path_free) - 1)
 		entry := &state.vector.paths[i]
-		entry.commands = owned
+		entry.commands = commands
 		entry.basis_commands = nil
 		entry.morph = Vector_Identity
-		entry.command_allocator = context.allocator
+		entry.command_allocator = allocator
 		entry.live = true
 		entry.affine_solvable = true
 		entry.morph_uniform_ok = true
 		entry.svg_retained = false
+		entry.svg_mesh_only = mesh_only
 		entry.svg_key = {}
 		entry.svg_command_hash = {}
+		entry.svg_structure = {}
 		entry.svg_lru_prev = {}
 		entry.svg_lru_next = {}
 		if entry.cache_lookup != nil {
@@ -1423,8 +1501,8 @@ Vector_Create_Path :: proc(commands: []Vector_Path_Command) -> (handle: Vector_P
 
 		return {index = u32(i + 1), generation = entry.generation}, .None
 	}
-	if _, append_error := append(&state.vector.paths, Vector_Path_Entry{commands = owned, morph = Vector_Identity, command_allocator = context.allocator, generation = 1, live = true, affine_solvable = true, morph_uniform_ok = true, command_revision = 1}); append_error != nil {
-		delete(owned)
+	if _, append_error := append(&state.vector.paths, Vector_Path_Entry{commands = commands, morph = Vector_Identity, command_allocator = allocator, generation = 1, live = true, affine_solvable = true, morph_uniform_ok = true, command_revision = 1, svg_mesh_only = mesh_only}); append_error != nil {
+		if !mesh_only { delete(commands, allocator) }
 		return {}, .Allocation_Failed
 	}
 	return {index = u32(len(state.vector.paths)), generation = 1}, .None
@@ -1435,7 +1513,7 @@ Vector_Create_Path :: proc(commands: []Vector_Path_Command) -> (handle: Vector_P
 // baked with morph, so stroke cache slots are invalidated here.
 Vector_Set_Path_Morph :: proc(handle: Vector_Path_Handle, morph: Vector_Transform) -> Vector_Error {
 	entry := vector_path_entry(handle)
-	if entry == nil {
+	if entry == nil || entry.svg_mesh_only {
 		return .Invalid_Handle
 	}
 	for value in morph {
@@ -1462,12 +1540,13 @@ Vector_Destroy_Path :: proc(handle: Vector_Path_Handle) -> Vector_Error {
 	if entry.svg_retained {
 		vector_svg_lru_unlink(handle)
 		delete_key(&state.vector.svg_paths, entry.svg_key)
-		state.vector.svg_path_bytes -= u64(len(entry.commands)) * size_of(Vector_Path_Command)
+		if !entry.svg_mesh_only { state.vector.svg_path_bytes -= u64(len(entry.commands)) * size_of(Vector_Path_Command) }
 		entry.svg_retained = false
 		entry.svg_key = {}
 		entry.svg_command_hash = {}
+		entry.svg_structure = {}
 	}
-	delete(entry.commands, entry.command_allocator)
+	if !entry.svg_mesh_only { delete(entry.commands, entry.command_allocator) }
 	delete(entry.basis_commands, entry.command_allocator)
 	entry.commands = nil
 	entry.basis_commands = nil
@@ -1486,7 +1565,7 @@ Vector_Destroy_Path :: proc(handle: Vector_Path_Handle) -> Vector_Error {
 // Vector_Update_Path) before the next Prefetch / Draw tessellation.
 Vector_Borrow_Path_Commands :: proc(handle: Vector_Path_Handle) -> ([]Vector_Path_Command, Vector_Error) {
 	entry := vector_path_entry(handle)
-	if entry == nil {
+	if entry == nil || entry.svg_mesh_only {
 		return nil, .Invalid_Handle
 	}
 	if state.vector.tess_workers != 0 {
@@ -1540,7 +1619,7 @@ Vector_Path_Geometry_Changed_Many :: proc(handles: []Vector_Path_Handle) -> Vect
 // stroke meshes bake morph into tessellated outlines.
 Vector_Update_Path :: proc(handle: Vector_Path_Handle, commands: []Vector_Path_Command) -> Vector_Error {
 	entry := vector_path_entry(handle)
-	if entry == nil {
+	if entry == nil || entry.svg_mesh_only {
 		return .Invalid_Handle
 	}
 

@@ -10,6 +10,7 @@ Svg_Element_Handle :: struct { revision, index: u32 }
 Svg_Path_Item :: struct {
 	commands: []Command,
 	commands_hash: [2]u64, // retained with immutable compiled command data
+	commands_structure: [2]u64,
 	transform: Affine,
 	fill, stroke: Paint,
 	fill_rule: Fill_Rule,
@@ -18,6 +19,8 @@ Svg_Path_Item :: struct {
 	draw_fill, draw_stroke: bool,
 	paint_order: Svg_Paint_Order,
 	element_index: u32, // source element index for paint-only override patching
+	parent_transform: Affine,
+	can_patch_transform: bool,
 }
 Svg_Asset :: struct {
 	revision: u32,
@@ -37,6 +40,10 @@ Svg_Asset :: struct {
 	owner: ^Svg_Revision_Owner,
 	geometry: map[Svg_Geometry_Key][]Command,
 	cascade_cache: map[^Xml_Node][]Css_Declaration,
+	instance_storage_bytes: int,
+	user_space_effects: bool,
+	flat_patch_indices: []int,
+	path_leaf_count: int,
 }
 
 @(private)
@@ -44,6 +51,10 @@ Svg_Revision_Owner :: struct {
 	refs: i64,
 	arena: ^Scratch_Arena,
 	allocator: mem.Allocator,
+	occurrence_mutex: sync.Mutex,
+	occurrence_chains: [dynamic]^Svg_Use_Chain,
+	occurrence_heads: map[[2]u64]^Svg_Use_Chain,
+	instance_block: ^Scratch_Block,
 }
 
 @(private)
@@ -52,6 +63,7 @@ Svg_Geometry_Key :: struct { node: ^Xml_Node, viewport: [2]f64 }
 @(private)
 svg_revision_release :: proc(owner: ^Svg_Revision_Owner) {
 	if owner == nil || sync.atomic_add(&owner.refs, -1) != 1 { return }
+	if owner.instance_block != nil { free(owner.instance_block, owner.allocator) }
 	scratch_arena_destroy(owner.arena)
 	free(owner.arena, owner.allocator)
 	free(owner, owner.allocator)
@@ -237,6 +249,37 @@ Load_Svg_From_String :: proc(source: string, opts := Svg_Load_Options{}, allocat
 	owner^ = {refs = 1, arena = arena, allocator = allocator}
 	asset.owner, asset.geometry = owner, ctx.geometry
 	asset.cascade_cache = ctx.cascade_cache
+	asset.user_space_effects = true
+	for element in asset.elements {
+		if element.name == "mask" {
+			units, _ := svg_attr(element, "maskUnits")
+			content, _ := svg_attr(element, "maskContentUnits")
+			if units != "userSpaceOnUse" || content == "objectBoundingBox" { asset.user_space_effects = false }
+		} else if element.name == "clipPath" {
+			units, _ := svg_attr(element, "clipPathUnits")
+			if units == "objectBoundingBox" { asset.user_space_effects = false }
+		}
+	}
+	asset.instance_storage_bytes = svg_instance_storage_bytes(asset.roots)
+	asset.path_leaf_count = svg_count_path_leaves(asset.roots)
+	flat := true
+	for &node in asset.roots { if node.kind != .Path { flat = false; break } }
+	if flat {
+		indices, index_error := make([]int, len(asset.elements) + 1)
+		if index_error != nil {
+			free(owner, allocator)
+			free(asset, allocator)
+			asset = nil
+			svg_load_failure(&result, arena, allocator)
+			return nil, result
+		}
+		for &index in indices { index = -1 }
+		for &node, index in asset.roots {
+			if indices[node.item.element_index] >= 0 { flat = false; break }
+			indices[node.item.element_index] = index
+		}
+		if flat { asset.flat_patch_indices = indices }
+	}
 	success, result.ok = true, true
 	return asset, result
 }

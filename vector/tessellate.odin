@@ -1,5 +1,6 @@
 package oni_vector
 
+
 import "core:math"
 import "core:mem"
 import "core:slice"
@@ -292,10 +293,26 @@ Tessellate :: proc(commands: []Command, transform: Affine, rule: Fill_Rule, limi
 	return mesh, err
 }
 
-// Reuses output capacity. Supplied scratch must support bulk release by its
-// caller; no scratch allocation is retained in the returned mesh.
-Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits := DEFAULT_LIMITS, scratch_allocator: mem.Allocator = {}, usage: ^Build_Usage = nil) -> Error {
-	if mesh == nil { return .Invalid_Path }
+// Attempts the allocation-free retained endpoint refresh. False leaves the mesh
+// unchanged and asks the caller to use full tessellation; handled failures clear
+// its drawable output and report the work consumed, like Tessellate_Into.
+Try_Refresh_Endpoint_Mesh :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits := DEFAULT_LIMITS, usage: ^Build_Usage = nil) -> (bool, Error) {
+	when ODIN_ARCH == .amd64 {
+		if vector_cpu_has_avx2() { return try_refresh_endpoint_mesh_avx2(mesh, commands, transform, rule, limits, usage) }
+	}
+	return try_refresh_endpoint_mesh(mesh, commands, transform, rule, limits, usage)
+}
+
+when ODIN_ARCH == .amd64 {
+	@(private, enable_target_feature="avx2")
+	try_refresh_endpoint_mesh_avx2 :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits: Limits, usage: ^Build_Usage) -> (bool, Error) {
+		return try_refresh_endpoint_mesh(mesh, commands, transform, rule, limits, usage)
+	}
+}
+
+@(private)
+try_refresh_endpoint_mesh :: #force_inline proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits: Limits, usage: ^Build_Usage) -> (bool, Error) {
+	if mesh == nil { return true, .Invalid_Path }
 	if usage != nil {
 		usage^ = {}
 	}
@@ -304,7 +321,7 @@ Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rul
 	   limits.max_exact_ops < 0 || limits.max_integer_bits <= 0 || limits.max_integer_bits > 4096 {
 		clear(&mesh.vertices)
 		clear(&mesh.indices)
-		return .Invalid_Value
+		return true, .Invalid_Value
 	}
 	if mesh.contour_slots && limits.uniform_subdivision < 0 && len(mesh.indices) > 0 {
 		work := Exact_Work{allowed = limits.max_exact_ops, width = limits.max_integer_bits}
@@ -316,9 +333,16 @@ Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rul
 				usage^ = {triangles = len(mesh.indices) / 3, flattened_segments = len(mesh.vertices), exact_ops = work.used, stable_remesh = err == .None}
 			}
 			if err != .None { clear(&mesh.vertices); clear(&mesh.indices); mesh.contour_slots = false }
-			return err
+			return true, err
 		}
 	}
+	return false, .None
+}
+
+// Reuses output capacity. Supplied scratch must support bulk release by its
+// caller; no scratch allocation is retained in the returned mesh.
+Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rule: Fill_Rule, limits := DEFAULT_LIMITS, scratch_allocator: mem.Allocator = {}, usage: ^Build_Usage = nil) -> Error {
+	if handled, err := Try_Refresh_Endpoint_Mesh(mesh, commands, transform, rule, limits, usage); handled { return err }
 	arena := Scratch_Arena{backing = context.allocator}
 	scratch := scratch_allocator
 	if scratch.procedure == nil {
@@ -330,6 +354,20 @@ Tessellate_Into :: proc(mesh: ^Mesh, commands: []Command, transform: Affine, rul
 	// Keep prior vertices/indices so compatible morph remesh can reposition.
 	output, err := tessellate_impl(commands, transform, rule, limits, mesh^, scratch, usage)
 	mesh^ = output
+	mesh.triangle_winding = 0
+	if err == .None && mesh.contour_slots {
+		winding := i8(0)
+		for i := 0; i < len(mesh.indices); i += 3 {
+			a, b, c := mesh.vertices[mesh.indices[i]], mesh.vertices[mesh.indices[i + 1]], mesh.vertices[mesh.indices[i + 2]]
+			left := (f64(b.x) - f64(a.x)) * (f64(c.y) - f64(a.y))
+			right := (f64(b.y) - f64(a.y)) * (f64(c.x) - f64(a.x))
+			area := left - right
+			sign := area < 0 ? i8(-1) : i8(1)
+			if !(abs(area) > (abs(left) + abs(right)) * 1e-14) || winding != 0 && winding != sign { winding = 0; break }
+			winding = sign
+		}
+		mesh.triangle_winding = winding
+	}
 	if usage != nil {
 		usage.triangles = len(mesh.indices) / 3
 	}

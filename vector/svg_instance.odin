@@ -4,10 +4,24 @@ import "core:mem"
 import "core:slice"
 import "core:fmt"
 import "core:sync"
+import "core:hash/xxhash"
 
 // Occurrences are value handles: no borrowed chain survives lookup or recording.
 // A use site itself belongs to the preceding chain; its target appends that site.
 Svg_Occurrence_Handle :: struct {
+	element: Svg_Element_Handle,
+	chain: u32,
+	depth: int,
+}
+@(private)
+Svg_Use_Chain :: struct {
+	sites: [128]u32,
+	depth: int,
+	index: u32,
+	next: ^Svg_Use_Chain,
+}
+@(private)
+Svg_Occurrence_Key :: struct {
 	element: Svg_Element_Handle,
 	use_chain: [128]u32,
 	depth: int,
@@ -17,12 +31,8 @@ Svg_Override :: struct {
 	target: Svg_Element_Handle,
 	occurrence: Svg_Occurrence_Handle,
 	property: Svg_Override_Property,
-	transform: Affine,
-	paint: Paint,
-	color: Color,
-	opacity: f64,
-	stroke: Stroke,
-	commands: []Command,
+	// Only the payload selected by property is live.
+	using value: Svg_Override_Value,
 }
 @(private)
 Svg_Override_Value :: struct #raw_union {
@@ -34,18 +44,6 @@ Svg_Override_Value :: struct #raw_union {
 	commands: []Command,
 }
 
-@(private)
-svg_override_value :: #force_inline proc(#by_ptr override: Svg_Override) -> Svg_Override_Value {
-	switch override.property {
-	case .Transform: return {transform = override.transform}
-	case .Fill, .Stroke: return {paint = override.paint}
-	case .Color: return {color = override.color}
-	case .Opacity, .Fill_Opacity, .Stroke_Opacity: return {opacity = override.opacity}
-	case .Stroke_Settings: return {stroke = override.stroke}
-	case .Path: return {commands = override.commands}
-	}
-	return {}
-}
 Svg_Instance_Budget :: struct { nodes, selectors, decoded_bytes: int }
 DEFAULT_SVG_INSTANCE_BUDGET :: Svg_Instance_Budget{200_000, 16_000_000, 64 * 1024 * 1024}
 Svg_Instance_Usage :: struct { nodes, selectors, decoded_bytes: int }
@@ -53,13 +51,14 @@ Svg_Instance :: struct {
 	roots: []Svg_Draw_Node,
 	width, height: f64,
 	usage: Svg_Instance_Usage,
-	arena: ^Scratch_Arena,
+	arena: Scratch_Arena,
 	allocator: mem.Allocator,
 	revision_owner: ^Svg_Revision_Owner,
+	reusable_storage: bool,
 }
 @(private)
 Svg_Override_Key :: struct {
-	occurrence: Svg_Occurrence_Handle,
+	occurrence: Svg_Occurrence_Key,
 	property: Svg_Override_Property,
 	definition: bool,
 }
@@ -86,6 +85,7 @@ Svg_Asset_Lookup_Occurrence :: proc(asset: ^Svg_Asset, use_sites: []Svg_Element_
 	terminal_node := svg_element_node(asset, terminal)
 	if !svg_visual_element(terminal_node) { return {}, false }
 	result := Svg_Occurrence_Handle{element = terminal, depth = len(use_sites)}
+	chain: [128]u32
 	boundary := asset.source
 	for site, i in use_sites {
 		node := svg_element_node(asset, site)
@@ -93,22 +93,64 @@ Svg_Asset_Lookup_Occurrence :: proc(asset: ^Svg_Asset, use_sites: []Svg_Element_
 		id, valid := svg_attr_href(node)
 		if !valid { return {}, false }
 		boundary = asset.ids[id]
-		result.use_chain[i] = site.index
+		chain[i] = site.index
 	}
-	return result, svg_occurrence_contains(asset, boundary, terminal_node)
+	if !svg_occurrence_contains(asset, boundary, terminal_node) { return {}, false }
+	if len(use_sites) == 0 { return result, true }
+	index, interned := svg_intern_use_chain(asset, chain, len(use_sites))
+	if !interned { return {}, false }
+	result.chain = index
+	return result, true
 }
+@(private)
+svg_intern_use_chain :: proc(asset: ^Svg_Asset, #by_ptr sites: [128]u32, depth: int) -> (u32, bool) {
+	owner := asset.owner
+	sync.mutex_lock(&owner.occurrence_mutex)
+	defer sync.mutex_unlock(&owner.occurrence_mutex)
+	key := sites
+	hash := transmute([2]u64)xxhash.XXH3_128_default(mem.slice_to_bytes(key[:depth]))
+	for chain := owner.occurrence_heads[hash]; chain != nil; chain = chain.next {
+		if chain.depth == depth && chain.sites == sites { return chain.index, true }
+	}
+	if owner.arena.failed || len(owner.occurrence_chains) >= asset.limits.max_elements { return 0, false }
+	context.allocator = {procedure = scratch_allocator_proc, data = owner.arena}
+	if reserve(&owner.occurrence_chains, len(owner.occurrence_chains) + 1) != nil ||
+	   reserve(&owner.occurrence_heads, len(owner.occurrence_heads) + 1) != nil { return 0, false }
+	chain, err := new(Svg_Use_Chain)
+	if err != nil { return 0, false }
+	chain^ = {sites = sites, depth = depth, index = u32(len(owner.occurrence_chains) + 1), next = owner.occurrence_heads[hash]}
+	if _, append_error := append(&owner.occurrence_chains, chain); append_error != nil { return 0, false }
+	owner.occurrence_heads[hash] = chain
+	return chain.index, true
+}
+
+@(private)
+svg_resolve_use_chain :: proc(asset: ^Svg_Asset, occurrence: Svg_Occurrence_Handle) -> ([128]u32, bool) {
+	if occurrence.depth == 0 { return {}, occurrence.chain == 0 }
+	if occurrence.depth < 0 || occurrence.depth > 128 || occurrence.chain == 0 { return {}, false }
+	owner := asset.owner
+	sync.mutex_lock(&owner.occurrence_mutex)
+	defer sync.mutex_unlock(&owner.occurrence_mutex)
+	if u64(occurrence.chain) > u64(len(owner.occurrence_chains)) { return {}, false }
+	chain := owner.occurrence_chains[occurrence.chain - 1]
+	return chain.sites, chain.depth == occurrence.depth
+}
+
 @(private)
 svg_occurrence_valid :: proc(asset: ^Svg_Asset, occurrence: Svg_Occurrence_Handle) -> bool {
 	if occurrence.depth < 0 || occurrence.depth > 128 { return false }
+	chain, found := svg_resolve_use_chain(asset, occurrence)
+	if !found { return false }
 	sites: [128]Svg_Element_Handle
-	for i in 0 ..< occurrence.depth { sites[i] = {revision = occurrence.element.revision, index = occurrence.use_chain[i]} }
+	for i in 0 ..< occurrence.depth { sites[i] = {revision = occurrence.element.revision, index = chain[i]} }
 	canonical, valid := Svg_Asset_Lookup_Occurrence(asset, sites[:occurrence.depth], occurrence.element)
 	return valid && canonical == occurrence
 }
 @(private)
-svg_override_key :: proc(#by_ptr override: Svg_Override) -> Svg_Override_Key {
+svg_override_key :: proc(asset: ^Svg_Asset, #by_ptr override: Svg_Override) -> Svg_Override_Key {
 	if override.target != {} { return {occurrence = {element = override.target}, property = override.property, definition = true} }
-	return {occurrence = override.occurrence, property = override.property}
+	chain, _ := svg_resolve_use_chain(asset, override.occurrence)
+	return {occurrence = {element = override.occurrence.element, depth = override.occurrence.depth, use_chain = chain}, property = override.property}
 }
 @(private)
 svg_find_override :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, property: Svg_Override_Property) -> (Svg_Override_Value, bool) {
@@ -142,7 +184,7 @@ svg_apply_overrides :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: ^Comput
 	return !ctx.arena.failed
 }
 @(private)
-svg_validate_override :: proc(asset: ^Svg_Asset, #by_ptr value: Svg_Override, result: ^Svg_Load_Result) -> bool {
+svg_validate_override :: proc(asset: ^Svg_Asset, value: ^Svg_Override, result: ^Svg_Load_Result) -> bool {
 	handle := value.target
 	if handle == {} { handle = value.occurrence.element }
 	node := svg_element_node(asset, handle)
@@ -165,6 +207,20 @@ svg_validate_override :: proc(asset: ^Svg_Asset, #by_ptr value: Svg_Override, re
 }
 
 @(private)
+svg_compiled_override_payload_valid :: #force_inline proc(value: ^Svg_Override) -> bool {
+	switch value.property {
+	case .Transform:
+		for component in value.transform { if !finite(component) { return false } }
+		return true
+	case .Fill, .Stroke: return Validate_Paint(value.paint) == .None
+	case .Opacity, .Fill_Opacity, .Stroke_Opacity: return finite(value.opacity) && value.opacity >= 0 && value.opacity <= 1
+	case .Path: return Validate_Commands(value.commands) == .None
+	case .Color, .Stroke_Settings: return false
+	}
+	return false
+}
+
+@(private)
 svg_prepare_leaf_patches :: proc(
 	asset: ^Svg_Asset,
 	overrides: []Svg_Override,
@@ -173,10 +229,13 @@ svg_prepare_leaf_patches :: proc(
 	usage: ^Svg_Instance_Usage,
 	result: ^Svg_Load_Result,
 ) -> (^Svg_Instance, bool) {
-	definition_overrides := make(map[[2]u32]Svg_Override_Value, context.temp_allocator)
+	// Small leaf patches need no temporary hash table. Bound the linear scan;
+	// large override sets retain the indexed path.
+	definition_overrides: map[[2]u32]Svg_Override_Value
+	if len(overrides) > 16 { definition_overrides = make(map[[2]u32]Svg_Override_Value, context.temp_allocator) }
 	selector_ops := 0
 	max_selector_ops := min(asset.limits.max_selector_ops, budget.selectors)
-	for &override in overrides {
+	for &override, i in overrides {
 		depth := override.target == {} ? override.occurrence.depth : 0
 		if depth < 0 || depth > 128 {
 			svg_push(result, .Invalid_Handle, "invalid occurrence depth", 0, 0)
@@ -199,7 +258,10 @@ svg_prepare_leaf_patches :: proc(
 			return nil, false
 		}
 		selector_ops += work + payload
-		if !svg_validate_override(asset, override, result) {
+		// Target identity and element compatibility were checked by the compiled
+		// patch classifier. Preserve detailed diagnostics on rejected payloads.
+		if !svg_compiled_override_payload_valid(&override) {
+			svg_validate_override(asset, &override, result)
 
 			return nil, false
 		}
@@ -210,17 +272,25 @@ svg_prepare_leaf_patches :: proc(
 			return nil, false
 		}
 
-		if definition_key in definition_overrides {
+		duplicate := false
+		if len(overrides) > 16 {
+			duplicate = definition_key in definition_overrides
+		} else {
+			for &previous in overrides[:i] {
+				if previous.target == override.target && previous.property == override.property { duplicate = true; break }
+			}
+		}
+		if duplicate {
 			svg_push(result, .Duplicate_Override, "duplicate SVG override target/property", 0, 0)
 
 			return nil, false
 		}
 
 		// Borrow caller paints; svg_prepare_patched_instance clones into the instance arena.
-		definition_overrides[definition_key] = svg_override_value(override)
+		if len(overrides) > 16 { definition_overrides[definition_key] = override.value }
 	}
 
-	instance, fast := svg_prepare_patched_instance(asset, definition_overrides, budget, allocator, usage)
+	instance, fast := svg_prepare_patched_instance(asset, definition_overrides, overrides, budget, allocator, usage)
 	result^ = fast
 
 	return instance, fast.ok
@@ -247,7 +317,7 @@ Svg_Prepare_Instance :: proc(asset: ^Svg_Asset, overrides: []Svg_Override = nil,
 		return
 	}
 
-	owner_bytes := size_of(Svg_Instance) + size_of(Scratch_Arena)
+	owner_bytes := size_of(Svg_Instance)
 	allowance := min(budget.decoded_bytes, asset.limits.max_decoded_bytes)
 	if allowance <= owner_bytes {
 		svg_push(&result, .Limit_Exceeded, fmt.tprintf("instance owner bytes required %d, allowed %d", owner_bytes, allowance), 0, 0)
@@ -273,18 +343,16 @@ Svg_Prepare_Instance :: proc(asset: ^Svg_Asset, overrides: []Svg_Override = nil,
 		svg_revision_release(asset.owner)
 	}
 
-	arena, err := new(Scratch_Arena, allocator)
-	if err != nil { svg_push(&result, .Allocation_Failed, "cannot allocate SVG instance owner", 0, 0); return }
-	arena^ = {backing = allocator, limit = allowance - owner_bytes}
+	arena := Scratch_Arena{backing = allocator, limit = allowance}
 	success := false
-	defer if !success { scratch_arena_destroy(arena); free(arena, allocator) }
-	context.allocator = {procedure = scratch_allocator_proc, data = arena}
+	defer if !success { scratch_arena_destroy(&arena) }
+	context.allocator = {procedure = scratch_allocator_proc, data = &arena}
 	context.temp_allocator = context.allocator
-	ctx := Svg_Build_Ctx{result = &result, arena = arena, limits = asset.limits, viewport = {asset.width, asset.height}, ids = asset.ids, parents = asset.parents, css = asset.css, element_indices = asset.element_indices, max_compile_nodes = budget.nodes}
+	ctx := Svg_Build_Ctx{result = &result, arena = &arena, limits = asset.limits, viewport = {asset.width, asset.height}, ids = asset.ids, parents = asset.parents, css = asset.css, element_indices = asset.element_indices, max_compile_nodes = budget.nodes}
 	ctx.geometry = asset.geometry
 	ctx.cascade_cache = asset.cascade_cache
 	ctx.limits.max_selector_ops = min(ctx.limits.max_selector_ops, budget.selectors)
-	defer if usage != nil { usage^ = {ctx.expanded_nodes, ctx.selector_ops, arena.reserved + owner_bytes} }
+	defer if usage != nil { usage^ = {ctx.expanded_nodes, ctx.selector_ops, arena.reserved} }
 	for &override in overrides {
 		depth := override.target == {} ? override.occurrence.depth : 0
 		if depth < 0 || depth > 128 { svg_push(&result, .Invalid_Handle, "invalid occurrence depth", 0, 0); return }
@@ -301,11 +369,11 @@ Svg_Prepare_Instance :: proc(asset: ^Svg_Asset, overrides: []Svg_Override = nil,
 		if work > remaining || payload > remaining - work { svg_push(&result, .Limit_Exceeded, fmt.tprintf("SVG override validation requires %d address and %d payload operations with %d remaining of %d allowed", work, payload, remaining, ctx.limits.max_selector_ops), 0, 0); return }
 		work += payload
 		ctx.selector_ops += work
-		if !svg_validate_override(asset, override, &result) { return }
+		if !svg_validate_override(asset, &override, &result) { return }
 		definition := override.target != {}
 		key: Svg_Override_Key
 		if !definition {
-			key = svg_override_key(override)
+			key = svg_override_key(asset, override)
 			key.occurrence.element.revision = 0
 		}
 		definition_key := [2]u32{override.target.index, u32(override.property)}
@@ -317,19 +385,20 @@ Svg_Prepare_Instance :: proc(asset: ^Svg_Asset, overrides: []Svg_Override = nil,
 			svg_push(&result, .Duplicate_Override, "duplicate SVG override target/property", node.line, node.column, node.name, fmt.tprintf("%v", override.property))
 			return
 		}
-		copy := svg_override_value(override)
+		copy := override.value
 		if override.property == .Fill || override.property == .Stroke {
 			copy.paint, _ = Clone_Paint(override.paint)
 		}
 		if override.property == .Stroke_Settings { copy.stroke.dash = slice.clone(override.stroke.dash) }
 		if override.property == .Path { copy.commands = slice.clone(override.commands) }
 		if definition { ctx.definition_overrides[definition_key] = copy } else { ctx.overrides[key] = copy }
-		if arena.failed { svg_load_failure(&result, arena, allocator); return }
+		if arena.failed { svg_load_failure(&result, &arena, allocator); return }
 	}
-	if !svg_compile_node(&ctx, asset.source, Default_Computed_Style(), IDENTITY) || arena.failed { svg_load_failure(&result, arena, allocator); return }
-	instance, err = new(Svg_Instance, allocator)
+	if !svg_compile_node(&ctx, asset.source, Default_Computed_Style(), IDENTITY) || arena.failed { svg_load_failure(&result, &arena, allocator); return }
+	err: mem.Allocator_Error
+	instance, err = new(Svg_Instance)
 	if err != nil { svg_push(&result, .Allocation_Failed, "cannot allocate SVG instance", 0, 0); return }
-	instance^ = {roots = ctx.roots[:], width = asset.width, height = asset.height, usage = {ctx.expanded_nodes, ctx.selector_ops, arena.reserved + owner_bytes}, arena = arena, allocator = allocator}
+	instance^ = {roots = ctx.roots[:], width = asset.width, height = asset.height, usage = {ctx.expanded_nodes, ctx.selector_ops, arena.reserved}, arena = arena, allocator = allocator}
 	instance.revision_owner = asset.owner
 	retained = true
 	success, result.ok = true, true
@@ -338,9 +407,14 @@ Svg_Prepare_Instance :: proc(asset: ^Svg_Asset, overrides: []Svg_Override = nil,
 }
 Destroy_Svg_Instance :: proc(instance: ^Svg_Instance) {
 	if instance == nil { return }
-	allocator := instance.allocator
-	svg_revision_release(instance.revision_owner)
-	scratch_arena_destroy(instance.arena)
-	free(instance.arena, allocator)
-	free(instance, allocator)
+	owner := instance.revision_owner
+	arena := instance.arena
+	// Keep at most one small allocation per revision. A custom instance
+	// allocator never leaves storage behind in an unrelated owner.
+	if instance.reusable_storage && arena.block != nil && arena.block.next == nil && arena.block.capacity <= 64 * 1024 {
+		_, retained := sync.atomic_compare_exchange_strong(&owner.instance_block, nil, arena.block)
+		if retained { arena.block = nil }
+	}
+	scratch_arena_destroy(&arena)
+	svg_revision_release(owner)
 }

@@ -2,6 +2,27 @@
 package oni
 
 import "core:testing"
+import "core:strings"
+import "core:fmt"
+
+@(test)
+svg_flat_recording_handles_small_and_large_path_lists :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer vector_scene_shutdown()
+		state.ui.pass = .Draw
+		for count in ([3]int{1, 8, 20}) {
+			paths := strings.repeat(`<path d="M0 0L8 0L0 8Z" fill="red" stroke="blue" stroke-width="1"/>`, count)
+			asset, loaded := Load_Svg_Memory(fmt.tprintf(`<svg xmlns="http://www.w3.org/2000/svg">%s</svg>`, paths))
+			delete(paths)
+			testing.expect(t, loaded.ok)
+			testing.expect_value(t, Draw_Svg_Asset(asset), Vector_Error.None)
+			testing.expect_value(t, len(vector_frame().commands), count * 2)
+			vector_scene_reset()
+			Destroy_Svg_Load_Result(&loaded)
+			Destroy_Svg_Asset(asset)
+		}
+	})
+}
 
 @(test)
 svg_scene_records_masks_strokes_and_isolated_opacity :: proc(t: ^testing.T) {
@@ -21,9 +42,11 @@ svg_scene_records_masks_strokes_and_isolated_opacity :: proc(t: ^testing.T) {
 		testing.expect_value(t, len(f.draws), 1)
 		if len(f.draws) != 1 { return }
 		root := f.records[f.draws[0].first]
-		testing.expect_value(t, root.kind, Vector_Node_Kind.Group)
+		testing.expect_value(t, root.kind, Vector_Node_Kind.Mask)
 		testing.expect_value(t, root.opacity, f32(.5))
-		testing.expect_value(t, f.records[root.first_child].kind, Vector_Node_Kind.Mask)
+		testing.expect_value(t, f.records[root.first_child].kind, Vector_Node_Kind.Path)
+		testing.expect(t, f.records[root.first_child].next >= 0, "fill and stroke remain inside the isolated mask")
+		testing.expect_value(t, f.instances[f.commands[root.command].first_instance].colour[3], f32(.5))
 		vector_expect_owned_svg_cache(t)
 	})
 }

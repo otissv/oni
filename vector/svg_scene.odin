@@ -10,6 +10,7 @@ Svg_Draw_Node :: struct {
 	clip_nodes: []Svg_Draw_Node,
 	mask_nodes: []Svg_Draw_Node,
 	mask_alpha: bool,
+	opacity_element: u32,
 }
 svg_count_path_leaves :: proc(nodes: []Svg_Draw_Node) -> int {
 	count := 0

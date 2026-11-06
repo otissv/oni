@@ -53,6 +53,7 @@ UI_State :: struct {
 	style_stack:         [dynamic]Style_Context,
 	widgets:             map[UI_Id]UI_Widget_Entry,
 	layout:              Layout_State,
+	render_scratch:      Layout_Frame_Arena_Chain,
 	layout_ids_prev:     map[UI_Id]bool,
 	layout_ids_snapshot: map[UI_Id]bool,
 	label_crc:           map[string]u32,

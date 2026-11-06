@@ -348,19 +348,43 @@ layout_frame_arena_allocator_proc :: proc(
 	}
 
 	switch mode {
-	case .Alloc, .Alloc_Non_Zeroed:
-		for {
-			block := layout_frame_arena_chain_active_block(chain)
-			sub := mem.arena_allocator(&block.arena)
-			bytes, err := sub.procedure(sub.data, mode, size, alignment, old_memory, old_size, loc)
-
-			if err != .Out_Of_Memory {
-
-				return bytes, err
+	case .Alloc, .Alloc_Non_Zeroed, .Resize, .Resize_Non_Zeroed:
+		if size < 0 || old_size < 0 || alignment <= 0 || alignment & (alignment - 1) != 0 ||
+		   size > max(int) - alignment - mem.DEFAULT_ALIGNMENT * 2 { return nil, .Invalid_Argument }
+		resizing := mode == .Resize || mode == .Resize_Non_Zeroed
+		zeroed := mode == .Alloc || mode == .Resize
+		block := layout_frame_arena_chain_active_block(chain)
+		if resizing && old_memory != nil {
+			if size == 0 { return nil, .Mode_Not_Implemented }
+			block = layout_frame_arena_block_for_ptr(chain, old_memory)
+			base := uintptr(raw_data(block.arena.data))
+			address := uintptr(old_memory)
+			if address < base || address - base > uintptr(block.arena.offset) ||
+			   uintptr(old_size) > uintptr(block.arena.offset) - (address - base) { return nil, .Invalid_Argument }
+			start := int(address - base)
+			if address % uintptr(alignment) == 0 && (size == old_size ||
+			   start + old_size == block.arena.offset && size <= len(block.arena.data) - start) {
+				if start + old_size == block.arena.offset {
+					block.arena.offset = start + size
+					block.arena.peak_used = max(block.arena.peak_used, block.arena.offset)
+				}
+				bytes := block.arena.data[start:][:size]
+				if zeroed && size > old_size { mem.zero_slice(bytes[old_size:]) }
+				return bytes, nil
 			}
-
-			layout_frame_arena_push_block(chain, size + alignment)
 		}
+		bytes, err := layout_frame_arena_take(block, size, alignment)
+		if err == .Out_Of_Memory {
+			layout_frame_arena_push_block(chain, size + alignment)
+			bytes, err = layout_frame_arena_take(layout_frame_arena_chain_active_block(chain), size, alignment)
+		}
+		if err != nil { return nil, err }
+		copied := 0
+		if resizing && old_memory != nil && old_size > 0 {
+			copied = copy(bytes, mem.byte_slice(old_memory, old_size))
+		}
+		if zeroed { mem.zero_slice(bytes[copied:]) }
+		return bytes, nil
 	case .Free:
 		return nil, .Mode_Not_Implemented
 	case .Free_All:
@@ -370,37 +394,6 @@ layout_frame_arena_allocator_proc :: proc(
 		chain.active = 0
 
 		return nil, nil
-	case .Resize, .Resize_Non_Zeroed:
-		block := layout_frame_arena_block_for_ptr(chain, old_memory)
-		sub := mem.arena_allocator(&block.arena)
-		bytes, err := sub.procedure(sub.data, mode, size, alignment, old_memory, old_size, loc)
-
-		if err != .Out_Of_Memory {
-
-			return bytes, err
-		}
-
-		layout_frame_arena_push_block(chain, size + alignment)
-		new_block := layout_frame_arena_chain_active_block(chain)
-		new_sub := mem.arena_allocator(&new_block.arena)
-
-		if mode == .Resize {
-			bytes, err = mem.alloc_bytes(size, alignment, new_sub, loc)
-		} else {
-			bytes, err = mem.alloc_bytes_non_zeroed(size, alignment, new_sub, loc)
-		}
-
-		if err != nil {
-
-			return bytes, err
-		}
-
-		if old_memory != nil && old_size > 0 {
-			old_bytes := mem.byte_slice(old_memory, old_size)
-			copy(bytes, old_bytes)
-		}
-
-		return bytes, nil
 	case .Query_Features:
 		set := (^mem.Allocator_Mode_Set)(old_memory)
 
@@ -421,6 +414,18 @@ layout_frame_arena_allocator_proc :: proc(
 	}
 
 	return nil, nil
+}
+
+@(private)
+layout_frame_arena_take :: #force_inline proc(block: ^Layout_Frame_Arena_Block, size, alignment: int) -> ([]byte, mem.Allocator_Error) {
+	base := uintptr(raw_data(block.arena.data))
+	address := mem.align_forward_uintptr(base + uintptr(block.arena.offset), uintptr(alignment))
+	if address < base || address - base > uintptr(len(block.arena.data)) ||
+	   uintptr(size) > uintptr(len(block.arena.data)) - (address - base) { return nil, .Out_Of_Memory }
+	start := int(address - base)
+	block.arena.offset = start + size
+	block.arena.peak_used = max(block.arena.peak_used, block.arena.offset)
+	return block.arena.data[start:][:size], nil
 }
 
 @(private)
@@ -476,7 +481,11 @@ layout_frame_arena_ensure :: proc(layout: ^Layout_State) {
 layout_frame_arena_reset :: proc(layout: ^Layout_State) {
 	vector_svg_layout_frame_end()
 	layout_frame_arena_ensure(layout)
-	chain := &layout.frame_arena
+	layout_frame_arena_chain_reset(&layout.frame_arena)
+}
+
+@(private)
+layout_frame_arena_chain_reset :: proc(chain: ^Layout_Frame_Arena_Chain) {
 	used := layout_frame_arena_chain_peak_used(chain)
 	backing_len := layout_frame_arena_chain_total_capacity(chain)
 

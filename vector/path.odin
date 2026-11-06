@@ -1,6 +1,7 @@
 package oni_vector
 
 import "core:math"
+import "base:intrinsics"
 
 Point :: [2]f64
 Affine :: [6]f64
@@ -85,6 +86,8 @@ Mesh :: struct {
 	indices: [dynamic]u32,
 	// Internal: vertices follow the original close-stripped contour slots.
 	contour_slots: bool,
+	// Certified by tessellation; zero retains full old/new orientation checks.
+	triangle_winding: i8,
 }
 
 Destroy_Path :: proc(path: ^Path) {
@@ -148,17 +151,24 @@ Validate_Commands :: proc(commands: []Command, limits := DEFAULT_LIMITS) -> Erro
 	if len(commands) > 0 && commands[0].kind != .Move {
 		return .Invalid_Path
 	}
-	for command in commands {
-		if command.kind < .Move || command.kind > .Close {
-			return .Invalid_Path
-		}
-		for point in command.points {
-			if !finite(point.x) || !finite(point.y) {
-				return .Invalid_Value
+	valid_values: #simd[8]u64 = max(u64)
+	invalid_kind, invalid_rotation: u64
+	mask: #simd[8]u64 = 0x7fffffffffffffff
+	maximum: #simd[8]f64 = max(f64)
+	for &command in commands {
+		bits := intrinsics.unaligned_load(cast(^#simd[8]u64)&command.points)
+		valid_values &= intrinsics.simd_lanes_le(transmute(#simd[8]f64)(bits & mask), maximum)
+		invalid_kind |= u64(u64(command.kind) > u64(Command_Kind.Close))
+		invalid_rotation |= u64(!finite(command.rotation))
+	}
+	if intrinsics.simd_reduce_and(valid_values) != max(u64) || invalid_kind != 0 || invalid_rotation != 0 {
+		// Preserve the first-error ordering for invalid mixed inputs.
+		for &command in commands {
+			if command.kind < .Move || command.kind > .Close { return .Invalid_Path }
+			for point in command.points {
+				if !finite(point.x) || !finite(point.y) { return .Invalid_Value }
 			}
-		}
-		if !finite(command.radii.x) || !finite(command.radii.y) || !finite(command.rotation) {
-			return .Invalid_Value
+			if !finite(command.radii.x) || !finite(command.radii.y) || !finite(command.rotation) { return .Invalid_Value }
 		}
 	}
 	return .None

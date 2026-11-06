@@ -2,6 +2,50 @@
 package oni
 
 import "core:testing"
+import "core:mem"
+import "base:runtime"
+
+@(private)
+render_scratch_test_data: []byte
+@(private)
+render_scratch_test_allocator: mem.Allocator
+@(private)
+render_scratch_test_survived: bool
+
+@(private)
+render_scratch_test_builder :: proc() {
+	if ui_pass() == .Layout {
+		render_scratch_test_allocator = context.temp_allocator
+		render_scratch_test_data = make([]byte, 128, context.temp_allocator)
+		render_scratch_test_data[0] = 91
+	} else { render_scratch_test_survived = render_scratch_test_data[0] == 91 }
+}
+
+@(test)
+ui_render_scratch_survives_both_passes_and_preserves_custom_allocator :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer render_scratch_test_data = nil
+		context.temp_allocator = runtime.default_context().temp_allocator
+		ui_begin_frame()
+		render_scratch_test_survived = false
+		render(render_scratch_test_builder)
+		testing.expect(t, render_scratch_test_survived)
+		testing.expect(t, render_scratch_test_allocator.data == &state.ui.render_scratch)
+		testing.expect(t, context.temp_allocator.procedure == runtime.default_temp_allocator_proc)
+		capacity := layout_frame_arena_chain_total_capacity(&state.ui.render_scratch)
+		ui_begin_frame()
+		render(render_scratch_test_builder)
+		testing.expect_value(t, layout_frame_arena_chain_total_capacity(&state.ui.render_scratch), capacity)
+		storage := make([]byte, 64 * mem.Kilobyte)
+		defer delete(storage)
+		arena: mem.Arena
+		mem.arena_init(&arena, storage)
+		context.temp_allocator = mem.arena_allocator(&arena)
+		ui_begin_frame()
+		render(render_scratch_test_builder)
+		testing.expect(t, render_scratch_test_allocator.data == &arena)
+	})
+}
 
 @(test)
 ui_init_is_idempotent_and_allocates_maps :: proc(t: ^testing.T) {

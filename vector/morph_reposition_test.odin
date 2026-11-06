@@ -6,6 +6,35 @@ import "core:math"
 import "core:testing"
 
 @(test)
+endpoint_refresh_dispatch_matches_portable_geometry_and_usage :: proc(t: ^testing.T) {
+	when ODIN_ARCH == .amd64 {
+		if !vector_cpu_has_avx2() { return }
+		commands := make_circleish()
+		defer delete(commands)
+		limits := DEFAULT_LIMITS
+		limits.uniform_subdivision = -1
+		a, b: Mesh
+		defer Destroy_Mesh(&a)
+		defer Destroy_Mesh(&b)
+		testing.expect_value(t, Tessellate_Into(&a, commands[:], IDENTITY, .Nonzero, limits), Error.None)
+		testing.expect_value(t, Tessellate_Into(&b, commands[:], IDENTITY, .Nonzero, limits), Error.None)
+		for _ in 0 ..< 64 {
+			commands[1].points[2].x += .00137
+			ua, ub: Build_Usage
+			ha, ea := try_refresh_endpoint_mesh(&a, commands[:], IDENTITY, .Nonzero, limits, &ua)
+			hb, eb := try_refresh_endpoint_mesh_avx2(&b, commands[:], IDENTITY, .Nonzero, limits, &ub)
+			testing.expect_value(t, ha, hb)
+			testing.expect_value(t, ea, eb)
+			testing.expect_value(t, ua, ub)
+			testing.expect_value(t, len(a.vertices), len(b.vertices))
+			testing.expect_value(t, len(a.indices), len(b.indices))
+			for vertex, i in a.vertices { testing.expect_value(t, vertex, b.vertices[i]) }
+			for index, i in a.indices { testing.expect_value(t, index, b.indices[i]) }
+		}
+	}
+}
+
+@(test)
 endpoint_quantization_matches_rounding_at_ties_and_limits :: proc(t: ^testing.T) {
 	for value in ([12]f64{0, -.0, .5, -.5, .49999999999999994, -.49999999999999994, 1.5, -1.5, 1073741824, -1073741824, 1073741823.5, -1073741823.5}) {
 		p := Point{value / 1024, -value / 1024}
@@ -47,10 +76,15 @@ morph_orientation_filter_preserves_signs_and_rejects_degeneracy :: proc(t: ^test
 	append(&mesh.indices, ..indices[:])
 	points := [3]Integer_Point{{0, 0}, {20480, 0}, {0, 20480}}
 	testing.expect(t, mesh_reposition_orientation_ok(mesh, points[:]))
+	testing.expect(t, mesh_reposition_orientation_ok(mesh, points[:], 1))
+	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:], -1))
 	points[2] = {0, -20480}
 	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:]))
+	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:], 1))
+	testing.expect(t, mesh_reposition_orientation_ok(mesh, points[:], -1))
 	points[2] = {40960, 0}
 	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:]))
+	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:], 1))
 	points[2] = {0, 20480}
 	mesh.vertices[2] = {20, 0}
 	testing.expect(t, !mesh_reposition_orientation_ok(mesh, points[:]))
@@ -121,6 +155,28 @@ endpoint_morph_accepts_redundant_close_commands :: proc(t: ^testing.T) {
 	ok, err := mesh_reposition_from_endpoint_commands(commands[:], IDENTITY, &mesh, &work)
 	testing.expect(t, ok)
 	testing.expect_value(t, err, Error.None)
+}
+
+@(test)
+endpoint_refresh_reports_inapplicability_and_charges_success :: proc(t: ^testing.T) {
+	commands := [5]Command{{kind = .Move}, {kind = .Line, points = {{10, 0}, {}, {}}},
+		{kind = .Line, points = {{10, 10}, {}, {}}}, {kind = .Line, points = {{0, 10}, {}, {}}}, {kind = .Close}}
+	limits := DEFAULT_LIMITS
+	limits.uniform_subdivision = -1
+	mesh: Mesh
+	defer Destroy_Mesh(&mesh)
+	usage: Build_Usage
+	handled, err := Try_Refresh_Endpoint_Mesh(&mesh, commands[:], IDENTITY, .Nonzero, limits, &usage)
+	testing.expect(t, !handled && err == .None && len(mesh.vertices) == 0)
+	testing.expect_value(t, Tessellate_Into(&mesh, commands[:], IDENTITY, .Nonzero, limits), Error.None)
+	commands[1].points[0].x = 11
+	handled, err = Try_Refresh_Endpoint_Mesh(&mesh, commands[:], IDENTITY, .Nonzero, limits, &usage)
+	testing.expect(t, handled && err == .None && usage.stable_remesh)
+	testing.expect_value(t, usage.flattened_segments, len(mesh.vertices))
+	testing.expect(t, usage.exact_ops > 0)
+	limits.max_exact_ops = 0
+	handled, err = Try_Refresh_Endpoint_Mesh(&mesh, commands[:], IDENTITY, .Nonzero, limits, &usage)
+	testing.expect(t, handled && err == .Limit_Exceeded && len(mesh.indices) == 0)
 }
 
 make_circleish :: proc() -> [dynamic]Command {

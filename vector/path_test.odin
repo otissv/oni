@@ -4,6 +4,26 @@ package oni_vector
 import "core:math"
 import "core:testing"
 
+@(test)
+path_validation_checks_every_numeric_command_field :: proc(t: ^testing.T) {
+	for value in ([3]f64{math.nan_f64(), math.inf_f64(1), math.inf_f64(-1)}) {
+		for field in 0 ..< 9 {
+			commands := [2]Command{{kind = .Move}, {kind = .Cubic}}
+			if field < 6 { commands[1].points[field / 2][field % 2] = value }
+			if field == 6 { commands[1].radii.x = value }
+			if field == 7 { commands[1].radii.y = value }
+			if field == 8 { commands[1].rotation = value }
+			testing.expect_value(t, Validate_Commands(commands[:]), Error.Invalid_Value)
+		}
+	}
+	commands := [1]Command{{kind = .Move, points = {{max(f64), -max(f64)}, {}, {}}}}
+	testing.expect_value(t, Validate_Commands(commands[:]), Error.None)
+	ordered := [3]Command{{kind = .Move}, {kind = .Line, rotation = math.nan_f64()}, {kind = Command_Kind(99)}}
+	testing.expect_value(t, Validate_Commands(ordered[:]), Error.Invalid_Value)
+	ordered[1], ordered[2] = ordered[2], ordered[1]
+	testing.expect_value(t, Validate_Commands(ordered[:]), Error.Invalid_Path)
+}
+
 @(private)
 test_area :: proc(mesh: Mesh) -> (area: f64) {
 	for i := 0; i < len(mesh.indices); i += 3 {

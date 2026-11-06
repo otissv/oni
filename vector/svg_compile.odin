@@ -30,7 +30,7 @@ svg_style_to_stroke :: proc(style: Computed_Style) -> Stroke {
 	return {width = style.stroke_width, cap = style.stroke_cap, join = style.stroke_join, miter_limit = style.stroke_miter, dash = style.dash, dash_offset = style.dash_offset, path_length = style.path_length, non_scaling = style.non_scaling}
 }
 @(private)
-svg_emit_shape :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Style, transform: Affine) -> bool {
+svg_emit_shape :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Style, transform, parent_transform: Affine) -> bool {
 	if style.visibility != .Visible { return true }
 	path: Path
 	limits := DEFAULT_LIMITS
@@ -70,12 +70,16 @@ svg_emit_shape :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_Sty
 		element_index = idx
 	}
 
+	structure: [2]u64
+	command_hash := Commands_Hash(commands, &structure)
 	append(&ctx.roots, Svg_Draw_Node{kind = .Path, opacity = 1, item = {
-		commands = commands, commands_hash = Commands_Hash(commands), transform = transform, fill = fill, stroke = stroke,
+		commands = commands, commands_hash = command_hash, commands_structure = structure, transform = transform, fill = fill, stroke = stroke,
 		fill_rule = rule, opacity = 1, fill_opacity = ctx.clip_mode ? 1 : style.fill_opacity, stroke_opacity = style.stroke_opacity,
 		stroke_settings = settings, draw_fill = fill.kind != .None, draw_stroke = stroke.kind != .None && settings.width > 0,
 		paint_order = style.paint_order,
 		element_index = element_index,
+		parent_transform = parent_transform,
+		can_patch_transform = style.clip_path_id == "" && style.mask_id == "" && style.opacity == 1,
 	}})
 	return true
 }
@@ -175,7 +179,7 @@ svg_wrap_effects :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, style: Computed_S
 		mask_nodes = svg_single_node(Svg_Draw_Node{kind = .Clip, opacity = 1, children = mask_nodes, clip_items = slice.clone([]Svg_Path_Item{{commands = region.commands[:], transform = region_transform, fill_rule = .Nonzero}})})
 		children = svg_single_node(Svg_Draw_Node{kind = .Mask, opacity = 1, children = children, mask_nodes = mask_nodes, mask_alpha = mask_style.mask_alpha})
 	}
-	if style.opacity != 1 && !ctx.clip_mode { children = svg_single_node(Svg_Draw_Node{kind = .Group, opacity = style.opacity, children = children}) }
+	if style.opacity != 1 && !ctx.clip_mode { children = svg_single_node(Svg_Draw_Node{kind = .Group, opacity = style.opacity, children = children, opacity_element = ctx.element_indices[node]}) }
 	append(&ctx.roots, ..children)
 	return !ctx.arena.failed
 }
@@ -259,7 +263,7 @@ svg_compile_node :: proc(ctx: ^Svg_Build_Ctx, node: ^Xml_Node, inherited: Comput
 		}
 	}
 	if svg_is_shape_element(node.name) {
-		if !svg_emit_shape(ctx, node, style, combined) { return false }
+		if !svg_emit_shape(ctx, node, style, combined, transform) { return false }
 	} else {
 		for &child in node.children { if !svg_compile_node(ctx, &child, style, combined) { return false } }
 	}

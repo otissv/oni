@@ -6,6 +6,28 @@ import "core:mem"
 import v "./vector"
 
 @(test)
+svg_layout_snapshot_cache_tracks_active_override_values :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer vector_scene_shutdown()
+		asset, loaded := Load_Svg_Memory(`<svg xmlns="http://www.w3.org/2000/svg"><path id="p" d="M0 0L8 0L0 8Z"/></svg>`)
+		defer Destroy_Svg_Asset(asset)
+		defer Destroy_Svg_Load_Result(&loaded)
+		defer vector_svg_layout_frame_end()
+		p, _ := Svg_Lookup_Element(asset, "p")
+		override := [1]Svg_Override{{target = p, property = .Fill, paint = Solid_Paint({255, 0, 0, 255})}}
+		first, a := Prepare_Svg_Frame_Instance(asset, override[:], 123)
+		testing.expect(t, a.ok && first != nil)
+		Destroy_Svg_Load_Result(&a)
+		vector_svg_layout_frame_end()
+		override[0].paint = Solid_Paint({0, 0, 255, 255})
+		second, b := Prepare_Svg_Frame_Instance(asset, override[:], 123)
+		testing.expect(t, b.ok && second != nil)
+		if second != nil { testing.expect_value(t, second.roots[0].item.fill.solid, RGBA{0, 0, 255, 255}) }
+		Destroy_Svg_Load_Result(&b)
+	})
+}
+
+@(test)
 svg_recording_node_allocation_failure_is_atomic :: proc(t: ^testing.T) {
 	with_ui_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()

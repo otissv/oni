@@ -75,25 +75,39 @@ mesh_matches_contour_slots :: proc(flat: Flat_Path, mesh: Mesh) -> bool {
 }
 
 @(private)
-mesh_reposition_orientation_ok :: proc(#by_ptr mesh: Mesh, points: []Integer_Point) -> bool {
+mesh_reposition_orientation_ok :: proc(#by_ptr mesh: Mesh, points: []Integer_Point, winding: i8 = 0) -> bool {
 	if len(mesh.indices) % 3 != 0 { return false }
+	bound := min(len(points), len(mesh.vertices))
 	for i := 0; i < len(mesh.indices); i += 3 {
 		a, b, c := int(mesh.indices[i]), int(mesh.indices[i + 1]), int(mesh.indices[i + 2])
-		if a >= len(points) || b >= len(points) || c >= len(points) ||
-		   a >= len(mesh.vertices) || b >= len(mesh.vertices) || c >= len(mesh.vertices) { return false }
+		if u64(mesh.indices[i]) >= u64(bound) || u64(mesh.indices[i + 1]) >= u64(bound) || u64(mesh.indices[i + 2]) >= u64(bound) { return false }
+		if winding != 0 {
+			u, v := points[b] - points[a], points[c] - points[a]
+			left, right := f64(u.x) * f64(v.y), f64(u.y) * f64(v.x)
+			area := left - right
+			signed_area := winding < 0 ? -area : area
+			if !(signed_area > (abs(left) + abs(right)) * 1e-14) { return false }
+			continue
+		}
 		pa, pb, pc := mesh.vertices[a], mesh.vertices[b], mesh.vertices[c]
-		old_left := (f64(pb.x) - f64(pa.x)) * (f64(pc.y) - f64(pa.y))
-		old_right := (f64(pb.y) - f64(pa.y)) * (f64(pc.x) - f64(pa.x))
-		old_area := old_left - old_right
 		// Quantization scales both axes by 1024, preserving the sign and the
 		// relative error bound without per-triangle coordinate conversion.
 		qa, qb, qc := points[a], points[b], points[c]
-		next_left := (f64(qb.x) - f64(qa.x)) * (f64(qc.y) - f64(qa.y))
-		next_right := (f64(qb.y) - f64(qa.y)) * (f64(qc.x) - f64(qa.x))
-		next_area := next_left - next_right
-		if !(abs(old_area) > (abs(old_left) + abs(old_right)) * 1e-14) ||
-		   !(abs(next_area) > (abs(next_left) + abs(next_right)) * 1e-14) ||
-		   (old_area < 0) != (next_area < 0) { return false }
+		ax := #simd[2]f64{f64(pa.x), f64(qa.x)}
+		ay := #simd[2]f64{f64(pa.y), f64(qa.y)}
+		bx := #simd[2]f64{f64(pb.x), f64(qb.x)}
+		by := #simd[2]f64{f64(pb.y), f64(qb.y)}
+		cx := #simd[2]f64{f64(pc.x), f64(qc.x)}
+		cy := #simd[2]f64{f64(pc.y), f64(qc.y)}
+		left, right := (bx - ax) * (cy - ay), (by - ay) * (cx - ax)
+		area := left - right
+		abs_mask: #simd[2]u64 = 0x7fffffffffffffff
+		magnitude := transmute(#simd[2]f64)(transmute(#simd[2]u64)area & abs_mask)
+		scale := transmute(#simd[2]f64)(transmute(#simd[2]u64)left & abs_mask) +
+			transmute(#simd[2]f64)(transmute(#simd[2]u64)right & abs_mask)
+		if intrinsics.simd_reduce_and(intrinsics.simd_lanes_gt(magnitude, scale * 1e-14)) == 0 { return false }
+		signs := transmute([2]f64)area
+		if (signs[0] < 0) != (signs[1] < 0) { return false }
 	}
 	return true
 }
@@ -101,7 +115,7 @@ mesh_reposition_orientation_ok :: proc(#by_ptr mesh: Mesh, points: []Integer_Poi
 // Endpoint-uniform morph: sample Move / Cubic / Close ends in contour order
 // (matching flatten_cubic with uniform_subdivision < 0) and rewrite verts.
 @(private)
-mesh_reposition_from_endpoint_commands :: proc(
+mesh_reposition_from_endpoint_commands :: #force_inline proc(
 	commands: []Command,
 	transform: Affine,
 	mesh: ^Mesh,
@@ -233,7 +247,7 @@ mesh_reposition_from_endpoint_commands :: proc(
 	if count != len(mesh.vertices) {
 		return false, .None
 	}
-	if !mesh_reposition_orientation_ok(mesh^, storage[:count]) { return false, .None }
+	if !mesh_reposition_orientation_ok(mesh^, storage[:count], mesh.triangle_winding) { return false, .None }
 	if !exact_charge(work, count) { return true, .Limit_Exceeded }
 	for i in 0 ..< count {
 		mesh.vertices[i] = {f32(storage[i].x) / 1024, f32(storage[i].y) / 1024}
@@ -256,7 +270,7 @@ mesh_reposition_from_flat :: proc(flat: Flat_Path, mesh: ^Mesh, work: ^Exact_Wor
 	if count != len(mesh.vertices) {
 		return false, .None
 	}
-	if !mesh_reposition_orientation_ok(mesh^, storage[:count]) { return false, .None }
+	if !mesh_reposition_orientation_ok(mesh^, storage[:count], mesh.triangle_winding) { return false, .None }
 	if !exact_charge(work, count) { return true, .Limit_Exceeded }
 	for i in 0 ..< count {
 		mesh.vertices[i] = {f32(storage[i].x) / 1024, f32(storage[i].y) / 1024}

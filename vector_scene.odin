@@ -136,6 +136,14 @@ Vector_Recorded_Geometry :: struct {
 }
 
 @(private)
+Vector_Path_Record_Context :: struct {
+	clip: Rect,
+	draw_space: Draw_Space,
+	stack_index: u32,
+	coalesce, capacity_reserved: bool,
+}
+
+@(private)
 Vector_Record :: struct {
 	kind:             Vector_Node_Kind,
 	first_child:      int,
@@ -644,12 +652,12 @@ vector_record_command :: #force_inline proc(
 ) -> u32 {
 	f := vector_frame()
 	first := u32(len(f.commands))
-	append(&f.commands, sdl.GPUIndexedIndirectDrawCommand{
+	#force_inline append(&f.commands, sdl.GPUIndexedIndirectDrawCommand{
 		num_indices = index_count, num_instances = 1, first_index = first_index,
 		vertex_offset = vertex_offset,
 		first_instance = u32(len(f.instances)),
 	})
-	append(&f.instances, Vector_Instance{
+	#force_inline append(&f.instances, Vector_Instance{
 		colour = paint.colour,
 		origin = origin,
 		morph_linear = {f32(morph[0]), f32(morph[1]), f32(morph[2]), f32(morph[3])},
@@ -731,7 +739,27 @@ vector_record_nodes :: proc(
 	first = -1
 	last := -1
 	f := vector_frame()
-	for node in nodes {
+	for source in nodes {
+		node := source
+		// A mask already isolates its content. Move a sole content group's alpha
+		// to the mask composite, preserving overlap inside that group.
+		if node.kind == .Mask {
+			for len(node.children) == 1 && node.children[0].kind == .Group {
+				node.opacity *= node.children[0].opacity
+				node.children = node.children[0].children
+			}
+		}
+		// A group with one composited child needs no second intermediate image.
+		if node.kind == .Group && len(node.children) == 1 &&
+		   (node.children[0].kind == .Group || node.children[0].kind == .Mask) {
+			child := [1]Vector_Node{node.children[0]}
+			child[0].opacity *= node.opacity
+			fused, fused_error := vector_record_nodes(child[:], device_space, offset, obb_bounds, use_obb)
+			if fused_error != .None { return -1, fused_error }
+			if last >= 0 { f.records[last].next = fused } else { first = fused }
+			last = fused
+			continue
+		}
 		index := len(f.records)
 		append(&f.records, Vector_Record{
 			kind = node.kind,
@@ -1030,7 +1058,7 @@ vector_source_point :: proc(point: Vec2, device_space: bool, offset: Vec2) -> Ve
 // Consecutive mesh instances that share clip/space coalesce into one submission
 // with contiguous indirect commands so encode/merge work stays O(batches).
 @(private)
-vector_record_cached_mesh :: proc(
+vector_record_cached_mesh :: #force_inline proc(
 	points: []Vec2,
 	indices: []u32,
 	bounds: Rect,
@@ -1039,6 +1067,7 @@ vector_record_cached_mesh :: proc(
 	geometry_id: u64,
 	morph: Vector_Transform = Vector_Identity,
 	memo: ^Vector_Recorded_Geometry = nil,
+	recording: ^Vector_Path_Record_Context = nil,
 ) -> Vector_Error {
 	if !(abs(bounds.x + origin.x) <= VECTOR_MAX_COORDINATE && abs(bounds.y + origin.y) <= VECTOR_MAX_COORDINATE &&
 	     abs(bounds.x + bounds.w + origin.x) <= VECTOR_MAX_COORDINATE && abs(bounds.y + bounds.h + origin.y) <= VECTOR_MAX_COORDINATE) {
@@ -1057,11 +1086,16 @@ vector_record_cached_mesh :: proc(
 	} else { geometry, shared = f.geometry[geometry_id] }
 	new_vertices := shared ? 0 : len(points)
 	new_indices := shared ? 0 : len(indices)
-	clip := batch_current_clip()
-	draw_space := draw_current_space()
-	stack_index := batch_current().current_stack
-	coalesce := false
-	if len(f.draws) > 0 && len(batch_current().segments) > 0 {
+	clip: Rect
+	draw_space: Draw_Space
+	stack_index: u32
+	coalesce := recording != nil && recording.coalesce
+	if recording != nil {
+		clip, draw_space, stack_index = recording.clip, recording.draw_space, recording.stack_index
+	} else {
+		clip, draw_space, stack_index = batch_current_clip(), draw_current_space(), batch_current().current_stack
+	}
+	if !coalesce && len(f.draws) > 0 && len(batch_current().segments) > 0 {
 		draw := f.draws[len(f.draws) - 1]
 		segment := batch_current().segments[len(batch_current().segments) - 1]
 		if !draw.failed &&
@@ -1078,8 +1112,9 @@ vector_record_cached_mesh :: proc(
 		}
 	}
 	if (!shared && (f.atlas_vertex_count + new_vertices > VECTOR_MAX_FRAME_VERTICES || f.atlas_index_count + new_indices > VECTOR_MAX_FRAME_INDICES)) ||
-	   !vector_reserve(&f.instances, len(f.instances) + 1, VECTOR_MAX_FRAME_NODES) ||
-	   !vector_reserve(&f.commands, len(f.commands) + 1, VECTOR_MAX_FRAME_NODES) ||
+	   ((recording == nil || !recording.capacity_reserved) &&
+	    (!vector_reserve(&f.instances, len(f.instances) + 1, VECTOR_MAX_FRAME_NODES) ||
+	     !vector_reserve(&f.commands, len(f.commands) + 1, VECTOR_MAX_FRAME_NODES))) ||
 	   (!coalesce && !vector_reserve(&f.records, len(f.records) + 1, VECTOR_MAX_FRAME_NODES)) ||
 	   (!coalesce &&
 	    (!vector_reserve(&f.draws, len(f.draws) + 1, VECTOR_MAX_FRAME_NODES) ||
@@ -1131,6 +1166,7 @@ vector_record_cached_mesh :: proc(
 		record := &f.records[draw.first]
 		record.bounds = vector_bounds_union(record.bounds, placed)
 		record.geometry_bounds = vector_bounds_union(record.geometry_bounds, placed)
+		if recording != nil { recording.coalesce = true }
 		return .None
 	}
 	root := len(f.records)
@@ -1148,6 +1184,7 @@ vector_record_cached_mesh :: proc(
 		sequence = batch_current().next_sequence,
 	})
 	batch_current().next_sequence += 1
+	if recording != nil { recording.coalesce = true }
 	return .None
 }
 

@@ -16,6 +16,7 @@ Scratch_Arena :: struct {
 	failed: bool,
 	limit_exceeded: bool,
 	requested: int,
+	minimum_block_size: int,
 }
 
 // The ownership link lives inside each allocation. Acquiring a block never
@@ -58,7 +59,7 @@ scratch_allocator_proc :: proc(data: rawptr, mode: mem.Allocator_Mode, size, ali
 		position = mem.align_forward_uintptr(uintptr(block) + uintptr(block.used), uintptr(alignment))
 	}
 	if block == nil || position - uintptr(block) > uintptr(block.capacity) || uintptr(size) > uintptr(block.capacity) - (position - uintptr(block)) {
-		capacity := max(4096, size_of(Scratch_Block) + alignment + size)
+		capacity := max(4096, arena.minimum_block_size, size_of(Scratch_Block) + alignment + size)
 		arena.requested = size_of(Scratch_Block) + alignment + size
 		if arena.limit > 0 {
 			capacity = min(capacity, arena.limit - arena.reserved)

@@ -2,6 +2,75 @@
 package oni
 
 import "core:testing"
+import "core:slice"
+import v "./vector"
+
+@(test)
+vector_small_fill_remesh_matches_cpu_mesh_and_enforces_frame_work_budget :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer vector_scene_shutdown()
+		state.ui.pass = .Draw
+		items: [4]Vector_Path_Draw
+		references: [4]v.Mesh
+		defer for &mesh in references { v.Destroy_Mesh(&mesh) }
+		for i in 0 ..< len(items) {
+			commands := vector_benchmark_circle(3, 3.5, f64(i))
+			handle, created := Vector_Create_Path(commands[:])
+			testing.expect_value(t, created, Vector_Error.None)
+			items[i] = {handle = handle, paint = Solid_Paint({255, 0, 0, 255}), transform = Vector_Identity, opacity = 1}
+		}
+		for frame in 0 ..< 4 {
+			vector_scene_reset()
+			state.ui.frame += 1
+			for item, i in items {
+				commands, borrowed := Vector_Borrow_Path_Commands(item.handle)
+				testing.expect_value(t, borrowed, Vector_Error.None)
+				vector_benchmark_morph_into(frame, 1536 + i, 3, commands)
+				testing.expect_value(t, Vector_Path_Geometry_Changed(item.handle), Vector_Error.None)
+				limits := v.DEFAULT_LIMITS
+				limits.uniform_subdivision = -1
+				testing.expect_value(t, v.Tessellate_Into(&references[i], commands, v.IDENTITY, .Nonzero, limits), v.Error.None)
+			}
+			testing.expect_value(t, Draw_Vector_Paths(items[:]), Vector_Error.None)
+			for item, i in items {
+				mesh := &vector_path_entry(item.handle).cache[0].mesh
+				testing.expect(t, slice.equal(mesh.vertices[:], references[i].vertices[:]))
+				testing.expect(t, slice.equal(mesh.indices[:], references[i].indices[:]))
+			}
+		}
+		vector_scene_reset()
+		vector_frame().exact_ops = VECTOR_MAX_FRAME_EXACT_OPS
+		for item in items { _ = Vector_Path_Geometry_Changed(item.handle) }
+		testing.expect_value(t, Draw_Vector_Paths(items[:]), Vector_Error.Limit_Exceeded)
+		testing.expect_value(t, len(vector_frame().commands), 0)
+	})
+}
+
+@(test)
+vector_small_path_batch_deduplicates_and_rolls_back_invalid_tail :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		defer vector_scene_shutdown()
+		state.ui.pass = .Draw
+		commands := vector_tess_test_triangle()
+		handle, created := Vector_Create_Path(commands[:])
+		testing.expect_value(t, created, Vector_Error.None)
+		items := [3]Vector_Path_Draw{
+			{handle = handle, paint = Solid_Paint({255, 0, 0, 255}), transform = Vector_Identity, opacity = 1},
+			{handle = handle, paint = Solid_Paint({0, 255, 0, 255}), transform = {1, 0, 0, 1, 20, 0}, opacity = 1},
+			{handle = handle, paint = Solid_Paint({0, 0, 255, 255}), transform = Vector_Identity, opacity = 1},
+		}
+		testing.expect_value(t, Draw_Vector_Paths(items[:2]), Vector_Error.None)
+		testing.expect_value(t, len(vector_path_entry(handle).cache), 1)
+		before_commands := len(vector_frame().commands)
+		before_instances := len(vector_frame().instances)
+		before_draw := vector_frame().draws[0]
+		items[2].handle = {}
+		testing.expect_value(t, Draw_Vector_Paths(items[:]), Vector_Error.Invalid_Handle)
+		testing.expect_value(t, len(vector_frame().commands), before_commands)
+		testing.expect_value(t, len(vector_frame().instances), before_instances)
+		testing.expect_value(t, vector_frame().draws[0].merged_commands, before_draw.merged_commands)
+	})
+}
 
 @(private)
 vector_tess_test_triangle :: proc() -> [4]Vector_Path_Command {

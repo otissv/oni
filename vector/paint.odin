@@ -61,15 +61,21 @@ Paint :: struct {
 }
 
 Solid_Paint :: #force_inline proc(color: Color) -> Paint {
-	return {kind = .Solid, solid = color}
+	paint: Paint = ---
+	paint.kind, paint.solid = .Solid, color
+	return paint
 }
 
 None_Paint :: #force_inline proc() -> Paint {
-	return {kind = .None}
+	paint: Paint = ---
+	paint.kind = .None
+	return paint
 }
 
 Current_Color_Paint :: #force_inline proc() -> Paint {
-	return {kind = .Current_Color}
+	paint: Paint = ---
+	paint.kind = .Current_Color
+	return paint
 }
 
 Linear_Paint :: #force_inline proc(gradient: Linear_Gradient) -> Paint {

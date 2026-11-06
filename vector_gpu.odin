@@ -31,11 +31,13 @@ Vector_Target :: struct {
 	has_depth: bool,
 	msaa: bool,
 	in_use, used_this_encode: bool,
+	atlas_refs: int,
 }
 
 @(private)
 Vector_GPU_Record :: struct {
 	content, mask: int,
+	content_uv, mask_uv: Vec2,
 }
 
 @(private)
@@ -90,6 +92,7 @@ Vector_GPU :: struct {
 	command_visits: u64,
 	encode_attempts: int,
 	geometry_epoch: u64,
+	atlas_disabled: bool,
 	// Last successful encode breakdown (milliseconds); for harness / diagnostics.
 	encode_fence_ms, encode_upload_ms, encode_record_ms: f64,
 	target_creates, target_reuses, target_releases: u64,
@@ -839,6 +842,7 @@ vector_gpu_draw_clip_mesh :: proc(
 	msaa: bool,
 	stencil_depth: u8,
 	mode: Vector_Stencil_Mode,
+	viewport_origin: Vec2 = {},
 ) {
 	visible := rect_intersect(clip, bounds)
 	left := max(f32(0), math.floor(visible.x - bounds.x))
@@ -851,7 +855,7 @@ vector_gpu_draw_clip_mesh :: proc(
 
 	ref := mode == .Write ? stencil_depth : stencil_depth + 1
 	vector_gpu_bind_mesh(cmd, pass, bounds, msaa, true, ref, mode)
-	sdl.SetGPUScissor(pass, {x = i32(left), y = i32(top), w = i32(right - left), h = i32(bottom - top)})
+	sdl.SetGPUScissor(pass, {x = i32(left + viewport_origin.x), y = i32(top + viewport_origin.y), w = i32(right - left), h = i32(bottom - top)})
 	g := &state.vector.gpu
 	frame := vector_gpu_frame()
 	ramp := frame.ramp != nil ? frame.ramp : g.white
@@ -861,7 +865,7 @@ vector_gpu_draw_clip_mesh :: proc(
 		{texture = ramp, sampler = g.sampler},
 	}
 	sdl.BindGPUFragmentSamplers(pass, 0, raw_data(bindings[:]), 3)
-	paint := [8]f32{}
+	paint := [12]f32{}
 	sdl.PushGPUFragmentUniformData(cmd, 0, &paint, u32(size_of(paint)))
 	sdl.DrawGPUIndexedPrimitivesIndirect(
 		pass,
@@ -881,6 +885,7 @@ vector_gpu_draw_list :: proc(
 	msaa := true,
 	with_depth := false,
 	stencil_depth: u8 = 0,
+	viewport_origin: Vec2 = {},
 ) {
 	g := &state.vector.gpu
 	frame := vector_gpu_frame()
@@ -895,7 +900,7 @@ vector_gpu_draw_list :: proc(
 						index = record.next
 						continue
 					}
-					vector_gpu_draw_clip_mesh(cmd, pass, record, bounds, child_clip, msaa, stencil_depth, .Write)
+					vector_gpu_draw_clip_mesh(cmd, pass, record, bounds, child_clip, msaa, stencil_depth, .Write, viewport_origin)
 					vector_gpu_draw_list(
 						cmd,
 						pass,
@@ -905,8 +910,9 @@ vector_gpu_draw_list :: proc(
 						msaa = msaa,
 						with_depth = true,
 						stencil_depth = stencil_depth + 1,
+						viewport_origin = viewport_origin,
 					)
-					vector_gpu_draw_clip_mesh(cmd, pass, record, bounds, child_clip, msaa, stencil_depth, .Pop)
+					vector_gpu_draw_clip_mesh(cmd, pass, record, bounds, child_clip, msaa, stencil_depth, .Pop, viewport_origin)
 				} else {
 					vector_gpu_draw_list(
 						cmd,
@@ -917,10 +923,11 @@ vector_gpu_draw_list :: proc(
 						msaa = msaa,
 						with_depth = with_depth,
 						stencil_depth = stencil_depth,
+						viewport_origin = viewport_origin,
 					)
 				}
 			} else {
-				paint := [8]f32{4 = 1, 5 = 1, 6 = 1, 7 = 1}
+				paint := [12]f32{4 = 1, 5 = 1, 6 = 1, 7 = 1}
 				content, mask := g.white, g.white
 				draw_clip := clip
 				if record.kind == .Group || record.kind == .Mask {
@@ -932,11 +939,13 @@ vector_gpu_draw_list :: proc(
 					content = frame.pool[output.content].resolved
 					content_target := frame.pool[output.content]
 					paint[4], paint[5] = record.bounds.w / content_target.alloc_w, record.bounds.h / content_target.alloc_h
+					paint[8], paint[9] = output.content_uv.x, output.content_uv.y
 					paint[0] = 1
 					if record.kind == .Mask {
 						mask = frame.pool[output.mask].resolved
 						mask_target := frame.pool[output.mask]
 						paint[6], paint[7] = record.bounds.w / mask_target.alloc_w, record.bounds.h / mask_target.alloc_h
+						paint[10], paint[11] = output.mask_uv.x, output.mask_uv.y
 						paint[1] = record.mask_kind == .Alpha ? 1 : 2
 						if record.clip.w > 0 && record.clip.h > 0 {
 							draw_clip = rect_intersect(draw_clip, record.clip)
@@ -950,7 +959,7 @@ vector_gpu_draw_list :: proc(
 				bottom := min(bounds.h, math.ceil(visible.y + visible.h - bounds.y))
 				if right > left && bottom > top {
 					vector_gpu_bind_mesh(cmd, pass, bounds, msaa, with_depth || stencil_depth > 0, stencil_depth, .Draw)
-					sdl.SetGPUScissor(pass, {x = i32(left), y = i32(top), w = i32(right - left), h = i32(bottom - top)})
+					sdl.SetGPUScissor(pass, {x = i32(left + viewport_origin.x), y = i32(top + viewport_origin.y), w = i32(right - left), h = i32(bottom - top)})
 					ramp := frame.ramp != nil ? frame.ramp : g.white
 					bindings := [3]sdl.GPUTextureSamplerBinding{
 						{texture = content, sampler = g.sampler},
@@ -1122,8 +1131,11 @@ vector_gpu_release_list_outputs :: proc(first: int) {
 		record := vector_frame().records[index]
 		if record.kind == .Group || record.kind == .Mask {
 			output := frame.outputs[index]
-			if output.content >= 0 { frame.pool[output.content].in_use = false }
-			if output.mask >= 0 { frame.pool[output.mask].in_use = false }
+			for target in ([2]int{output.content, output.mask}) {
+				if target < 0 { continue }
+				if frame.pool[target].atlas_refs > 0 { frame.pool[target].atlas_refs -= 1 }
+				if frame.pool[target].atlas_refs == 0 { frame.pool[target].in_use = false }
+			}
 			frame.outputs[index] = {content = -1, mask = -1}
 		} else if record.kind == .Clip { vector_gpu_release_list_outputs(record.first_child) }
 	}
@@ -1297,7 +1309,7 @@ vector_gpu_encode_frame :: proc(cmd: ^sdl.GPUCommandBuffer, format: sdl.GPUTextu
 	fence_ms := time.duration_milliseconds(time.tick_since(fence_start))
 
 	frame.pool_cursor = 0
-	for &target in frame.pool { target.in_use, target.used_this_encode = false, false }
+	for &target in frame.pool { target.in_use, target.used_this_encode, target.atlas_refs = false, false, 0 }
 	content := vector_gpu_compute_composite_bounds()
 	needs_depth_clear := vector_gpu_frame_needs_depth_clear()
 	// Geometric clips need root stencil; other composition uses pooled targets.
@@ -1342,12 +1354,23 @@ vector_gpu_encode_frame :: proc(cmd: ^sdl.GPUCommandBuffer, format: sdl.GPUTextu
 	upload_ms := time.duration_milliseconds(time.tick_since(upload_start))
 
 	record_start := time.tick_now()
-	for &draw, draw_index in vector_frame().draws {
-		if !draw.failed && !vector_gpu_prepare_list(cmd, draw.first) {
-			if failed_submission != nil {
-				failed_submission^ = draw_index
+	if len(vector_frame().draws) >= 8 && !state.vector.gpu.atlas_disabled {
+		for begin := 0; begin < len(vector_frame().draws); begin += 32 {
+			failed := -1
+			if !vector_gpu_prepare_atlas_batch(cmd, begin, min(begin + 32, len(vector_frame().draws)), &failed) {
+				// Retry the complete immutable frame through individual targets if
+				// atlas packing, allocation or encoding cannot complete.
+				state.vector.gpu.atlas_disabled = true
+				if failed_submission != nil { failed_submission^ = -2 }
+				return false
 			}
-			return false
+		}
+	} else {
+		for &draw, draw_index in vector_frame().draws {
+			if !draw.failed && !vector_gpu_prepare_list(cmd, draw.first) {
+				if failed_submission != nil { failed_submission^ = draw_index }
+				return false
+			}
 		}
 	}
 
@@ -1415,6 +1438,7 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 	state.vector.gpu.sample_work = 0
 	state.vector.gpu.command_visits = 0
 	state.vector.gpu.encode_attempts = 0
+	state.vector.gpu.atlas_disabled = false
 	for _ in 0 ..< attempts {
 		state.vector.gpu.encode_attempts += 1
 		cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
@@ -1428,7 +1452,16 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 			return cmd
 		}
 
-		if !sdl.CancelGPUCommandBuffer(cmd) || failed < 0 {
+		cancelled := sdl.CancelGPUCommandBuffer(cmd)
+		if cancelled && failed == -2 {
+			vector_gpu_reset_after_cancelled_encode()
+			// The slot fence was waited before encoding. Its cancelled command
+			// buffer is the only borrower of these atlas pages.
+			for &target in vector_gpu_frame().pool { vector_target_release(&target, true) }
+			clear(&vector_gpu_frame().pool)
+			continue
+		}
+		if !cancelled || failed < 0 {
 			state.vector.last_error = .GPU_Failed
 			vector_gpu_reset_after_cancelled_encode()
 			return nil

@@ -5,6 +5,7 @@ import "core:hash"
 import "core:mem"
 import "core:strings"
 import "core:fmt"
+import "core:math"
 
 Svg_Asset :: ^v.Svg_Asset
 Svg_Load_Result :: v.Svg_Load_Result
@@ -103,20 +104,64 @@ vector_svg_overrides_hash :: proc(asset: Svg_Asset, overrides: []Svg_Override) -
 		revision := asset.revision
 		digest = hash.fnv64a(([^]u8)(&revision)[:size_of(u32)], digest)
 	}
-	for override in overrides {
-		words := [8]u64{
-			u64(override.target.index),
-			u64(override.target.revision),
-			u64(override.occurrence.element.index),
-			u64(override.occurrence.depth),
-			u64(override.property),
-			transmute(u64)override.opacity,
-			u64(len(override.commands)),
-			u64(len(override.stroke.dash)),
-		}
+	for &override in overrides {
+		words := [7]u64{u64(override.target.index), u64(override.target.revision),
+			u64(override.occurrence.element.index), u64(override.occurrence.element.revision),
+			u64(override.occurrence.chain), u64(override.occurrence.depth), u64(override.property)}
 		digest = hash.fnv64a(mem.slice_to_bytes(words[:]), digest)
+		switch override.property {
+		case .Transform: digest = hash.fnv64a(mem.slice_to_bytes(override.transform[:]), digest)
+		case .Fill, .Stroke: digest = vector_svg_paint_hash(override.paint, digest)
+		case .Color: digest = hash.fnv64a(mem.byte_slice(rawptr(&override.color), size_of(RGBA)), digest)
+		case .Opacity, .Fill_Opacity, .Stroke_Opacity:
+			digest = hash.fnv64a(mem.byte_slice(rawptr(&override.opacity), size_of(f64)), digest)
+		case .Path:
+			commands := v.Commands_Hash(override.commands)
+			digest = hash.fnv64a(mem.slice_to_bytes(commands[:]), digest)
+		case .Stroke_Settings:
+			stroke := &override.stroke
+			values := [8]u64{transmute(u64)stroke.width, u64(stroke.cap), u64(stroke.join),
+				transmute(u64)stroke.miter_limit, transmute(u64)stroke.dash_offset,
+				transmute(u64)stroke.path_length, u64(stroke.non_scaling), u64(len(stroke.dash))}
+			digest = hash.fnv64a(mem.slice_to_bytes(values[:]), digest)
+			digest = hash.fnv64a(mem.slice_to_bytes(stroke.dash), digest)
+		}
 	}
 
+	return digest
+}
+
+@(private)
+vector_svg_paint_hash :: proc(#by_ptr paint: Vector_Paint, digest: u64) -> u64 {
+	digest := digest
+	paint := paint
+	kind := u64(paint.kind)
+	digest = hash.fnv64a(mem.byte_slice(rawptr(&kind), size_of(u64)), digest)
+	stops: []Vector_Gradient_Stop
+	switch paint.kind {
+	case .None, .Current_Color:
+	case .Solid:
+		digest = hash.fnv64a(mem.byte_slice(rawptr(&paint.solid), size_of(RGBA)), digest)
+	case .Linear_Gradient:
+		g := &paint.linear
+		values := [7]u64{transmute(u64)g.x1, transmute(u64)g.y1, transmute(u64)g.x2, transmute(u64)g.y2,
+			u64(g.units), u64(g.spread), u64(g.color_interpolation)}
+		digest = hash.fnv64a(mem.slice_to_bytes(values[:]), digest)
+		digest = hash.fnv64a(mem.slice_to_bytes(g.transform[:]), digest)
+		stops = g.stops
+	case .Radial_Gradient:
+		g := &paint.radial
+		values := [9]u64{transmute(u64)g.cx, transmute(u64)g.cy, transmute(u64)g.r,
+			transmute(u64)g.fx, transmute(u64)g.fy, transmute(u64)g.fr,
+			u64(g.units), u64(g.spread), u64(g.color_interpolation)}
+		digest = hash.fnv64a(mem.slice_to_bytes(values[:]), digest)
+		digest = hash.fnv64a(mem.slice_to_bytes(g.transform[:]), digest)
+		stops = g.stops
+	}
+	for &stop in stops {
+		digest = hash.fnv64a(mem.byte_slice(rawptr(&stop.offset), size_of(f64)), digest)
+		digest = hash.fnv64a(mem.byte_slice(rawptr(&stop.color), size_of(RGBA)), digest)
+	}
 	return digest
 }
 
@@ -266,7 +311,18 @@ Draw_Svg_Instance :: proc(instance: ^Svg_Instance, transform := Vector_Identity,
 
 @(private)
 draw_svg_roots :: proc(roots: []v.Svg_Draw_Node, transform: Vector_Transform, opacity: f32) -> Vector_Error {
-	items := make([dynamic]Vector_Path_Draw, context.temp_allocator)
+	flat_solid := len(roots) > 0
+	for &root in roots {
+		if root.kind != .Path || !root.item.draw_fill || root.item.draw_stroke || root.item.fill.kind != .Solid ||
+		   root.item.transform != Vector_Identity { flat_solid = false; break }
+	}
+	if flat_solid { return draw_svg_flat_solid(roots, transform, opacity) }
+	storage: [16]Vector_Path_Draw = ---
+	path_count := v.svg_count_path_leaves(roots)
+	items := mem.buffer_from_slice(storage[:])
+	if path_count > len(storage) / 2 {
+		items = make([dynamic]Vector_Path_Draw, 0, path_count * 2, context.temp_allocator)
+	}
 	if draw_svg_collect_paths(roots, transform, 1, &items) {
 		if len(items) == 0 {
 
@@ -303,7 +359,7 @@ draw_svg_collect_paths :: proc(
 				continue
 			}
 
-			handle, err := vector_svg_path(item.commands, item.commands_hash)
+			handle, err := vector_svg_path(item.commands, item.commands_hash, item.commands_structure)
 			if err != .None {
 
 				return false
@@ -320,38 +376,23 @@ draw_svg_collect_paths :: proc(
 			}
 
 			opacity := f32(node.opacity * f64(group_opacity))
-			fill := Vector_Path_Draw{
-				handle = handle,
-				paint = item.fill,
-				transform = transform,
-				rule = item.fill_rule,
-				opacity = f32(item.fill_opacity) * opacity,
-			}
-			stroke := Vector_Path_Draw{
-				handle = handle,
-				paint = item.stroke,
-				transform = transform,
-				opacity = f32(item.stroke_opacity) * opacity,
-				op = .Stroke,
-				stroke = settings,
-			}
-			ordered := [2]Vector_Path_Draw{fill, stroke}
-			enabled := [2]bool{item.draw_fill, item.draw_stroke}
-			if item.paint_order == .Stroke_Fill {
-				ordered = {stroke, fill}
-				enabled = {item.draw_stroke, item.draw_fill}
-			}
-
-			for entry, i in ordered {
-				if !enabled[i] {
-
-					continue
-				}
-
-				if _, allocation_error := append(out, entry); allocation_error != nil {
-
-					return false
-				}
+			for pass in 0 ..< 2 {
+				stroke_pass := (pass == 0) == (item.paint_order == .Stroke_Fill)
+				if stroke_pass && !item.draw_stroke || !stroke_pass && !item.draw_fill { continue }
+				index := len(out^)
+				if resize(out, index + 1) != nil { return false }
+				entry := &out^[index]
+				entry.handle = handle
+				entry.transform = transform
+				entry.opacity = f32(item.stroke_opacity if stroke_pass else item.fill_opacity) * opacity
+				paint := &item.fill
+				if stroke_pass {
+					paint = &item.stroke
+					entry.op, entry.stroke = .Stroke, settings
+				} else { entry.rule = item.fill_rule }
+				if paint.kind == .Solid {
+					entry.paint.kind, entry.paint.solid = .Solid, paint.solid
+				} else { entry.paint = paint^ }
 			}
 		case .Group:
 			if node.opacity != 1 {
@@ -379,7 +420,7 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 		case .Path:
 			item := &node.item
 			if !item.draw_fill && !item.draw_stroke { continue }
-			handle, err := vector_svg_path(item.commands, item.commands_hash)
+			handle, err := vector_svg_path(item.commands, item.commands_hash, item.commands_structure)
 			if err != .None { return err }
 
 			transform := v.Affine_Compose(root_transform, item.transform)
@@ -412,6 +453,10 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 			switch node.kind {
 			case .Group:
 			case .Clip:
+				if clip, rectangular := draw_svg_rect_clip(node, root_transform); rectangular {
+					group = {kind = .Clip, opacity = 1, clip = clip, children = children[:]}
+					break
+				}
 				mesh, err := draw_svg_clip_geometry(node, root_transform)
 				if err != .None { return err }
 				if len(mesh.indices) == 0 { continue }
@@ -427,31 +472,74 @@ draw_svg_build_nodes :: proc(nodes: []v.Svg_Draw_Node, root_transform: Vector_Tr
 	}
 	return .None
 }
+
+// Integer device-space rectangles have the same coverage under scissoring and
+// stencil clipping. Fractional or rotated edges retain the MSAA geometry path.
+@(private)
+draw_svg_rect_clip :: proc(#by_ptr node: v.Svg_Draw_Node, root_transform: Vector_Transform) -> (Rect, bool) {
+	if len(node.clip_nodes) != 0 || len(node.clip_items) != 1 { return {}, false }
+	item := &node.clip_items[0]
+	transform := v.Affine_Compose(root_transform, item.transform)
+	points: [5]Vec2
+	count := 0
+	closed := false
+	for &command in item.commands {
+		if closed { return {}, false }
+		switch command.kind {
+		case .Close: closed = true; continue
+		case .Move: if count != 0 { return {}, false }
+		case .Line:
+		case .Arc: if command.radii != {} { return {}, false }
+		case .Quadratic, .Cubic: return {}, false
+		}
+		point := v.Transform_Point(transform, command.points[0])
+		logical := Vec2{f32(point.x), f32(point.y)}
+		if count > 0 && points[count - 1] == logical { continue }
+		if count >= len(points) { return {}, false }
+		points[count] = logical
+		count += 1
+	}
+	if count == 5 && points[4] == points[0] { count -= 1 }
+	if !closed || count != 4 { return {}, false }
+	lo, hi := points[0], points[0]
+	for point, i in points[:4] {
+		next := points[(i + 1) % 4]
+		if (point.x == next.x) == (point.y == next.y) { return {}, false }
+		device := view_transform_point(point) * state.dpi.scale
+		if device.x != math.floor(device.x) || device.y != math.floor(device.y) { return {}, false }
+		lo = {min(lo.x, point.x), min(lo.y, point.y)}
+		hi = {max(hi.x, point.x), max(hi.y, point.y)}
+	}
+	if hi.x <= lo.x || hi.y <= lo.y { return {}, false }
+	return {lo.x, lo.y, hi.x - lo.x, hi.y - lo.y}, true
+}
 @(private)
 draw_svg_clip_mesh :: proc(items: []v.Svg_Path_Item, root_transform: Vector_Transform) -> (Vector_Mesh, Vector_Error) {
 	points := make([dynamic]Vec2, context.temp_allocator)
 	indices := make([dynamic]u32, context.temp_allocator)
 	scale := state.dpi.scale * view_artboard_zoom()
 	if scale <= 0 { return {}, .Invalid_Value }
-	view_origin := view_transform_point({})
-	device_transform := v.Affine{f64(scale), 0, 0, f64(scale), f64(view_origin.x * state.dpi.scale), f64(view_origin.y * state.dpi.scale)}
-	for item in items {
+	for &item in items {
 		transform := v.Affine_Compose(root_transform, item.transform)
-		mesh := v.Mesh{vertices = make([dynamic][2]f32, context.temp_allocator), indices = make([dynamic]u32, context.temp_allocator)}
-		limits, limit_err := vector_path_frame_tess_limits()
-		if limit_err != .None { return {}, limit_err }
-		usage: v.Build_Usage
-		err := v.Tessellate_Into(&mesh, item.commands, v.Affine_Compose(device_transform, transform), item.fill_rule, limits, context.temp_allocator, &usage)
-		vector_frame().new_segments += usage.flattened_segments
-		vector_frame().new_triangles += usage.triangles
-		vector_frame().pair_tests += usage.pair_tests
-		vector_frame().exact_ops += usage.exact_ops
-		if err != .None { return {}, vector_path_error(err) }
+		handle, path_error := vector_svg_path(item.commands, item.commands_hash, item.commands_structure)
+		if path_error != .None { return {}, path_error }
+		entry := vector_path_entry(handle)
+		linear := [4]f64{f64(scale) * transform[0], f64(scale) * transform[1], f64(scale) * transform[2], f64(scale) * transform[3]}
+		job, need, build_error := vector_path_build_miss_job(handle, entry, linear, item.fill_rule)
+		if build_error != .None { return {}, build_error }
+		if need {
+			jobs := [1]Vector_Tess_Job{job}
+			vector_tessellate_jobs_serial(jobs[:])
+			if install_error := vector_path_install_tess_job(&jobs[0]); install_error != .None { return {}, install_error }
+		}
+		cache_index := vector_path_find_cache_index(entry, linear, item.fill_rule)
+		if cache_index < 0 { return {}, .Invalid_Path }
+		mesh := &entry.cache[cache_index].mesh
 		if len(points) + len(mesh.vertices) > VECTOR_MAX_FRAME_VERTICES || len(indices) + len(mesh.indices) > VECTOR_MAX_FRAME_INDICES { return {}, .Limit_Exceeded }
 		base := u32(len(points))
 		if err := reserve(&points, len(points) + len(mesh.vertices)); err != nil { return {}, .Allocation_Failed }
 		if err := reserve(&indices, len(indices) + len(mesh.indices)); err != nil { return {}, .Allocation_Failed }
-		for point in mesh.vertices { append(&points, (Vec2{point.x, point.y} - view_origin * state.dpi.scale) / scale) }
+		for point in mesh.vertices { append(&points, Vec2{point.x, point.y} / scale + Vec2{f32(transform[4]), f32(transform[5])}) }
 		for index in mesh.indices { append(&indices, base + index) }
 	}
 	return {vertices = points[:], indices = indices[:]}, .None

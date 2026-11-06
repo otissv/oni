@@ -5,6 +5,197 @@ import "core:testing"
 import "core:mem"
 
 @(test)
+svg_flat_snapshot_failure_sweep_releases_all_owned_storage :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z"/><path id="q" d="M0 0L5 0L0 5Z"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	p, _ := Svg_Asset_Lookup(asset, "p")
+	q, _ := Svg_Asset_Lookup(asset, "q")
+	commands := [4]Command{{kind = .Move}, {kind = .Line, points = {{20, 0}, {}, {}}}, {kind = .Line, points = {{0, 20}, {}, {}}}, {kind = .Close}}
+	overrides := [3]Svg_Override{{target = p, property = .Path, commands = commands[:]},
+		{target = q, property = .Path, commands = commands[:]}, {target = p, property = .Fill, paint = Solid_Paint({10, 20, 30, 255})}}
+	tracking: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking, context.allocator)
+	defer mem.tracking_allocator_destroy(&tracking)
+	success := false
+	for allowed in 0 ..< 16 {
+		failing := Test_Failing_Allocator{backing = mem.tracking_allocator(&tracking), remaining = allowed}
+		instance, result := Svg_Prepare_Instance(asset, overrides[:], allocator = {procedure = test_failing_allocator_proc, data = &failing})
+		if failing.rejected { testing.expect_value(t, result.error, Svg_Diagnostic_Category.Allocation_Failed)
+		} else {
+			testing.expect(t, result.ok && instance != nil)
+			success = true
+			if instance != nil {
+				testing.expect(t, raw_data(instance.roots[0].item.commands) != raw_data(commands[:]))
+				testing.expect(t, raw_data(instance.roots[0].item.commands) != raw_data(instance.roots[1].item.commands))
+			}
+		}
+		Destroy_Svg_Instance(instance)
+		Destroy_Svg_Load_Result(&result)
+		testing.expect_value(t, tracking.current_memory_allocated, i64(0))
+		if success { break }
+	}
+	testing.expect(t, success)
+	budget := DEFAULT_SVG_INSTANCE_BUDGET
+	budget.nodes = 1
+	limited, rejected := Svg_Prepare_Instance(asset, overrides[:], budget, mem.tracking_allocator(&tracking))
+	testing.expect(t, limited == nil)
+	testing.expect_value(t, rejected.error, Svg_Diagnostic_Category.Limit_Exceeded)
+	Destroy_Svg_Instance(limited)
+	Destroy_Svg_Load_Result(&rejected)
+	testing.expect_value(t, tracking.current_memory_allocated, i64(0))
+}
+
+@(test)
+svg_command_structure_key_is_exact_across_packed_word_boundary :: proc(t: ^testing.T) {
+	commands: [41]Command
+	for &command in commands { command.kind = .Line }
+	commands[0].kind = .Move
+	key: [2]u64
+	hash := Commands_Hash(commands[:40], &key)
+	testing.expect(t, key != {})
+	testing.expect_value(t, hash, Commands_Hash(commands[:40]))
+	for index in ([3]int{20, 21, 39}) {
+		commands[index].kind = .Cubic
+		changed: [2]u64
+		_ = Commands_Hash(commands[:40], &changed)
+		testing.expect(t, changed != key)
+		commands[index].kind = .Line
+	}
+	commands[1].points[0].x = 10
+	changed: [2]u64
+	testing.expect(t, Commands_Hash(commands[:40], &changed) != hash && changed == key)
+	_ = Commands_Hash(commands[:41], &changed)
+	testing.expect(t, changed == {})
+	commands[1].kind = .Arc
+	_ = Commands_Hash(commands[:40], &changed)
+	testing.expect(t, changed == {})
+}
+
+@(test)
+svg_leaf_instances_remain_independent_across_repeated_storage_reuse :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z" fill="red"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	p, _ := Svg_Asset_Lookup(asset, "p")
+	for cycle in 0 ..< 3 {
+		first, a := Svg_Prepare_Instance(asset, []Svg_Override{{target = p, property = .Fill, paint = Solid_Paint({0, 255, 0, 255})}})
+		second, b := Svg_Prepare_Instance(asset)
+		testing.expect(t, a.ok && b.ok && first != second)
+		if first != nil && second != nil {
+			testing.expect_value(t, first.roots[0].item.fill.solid, Color{0, 255, 0, 255})
+			testing.expect_value(t, second.roots[0].item.fill.solid, Color{255, 0, 0, 255})
+		}
+		Destroy_Svg_Instance(first)
+		Destroy_Svg_Instance(second)
+		Destroy_Svg_Load_Result(&a)
+		Destroy_Svg_Load_Result(&b)
+		budget := DEFAULT_SVG_INSTANCE_BUDGET
+		budget.decoded_bytes = size_of(Svg_Instance) + 1
+		limited, rejected := Svg_Prepare_Instance(asset, budget = budget)
+		testing.expect(t, limited == nil && !rejected.ok && rejected.error == .Limit_Exceeded)
+		Destroy_Svg_Instance(limited)
+		Destroy_Svg_Load_Result(&rejected)
+		_ = cycle
+	}
+}
+
+@(test)
+svg_definition_override_rejects_occurrence_chain_without_terminal :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	target, _ := Svg_Asset_Lookup(asset, "p")
+	for index in ([3]u32{1, 63, 127}) {
+		override := Svg_Override{target = target, property = .Fill, paint = Solid_Paint({255, 0, 0, 255})}
+		override.occurrence.chain = index
+		instance, result := Svg_Prepare_Instance(asset, []Svg_Override{override})
+		testing.expect(t, instance == nil && result.error == .Invalid_Handle)
+		Destroy_Svg_Instance(instance)
+		Destroy_Svg_Load_Result(&result)
+	}
+}
+
+@(test)
+svg_occurrence_handles_reject_forged_chain_indices_depths_and_terminals :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<defs><g id="s"><rect id="r" width="2" height="2"/></g></defs><use id="u" href="#s"/><rect id="outside" width="3" height="3"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	u, _ := Svg_Asset_Lookup(asset, "u")
+	r, _ := Svg_Asset_Lookup(asset, "r")
+	outside, _ := Svg_Asset_Lookup(asset, "outside")
+	valid, ok := Svg_Asset_Lookup_Occurrence(asset, []Svg_Element_Handle{u}, r)
+	testing.expect(t, ok)
+	again, found := Svg_Asset_Lookup_Occurrence(asset, []Svg_Element_Handle{u}, r)
+	testing.expect(t, found && again == valid)
+	for field in 0 ..< 4 {
+		forged := valid
+		switch field {
+		case 0: forged.chain = max(u32)
+		case 1: forged.depth = 0
+		case 2: forged.element = outside
+		case 3: forged.depth = 128
+		}
+		instance, result := Svg_Prepare_Instance(asset, []Svg_Override{{occurrence = forged, property = .Fill, paint = Solid_Paint({255, 0, 0, 255})}})
+		testing.expect(t, instance == nil && result.error == .Invalid_Handle)
+		Destroy_Svg_Instance(instance)
+		Destroy_Svg_Load_Result(&result)
+	}
+}
+
+@(test)
+svg_occurrence_registry_exhaustion_preserves_existing_handles :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<defs><rect id="r" width="2" height="2"/></defs><use id="a" href="#r"/><use id="b" href="#r"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	a, _ := Svg_Asset_Lookup(asset, "a")
+	b, _ := Svg_Asset_Lookup(asset, "b")
+	r, _ := Svg_Asset_Lookup(asset, "r")
+	first, ok := Svg_Asset_Lookup_Occurrence(asset, []Svg_Element_Handle{a}, r)
+	testing.expect(t, ok)
+	reserved := asset.arena.reserved
+	asset.arena.limit = reserved
+	asset.arena.block.used = asset.arena.block.capacity
+	_, rejected := Svg_Asset_Lookup_Occurrence(asset, []Svg_Element_Handle{b}, r)
+	testing.expect(t, !rejected)
+	again, found := Svg_Asset_Lookup_Occurrence(asset, []Svg_Element_Handle{a}, r)
+	testing.expect(t, found && again == first)
+	testing.expect_value(t, asset.arena.reserved, reserved)
+	instance, result := Svg_Prepare_Instance(asset, []Svg_Override{{occurrence = first, property = .Fill, paint = Solid_Paint({0, 0, 255, 255})}})
+	defer Destroy_Svg_Instance(instance)
+	defer Destroy_Svg_Load_Result(&result)
+	testing.expect(t, result.ok && instance != nil)
+}
+
+@(test)
+svg_leaf_patches_apply_in_any_order_and_reject_duplicates :: proc(t: ^testing.T) {
+	asset, loaded := svg_test_load(`<path id="a" d="M0 0L10 0L0 10Z"/><path id="b" d="M0 0L20 0L0 20Z"/>`)
+	defer Destroy_Svg_Asset(asset)
+	defer Destroy_Svg_Load_Result(&loaded)
+	a, _ := Svg_Asset_Lookup(asset, "a")
+	b, _ := Svg_Asset_Lookup(asset, "b")
+	overrides := [3]Svg_Override{
+		{target = b, property = .Fill, paint = Solid_Paint({0, 0, 255, 255})},
+		{target = a, property = .Fill_Opacity, opacity = .25},
+		{target = a, property = .Fill, paint = Solid_Paint({255, 0, 0, 255})},
+	}
+	instance, result := Svg_Prepare_Instance(asset, overrides[:])
+	testing.expect(t, result.ok && instance != nil)
+	if instance != nil {
+		testing.expect_value(t, instance.roots[0].item.fill.solid, Color{255, 0, 0, 255})
+		testing.expect_value(t, instance.roots[0].item.fill_opacity, f64(.25))
+		testing.expect_value(t, instance.roots[1].item.fill.solid, Color{0, 0, 255, 255})
+	}
+	Destroy_Svg_Instance(instance)
+	Destroy_Svg_Load_Result(&result)
+	overrides[1] = overrides[2]
+	instance, result = Svg_Prepare_Instance(asset, overrides[:])
+	testing.expect(t, instance == nil && result.error == .Duplicate_Override)
+	Destroy_Svg_Instance(instance)
+	Destroy_Svg_Load_Result(&result)
+}
+
+@(test)
 svg_compiled_leaf_patch_reports_allocation_failures_and_cleans_up :: proc(t: ^testing.T) {
 	asset, loaded := svg_test_load(`<path id="p" d="M0 0L10 0L0 10Z"/>`)
 	defer Destroy_Svg_Asset(asset)

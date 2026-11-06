@@ -2,6 +2,7 @@ package oni
 
 import "core:hash"
 import "core:strings"
+import "base:runtime"
 
 
 UI_Pass :: enum {
@@ -62,6 +63,7 @@ ui_shutdown :: proc() {
 	delete(state.ui.layout.table_tracks)
 	state.ui.layout.table_tracks = nil
 	layout_shutdown()
+	layout_frame_arena_chain_free_blocks(&state.ui.render_scratch)
 	delete(state.ui.layout_ids_prev)
 	state.ui.layout_ids_prev = nil
 	delete(state.ui.layout_ids_snapshot)
@@ -103,6 +105,9 @@ ui_begin_frame :: proc() {
 	clear(&state.ui.draw_children_space_pushed)
 	clear(&state.ui.style_stack)
 	layout_reset()
+	if len(state.ui.render_scratch.blocks) > 0 {
+		layout_frame_arena_chain_reset(&state.ui.render_scratch)
+	}
 
 	w_ctx.auto_element_index = 0
 
@@ -206,6 +211,16 @@ error_banner_register_ui :: proc "contextless" (ui: proc()) {
 }
 
 render :: proc(ui: ..proc()) {
+	// Keep default UI scratch in reusable frame storage. Caller-supplied
+	// allocators retain their failure and lifetime semantics.
+	scratch := context.temp_allocator
+	if state != nil && scratch.procedure == runtime.default_temp_allocator_proc {
+		if len(state.ui.render_scratch.blocks) == 0 {
+			layout_frame_arena_push_block(&state.ui.render_scratch, 0)
+		}
+		scratch = layout_frame_arena_chain_allocator(&state.ui.render_scratch)
+	}
+	context.temp_allocator = scratch
 	for u in ui {
 		u()
 
