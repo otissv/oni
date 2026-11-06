@@ -1,6 +1,6 @@
-# Atlas — production work order
+# Glyph atlas
 
-Dynamic glyph (+ small UI) atlas for Oni. Large unique textures stay standalone (`Load_Texture`); they never enter this atlas.
+Dynamic glyph (+ small UI) atlas for Oni. Large unique textures stay standalone (`Load_Texture`); they never enter this atlas. `Load_Texture` is an asynchronous, reference-counted request: wait for `Texture_Status == .Ready` before sampling and balance it with `Unload_Texture` (see [APP.md](APP.md#section-4--assets--gpu-textures)). Vector composition also uses temporary GPU atlas pages, but those are a separate system in `vector_gpu_atlas.odin`, outside glyph residency policy.
 
 Production means the **full** stack below: recovery (evict / repack / grow / overflow), **bindless or multi-texture sampling in one draw**, and **defined parallelism / concurrency** with tests. Shipping overflow that silently splits every batch, or parallel raster that races the packer, is not done.
 
@@ -11,7 +11,7 @@ Production means the **full** stack below: recovery (evict / repack / grow / ove
 | Scope | Glyphs + optional small UI packs only |
 | Primary | Single shared atlas (`state.textures.atlas`); overflow sheets allowed under cap |
 | On full | 1) evict cold → 2) repack if fragmented → 3) grow if under cap → 4) overflow atlas → 5) soft-fail + structured error |
-| Growth | Power-of-two from 2048 → `min(device max, ATLAS_HARD_MAX)` (e.g. 8192); at most once per pressure event / frame |
+| Growth | Power-of-two from 2048 → `min(device max, ATLAS_HARD_MAX)` (e.g. 8192); at most one doubling step per `font_atlas_try_grow` call |
 | Eviction | Frame-stamp residency; never evict current-frame, pinned, or prefetched (until pin expires) |
 | Repack | Compacts survivors; rewrites all `Font_Glyph_Entry.region`; bumps atlas `generation` |
 | Prefetch | Explicit API + optional locale/UI charset at face load / route change |
@@ -30,13 +30,15 @@ Production means the **full** stack below: recovery (evict / repack / grow / ove
 
 **Do not ship grow-only or overflow-only.** Eviction + repack before growth; growth before overflow; overflow ships with multi-texture/bindless draw (or an explicit device capability fallback that is tested).
 
+Current constants are `ATLAS_DEFAULT_SIZE = 2048`, `ATLAS_HARD_MAX = 8192`, `ATLAS_OVERFLOW_CAP = 2`, `ATLAS_SAMPLER_SLOTS = 4`, `ATLAS_EVICT_COLD_FRAMES = 3` and `ATLAS_PREFETCH_PIN_FRAMES = 5`. The raster pool has at most four workers.
+
 Current baseline: dynamic shelf packer (`ATLAS_DEFAULT_SIZE` 2048, capped grow + overflow) in `texture.odin`; glyph cache in `font_shaper.odin` / `font.odin`; bounded FreeType raster pool then **serial** pack in `font.odin`; multi-atlas batch path (`tex0`–`tex3` + per-vertex slot) in font draw / `batch.odin` with tested `Fallback_Split`.
 
 ---
 
-## Agent prompt groups
+## Implementation groups (historical acceptance checklist)
 
-Give **one group per agent prompt**. Groups are ordered; later groups assume earlier groups are merged. Within a group, implement all items together and land as one PR (or one coherent change set).
+Groups A–I below record the completed implementation scope and its acceptance criteria. They are retained for traceability, not a list of pending implementation tasks. The policy and current API above/below describe the shipped behavior; rerun the current test suite to establish validation for a new revision.
 
 ### Group A — Correctness (Phase 0)
 
@@ -366,7 +368,7 @@ Do not call the work “production atlas” until **E, G, H, and I** are done (m
 
 ---
 
-## Suggested git / agent cadence
+## Historical implementation sequence
 
 | Agent prompt | Group | PR title hint |
 |--------------|-------|----------------|

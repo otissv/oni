@@ -8,7 +8,8 @@ Product and engineering order for Oni: **desktop UI toolkit first**, then a **pl
 | [WIDGETS.md](WIDGETS.md) | Widget authoring checklist (config/props, Layout/Draw, compound parts) |
 | [APP.md](APP.md) | UI / HUD feature checklist vs codebase |
 | [ATLAS.md](ATLAS.md) | Production glyph atlas (shipped; policy + groups A–I) |
-| [FONT.md](../../FONT.md) | LCD / dual-source text sharpness (shipped; lives at repo-parent `FONT.md`) |
+| [VECTOR.md](VECTOR.md) | Native vector/SVG APIs, ownership and open release performance gate |
+| [SVG-SUPPORTED-PROFILE.md](SVG-SUPPORTED-PROFILE.md) | Normative SVG import profile |
 | [DRAW.md](DRAW.md) | Draw / batch / present model |
 | [Layout.md](Layout.md) | Layout solve rules (flex + CSS-like grid) |
 | [FRAME_MODES.md](FRAME_MODES.md) | Frame pacing (`FRAME_MODE`) |
@@ -37,14 +38,17 @@ Shipped and in daily use:
 - [x] Hot-reload host + `app.so`, F5/F6, tracking allocator
 - [x] SDL_GPU 2D pipeline, batching, clips, artboard / screen spaces
 - [x] Assets + textures; production dynamic atlas (evict / repack / grow / overflow / multi-texture) — see [ATLAS.md](ATLAS.md)
-- [x] FreeType + HarfBuzz, LCD dual-source text — see [FONT.md](../../FONT.md)
+- [x] FreeType + HarfBuzz, LCD dual-source text — see [DRAW.md](DRAW.md#text-draw-onifontodin)
 - [x] Two-pass UI (layout → draw), flex + CSS-like grid, overflow scrollports
-- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Dialog, Context_Menu, Collapsible, Progress, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table, Tabs
+- [x] Widget set: Rectangle, Text, Image, Button, Table, Checkbox, Radio, Slider, Select, Text_Input / Rich_Text_Input, Scroll_Bar, Popover, Dialog, Context_Menu, Collapsible, Progress, Link, Calendar / Date_Picker, Color_Picker, Grid, Preserve, Error_Banner, Shortcuts_Table, Tabs, Accordion, Vector / Svg
 - [x] Shortcuts (key / mouse / wheel / gamepad / sequences), settings.kdl, `APP_TYPE` / `FRAME_MODE`
 - [x] Clipboard + Open URL (`platform_os.odin`); Tengu animations (`oni/libs/tengu`)
+- [x] Async texture decode / owner-thread deferred upload; explicit Ready/Failed/retry/unload contract
+- [x] Persistent shaped-line cache and growable frame-arena scratch
+- [x] Native vector paths, strokes, paints, composition and SVG instances; dense-scene release gate still open
 - [x] Package tests via `./oni/scripts/test_all.sh` (vet, strict-style, leak tracking)
 
-Still open at a high level: tooltip / menu bar / input-capture flags, OS file/DnD, performance virtualization, **platform game**, audio, editor, a11y / packaging / SVG. Tracked below and in [APP.md](APP.md).
+Still open at a high level: tooltip / menu bar / input-capture flags, OS file/DnD, performance virtualization, **platform game**, audio, editor, a11y / installers and signing. Native SVG is implemented; its dense-scene release performance remains open. Tracked below and in [APP.md](APP.md).
 
 ---
 
@@ -58,7 +62,7 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [x] **Context menu** (`Context_Menu` / Trigger / Content / Item / Separator; Escape + outside dismiss; items tabbable)
 - [ ] **Menu bar** (app chrome; arrow + Enter navigation across menus)
 - [x] **Dialog** (`Dialog` / Trigger / Scrim / Content / Actions; Escape + outside dismiss on `.OVERLAY`)
-- [~] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
+- [ ] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
 - [~] **Dropdown**: keep one shared popup API — no second overlay system
 - [x] Select 
 - [x] Popover 
@@ -66,11 +70,13 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [x] Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`)
 - [x] **Progress** (`Progress` / Label / Value / Track / Indicator; determinate + indeterminate)
 - [x] **Collapsible** (`Collapsible` / Trigger / Content; in-flow expand/collapse)
+- [x] **Accordion** (`Accordion` / Item / Trigger / Content; controlled single/multiple selection)
+- [x] **Vector / Svg** widgets with intrinsic measure, fit and immutable frame snapshots
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard` for host / game input handoff
 
 ### 1.2 Layout & style gaps
 
-- [ ] `aspect_ratio` on `Widget_Style` (listed in attributes; not modeled yet)
+- [ ] `aspect_ratio` on `Widget_Config` (not modeled; SVG intrinsic sizing is separate)
 - [~] Overflow scrollports work; harden edge cases (nested scroll, sticky + scroll)
 - [x] Flex sizing: axis `.SHRINK` (content basis; share deficit; ignore leftover) shipped; CSS-style `flex-shrink` / `flex-basis` fields still open
 - [ ] `theme_light` / `theme_dark` presets + runtime switch demo
@@ -93,7 +99,8 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [x] Frame modes / dirty wake + on-demand present skip ([FRAME_MODES.md](FRAME_MODES.md)); partial dirty-rect region updates deferred
 - [ ] F3 (or settings) debug overlay: FPS, draw calls, batch flushes, atlas stats
 - [ ] Log / toast for non-fatal errors; structured GPU device-loss quit path
-- [ ] Release GPU path (no always-on validation); multi-backend shaders beyond SPIR-V when needed
+- [ ] Release GPU path (device creation still defaults to debug mode); multi-backend shaders beyond SPIR-V when needed
+- [~] Native vector/SVG performance: API, composition, reload and correctness coverage implemented; full corrected M2/M8/composition and ordinary-UI regression gates still required ([VECTOR.md](VECTOR.md))
 - [x] Production build script (`build_production.sh`: static `-o:speed` binary, staged assets, SDL bundle, package tarball)
 - [ ] CI: `test_all.sh` + hot-reload/production builds on push; Darwin / Windows watch parity
 
@@ -186,8 +193,8 @@ Explicitly deferred; do not block Tracks 1–2.
 | Topic | Notes |
 | ----- | ----- |
 | Accessibility | Focus already exists; a11y tree / AT / screen readers later |
-| Packaging / installers / signing | After a shippable demo |
-| SVG / `draw_path` | Vector module behind draw API |
+| Installers / signing | Static build, asset/library staging and tarball packaging already exist; installers/signing follow a shippable demo |
+| SVG / native vector release performance | Implemented behind draw/widget APIs; corrected dense-scene benchmark acceptance remains open, see [VECTOR.md](VECTOR.md) |
 | Multi-backend GPU (MSL / DXIL) | When non-Vulkan targets matter |
 | Offline sprite atlas bake | Separate asset pipeline; not the runtime glyph atlas |
 

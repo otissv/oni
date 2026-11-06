@@ -17,7 +17,7 @@ Oni’s generic wake API if another frame is needed.
 | **On-demand** | The engine waits for input, a timeout, or an explicit wake. A full frame runs only when something needs one, focused or not. | Docs, settings UIs, editors at rest, reading-heavy tools. |
 | **Focused** | **Focused:** same as continuous. **Unfocused:** same as on-demand (wait + dirty/wake; longer wait timeout is allowed to save CPU). Focus gain/loss wakes a frame so the transition is immediate. | Desktop apps and tools that should feel live while in use but idle when in the background. |
 
-Effective pacing each loop iteration is whichever of the three modes is selected; there is no separate optional focus flag.
+The selected `Frame_Mode` resolves each iteration to `Frame_Pacing.Continuous` or `.On_Demand`; `Focused` chooses between them using window focus. There is no separate optional focus flag.
 
 ## How they work
 
@@ -39,7 +39,7 @@ Effective pacing each loop iteration is whichever of the three modes is selected
 4. Consume one-shot dirty **before** tick so `Request_Frame` during the frame still schedules the next iteration; keep waking if a wake deadline is still active.
 5. **Skip present** when the iteration is wake-deadline-only and nothing marked oneshot dirty at entry or during tick (`Request_Frame`). Continuous effective pacing always presents. Idle wait remains the main CPU save; present skip avoids swapchain work while a wake window stays open for app-driven updates.
 
-Timeouts matter: on-demand must not block forever, or settings mtime checks and hot reload stall. They are **not** a substitute for app wake calls—ongoing app work must push wake explicitly.
+The idle timeout is currently 100 ms, or 500 ms for an unfocused `Focused` app (`frame_mode.odin`). Housekeeping-only timeouts can return without tick or present. Timeouts matter: on-demand must not block forever, or settings mtime checks and hot reload stall. They are **not** a substitute for app wake calls—ongoing app work must push wake explicitly.
 
 ### Focused
 
@@ -84,10 +84,10 @@ after hover ends, so smoothing works in every frame mode. Scrollbar dragging and
 explicit scroll offsets remain immediate; `on_scroll` reports the current animated
 offset. Animation state is retained and pruned with the widget's scroll offset.
 
-Oni exposes only **push wake** (names illustrative)—no app poll-hook registry:
+Oni exposes **push wake** through the public aliases in [`api.odin`](../api.odin):
 
 - `Request_Frame()` — schedule at least one more frame.
-- `Wake_For(duration)` / `Wake_Until(deadline)` — keep waking until the deadline (drags, scrubbing, app-driven animation).
+- `Wake_For(duration: f64)` takes seconds; `Wake_Until(deadline_ns: u64)` takes an absolute SDL tick deadline in nanoseconds. `Wake_Deadline()` returns that deadline, or zero. These extend the update window; call `Request_Frame()` when an update changes pixels, because a deadline-only iteration can skip present.
 
 One demand path avoids a weaker “ask me later” API that stalls until the idle timeout.
 
@@ -102,6 +102,7 @@ Engine-owned wake sources (no vendor involved; same on-demand rule):
 - Resize / DPI / focus changes
 - Hot-reload / force reload
 - Settings apply / file-watch cooldown (time-based under on-demand)
+- Async texture decode completions and deferred uploads
 - Text caret blink, IME, hover transitions as needed by widgets
 
 ## When to use which

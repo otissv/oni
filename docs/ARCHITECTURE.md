@@ -38,7 +38,7 @@ Widgets take a `*_Props` struct. Style, identity, and domain values live in `con
 | `*_Config` | Data only: `Widget_Config` fields (`id`, style, `disabled`, …) plus domain values (selection, open, metrics, paths, …) | Any `proc` field |
 | `*_Props` | `config` and procedures only (`child`, `on_*`, formatters, matchers, …) | Non-procedure domain / style values |
 
-If a field is not a procedure, it belongs on `*_Config`. Disable widgets with `config.disabled` / `set.Disabled`, not a separate props-level `disabled: bool`. Engine lifecycle bools `unmount` / `can_interactive_during_mount` remain on props today; prefer not adding other non-proc fields there.
+If a field is not a procedure, it belongs on `*_Config`. Disable widgets with `config.disabled` / `set.Disabled`, not a separate props-level `disabled: bool`. Older widget shells still expose lifecycle bools `unmount` / `can_interactive_during_mount` on props. Newer wrappers such as Accordion, Vector and Svg carry those values in config and adapt them to the shared shell. Read the concrete widget type when composing existing APIs; new non-procedure values belong in config.
 
 | Piece | Role |
 | ----- | ---- |
@@ -99,10 +99,12 @@ run_frame                          oni/runtime.odin
   frame_wait_if_idle / pacing gates
   input_begin_frame
   poll_events (+ settings_poll)
+  assets_io_drain                 adopt completed image decodes
   ui_begin_frame                   pass = Layout; layout reset
   tick(dt)
   run_init_once (first frame only)
   present_frame(draw)              may skip when on-demand idle
+    assets_io_drain
     draw_record_begin
     draw()                         typically app_draw → o.Render(main_ui)
       render(ui...)
@@ -116,8 +118,8 @@ run_frame                          oni/runtime.odin
           error_banner_ui?
           ui_end_frame             prune widgets not seen this builder
     draw_record_end
-    texture_uploads_flush
-    GPU acquire / upload / flush / present
+    assets_io_drain / texture_uploads_flush
+    GPU acquire / upload / flush / present (UI-only or shared vector MSAA)
   frame_after_present
   end_frame                        ui_end_frame again (usually no-op after Render)
 ```
@@ -138,7 +140,15 @@ Invariants:
 2. **Layout solves; Draw paints** — primary solve is on space end (`End_Screen` / `End_Artboard`); `ui_end_layout_pass` then runs layer/anchor/stack/hit bookkeeping. Draw reads `ui_layout_rect`; it must not re-solve layout.
 3. **Input interaction is Draw-side** — focus/hover and `on_*` input handlers update during Draw using layout-finalized hit targets. Mount/unmount run on Layout.
 
-See [Layout.md](Layout.md) and [DRAW.md](DRAW.md) for solve timing, spaces (Screen / Artboard / Popover), batching, and present.
+See [Layout.md](Layout.md) and [DRAW.md](DRAW.md) for solve timing, spaces (Screen / Artboard / Popover / Overlay), batching, and present.
+
+## Cached work and resource ownership
+
+Immediate mode rebuilds layout and paint declarations each frame, while stable work is retained separately. `font_shape_line_build` caches shaped lines and layout borrows them; DPI/font reload invalidates the cache. Glyph residency and raster workers follow [ATLAS.md](ATLAS.md). Static labels memoize their CRC32, theme widget defaults are invalidated at frame begin, and layout caches direction information on nodes. These caches do not skip either UI pass or interaction-driven style callbacks.
+
+Image loading is a reference-counted async request: workers decode CPU surfaces, the owner drains completions and submits GPU uploads, and only then does a handle become Ready. Retain handles rather than loading the same path every frame; balance each accepted request with `Unload_Texture`. Native vector paths and SVG assets/instances have separate explicit destruction APIs and bounded CPU/GPU caches; see [VECTOR.md](VECTOR.md).
+
+Layout uses a growable frame-arena chain. Uncached SVG frame snapshots register revision-pin cleanup before arena reset, while stable-key cached instances survive until replacement/shutdown; cached shaped lines remain font-owned. Never individually free arena slices or cached borrows, and never retain frame scratch in cross-frame widget/app state.
 
 ## Widget lifecycle
 
@@ -162,5 +172,5 @@ Beyond per-frame props, widgets can participate in mount/unmount via props (`on_
 | [attributes.md](attributes.md) | CSS ↔ style field map |
 | [APP.md](APP.md) | UI / HUD feature checklist |
 | [ROAD_MAP.md](ROAD_MAP.md) | Product sequence |
-| [../FONT.md](../FONT.md) | LCD / dual-source text |
+| [DRAW.md#text-draw-onifontodin](DRAW.md#text-draw-onifontodin) | Text paint, LCD eligibility and shaping cache |
 | [AGENTS.md](../AGENTS.md) | Contributor conventions (memory, widgets, config/props split, boundaries) |

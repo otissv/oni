@@ -1,25 +1,28 @@
 # CSS attributes
 
-Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
+Reference for mapping CSS concepts to author-time [`Widget_Config`](../types.odin) fields and [`set` helpers](../set/set.odin). Resolved values live in `Resolved_Widget_Style` / `Resolved_Widget_Config`; there is no author-time `Widget_Style` type. Oni is a declarative style API, not a CSS parser. Wrap typed values with the matching `set.*` helper where available.
 
-## In `Widget_Style`
+## In `Widget_Config`
 
 | CSS property | Field | Notes |
 |---|---|---|
-| `aspect-ratio` | `aspect_ratio` | |
 | `background` / `background-color` | `background` | `Colors` union (Tailwind palette, callbacks) |
 | `border-width` | `border` | Per-side via `Border` union |
 | `border-color` | `border_color` | |
 | `border-radius` | `radius` | Per-corner via `Radius` union |
 | `color` | `color` | |
 | `direction` (bidi) | `text_direction` | `Text_Direction` enum |
-| `flex-direction` | `direction` | Row/column only (`.Horizontal` / `.Vertical`) |
+| `flex-direction` | `direction` | `.HORIZONTAL` / `.VERTICAL`, plus `_WRAP`, `_REVERSE` and `_WRAP_REVERSE` variants |
 | `flex-grow` | `flex` | Number only; not full `flex` shorthand. Axis `.GROW` is weight 1 when `flex` unset |
 | `font-family` | `font` | `Font_Handle` (registered family), not a CSS string |
 | `font-size` | `font_size` | |
 | `font-style` | `font_style` | `NORMAL` / `ITALIC`; missing italic faces use synthetic oblique |
 | `font-weight` | `font_weight` | `Font_Weight` 100–900; VF `wght` or closest static face + fake bold |
-| `gap` | `gap` | Single value; no separate row/column gap |
+| `column-gap` | `gap_x` | Horizontal gap; `set.Gap_X` |
+| `row-gap` | `gap_y` | Vertical gap; `set.Gap_Y` |
+| `gap` | `gap_x` + `gap_y` | Set both; no unified `gap` field |
+| `align-self` | `self` | `set.Self`; per-child justify override |
+| `flex-wrap` / `flex-flow` | `direction` | Wrap/reverse variants of `Direction_Layout`; not separate fields |
 | `height` | `height` | `Height` / `Length`: `f32`, `%` via `Dim_struct`, unset (content) / `.GROW` (fill free space) / `.AUTO` (fill parent content area) / `.FIT` (shrink to content) / `.SHRINK` (content basis; share main-axis deficit; ignore leftover) / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT` |
 | `justify-content` + `align-items` | `justify` | Combined in `Justify_Pos` |
 | `left` | `x` | Inset / offset; with `position` absolute/fixed, pairs with `right` |
@@ -31,9 +34,9 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `min-height` | `min_h` | |
 | `min-width` | `min_w` | |
 | `order` | `order` | Flex item order; optional `Cfg(Style_F32)`, default `0` |
-| `opacity` | `opacity` | `0`–`1` via `Cfg(Style_F32)`; default `1`; not inherited; nested values multiply like CSS group opacity |
-| `overflow` | `overflow` | `Auto`, `Scroll`, `Hidden` |
-| `overflow-x` | `overflow_x` | Clip when `Hidden`/`Scroll`/`Auto`; hit-test intersects clip. `Scroll`/`Auto` are scrollports; overlay bars show on hover (or bar drag) when content overflows |
+| `opacity` | `opacity` | `0`–`1` via `Cfg(Style_F32)`; default `1`; not inherited; nested values multiply per emitted primitive; isolated vector group opacity is a separate `Vector_Node` contract |
+| `overflow` | `overflow_x` + `overflow_y` | Set both; no unified `overflow` field. `.HIDDEN`, `.SCROLL`, `.AUTO`; an unset union does not request clipping |
+| `overflow-x` | `overflow_x` | Clip when `.HIDDEN`/`.SCROLL`/`.AUTO`; hit-test intersects clip. `.SCROLL`/`.AUTO` are scrollports; overlay bars show on hover (or bar drag) when content overflows |
 | `overflow-y` | `overflow_y` | Same as `overflow_x` |
 | `padding` | `padding` | Per-side via `Padding` union |
 | `pointer-events` | `pointer_events` | `AUTO` (default) or `NONE` (paint, skip hit) |
@@ -47,27 +50,28 @@ Reference for mapping CSS to `Widget_Style` (`oni/types.odin`).
 | `top` | `y` | Inset / offset; with absolute/fixed pairs with `bottom` |
 | `visibility` | `visibility` | `VISIBLE` (default), `HIDDEN` (layout hole, no paint/hit), `NONE` (removed from tree) |
 | `width` | `width` | `Width` / `Length`: `f32`, `%` via `Dim_struct`, `.AUTO` / `.FIT` / `.GROW` / `.SHRINK` / `.MIN_CONTENT` / `.MAX_CONTENT` / `.INHERIT`. Unset defaults to `.GROW` |
-| `white-space` / wrapping | `wrap` | `None`, `Newlines`, `Preserve`, `Balance` — not full `white-space`; unset inherits parent (theme at root) |
+| `white-space` / wrapping | `wrap` | `.NONE`, `.NEWLINES`, `.PRESERVE`, `.BALANCE` — not full `white-space`; unset inherits parent (theme at root) |
 | `tab-size` | `tab_size` | Preserve text tab stops in space columns; default `4` |
 | `word-spacing` | `word_spacing` | Extra advance on space clusters; default `0` |
 | `z-index` | `z_index` | Local stacking context; layout builds paint/hit `stack_index` (default `0`) |
 
-Non-CSS fields on `Widget_Style`: `id`, `kind`, `auto_focus`, `disabled`, `space` (`Draw_Space`: artboard, screen, or popover — popover paints/hits above screen+artboard with its own stacking context).
+Non-CSS fields on `Widget_Config` include `id`, `kind`, `title`, `auto_focus`, `disabled`, `tabbable`, `accepts_text_input`, `scroll_x`, `scroll_y` and `space`. Draw spaces are `.ARTBOARD`, `.SCREEN`, `.POPOVER` and `.OVERLAY`; later layers paint/hit above earlier ones.
 
-**Stacking:** Layout owns order. Paint lists: artboard → screen → popover. Negative-z children paint under parent chrome; then parent; then non-negative children. Sorted by `(z_index, order, source)` within each stacking context. Each popover root is its own stacking context. Draw tags `stack_index` only. Hit order: popover → screen → artboard.
+**Stacking:** Layout owns order. Paint lists: artboard → screen → popover → overlay. Negative-z children paint under parent chrome; then parent; then non-negative children. Sorted by `(z_index, order, source)` within each stacking context. Each popover/overlay root is its own stacking context. Draw tags `stack_index` only. Hit order: overlay → popover → screen → artboard.
 
 ---
 
-## Not in `Widget_Style`
+## CSS differences and remaining gaps
 
-All CSS properties below have no corresponding field on `Widget_Style`.
+The entries below have no direct field or lack the full CSS semantics. Where typed alternatives exist, use the mappings above and the grid/image sections below.
 
 ### Layout — display & flow
 
 - `display`
 - `float`
 - `clear`
-- `content`- `contain`
+- `content`
+- `contain`
 - `container-type`
 - `container-name`
 
@@ -76,30 +80,26 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `flex` (shorthand — only `flex-grow` via `flex`)
 - `flex-shrink`
 - `flex-basis`
-- `flex-wrap`
-- `flex-flow`
 - `align-content`
-- `align-self`
-- `row-gap` (only unified `gap`)
-- `column-gap` (only unified `gap`)
 
-### Layout — grid
+## Grid mappings
 
-- `grid`
-- `grid-area`
-- `grid-auto-columns`
-- `grid-auto-flow`
-- `grid-auto-rows`
-- `grid-column`
-- `grid-column-end`
-- `grid-column-start`
-- `grid-row`
-- `grid-row-end`
-- `grid-row-start`
-- `grid-template`
-- `grid-template-areas`
-- `grid-template-columns`
-- `grid-template-rows`
+`w.Grid` selects the CSS-like grid solver. These fields exist on `Widget_Config`; track/placement strings are parsed by Oni's grid parser rather than a general CSS engine.
+
+| CSS concept | Field | Helper |
+| --- | --- | --- |
+| `grid-template-columns` / rows | `grid_template_columns` / `grid_template_rows` | `Grid_Template_Columns` / `Grid_Template_Rows`, or `Grid_Cols` / `Grid_Rows` |
+| `grid-auto-columns` / rows | `grid_auto_columns` / `grid_auto_rows` | `Grid_Auto_Columns` / `Grid_Auto_Rows` |
+| `grid-auto-flow` | `grid_auto_flow` | `Grid_Auto_Flow` |
+| `grid-template-areas` | `grid_template_areas` | `Grid_Template_Areas` |
+| `grid-column` / row | `grid_column` / `grid_row` | `Grid_Column` / `Grid_Row` |
+| Column start/end | `grid_column_start` / `grid_column_end` | `Col_Start` / `Col_End` / `Col_Span` |
+| Row start/end | `grid_row_start` / `grid_row_end` | `Row_Start` / `Row_End` / `Row_Span` |
+| `grid-area` | `grid_area` | `Grid_Area` |
+
+The combined CSS `grid` and `grid-template` shorthands have no direct field. See [`style_grid.odin`](../style_grid.odin) for accepted syntax and [`layout_grid.odin`](../layout_grid.odin) for sizing behavior.
+
+## Remaining CSS gaps
 
 ### Layout — positioning
 
@@ -115,7 +115,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 
 ### Box model
 
-- `margin-top` / `margin-right` / `margin-bottom` / `margin-left` (use `margin` / `Pd` / `Pd_struct` sides)
+- `margin-top` / `margin-right` / `margin-bottom` / `margin-left` (use `margin` / `Mg` / `Mg_struct` sides)
 - `margin-block` / `margin-inline` and logical longhands
 - CSS margin collapse (Oni does not collapse adjacent margins; use `gap_*` for sibling spacing)
 - `box-sizing`
@@ -126,7 +126,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `max-block-size`
 - `min-inline-size`
 - `max-inline-size`
-- `aspect-ratio` keywords (`auto`, `none`) — only numeric ratio supported
+- `aspect-ratio` (no general field, including numeric ratios; Svg/Vector intrinsic sizing is separate)
 
 ### Borders & outlines
 
@@ -214,7 +214,6 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `font-size-adjust`
 - `font-synthesis`
 - `font-variation-settings`
-- `word-spacing`
 - `text-decoration` (shorthand — use line/style/color fields)
 - `text-decoration-thickness`
 - `text-underline-offset`
@@ -235,7 +234,6 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `hyphenate-character`
 - `hyphenate-limit-chars`
 - `line-break`
-- `tab-size`
 - `vertical-align`
 - `writing-mode`
 - `text-orientation`
@@ -280,18 +278,15 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `animation-fill-mode`
 - `animation-play-state`
 
-(`Transition` is commented out in `types.odin`.)
+Drive animations from app-owned state (for example, Tengu) and pass the resulting values each frame. Wake on-demand rendering while animation changes pixels; see [FRAME_MODES.md](FRAME_MODES.md).
 
-### Images & replaced content
+## Image mappings
 
-- `object-fit`
-- `object-position`
-- `image-rendering`
+`texture_fit` (`set.Texture_Fit`) maps object-fit to `.CONTAIN`, `.COVER`, `.FILL`, `.NONE` or `.SCALE_DOWN`. `texture_pos` uses `set.Texture_Pos` or `set.Texture_Pos_Edges` for placement. These fields apply to image geometry; native vector widgets use their own `Vector_Fit`. There is no general CSS `image-rendering` field.
 
 ### Interaction
 
 - `cursor`
-- `pointer-events`
 - `user-select`
 - `touch-action`
 - `caret-color`
@@ -305,8 +300,7 @@ All CSS properties below have no corresponding field on `Widget_Style`.
 - `list-style-position`
 - `list-style-image`
 - `table-layout`
-- `border-collapse`
-- `border-spacing`
+- `border-collapse` / `border-spacing` as standalone CSS fields (table collapse uses `gap_x` / `gap_y` and the table border solver)
 - `caption-side`
 - `empty-cells`
 

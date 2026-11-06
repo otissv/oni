@@ -33,7 +33,7 @@ Every public widget defines four types:
 | `*_Config` | `Widget_Config` fields (`id`, style, `disabled`, …) plus domain values (`open`, `checked`, text, …) | Any `proc` field |
 | `*_Props` | `config` and procedures | Non-procedure domain / style values |
 
-Disable with `config.disabled` / `set.Disabled`, not a props-level `disabled: bool`. Engine lifecycle bools `unmount` / `can_interactive_during_mount` remain on props; prefer not adding other non-proc fields there.
+Disable with `config.disabled` / `set.Disabled`, not a props-level `disabled: bool`. Existing Button/Checkbox-style APIs still expose lifecycle bools `unmount` / `can_interactive_during_mount` on props. Accordion, Vector and Svg place them on config and adapt to the shared Rectangle shell. Follow the concrete type when using existing widgets; place new non-procedure fields on config.
 
 ### Config shapes
 
@@ -95,8 +95,8 @@ Private `*_theme_base` returns defaults via `set.*` helpers. Always set `kind`. 
 @(private)
 widget_theme_base :: proc(frame_state: ^Widget_State) -> Widget_Config {
 	_ = frame_state
-	return Widget {
-		kind = .WIDGET,
+	return Widget_Config {
+		kind = .RECT,
 		line_height = set.F32(1),
 		border = set.Border(1),
 		border_color = set.Border_color(o.Color.TRANSPARENT),
@@ -259,7 +259,7 @@ Do not mutate caller state inside the widget. Built-in chrome may read engine ma
 
 ## Compound widgets
 
-When parts must share live state within one declaration (Popover, Dialog, Select, Date_Picker, Tabs):
+When parts must share live state within one declaration (Popover, Dialog, Select, Date_Picker, Tabs, Collapsible, Context_Menu, Progress, Accordion):
 
 1. **Root** (`Popover`) — owns `config.open` / `on_open_change`, pushes a private ctx stack frame, runs the standard Layout/Draw shell, runs dismiss / domain logic on Draw.
 2. **Parts** (`Popover_Trigger`, `Popover_Content`, …) — Button-like shells that read/write the ctx (`popover_toggle_open`, anchor rects, content child).
@@ -289,6 +289,23 @@ Generic `widget_refresh_merged` expects `Widget_Merged_State`. Custom State need
 | `test_helpers.odin` | Wire new `*_shutdown` into `with_widget_env` (setup + defer) |
 
 Package is `oni_widgets`. Import engine as `o`, set helpers as `set`. App code imports widgets as `w` and prefers `oni/api.odin` for engine entry points.
+
+## Shipped families and ownership
+
+| Family | Public entry points / contract |
+| --- | --- |
+| Basic content | `Rectangle`, `Text`, `Rich_Text`, `Preserve`, `Image`, `Grid`, `Link`, `Button` |
+| Forms | `Checkbox`, `Radio` / `Radio_Group`, `Slider`, `Text_Input`, `Rich_Text_Input`, `Select` with Trigger/Value/Option parts |
+| Structured data | `Table` with Caption/Head/Heading/Body/Row/Cell/Foot; `Shortcuts_Table` |
+| Date and color | `Calendar`, `Date_Picker` with Input/Trigger/Value; `Color_Picker` and parts |
+| Overlays | `Popover`, `Dialog`, `Context_Menu` and parts; `Error_Banner` |
+| Disclosure/navigation | `Tabs` with List/Trigger/Content; `Collapsible` with Trigger/Content; `Accordion` with Item/Trigger/Content |
+| Progress | `Progress`, Label/Value/Track/Indicator; controlled display value, no value-change callback |
+| Native vectors | `Vector` / `Svg`; frame-snapshotted config, fit and error callbacks; see [VECTOR.md](VECTOR.md) |
+
+Accordion stores selection in caller-owned `config.value: []string`, with `multiple` and `prevent_collapse` policies. `on_value_change` receives a frame-temporary slice of caller-owned strings; copy the slice into app storage to retain it. Item values identify the controlled selection. Its compound context is scoped to the root call rather than a persistent widget graph.
+
+Dialog renders on `.OVERLAY` with Escape/outside dismissal. A hard modal focus trap remains open work; the presence of Dialog chrome does not imply Tab is confined to the dialog. Tooltip, menu bar and host input-capture flags also remain open; see [ROAD_MAP.md](ROAD_MAP.md).
 
 ## Ids and focus
 

@@ -2,7 +2,7 @@
 
 Production HUD / app UI on the hot-reload stack (`main.odin` host + `app/` DLL). Checkboxes track codebase reality: `[x]` **done**, `[~]` **partial**, `[ ]` **not done**. Sequence and non-UI work (platform game, audio, editor) live in [ROAD_MAP.md](ROAD_MAP.md).
 
-**Out of scope here:** accessibility, packaging/installers, SVG/`draw_path`, audio, gameplay collision/camera/entities — see road map Tracks 2–5.
+**Related scope:** accessibility, installers/signing, audio and gameplay collision/camera/entities are tracked in road map Tracks 2–5. Static production builds and tarball packaging are implemented. Native vector/SVG drawing is implemented with a separate open performance acceptance gate; see [VECTOR.md](VECTOR.md) and [SVG-SUPPORTED-PROFILE.md](SVG-SUPPORTED-PROFILE.md).
 
 **Reuse as-is:** `main.odin`, `oni/scripts/build_hot_reload.sh`, hot-reload exports (`app/exports.odin`), tracking allocator in the host, `WINDOW_HIGH_PIXEL_DENSITY`, performance counter timing, `APP_TYPE` / `FRAME_MODE` in `app/globlas/global.odin`.
 
@@ -17,14 +17,16 @@ Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Dual-source blen
 | Dependency | Role |
 | ---------- | ---- |
 | [Odin](https://odin-lang.org/) | Compiler |
-| `glslc` | Compiles `oni/shaders/ui*.{vert,frag}` to SPIR-V |
+| `glslc` | Compiles `oni/shaders/` UI, LCD, vector and probe shaders to SPIR-V |
 | SDL3 | Window, input, SDL_GPU (pinned build under `oni/third_party/sdl3/` when used) |
 | SDL3_image | Texture loading |
 | FreeType | Font rasterization (gray + LCD) |
 | HarfBuzz | Text shaping |
 | `inotify-tools` (Linux) | Hot-reload file watch |
 
-Build flags: `-vet -strict-style -debug`. Collections via `oni/odin_collections.sh`.
+Development flags: `-vet -strict-style -debug`. Production flags: `-vet -strict-style -o:speed -disable-assert`. Collections and optional local SDL linker flags come from `oni/odin_collections.sh`.
+
+Run these from the consumer root; scripts resolve that root as the parent of `oni/` unless `ONI_PROJECT_ROOT` is set. Development uses `./oni/scripts/build_hot_reload.sh run` (`build`, `restart` and `stop` are also available). Production uses `./oni/scripts/build_production.sh build`, then `run`, `smoke` or `package`; output and staged assets live under `build/production/`. The release host is copied from `templates/release/main.odin` when missing. On Linux the package bundles non-GPU shared libraries under `lib/` with `$ORIGIN/lib` rpath; Vulkan ICDs remain OS-provided. `ONI_APP_NAME` overrides the binary name and `ONI_SMOKE_FRAMES` controls smoke duration (default 3).
 
 ### Runtime GPU (Vulkan)
 
@@ -53,6 +55,9 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/bui
 | `oni/templates/` | Starter host + app | [x] |
 | `oni/libs/tengu` | Standalone animation library | [x] |
 | `oni/libs/colors` | Color helpers | [x] |
+| `oni/vector/` | Standalone CPU path, tessellation and SVG package | [x] |
+| `release/main.odin` | Static production host | [x] |
+| `oni/scripts/build_production.sh` | Optimized build, staging, smoke and tarball packaging | [x] |
 | `app/` | Consumer demo: routes, components, theme, DLL exports | [x] |
 | `assets/` | Runtime fonts / textures | [x] |
 | `oni/scripts/build_hot_reload.sh` | Build, run, watch, stop | [x] |
@@ -69,7 +74,8 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/bui
 | `batch.odin` | Vertex/index batches, multi-atlas slots | [x] |
 | `texture.odin` | Upload, sampler, production shelf atlas | [x] |
 | `font_shaper.odin` / `font.odin` | Families, FreeType + HarfBuzz, glyph cache, LCD | [x] |
-| `assets.odin` | Path cache, `Asset_Id` | [x] |
+| `assets.odin` / `assets_io.odin` | Reference-counted async texture requests, decode workers, owner-thread drain | [x] |
+| `vector*.odin` / `layout_vector.odin` | Retained paths, scenes, SVG instances, GPU composition and widget geometry | [x] |
 | `layout.odin` (+ grid / stack / chrome) | Measure + flex/grid solve | [x] |
 | `ui.odin` | Two-pass UI, IDs, focus, tab order | [x] |
 | `input.odin` | Mouse/keys/text session, modifiers | [x] |
@@ -109,7 +115,7 @@ UI_Id :: distinct u64
 
 Matches `run_frame` in `oni/runtime.odin` (pacing may skip the body or present):
 
-1. `input_begin_frame` → poll SDL events (+ `settings_poll`) → update input / DPI
+1. Pacing wait → `input_begin_frame` → poll SDL events (+ `settings_poll`) → update input / DPI; return early if rendering/work is unavailable. Drain async asset completions before UI begin.
 2. `ui_begin_frame()` — Layout pass; reset per-frame UI / layout
 3. App `tick(dt)` (and first-frame `init` once)
 4. `present_frame(draw)` — CPU record, then GPU upload/present:
@@ -120,13 +126,13 @@ Matches `run_frame` in `oni/runtime.odin` (pacing may skip the body or present):
    - `ui_end_frame()` — prune widgets not touched this builder (not focus/tab)
 5. Host `end_frame()` — `ui_end_frame` again (usually no-op after `Render`)
 
-Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame step.
+Popover chrome uses `space = .POPOVER` / `Popover_Begin`; Dialog and framework chrome use `.OVERLAY`. Both are layers in the same frame.
 
 ### Hot reload rules
 
 - [x] GPU objects, font families/faces, atlas live in engine state; rebound on reload
 - [x] App long-lived UI state in heap `Persistent` (`app/exports.odin`); host keeps pointer across DLL swaps
-- [x] `Asset_Id` + paths survive reload; GPU handles recreated via assets/texture reload
+- [x] Texture ids/paths survive reload; generation/token checks reject stale async completions, and retained surfaces re-upload before returning to Ready
 - [x] Widget code is plain procs; no long-lived UI state in package globals outside `Persistent` / engine state
 
 ---
@@ -209,17 +215,23 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 - [x] `assets_init` / `assets_shutdown` / reload-after-hot-reload
 - [x] `assets_load_texture` / `assets_get_texture` (`Load_Texture` / `Get_Texture`)
 - [x] Paths relative to exe working directory
-- [x] Surface load → `SDL_CreateGPUTexture`
+- [x] Worker disk/decode → owner drain → deferred GPU upload; Ready after submission
 - [x] Path → `Asset_Id` cache; GPU re-upload on reload
 - [x] Production shelf atlas (glyphs + small packs): evict, repack, grow, overflow, prefetch — [ATLAS.md](ATLAS.md)
 - [ ] Ship `assets/ui/icons.png` UI icon atlas sheet
 - [ ] Missing-image checker / pink-black fallback texture handle for widgets
 
+### Async texture contract
+
+`Load_Texture(path)` returns a handle and an acceptance bool. Accepted requests can be Pending or Failed; the bool never promises Ready pixels. `Texture_Status` is authoritative, and `Get_Texture(handle.id)` supplies current dimensions after Ready. Duplicate normalized paths acquire another reference; request once when app content changes, and balance each accepted call with `Unload_Texture`. Failed records remain Failed until `Retry_Texture`. `Texture_Error` returns independently owned diagnostic text; release it with `Texture_Error_Free`. Pending/Failed images have zero intrinsic dimensions, so give placeholders explicit sizes if needed.
+
+Workers perform disk/decode only. The owner drains completions in `Run_Frame` / `Present_Frame` and publishes Ready after upload submission. Admission bounds encoded size at 32 MiB, decoded image bytes at 64 MiB, image edge at 8,192 and in-flight surfaces at 128 MiB. Per-frame drains admit up to 16 completions and about 16 MiB of uploads. Unload, retry and device recreation use generations/tokens to reject stale completions; reload joins workers before replacing GPU state.
+
 ### Checkpoint
 
 - [ ] Load icon sheet; draw multiple sub-rects via atlas regions
 - [x] Hot reload texture path
-- [x] Missing file logs and returns false without crashing
+- [x] Accepted missing-file requests become Failed with a diagnostic; immediate rejection returns false
 
 ---
 
@@ -229,7 +241,7 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 
 - [x] FreeType + HarfBuzz linked
 - [x] Thin bindings: `oni/freetype.odin`, `oni/harfbuzz.odin`
-- [x] LCD dual-source path — [FONT.md](../../FONT.md)
+- [x] LCD dual-source path — [DRAW.md](DRAW.md#text-draw-onifontodin)
 
 ### Public font API
 
@@ -237,6 +249,7 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 - [x] Theme registers Inter; body + heading sizes
 - [x] VF `wght` / `opsz`; static face weight matching; synthetic bold/italic
 - [x] Glyph atlas + `font_ensure_glyphs` / layout-owned wrap + draw
+- [x] Persistent shaped-line cache; layout borrows cached lines, invalidated on DPI/font reload
 - [x] Decorations: underline / line-through / overline × solid/double/dotted/dashed/wavy
 - [x] Wrap modes + letter-spacing; HarfBuzz clusters; `Text_Direction` (LTR/RTL)
 - [x] Prefetch APIs (`Font_Prefetch_*`)
@@ -291,7 +304,8 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 - [x] Focus: click sets; click-empty clears; tab moves focus
 - [x] Tab order registration
 - [x] Global hit stack (topmost wins); popover paint/hit slot
-- [~] Modal UX widgets (dialog chrome, focus trap) on that slot — see Section 10
+- [x] Dialog / Context_Menu chrome and dismiss paths — see Section 10
+- [ ] Hard modal focus trap
 - [ ] `ui_want_capture_mouse` / `ui_want_capture_keyboard`
 - [x] Clip push/pop during draw
 
@@ -330,10 +344,14 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 | `Error_Banner` | [x] |
 | `Shortcuts_Table` | [x] |
 | Tooltip | [ ] |
-| Context menu / menu bar | [ ] |
-| Dialog / modal chrome | [ ] |
+| Context_Menu (+ Trigger/Content/Item/Separator) | [x] |
+| Menu bar | [ ] |
+| Dialog (+ Trigger/Scrim/Content/Actions) | [x] chrome + dismiss; focus trap open |
 | Tabs (`Tabs` / `Tabs_List` / `Tabs_Trigger` / `Tabs_Content`) | [x] |
-| Progress | [ ] |
+| Progress (+ Label/Value/Track/Indicator) | [x] |
+| Collapsible (+ Trigger/Content) | [x] |
+| Accordion (+ Item/Trigger/Content) | [x] |
+| Vector / Svg | [x] APIs and controlled widgets; release performance gate open |
 
 ### Other
 
@@ -363,7 +381,7 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 - [x] Caret, selection in UTF-8 / cluster-aware editing (`text_edit` / document)
 - [x] Clipboard via Section 11 (`Clipboard_Get_Text` / `Set_Text`)
 - [x] Arrow / Home / End / select-all / copy / paste / cut paths (shortcut + edit stack)
-- [~] Undo stack for text fields (extend as needed for multi-level)
+- [x] Multi-level undo/redo for text fields (64-entry bounded stacks; edits coalesce within a frame)
 - [x] Caret blink / x from shaped advances
 
 ### Checkpoint
@@ -377,17 +395,19 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`, not a separate frame s
 
 ## Section 10 — Modal & overlay layer
 
-Stacking/hit for overlays: `space = .POPOVER`, `Popover_Begin` / `End`, Select popups. Remaining work is shared modal UX.
+Stacking/hit uses `.POPOVER` for Popover, Select and Context_Menu, and `.OVERLAY` for Dialog/framework chrome. `Popover_Begin` / `Popover_End` and `Begin_Overlay` / `End_Overlay` scope the same frame; neither starts a separate render loop. Hard modal focus trapping, tooltip delay and menu-bar navigation remain open.
 
 ### Deliverables
 
 - [~] Shared popup path (Popover / Select) — keep consolidating; no second system
 - [ ] `ui_tooltip(text, anchor)` — delay; one active
-- [ ] `ui_context_menu(items, pos)` — arrows + Enter; Escape closes
-- [ ] Dialog / modal chrome + focus trap + click-outside (configurable)
+- [x] `Context_Menu` compound parts; Escape/outside dismissal and tabbable items
+- [ ] Menu-bar / complete arrow-key menu navigation
+- [x] Dialog chrome + Escape / outside dismissal
+- [ ] Hard focus trap while Dialog is open
 - [ ] `ui_drag_overlay(preview)` — drag ghost
 - [x] Popup/top layer drawn last; separate hit pass
-- [x] Widget `on_contextmenu` hook (menu system still open)
+- [x] Widget `on_contextmenu` hook and Context_Menu composition
 
 ### Checkpoint
 
@@ -428,7 +448,9 @@ Stacking/hit for overlays: `space = .POPOVER`, `Popover_Begin` / `End`, Select p
 - [ ] Virtualization used by select / asset lists
 - [ ] F3 (or settings) debug overlay: FPS, draw_call_count, batch_flush_count, atlas stats
 - [ ] Log frame spikes > 33 ms
-- [~] Atlas / font / batch production paths — see [ATLAS.md](ATLAS.md), AGENTS.md Performance
+- [x] Glyph atlas recovery, pooled raster workers and multi-texture batching — see [ATLAS.md](ATLAS.md)
+- [x] Shaped-line caching, frame-arena layout scratch and async texture decode/deferred uploads
+- [~] Native vector/SVG dense-scene performance — correctness features exist; release benchmark acceptance remains open ([VECTOR.md](VECTOR.md))
 
 ### Checkpoint
 
@@ -465,20 +487,22 @@ Stacking/hit for overlays: `space = .POPOVER`, `Popover_Begin` / `End`, Select p
 
 ### `oni/scripts/build_hot_reload.sh`
 
-- [x] Compile UI (+ LCD) shaders to SPIR-V
+- [x] Compile UI, LCD, vector and probe shaders to SPIR-V
 - [x] Link FreeType + HarfBuzz
 - [x] Build host + `app` shared library; watch `oni/` and `app/`
-- [ ] Optional: copy `assets/` next to `build/hot_reload/` output on build
+- [x] Development runs from consumer root and reads its `assets/`; production stages assets beside the release binary
 
-### `assets/` layout
+### Consumer `assets/` example
+
+The framework embeds default Inter faces from `assets/fonts/` when no settings faces are configured. The following consumer layout is illustrative; optional PixelOperator/Noto fonts and icon sheets must be supplied by the consumer. Tests use `fixtures/fonts/`.
 
 ```
 assets/
   fonts/
     Inter-VariableFont_opsz,wght.ttf          [x]
     Inter-Italic-VariableFont_opsz,wght.ttf   [x]
-    PixelOperator8.ttf                        [x]
-    PixelOperator8-Bold.ttf                   [x]
+    PixelOperator8.ttf                        optional
+    PixelOperator8-Bold.ttf                   optional
     NotoSansArabic-Regular.ttf                [ ] optional
     NotoSansJP-Regular.otf                    [ ] optional
   ui/
@@ -519,7 +543,7 @@ flowchart TD
     S8 --> S9 --> S10 --> S11 --> S12 --> S13
 ```
 
-**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, LCD text). Open work concentrates in **10** (tooltip/menu/dialog), remaining **11** (file dialogs / DnD / geometry persist), **12** (virtualization / debug overlay), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
+**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, cached shaping, LCD text, async assets and native vectors). Dialog, Context_Menu, Progress, Collapsible and Accordion are implemented. Open work concentrates in **10** (tooltip/menu bar/focus trap), remaining **11** (file dialogs / DnD / geometry persist), **12** (virtualization / debug overlay / vector release performance), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
 
 ---
 
@@ -528,8 +552,8 @@ flowchart TD
 | Topic | Where it lives |
 | ----- | -------------- |
 | Accessibility | Road map Track 5 |
-| Packaging / installers / code signing | Road map Track 5 |
-| SVG / vector paths | Road map Track 5 |
+| Installers / code signing (static build + tarball already implemented) | Road map Track 5 |
+| Native SVG / vector contract and open release gate | [VECTOR.md](VECTOR.md) |
 | Audio (SDL3_mixer) | Road map Track 3 |
 | Platform game (collision, camera, entities) | Road map Track 2 |
 | Tiny level editor | Road map Track 4 |
