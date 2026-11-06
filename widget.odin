@@ -238,10 +238,10 @@ scroll_value_get :: proc(value: Scroll_Value) -> (f32, bool) {
 /*
 Ensures a scroll-offset map entry exists for key and returns a stable pointer.
 */
-widget_scroll_ensure :: proc(key: string) -> ^Vec2 {
+widget_scroll_motion_ensure :: proc(key: string) -> ^Scroll_Motion {
 	if w_ctx == nil || key == "" do return nil
 	if w_ctx.scroll_offsets == nil {
-		w_ctx.scroll_offsets = make(map[string]Vec2)
+		w_ctx.scroll_offsets = make(map[string]Scroll_Motion)
 	}
 	if _, exists := w_ctx.scroll_offsets[key]; !exists {
 		w_ctx.scroll_offsets[widget_retain_key(key)] = {}
@@ -249,26 +249,39 @@ widget_scroll_ensure :: proc(key: string) -> ^Vec2 {
 	return &w_ctx.scroll_offsets[key]
 }
 
+widget_scroll_ensure :: proc(key: string) -> ^Vec2 {
+	motion := widget_scroll_motion_ensure(key)
+
+	if motion == nil {
+		return nil
+	}
+
+	return &motion.offset
+}
+
 /*
 Returns the persisted scroll offset for a widget key.
 */
 widget_scroll_get :: proc(key: string) -> Vec2 {
 	if w_ctx == nil || w_ctx.scroll_offsets == nil || key == "" do return {}
-	return w_ctx.scroll_offsets[key]
+	return w_ctx.scroll_offsets[key].offset
 }
 
 /*
 Writes a scroll offset into widget context for the given key.
 */
 widget_scroll_set :: proc(key: string, scroll: Vec2) {
-	entry := widget_scroll_ensure(key)
+	entry := widget_scroll_motion_ensure(key)
 	if entry == nil do return
-	entry^ = scroll
+	entry.offset = scroll
+	entry.target = scroll
+	entry.last_update_ns = 0
 }
 
 /*
-Applies optional author config.scroll_* overrides into widget context, then
-copies the persisted offsets onto the resolved config for layout/draw.
+Applies author config.scroll_* overrides during Layout, then copies the current
+offset onto resolved config in both passes. Draw must not reapply props captured
+before wheel animation or its notification callback advanced the offset.
 
 No-ops (and does not allocate) for non-scrollports without an author override.
 */
@@ -287,10 +300,20 @@ widget_scroll_apply :: proc(key: string, author: Widget_Config, config: ^Resolve
 		config.scroll_y = 0
 		return
 	}
-	if x, ok := scroll_value_get(author.scroll_x); ok {
+	motion := &w_ctx.scroll_offsets[key]
+
+	if x, ok := scroll_value_get(author.scroll_x); ok && ui_pass() == .Layout {
+		if x != entry.x {
+			motion.target.x = x
+		}
+
 		entry.x = x
 	}
-	if y, ok := scroll_value_get(author.scroll_y); ok {
+	if y, ok := scroll_value_get(author.scroll_y); ok && ui_pass() == .Layout {
+		if y != entry.y {
+			motion.target.y = y
+		}
+
 		entry.y = y
 	}
 	config.scroll_x = entry.x

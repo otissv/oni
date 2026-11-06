@@ -289,6 +289,64 @@ layout_offset_paint_geometry_offsets_edit_glyphs_x :: proc(t: ^testing.T) {
 }
 
 @(test)
+layout_offset_subtree_moves_vector_paint_without_changing_source :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		ui_begin_frame()
+		append(&state.ui.layout.nodes, Layout_Node {
+			ui_id = UI_Id(99),
+			rect = {10, 20, 100, 60},
+			vector = {
+				active = true,
+				viewport = {5, 10, 200, 100},
+				src = {15, 10, 180, 100},
+				content = {12, 22, 96, 56},
+				dst = {12, 24, 96, 52},
+				fit = .COVER,
+			},
+		})
+		layout_offset_subtree(0, -5.5, -15.25)
+		node := &state.ui.layout.nodes[0]
+		testing.expect_value(t, node.rect, Rect{4.5, 4.75, 100, 60})
+		testing.expect_value(t, node.vector.content, Rect{6.5, 6.75, 96, 56})
+		testing.expect_value(t, node.vector.dst, Rect{6.5, 8.75, 96, 52})
+		testing.expect_value(t, node.vector.viewport, Rect{5, 10, 200, 100})
+		testing.expect_value(t, node.vector.src, Rect{15, 10, 180, 100})
+
+		layout_offset_subtree(0, 5.5, 15.25)
+		testing.expect_value(t, node.vector.content, Rect{12, 22, 96, 56})
+		testing.expect_value(t, node.vector.dst, Rect{12, 24, 96, 52})
+	})
+}
+
+@(test)
+layout_apply_scroll_delta_moves_vector_leaf_paint :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		ui_begin_frame()
+		id := UI_Id(99)
+		append(&state.ui.layout.nodes, Layout_Node {
+			ui_id = id,
+			rect = {10, 20, 100, 60},
+			vector = {
+				active = true,
+				viewport = {0, 0, 200, 100},
+				src = {0, 0, 200, 100},
+				content = {12, 22, 96, 56},
+				dst = {12, 24, 96, 52},
+			},
+		})
+		state.ui.layout.id_to_node[id] = 0
+		testing.expect(t, layout_apply_scroll_delta(id, {5, 15}))
+		node := &state.ui.layout.nodes[0]
+		testing.expect_value(t, node.rect, Rect{10, 20, 100, 60})
+		testing.expect_value(t, node.vector.content, Rect{7, 7, 96, 56})
+		testing.expect_value(t, node.vector.dst, Rect{7, 9, 96, 52})
+		testing.expect_value(t, node.vector.viewport, Rect{0, 0, 200, 100})
+		testing.expect_value(t, node.vector.src, Rect{0, 0, 200, 100})
+		testing.expect_value(t, node.scroll, Vec2{5, 15})
+	})
+}
+
+@(test)
 layout_offset_subtree_moves_text_paint_geometry :: proc(t: ^testing.T) {
 	with_ui_env(t, proc(t: ^testing.T) {
 		ui_begin_frame()

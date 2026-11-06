@@ -217,8 +217,8 @@ Widget_Context :: struct {
 	auto_element_index:          u32,
 	// Maps author static keys to retained widget ids for the current pass pair.
 	static_ids:                  map[string]Widget_ID,
-	// Per-scroll-container content offsets in logical pixels.
-	scroll_offsets:              map[string]Vec2,
+	// Per-scroll-container offsets, wheel targets, and animation clocks.
+	scroll_offsets:              map[string]Scroll_Motion,
 	// When true, the scroll container should reveal the focused child.
 	scroll_auto_reveal:          map[string]bool,
 	// Pointer X in logical design pixels.

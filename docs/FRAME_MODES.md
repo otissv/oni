@@ -78,6 +78,12 @@ Wake is only required when **effective pacing is on-demand**:
 
 Calling `Request_Frame` / `Wake_For` in continuous effective pacing is harmless but unnecessary. Vendor libs never call these APIs; the **app** does after stepping them.
 
+Wheel scrolling uses elapsed-time exponential smoothing toward a clamped target.
+Scrollports request frames automatically until they reach that target, including
+after hover ends, so smoothing works in every frame mode. Scrollbar dragging and
+explicit scroll offsets remain immediate; `on_scroll` reports the current animated
+offset. Animation state is retained and pruned with the widget's scroll offset.
+
 Oni exposes only **push wake** (names illustrative)—no app poll-hook registry:
 
 - `Request_Frame()` — schedule at least one more frame.

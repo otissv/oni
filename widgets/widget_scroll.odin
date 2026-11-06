@@ -85,7 +85,7 @@ widget_scroll_notify :: proc(scroll_x, scroll_y: f32) {
 	ctx := widget_scroll_top()
 
 	if ctx.scroll != nil {
-		ctx.scroll^ = {scroll_x, scroll_y}
+		o.widget_scroll_set(ctx.element_id, {scroll_x, scroll_y})
 	}
 
 	if ctx.on_scroll != nil {
@@ -251,7 +251,7 @@ widget_emit_scroll_bars :: proc(ctx: Widget_Scroll_Ctx) {
 }
 
 /*
-Handles mouse-wheel scrolling for a hovered scrollport widget.
+Accepts wheel input while hovered and advances smoothing even after hover ends.
 
 Persists the new offset in widget context and invokes `on_scroll` when it changes.
 */
@@ -262,46 +262,27 @@ widget_handle_scroll_wheel :: proc(
 	element_id: string,
 	on_scroll: proc(scroll_x, scroll_y: f32) = nil,
 ) {
-	if !hovered {
-		return
-	}
-
 	if !o.style_is_scrollport(config.overflow_x, config.overflow_y) {
 		return
 	}
 
-	if o.Shortcut_Wheel_Consumed() {
-		return
-	}
+	wheel: o.Vec2
 
-	wheel_x := o.state.input.mouse_wheel_x
-	wheel_y := o.state.input.mouse_wheel_y
-
-	if wheel_x == 0 && wheel_y == 0 {
-		return
-	}
-
-	entry := o.widget_scroll_ensure(element_id)
-
-	if entry == nil {
-		return
+	if hovered && !o.Shortcut_Wheel_Consumed() {
+		wheel = {o.state.input.mouse_wheel_x, o.state.input.mouse_wheel_y}
 	}
 
 	metrics, _ := o.Scrollport_Metrics_Get(layout_id)
+	previous := o.widget_scroll_get(element_id)
+	accepted := o.widget_scroll_update(element_id, metrics.max_scroll, wheel, config.overflow_x, config.overflow_y)
+	scroll := o.widget_scroll_get(element_id)
+	o.layout_apply_scroll_delta(layout_id, scroll - metrics.scroll)
 
-	if o.scroll_apply_wheel(
-		&entry.x,
-		&entry.y,
-		metrics.max_scroll,
-		wheel_x,
-		wheel_y,
-		config.overflow_x,
-		config.overflow_y,
-	) {
-		if on_scroll != nil {
-			on_scroll(entry.x, entry.y)
-		}
+	if scroll != previous && on_scroll != nil {
+		on_scroll(scroll.x, scroll.y)
+	}
 
+	if accepted {
 		o.Shortcut_Consume_Wheel()
 		o.Stop_Propagation()
 	}

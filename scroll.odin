@@ -36,7 +36,7 @@ layout_child_is_scroll_content :: proc(child: ^Layout_Node) -> bool {
 /*
 Offsets layout-owned paint geometry that was finalized in absolute coordinates.
 
-Node rects are scrolled separately; text glyphs, decorations, image dst, and
+Node rects are scrolled separately; text glyphs, decorations, image/vector dst, and
 collapsed-border strips must move with the same delta or they paint unmoved.
 */
 layout_offset_paint_geometry :: proc(node: ^Layout_Node, dx, dy: f32) {
@@ -66,6 +66,13 @@ layout_offset_paint_geometry :: proc(node: ^Layout_Node, dx, dy: f32) {
 		node.image.content.y += dy
 		node.image.dst.x += dx
 		node.image.dst.y += dy
+	}
+
+	if node.vector.active {
+		node.vector.content.x += dx
+		node.vector.content.y += dy
+		node.vector.dst.x += dx
+		node.vector.dst.y += dy
 	}
 
 	layout_offset_chrome_geometry(node, dx, dy)
@@ -361,10 +368,25 @@ layout_apply_scroll_delta :: proc(id: UI_Id, delta: Vec2) -> bool {
 
 	node := &state.ui.layout.nodes[node_index]
 	layout_offset_paint_geometry(node, -delta.x, -delta.y)
+
+	for child_index in node.child_indices {
+		child := &state.ui.layout.nodes[child_index]
+
+		if layout_child_is_scroll_content(child) {
+			layout_offset_subtree(child_index, -delta.x, -delta.y)
+			layout_resolve_clips(child_index, node.clip_rect, node.has_clip)
+		}
+	}
+
 	node.scroll.x += delta.x
 	node.scroll.y += delta.y
 	node.config.scroll_x = node.scroll.x
 	node.config.scroll_y = node.scroll.y
+
+	if metrics, has_metrics := ui_scrollport_metrics(id); has_metrics {
+		metrics.scroll = node.scroll
+		scroll_store_metrics(id, metrics)
+	}
 
 	return true
 }
