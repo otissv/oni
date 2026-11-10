@@ -53,7 +53,7 @@ popover_trigger_theme_base :: proc(frame_state: ^Popover_Trigger_State) -> Popov
 
 @(private)
 popover_trigger_on_click :: proc(ev: Popover_Trigger_Event) {
-	popover_toggle_open()
+	Popover_Toggle(popover_current_handle())
 
 	if popover_ctx_ok() {
 		user := popover_ctx_top().trigger_user_click
@@ -102,7 +102,7 @@ Popover_Trigger :: proc(props: Popover_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
-		popover_set_trigger(key, layout_id, {})
+		popover_set_trigger(popover_current_handle(), key, layout_id, {})
 
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
@@ -146,7 +146,7 @@ Popover_Trigger :: proc(props: Popover_Trigger_Props) {
 
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
-	popover_set_trigger(key, layout_id, rect)
+	popover_set_trigger(popover_current_handle(), key, layout_id, rect)
 
 	widget_handle_interaction(
 		props_with_toggle,
@@ -161,7 +161,7 @@ Popover_Trigger :: proc(props: Popover_Trigger_Props) {
 	)
 
 	if frame_state.is_hovered {
-		popover_note_pointer()
+		Popover_Claim_Pointer(popover_current_handle())
 	}
 
 	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)

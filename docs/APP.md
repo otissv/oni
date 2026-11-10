@@ -87,7 +87,8 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/bui
 | `frame_mode.odin` | Continuous / on-demand / focused pacing | [x] |
 | `gamepad.odin` | Gamepad polling (+ shortcut binds) | [x] |
 | `log.odin` / `error.odin` | Logging + structured errors | [x] |
-| File open/save / folder / drag-drop | Native dialogs + drop events | [ ] |
+| File open/save / folder | Native modal pickers; owned results | [x] |
+| File drag-drop | Native drop events | [ ] |
 
 ### Core types (stable)
 
@@ -397,9 +398,15 @@ Workers perform disk/decode only. The owner drains completions in `Run_Frame` / 
 
 Stacking/hit uses `.POPOVER` for Popover, Select and Context_Menu, and `.OVERLAY` for Dialog/framework chrome. `Popover_Begin` / `Popover_End` and `Begin_Overlay` / `End_Overlay` scope the same frame; neither starts a separate render loop. Hard modal focus trapping, tooltip delay and menu-bar navigation remain open.
 
+Popup control uses `Popover_Handle` through `Popover_Is_Open(handle)`, `Popover_Set_Open(handle, open)` and `Popover_Toggle(handle)`. Popover, Select, Date_Picker and Context_Menu child callbacks receive their own handle in `frame_state.popup`; inline Select listboxes receive an empty handle. Handles belong to the current callback/pass and must not be retained across frames. Expired handles are inert, including after stack-slot reuse and shutdown. Open values remain app-owned via `config.open` and `on_open_change`; repeated requests for the current value do not notify again.
+
+All four popup widgets use `Popover_Claim_Pointer(handle)` and `Popover_Process_Dismissal(handle)` internally. Nested panel hits also claim enclosing roots, Escape closes the innermost enabled popup and is consumed once, and disabled roots do not consume it. Outside left presses dismiss all popup types; Context_Menu also dismisses on outside right presses. Select and Date_Picker retain domain keyboard navigation but delegate dismissal and open transitions to the shared control path. Placement still uses the existing anchored Popover panel or pointer-anchored Context_Menu panel in `.POPOVER` space.
+
+The implicit `Popover_Is_Open()` / `Popover_Set_Open(open)`, `Context_Menu_Is_Open()` / `Context_Menu_Set_Open(open)`, `Select_Is_Open()`, and `Date_Picker_Is_Open()` / `Date_Picker_Set_Open(open)` APIs have been removed. Inline listbox content activity is available as `Select_State.open`. Use the scoped handle from the owning child callback with the shared API.
+
 ### Deliverables
 
-- [~] Shared popup path (Popover / Select) — keep consolidating; no second system
+- [x] Shared popup control (Popover / Select / Date_Picker / Context_Menu) — scoped handles, one dismissal path; no second system
 - [ ] `ui_tooltip(text, anchor)` — delay; one active
 - [x] `Context_Menu` compound parts; Escape/outside dismissal and tabbable items
 - [ ] Menu-bar / complete arrow-key menu navigation
@@ -411,7 +418,7 @@ Stacking/hit uses `.POPOVER` for Popover, Select and Context_Menu, and `.OVERLAY
 
 ### Checkpoint
 
-- [ ] Dropdown/select uses only the shared popup API
+- [x] Dropdown/select uses only the shared popup API
 - [ ] Right-click context menu on a list row
 - [ ] Drag slider thumb can show a drag overlay ghost
 
@@ -423,11 +430,13 @@ Stacking/hit uses `.POPOVER` for Popover, Select and Context_Menu, and `.OVERLAY
 | ------- | ------ |
 | System clipboard (SDL UTF-8) bridged to text editing | [x] |
 | Open URL (`Open_URL` / allowlisted schemes) | [x] |
-| File open/save dialogs | [ ] |
-| Folder pick | [ ] |
+| File open/save dialogs | [x] `Open_File_Dialog` / `Save_File_Dialog` |
+| Folder pick | [x] `Pick_Folder`, including multi-selection |
 | Drag and drop (`SDL_EVENT_DROP_FILE`) | [ ] |
 | Persist window size/position/maximized | [~] mode via settings; geometry restore open |
 | Multi-monitor DPI | [x] dpi events; [ ] dialog re-center when dialogs exist |
+
+Native dialogs use one modal, main-thread API with explicit result ownership; see [NATIVE_DIALOGS.md](NATIVE_DIALOGS.md) for options, error handling, cleanup and controlled text-field integration. Selection does not perform file I/O.
 
 ### Checkpoint
 
@@ -543,7 +552,7 @@ flowchart TD
     S8 --> S9 --> S10 --> S11 --> S12 --> S13
 ```
 
-**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, cached shaping, LCD text, async assets and native vectors). Dialog, Context_Menu, Progress, Collapsible and Accordion are implemented. Open work concentrates in **10** (tooltip/menu bar/focus trap), remaining **11** (file dialogs / DnD / geometry persist), **12** (virtualization / debug overlay / vector release performance), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
+**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, cached shaping, LCD text, async assets and native vectors). Dialog, Context_Menu, Progress, Collapsible and Accordion are implemented. Open work concentrates in **10** (tooltip/menu bar/focus trap), remaining **11** (DnD / geometry persist), **12** (virtualization / debug overlay / vector release performance), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
 
 ---
 

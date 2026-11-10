@@ -408,7 +408,7 @@ context_menu_disabled_root_blocks_open :: proc(t: ^testing.T) {
 context_menu_test_saw_open := false
 
 @(test)
-context_menu_is_open_helper_reads_ctx :: proc(t: ^testing.T) {
+context_menu_shared_handle_reads_open :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		context_menu_test_saw_open = false
 		widget_test_begin_layout()
@@ -416,8 +416,8 @@ context_menu_is_open_helper_reads_ctx :: proc(t: ^testing.T) {
 
 		Context_Menu({
 			config = {id = "ctx-helper", open = true},
-			child = proc(_: Context_Menu_State) {
-				context_menu_test_saw_open = Context_Menu_Is_Open()
+			child = proc(fs: Context_Menu_State) {
+				context_menu_test_saw_open = Popover_Is_Open(fs.popup)
 			},
 		})
 		widget_test_finish_layout()

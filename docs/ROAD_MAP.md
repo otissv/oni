@@ -48,7 +48,7 @@ Shipped and in daily use:
 - [x] Native vector paths, strokes, paints, composition and SVG instances; dense-scene release gate still open
 - [x] Package tests via `./oni/scripts/test_all.sh` (vet, strict-style, leak tracking)
 
-Still open at a high level: tooltip / menu bar / input-capture flags, OS file/DnD, performance virtualization, **platform game**, audio, editor, a11y / installers and signing. Native SVG is implemented; its dense-scene release performance remains open. Tracked below and in [APP.md](APP.md).
+Still open at a high level: tooltip / menu bar / input-capture flags, OS DnD, performance virtualization, **platform game**, audio, editor, a11y / installers and signing. Native SVG is implemented; its dense-scene release performance remains open. Tracked below and in [APP.md](APP.md).
 
 ---
 
@@ -63,7 +63,7 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [ ] **Menu bar** (app chrome; arrow + Enter navigation across menus)
 - [x] **Dialog** (`Dialog` / Trigger / Scrim / Content / Actions; Escape + outside dismiss on `.OVERLAY`)
 - [ ] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
-- [~] **Dropdown**: keep one shared popup API — no second overlay system
+- [x] **Dropdown**: one shared popup control API for Popover, Select, Date_Picker and Context_Menu; scoped ownership and shared dismissal — no second overlay system
 - [x] Select 
 - [x] Popover 
 - [x] Context_Menu 
@@ -86,8 +86,8 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 
 - [x] System clipboard bridged to text editing
 - [x] Open URL
-- [ ] File open / save dialogs (`SDL_ShowOpenFileDialog` / save)
-- [ ] Folder pick
+- [x] Native file open / save-path dialogs (`Open_File_Dialog` / `Save_File_Dialog`) — see [NATIVE_DIALOGS.md](NATIVE_DIALOGS.md)
+- [x] Native folder picker (`Pick_Folder`), including multi-selection
 - [ ] Drag-and-drop files (`SDL_EVENT_DROP_FILE`)
 - [~] Window mode via settings; persist size / position / maximized across launches
 - [ ] Missing-image checker / pink-black fallback texture for widgets

@@ -23,6 +23,7 @@ Live compound context pushed by `Context_Menu` for Trigger / Content parts.
 */
 @(private)
 Context_Menu_Ctx :: struct {
+	popup:                Popover_Handle,
 	menu_key:             string,
 	open:                 bool,
 	disabled:             bool,
@@ -33,7 +34,6 @@ Context_Menu_Ctx :: struct {
 	has_trigger:          bool,
 	anchor_point:         o.Vec2,
 	has_anchor_point:     bool,
-	pointer_owned:        bool,
 	trigger_user_context: proc(event: Context_Menu_Trigger_Event),
 	trigger_user_click:   proc(event: Context_Menu_Trigger_Event),
 	item_user_click:      proc(event: Context_Menu_Item_Event),
@@ -77,11 +77,19 @@ context_menu_ctx_push :: proc(ctx: Context_Menu_Ctx) {
 	assert(context_menu_ctx_depth < CONTEXT_MENU_CTX_STACK_MAX)
 	context_menu_ctx_stack[context_menu_ctx_depth] = ctx
 	context_menu_ctx_depth += 1
+	context_menu_ctx_top().popup = popover_ctx_push({
+		popover_key = ctx.menu_key,
+		open = ctx.open,
+		disabled = ctx.disabled,
+		dismiss_right_press = true,
+		on_open_change = context_menu_on_popup_open_change,
+	})
 }
 
 @(private)
 context_menu_ctx_pop :: proc() {
 	assert(context_menu_ctx_depth > 0)
+	popover_ctx_pop()
 	context_menu_ctx_depth -= 1
 	context_menu_ctx_stack[context_menu_ctx_depth] = {}
 }
@@ -96,28 +104,6 @@ context_menu_ctx_top :: proc() -> ^Context_Menu_Ctx {
 	assert(context_menu_ctx_depth > 0)
 
 	return &context_menu_ctx_stack[context_menu_ctx_depth - 1]
-}
-
-/*
-Returns whether the active `Context_Menu` root is open.
-*/
-Context_Menu_Is_Open :: proc() -> bool {
-	if !context_menu_ctx_ok() {
-		return false
-	}
-
-	return context_menu_ctx_top().open
-}
-
-/*
-Opens or closes the active `Context_Menu` root.
-*/
-Context_Menu_Set_Open :: proc(open: bool) {
-	if !context_menu_ctx_ok() {
-		return
-	}
-
-	context_menu_set_open(open)
 }
 
 @(private)
@@ -175,23 +161,26 @@ context_menu_load_anchor :: proc(menu_key: string) -> (point: o.Vec2, ok: bool) 
 
 @(private)
 context_menu_set_open :: proc(open: bool) {
-	ctx := context_menu_ctx_top()
+	if !context_menu_ctx_ok() do return
+	Popover_Set_Open(context_menu_ctx_top().popup, open)
+}
 
-	if ctx.disabled {
-		return
+@(private)
+context_menu_on_popup_open_change :: proc(handle: Popover_Handle, open: bool) {
+	ctx: ^Context_Menu_Ctx
+	for i in 0 ..< context_menu_ctx_depth {
+		candidate := &context_menu_ctx_stack[i]
+		if candidate.popup == handle {
+			ctx = candidate
+			break
+		}
 	}
-
-	if ctx.open == open {
-		return
-	}
-
+	if ctx == nil do return
 	ctx.open = open
-
 	if !open {
 		ctx.has_anchor_point = false
 		context_menu_clear_anchor(ctx.menu_key)
 	}
-
 	if ctx.on_open_change != nil {
 		ctx.on_open_change(open)
 	}
@@ -245,40 +234,8 @@ context_menu_set_trigger :: proc(key: string, layout_id: o.UI_Id, rect: o.Rect) 
 
 @(private)
 context_menu_note_pointer :: proc() {
-	if !context_menu_ctx_ok() {
-		return
-	}
-
-	context_menu_ctx_top().pointer_owned = true
-}
-
-@(private)
-context_menu_handle_dismiss :: proc(root_key: string) {
-	if !context_menu_ctx_ok() {
-		return
-	}
-
-	ctx := context_menu_ctx_top()
-
-	if !ctx.open {
-		return
-	}
-
-	_ = root_key
-
-	esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-	if esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-		context_menu_set_open(false)
-		o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-	}
-
-	outside_press :=
-		(o.w_ctx.left_mouse.pressed || o.w_ctx.right_mouse.pressed) && !ctx.pointer_owned
-
-	if outside_press {
-		context_menu_set_open(false)
-	}
+	if !context_menu_ctx_ok() do return
+	Popover_Claim_Pointer(context_menu_ctx_top().popup)
 }
 
 @(private)

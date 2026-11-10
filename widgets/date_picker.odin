@@ -36,6 +36,7 @@ Date_Picker_Config :: struct {
 Date picker root per-frame state merged with resolved style and selection fields.
 */
 Date_Picker_State :: struct {
+	popup:             Popover_Handle,
 	using frame_state: o.Widget_Frame_State,
 	config:            o.Resolved_Widget_Config,
 	mode:              Calendar_Mode,
@@ -377,17 +378,6 @@ Date_Picker :: proc(props: Date_Picker_Props) {
 		props.on_scroll,
 		frame_state.is_hovered,
 	)
-
-	trigger_focused := false
-
-	if popover_ctx_ok() {
-		tkey := popover_ctx_top().trigger_key
-		trigger_focused = tkey != "" && widget_is_focused(tkey)
-	}
-
-	if trigger_focused || widget_is_focused(key) {
-		date_picker_handle_keys()
-	}
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

@@ -446,8 +446,8 @@ Date_Picker_Input :: proc(props: Date_Picker_Input_Props) {
 	text, _ := date_picker_input_resolve_text(props, picker_key)
 	ti_cfg := date_picker_input_text_config(cfg, text, placeholder, disabled)
 
-	if popover_ctx_ok() && o.ui_pass() == .Layout {
-		popover_set_trigger(key, layout_id, {})
+	if date_picker_ctx_ok() && o.ui_pass() == .Layout {
+		popover_set_trigger(date_picker_ctx_top().popup, key, layout_id, {})
 	}
 
 	Text_Input(
@@ -475,7 +475,7 @@ Date_Picker_Input :: proc(props: Date_Picker_Input_Props) {
 		},
 	)
 
-	if popover_ctx_ok() && o.ui_pass() == .Draw {
-		popover_set_trigger(key, layout_id, o.ui_layout_rect(layout_id))
+	if date_picker_ctx_ok() && o.ui_pass() == .Draw {
+		popover_set_trigger(date_picker_ctx_top().popup, key, layout_id, o.ui_layout_rect(layout_id))
 	}
 }

@@ -206,6 +206,11 @@ Shortcut_Save_Bindings :: shortcut_save_bindings
 Shortcut_Load_Bindings :: shortcut_load_bindings
 Shortcut_Load_Bindings_Ex :: shortcut_load_bindings_ex
 Shortcut_Process :: shortcut_process
+Open_File_Dialog :: open_file_dialog
+Save_File_Dialog :: save_file_dialog
+Pick_Folder :: pick_folder
+Destroy_File_Dialog_Result :: destroy_file_dialog_result
+
 Clipboard_Get_Text :: clipboard_get_text
 Clipboard_Set_Text :: clipboard_set_text
 Open_URL :: open_url

@@ -424,7 +424,7 @@ date_picker_open_toggle_notifies_callback :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "toggle",
 				open = false,
@@ -432,15 +432,15 @@ date_picker_open_toggle_notifies_callback :: proc(t: ^testing.T) {
 				on_open_change = date_picker_test_on_open,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		date_picker_toggle_open()
-		testing.expect(t, Date_Picker_Is_Open())
+		testing.expect(t, Popover_Is_Open(date_picker_ctx_top().popup))
 		testing.expect(t, date_picker_test_open)
 		testing.expect_value(t, date_picker_test_open_count, 1)
 
 		date_picker_set_open(false)
-		testing.expect(t, !Date_Picker_Is_Open())
+		testing.expect(t, !Popover_Is_Open(date_picker_ctx_top().popup))
 		testing.expect(t, !date_picker_test_open)
 		testing.expect_value(t, date_picker_test_open_count, 2)
 	})
@@ -452,7 +452,7 @@ date_picker_select_single_closes_and_notifies :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "pick-single",
 				open = true,
@@ -460,13 +460,13 @@ date_picker_select_single_closes_and_notifies :: proc(t: ^testing.T) {
 				on_select = date_picker_test_on_select,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		Date_Picker_Notify_Select({mode = .SINGLE, single = {2024, 6, 5}, has_single = true})
 		testing.expect_value(t, date_picker_test_select_count, 1)
 		testing.expect(t, date_picker_test_has_selected)
 		testing.expect(t, Calendar_Date_Equal(date_picker_test_selected, {2024, 6, 5}))
-		testing.expect(t, !Date_Picker_Is_Open())
+		testing.expect(t, !Popover_Is_Open(date_picker_ctx_top().popup))
 	})
 }
 
@@ -476,7 +476,7 @@ date_picker_select_range_closes_when_complete :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "pick-range",
 				open = true,
@@ -484,10 +484,10 @@ date_picker_select_range_closes_when_complete :: proc(t: ^testing.T) {
 				on_select = date_picker_test_on_select,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		Date_Picker_Notify_Select({mode = .RANGE, range = {from = {2024, 1, 20}, has_from = true}})
-		testing.expect(t, Date_Picker_Is_Open())
+		testing.expect(t, Popover_Is_Open(date_picker_ctx_top().popup))
 
 		Date_Picker_Notify_Select(
 			{
@@ -495,7 +495,7 @@ date_picker_select_range_closes_when_complete :: proc(t: ^testing.T) {
 				range = {from = {2024, 1, 20}, to = {2024, 2, 9}, has_from = true, has_to = true},
 			},
 		)
-		testing.expect(t, !Date_Picker_Is_Open())
+		testing.expect(t, !Popover_Is_Open(date_picker_ctx_top().popup))
 		testing.expect(t, date_picker_test_range.has_to)
 	})
 }
@@ -506,7 +506,7 @@ date_picker_keep_open_prevents_close_on_select :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "keep",
 				open = true,
@@ -515,10 +515,10 @@ date_picker_keep_open_prevents_close_on_select :: proc(t: ^testing.T) {
 				on_select = date_picker_test_on_select,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		Date_Picker_Notify_Select({mode = .SINGLE, single = {2024, 6, 5}, has_single = true})
-		testing.expect(t, Date_Picker_Is_Open())
+		testing.expect(t, Popover_Is_Open(date_picker_ctx_top().popup))
 	})
 }
 
@@ -574,7 +574,7 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "esc",
 				open = true,
@@ -582,13 +582,16 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 				on_open_change = date_picker_test_on_open,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		o.w_ctx.keys[int(o.Scancode.ESCAPE)] = {
 			pressed = true,
 			down    = true,
 		}
 		date_picker_handle_keys()
+		Popover_Process_Dismissal(date_picker_ctx_top().popup)
+		testing.expect(t, !Popover_Is_Open(date_picker_ctx_top().popup))
+		testing.expect_value(t, date_picker_test_open_count, 1)
 		testing.expect(t, !date_picker_test_open)
 	})
 }
@@ -596,19 +599,19 @@ date_picker_escape_closes_open_popover :: proc(t: ^testing.T) {
 @(test)
 date_picker_value_shows_placeholder_and_selection :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
-		date_picker_ctx_push({picker_key = "val", mode = .SINGLE, has_selected = false})
+		date_picker_test_ctx_push({picker_key = "val", mode = .SINGLE, has_selected = false})
 		text, has := date_picker_resolve_value_text("Pick a date")
 		testing.expect(t, !has)
 		testing.expect(t, text == "Pick a date")
-		date_picker_ctx_pop()
+		date_picker_test_ctx_pop()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{picker_key = "val2", mode = .SINGLE, selected = {2024, 6, 5}, has_selected = true},
 		)
 		text, has = date_picker_resolve_value_text("Pick a date")
 		testing.expect(t, has)
 		testing.expect(t, text == "June 5, 2024")
-		date_picker_ctx_pop()
+		date_picker_test_ctx_pop()
 	})
 }
 
@@ -618,7 +621,7 @@ date_picker_input_parses_iso_on_commit :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "input",
 				mode = .SINGLE,
@@ -626,7 +629,7 @@ date_picker_input_parses_iso_on_commit :: proc(t: ^testing.T) {
 				on_select = date_picker_test_on_select,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		date_picker_input_sync_runtime_format("input", "YYYY-MM-DD")
 
@@ -709,7 +712,7 @@ date_picker_input_calendar_select_updates_formatted_text :: proc(t: ^testing.T) 
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "input-fmt",
 				mode = .SINGLE,
@@ -717,7 +720,7 @@ date_picker_input_calendar_select_updates_formatted_text :: proc(t: ^testing.T) 
 				on_select = date_picker_test_on_select,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		date_picker_input_sync_runtime_format("input-fmt", "DD/MM/YYYY")
 		rt := date_picker_runtime_ensure("input-fmt")
@@ -875,7 +878,7 @@ date_picker_trigger_click_toggles_open :: proc(t: ^testing.T) {
 		date_picker_test_reset()
 		defer date_picker_shutdown()
 
-		date_picker_ctx_push(
+		date_picker_test_ctx_push(
 			{
 				picker_key = "click",
 				open = false,
@@ -884,7 +887,7 @@ date_picker_trigger_click_toggles_open :: proc(t: ^testing.T) {
 				trigger_user_click = date_picker_test_on_trigger_click,
 			},
 		)
-		defer date_picker_ctx_pop()
+		defer date_picker_test_ctx_pop()
 
 		date_picker_trigger_on_click({})
 		testing.expect(t, date_picker_ctx_top().open)
@@ -897,4 +900,20 @@ date_picker_trigger_click_toggles_open :: proc(t: ^testing.T) {
 date_picker_effective_mode_defaults_none_to_single :: proc(t: ^testing.T) {
 	testing.expect(t, date_picker_effective_mode(.NONE) == .SINGLE)
 	testing.expect(t, date_picker_effective_mode(.RANGE) == .RANGE)
+}
+
+@(private)
+date_picker_test_ctx_push :: proc(ctx: Date_Picker_Ctx) {
+	date_picker_ctx_push(ctx)
+	date_picker_ctx_top().popup = popover_ctx_push({
+		open = ctx.open,
+		disabled = ctx.disabled,
+		on_open_change = date_picker_on_popover_open_change,
+	})
+}
+
+@(private)
+date_picker_test_ctx_pop :: proc() {
+	popover_ctx_pop()
+	date_picker_ctx_pop()
 }

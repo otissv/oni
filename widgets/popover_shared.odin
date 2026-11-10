@@ -22,18 +22,21 @@ Live compound context pushed by `Popover` for Trigger / Content parts.
 */
 @(private)
 Popover_Ctx :: struct {
-	popover_key:        string,
-	open:               bool,
-	disabled:           bool,
-	on_open_change:     proc(open: bool),
-	trigger_key:        string,
-	trigger_layout_id:  o.UI_Id,
-	trigger_rect:       o.Rect,
-	has_trigger:        bool,
-	pointer_owned:      bool,
-	trigger_user_click: proc(event: Popover_Trigger_Event),
-	content_child:      proc(frame_state: Popover_Content_Props_State),
-	content_frame:      Popover_Content_Props_State,
+	generation:          u64,
+	dismiss_right_press: bool,
+	popover_key:         string,
+	open:                bool,
+	disabled:            bool,
+	on_open_change:      proc(handle: Popover_Handle, open: bool),
+	user_on_open_change: proc(open: bool),
+	trigger_key:         string,
+	trigger_layout_id:   o.UI_Id,
+	trigger_rect:        o.Rect,
+	has_trigger:         bool,
+	pointer_owned:       bool,
+	trigger_user_click:  proc(event: Popover_Trigger_Event),
+	content_child:       proc(frame_state: Popover_Content_Props_State),
+	content_frame:       Popover_Content_Props_State,
 }
 
 @(private)
@@ -41,6 +44,18 @@ popover_ctx_stack: [POPOVER_CTX_STACK_MAX]Popover_Ctx
 
 @(private)
 popover_ctx_depth: int
+
+@(private)
+popover_ctx_generation: u64
+
+/*
+Scoped popup identity. Valid only inside its root callback, in the current pass.
+Popped, replaced and shutdown handles are inert. Never retain across frames.
+*/
+Popover_Handle :: struct {
+	slot:       int,
+	generation: u64,
+}
 
 /*
 Releases popover context stack.
@@ -53,10 +68,15 @@ popover_shutdown :: proc() {
 }
 
 @(private)
-popover_ctx_push :: proc(ctx: Popover_Ctx) {
+popover_ctx_push :: proc(ctx: Popover_Ctx) -> Popover_Handle {
 	assert(popover_ctx_depth < POPOVER_CTX_STACK_MAX)
+	assert(popover_ctx_generation < max(u64))
+	popover_ctx_generation += 1
 	popover_ctx_stack[popover_ctx_depth] = ctx
+	popover_ctx_stack[popover_ctx_depth].generation = popover_ctx_generation
+	handle := Popover_Handle{slot = popover_ctx_depth, generation = popover_ctx_generation}
 	popover_ctx_depth += 1
+	return handle
 }
 
 @(private)
@@ -78,112 +98,105 @@ popover_ctx_top :: proc() -> ^Popover_Ctx {
 	return &popover_ctx_stack[popover_ctx_depth - 1]
 }
 
-/*
-Returns whether the active `Popover` root is open.
-*/
-Popover_Is_Open :: proc() -> bool {
-	if !popover_ctx_ok() {
-		return false
-	}
-
-	return popover_ctx_top().open
-}
-
-/*
-Opens or closes the active `Popover` root.
-*/
-Popover_Set_Open :: proc(open: bool) {
-	if !popover_ctx_ok() {
-		return
-	}
-
-	popover_set_open(open)
+@(private)
+popover_current_handle :: proc() -> Popover_Handle {
+	if !popover_ctx_ok() do return {}
+	ctx := popover_ctx_top()
+	return {slot = popover_ctx_depth - 1, generation = ctx.generation}
 }
 
 @(private)
-popover_set_open :: proc(open: bool) {
-	ctx := popover_ctx_top()
-
-	if ctx.disabled {
-		return
+popover_context :: proc(handle: Popover_Handle) -> ^Popover_Ctx {
+	if handle.generation == 0 || handle.slot < 0 || handle.slot >= popover_ctx_depth {
+		return nil
 	}
+	ctx := &popover_ctx_stack[handle.slot]
+	if ctx.generation != handle.generation do return nil
+	return ctx
+}
 
-	if ctx.open == open {
-		return
-	}
+/*
+Reads the caller-owned open value for this live popup.
+*/
+Popover_Is_Open :: proc(handle: Popover_Handle) -> bool {
+	ctx := popover_context(handle)
+	return ctx != nil && ctx.open
+}
 
+/*
+Requests a change once per transition. Disabled and expired handles are inert.
+*/
+Popover_Set_Open :: proc(handle: Popover_Handle, open: bool) {
+	ctx := popover_context(handle)
+	if ctx == nil || ctx.disabled || ctx.open == open do return
 	ctx.open = open
-
 	if ctx.on_open_change != nil {
-		ctx.on_open_change(open)
+		ctx.on_open_change(handle, open)
 	}
 }
 
 @(private)
-popover_toggle_open :: proc() {
-	if !popover_ctx_ok() {
-		return
+popover_on_open_change :: proc(handle: Popover_Handle, open: bool) {
+	ctx := popover_context(handle)
+	if ctx != nil && ctx.user_on_open_change != nil {
+		ctx.user_on_open_change(open)
+	}
+}
+
+/*
+Toggles the specified live popup through the same change callback.
+*/
+Popover_Toggle :: proc(handle: Popover_Handle) {
+	Popover_Set_Open(handle, !Popover_Is_Open(handle))
+}
+
+/*
+Marks a hit inside this popup and its enclosing popup roots. This prevents
+an ancestor from treating a nested floating panel hit as an outside press.
+*/
+Popover_Claim_Pointer :: proc(handle: Popover_Handle) {
+	if popover_context(handle) == nil do return
+	for i in 0 ..= handle.slot {
+		popover_ctx_stack[i].pointer_owned = true
+	}
+}
+
+/*
+Runs after children on Draw. Escape is consumed only by an enabled open popup;
+outside presses use the same ownership path for all popup widgets.
+*/
+Popover_Process_Dismissal :: proc(handle: Popover_Handle) {
+	ctx := popover_context(handle)
+	if ctx == nil || !ctx.open || ctx.disabled do return
+
+	for i in handle.slot + 1 ..< popover_ctx_depth {
+		if popover_ctx_stack[i].open && !popover_ctx_stack[i].disabled do return
 	}
 
-	popover_set_open(!popover_ctx_top().open)
+	esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
+	if esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
+		o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
+		Popover_Set_Open(handle, false)
+		return
+	}
+	outside_press := o.w_ctx.left_mouse.pressed ||
+	                 (ctx.dismiss_right_press && o.w_ctx.right_mouse.pressed)
+	if outside_press && !ctx.pointer_owned {
+		Popover_Set_Open(handle, false)
+	}
 }
 
 @(private)
-popover_set_trigger :: proc(key: string, layout_id: o.UI_Id, rect: o.Rect) {
-	if !popover_ctx_ok() {
+popover_set_trigger :: proc(handle: Popover_Handle, key: string, layout_id: o.UI_Id, rect: o.Rect) {
+	ctx := popover_context(handle)
+	if ctx == nil {
 		return
 	}
 
-	ctx := popover_ctx_top()
 	ctx.trigger_key = key
 	ctx.trigger_layout_id = layout_id
 	ctx.trigger_rect = rect
 	ctx.has_trigger = true
-}
-
-@(private)
-popover_note_pointer :: proc() {
-	if !popover_ctx_ok() {
-		return
-	}
-
-	popover_ctx_top().pointer_owned = true
-}
-
-@(private)
-popover_handle_dismiss :: proc(root_key: string) {
-	if !popover_ctx_ok() {
-		return
-	}
-
-	ctx := popover_ctx_top()
-
-	if !ctx.open {
-		return
-	}
-
-	trigger_focused := ctx.trigger_key != "" && widget_is_focused(ctx.trigger_key)
-	root_focused := widget_is_focused(root_key)
-
-	if trigger_focused || root_focused {
-		esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-		if esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-			popover_set_open(false)
-			o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-		}
-	} else {
-		esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-		if esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-			popover_set_open(false)
-			o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-		}
-	}
-
-	if o.w_ctx.left_mouse.pressed && !ctx.pointer_owned {
-		popover_set_open(false)
-	}
 }
 
 /*

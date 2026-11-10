@@ -56,6 +56,7 @@ Live compound context pushed by `Select` for Trigger / Value / Option parts.
 */
 @(private)
 Select_Ctx :: struct {
+	popup:              Popover_Handle,
 	select_key:         string,
 	value:              string,
 	value_label:        string,
@@ -193,20 +194,6 @@ select_ctx_ok :: proc() -> bool {
 }
 
 /*
-Returns whether the current Select compound is open.
-
-Reads the live context so Trigger toggles are visible to later siblings in the
-same draw pass. Listbox selects are always treated as open for content.
-*/
-Select_Is_Open :: proc() -> bool {
-	if !select_ctx_ok() do return false
-
-	ctx := select_ctx_top()
-
-	return ctx.open || ctx.listbox
-}
-
-/*
 Returns the current Select value, or "" when none / outside a Select.
 
 In multiple mode this is the first selected value (use `Select_Get_Values`).
@@ -273,9 +260,8 @@ Marks the nested Popover pointer as owned so option / content hits do not dismis
 */
 @(private)
 select_note_pointer :: proc() {
-	if popover_ctx_ok() {
-		popover_note_pointer()
-	}
+	if !select_ctx_ok() do return
+	Popover_Claim_Pointer(select_ctx_top().popup)
 }
 
 @(private)
@@ -498,10 +484,16 @@ select_apply_open_state :: proc(ctx: ^Select_Ctx, open: bool) {
 }
 
 @(private)
-select_on_popover_open_change :: proc(open: bool) {
-	if !select_ctx_ok() do return
-
-	ctx := select_ctx_top()
+select_on_popover_open_change :: proc(handle: Popover_Handle, open: bool) {
+	ctx: ^Select_Ctx
+	for i in 0 ..< select_ctx_depth {
+		candidate := &select_ctx_stack[i]
+		if candidate.popup == handle {
+			ctx = candidate
+			break
+		}
+	}
+	if ctx == nil do return
 
 	if ctx.disabled || ctx.listbox do return
 
@@ -517,43 +509,14 @@ select_on_popover_open_change :: proc(open: bool) {
 @(private)
 select_set_open :: proc(open: bool) {
 	if !select_ctx_ok() do return
-
 	ctx := select_ctx_top()
-
-	if ctx.disabled || ctx.listbox do return
-
-	if ctx.open == open do return
-
-	select_apply_open_state(ctx, open)
-
-	if popover_ctx_ok() {
-		pctx := popover_ctx_top()
-
-		if pctx.open != open {
-			pctx.open = open
-		}
-	}
-
-	if ctx.on_open_change != nil {
-		ctx.on_open_change(open)
-	}
+	Popover_Set_Open(ctx.popup, open)
 }
 
 @(private)
 select_toggle_open :: proc() {
 	if !select_ctx_ok() do return
-
-	ctx := select_ctx_top()
-
-	if ctx.listbox do return
-
-	if popover_ctx_ok() {
-		popover_toggle_open()
-
-		return
-	}
-
-	select_set_open(!ctx.open)
+	Popover_Toggle(select_ctx_top().popup)
 }
 
 @(private)
@@ -718,14 +681,6 @@ select_handle_typing_keys :: proc() {
 	if ctx.disabled do return
 
 	active := select_content_is_active(ctx)
-	esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-	if active && !ctx.listbox && esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-		select_set_open(false)
-		o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-
-		return
-	}
 
 	down := o.w_ctx.keys[int(o.Scancode.DOWN)]
 	up := o.w_ctx.keys[int(o.Scancode.UP)]
@@ -817,6 +772,9 @@ select_compound_child :: proc(fs: Select_State) {
 		}
 
 		select_render_listbox()
+		if o.ui_pass() == .Draw {
+			select_handle_typing_keys()
+		}
 
 		return
 	}
@@ -837,15 +795,18 @@ select_compound_child :: proc(fs: Select_State) {
 	Popover(
 		{
 			config = popover_cfg,
-			on_open_change = select_on_popover_open_change,
 			child = select_dropdown_popover_child,
 		},
 	)
 }
 
 @(private)
-select_dropdown_popover_child :: proc(_: Popover_State) {
+select_dropdown_popover_child :: proc(fs: Popover_State) {
 	ctx := select_ctx_top()
+	ctx.popup = fs.popup
+	ctx.content_frame.popup = fs.popup
+	popover_context(fs.popup).on_open_change = select_on_popover_open_change
+	defer select_handle_root_keys()
 
 	if ctx.user_child != nil {
 		ctx.user_child(ctx.content_frame)
@@ -862,8 +823,8 @@ select_dropdown_popover_child :: proc(_: Popover_State) {
 		},
 	)
 
-	if o.ui_pass() == .Layout && popover_ctx_ok() {
-		pkey := popover_ctx_top().popover_key
+	if o.ui_pass() == .Layout {
+		pkey := popover_context(ctx.popup).popover_key
 
 		if pkey != "" {
 			o.layout_constrain_visible_items(
@@ -985,5 +946,17 @@ option_on_click :: proc(ev: Option_Event) {
 		if user != nil {
 			user(ev)
 		}
+	}
+}
+
+@(private)
+select_handle_root_keys :: proc() {
+	if o.ui_pass() != .Draw do return
+	ctx := select_ctx_top()
+	popup := popover_context(ctx.popup)
+	if popup == nil do return
+	trigger_focused := popup.trigger_key != "" && widget_is_focused(popup.trigger_key)
+	if select_content_is_active(ctx) && (trigger_focused || widget_is_focused(ctx.select_key)) {
+		select_handle_typing_keys()
 	}
 }

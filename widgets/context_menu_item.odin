@@ -77,7 +77,7 @@ context_menu_item_on_click :: proc(ev: Context_Menu_Item_Event) {
 		}
 	}
 
-	Context_Menu_Set_Open(false)
+	context_menu_set_open(false)
 }
 
 /*

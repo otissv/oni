@@ -22,6 +22,7 @@ Select_Config :: struct {
 Select root per-frame state merged with resolved style and compound fields.
 */
 Select_State :: struct {
+	popup:             Popover_Handle,
 	using frame_state: o.Widget_Frame_State,
 	config:            o.Resolved_Widget_Config,
 	value:             string,
@@ -363,23 +364,6 @@ Select :: proc(props: Select_Props) {
 		props.on_scroll,
 		frame_state.is_hovered,
 	)
-
-	ctx = select_ctx_top()
-
-	if select_content_is_active(ctx) {
-		trigger_focused := false
-
-		if popover_ctx_ok() {
-			tkey := popover_ctx_top().trigger_key
-			trigger_focused = tkey != "" && widget_is_focused(tkey)
-		}
-
-		root_focused := widget_is_focused(key)
-
-		if trigger_focused || root_focused || ctx.listbox {
-			select_handle_typing_keys()
-		}
-	}
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

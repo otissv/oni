@@ -83,7 +83,7 @@ popover_content_panel_child :: proc(_: Popover_Content_State) {
 
 @(private)
 popover_content_panel_mouse_enter :: proc(_: Popover_Content_Event) {
-	popover_note_pointer()
+	Popover_Claim_Pointer(popover_current_handle())
 }
 
 @(private)

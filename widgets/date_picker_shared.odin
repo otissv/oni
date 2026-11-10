@@ -58,6 +58,7 @@ Live compound context pushed by `Date_Picker` for Trigger / Value / Input / cont
 */
 @(private)
 Date_Picker_Ctx :: struct {
+	popup:              Popover_Handle,
 	picker_key:         string,
 	mode:               Calendar_Mode,
 	open:               bool,
@@ -229,17 +230,6 @@ date_picker_ctx_ok :: proc() -> bool {
 }
 
 /*
-Returns whether the current Date_Picker compound is open.
-*/
-Date_Picker_Is_Open :: proc() -> bool {
-	if !date_picker_ctx_ok() {
-		return false
-	}
-
-	return date_picker_ctx_top().open
-}
-
-/*
 Returns the current selection snapshot from the active Date_Picker context.
 */
 Date_Picker_Get_Selection :: proc() -> Calendar_Selection {
@@ -261,17 +251,6 @@ Date_Picker_Notify_Select :: proc(selection: Calendar_Selection) {
 	}
 
 	date_picker_apply_selection(selection)
-}
-
-/*
-Opens or closes the active Date_Picker popover.
-*/
-Date_Picker_Set_Open :: proc(open: bool) {
-	if !date_picker_ctx_ok() {
-		return
-	}
-
-	date_picker_set_open(open)
 }
 
 /*
@@ -409,12 +388,16 @@ date_picker_should_close_after_select :: proc(
 }
 
 @(private)
-date_picker_on_popover_open_change :: proc(open: bool) {
-	if !date_picker_ctx_ok() {
-		return
+date_picker_on_popover_open_change :: proc(handle: Popover_Handle, open: bool) {
+	ctx: ^Date_Picker_Ctx
+	for i in 0 ..< date_picker_ctx_depth {
+		candidate := &date_picker_ctx_stack[i]
+		if candidate.popup == handle {
+			ctx = candidate
+			break
+		}
 	}
-
-	ctx := date_picker_ctx_top()
+	if ctx == nil do return
 
 	if ctx.disabled {
 		return
@@ -433,49 +416,15 @@ date_picker_on_popover_open_change :: proc(open: bool) {
 
 @(private)
 date_picker_set_open :: proc(open: bool) {
-	if !date_picker_ctx_ok() {
-		return
-	}
-
+	if !date_picker_ctx_ok() do return
 	ctx := date_picker_ctx_top()
-
-	if ctx.disabled {
-		return
-	}
-
-	if ctx.open == open {
-		return
-	}
-
-	ctx.open = open
-
-	if popover_ctx_ok() {
-		pctx := popover_ctx_top()
-
-		if pctx.open != open {
-			pctx.open = open
-		}
-	}
-
-	if ctx.on_open_change != nil {
-		ctx.on_open_change(open)
-	}
+	Popover_Set_Open(ctx.popup, open)
 }
 
 @(private)
 date_picker_toggle_open :: proc() {
-	if !date_picker_ctx_ok() {
-		return
-	}
-
-	if popover_ctx_ok() {
-		popover_toggle_open()
-
-		return
-	}
-
-	ctx := date_picker_ctx_top()
-	date_picker_set_open(!ctx.open)
+	if !date_picker_ctx_ok() do return
+	Popover_Toggle(date_picker_ctx_top().popup)
 }
 
 @(private)
@@ -540,9 +489,8 @@ Marks the nested Popover pointer as owned so calendar / content hits do not dism
 */
 @(private)
 date_picker_note_pointer :: proc() {
-	if popover_ctx_ok() {
-		popover_note_pointer()
-	}
+	if !date_picker_ctx_ok() do return
+	Popover_Claim_Pointer(date_picker_ctx_top().popup)
 }
 
 @(private)
@@ -649,15 +597,18 @@ date_picker_compound_child :: proc(fs: Date_Picker_State) {
 	Popover(
 		{
 			config = popover_cfg,
-			on_open_change = date_picker_on_popover_open_change,
 			child = date_picker_popover_child,
 		},
 	)
 }
 
 @(private)
-date_picker_popover_child :: proc(_: Popover_State) {
+date_picker_popover_child :: proc(fs: Popover_State) {
 	ctx := date_picker_ctx_top()
+	ctx.popup = fs.popup
+	ctx.content_frame.popup = fs.popup
+	popover_context(fs.popup).on_open_change = date_picker_on_popover_open_change
+	defer date_picker_handle_root_keys()
 
 	if ctx.user_child != nil {
 		ctx.user_child(ctx.content_frame)
@@ -704,15 +655,6 @@ date_picker_handle_keys :: proc() {
 	ctx := date_picker_ctx_top()
 
 	if ctx.disabled {
-		return
-	}
-
-	esc := o.w_ctx.keys[int(o.Scancode.ESCAPE)]
-
-	if ctx.open && esc.pressed && !o.shortcut_key_consumed(.ESCAPE) {
-		date_picker_set_open(false)
-		o.state.shortcuts.consumed_keys[int(o.Scancode.ESCAPE)] = true
-
 		return
 	}
 
@@ -765,4 +707,16 @@ date_picker_resolve_value_text :: proc(placeholder: string) -> (text: string, ha
 	}
 
 	return Date_Picker_Format_Selection(sel), true
+}
+
+@(private)
+date_picker_handle_root_keys :: proc() {
+	if o.ui_pass() != .Draw do return
+	ctx := date_picker_ctx_top()
+	popup := popover_context(ctx.popup)
+	if popup == nil do return
+	trigger_focused := popup.trigger_key != "" && widget_is_focused(popup.trigger_key)
+	if trigger_focused || widget_is_focused(ctx.picker_key) {
+		date_picker_handle_keys()
+	}
 }

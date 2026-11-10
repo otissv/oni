@@ -299,7 +299,7 @@ select_single_value_callback_updates_cache_and_closes :: proc(t: ^testing.T) {
 
 		select_test_value = ""
 		select_test_open = true
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "pick",
 				open = true,
@@ -307,7 +307,7 @@ select_single_value_callback_updates_cache_and_closes :: proc(t: ^testing.T) {
 				on_open_change = select_test_on_open,
 			},
 		)
-		defer select_ctx_pop()
+		defer select_test_ctx_pop()
 
 		select_set_value("red", "Red")
 		testing.expect_value(t, select_test_value, "red")
@@ -326,17 +326,17 @@ select_set_value_updates_runtime_label_cache :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "runtime-sel",
 				open = true,
 			},
 		)
-		defer select_ctx_pop()
+		defer select_test_ctx_pop()
 
 		select_set_value("banana", "Banana")
 		testing.expect_value(t, Select_Get_Value(), "banana")
-		testing.expect(t, !Select_Is_Open())
+		testing.expect(t, !Popover_Is_Open(select_ctx_top().popup))
 
 		ctx := select_ctx_top()
 		testing.expect_value(t, select_resolve_value_label(ctx), "Banana")
@@ -356,7 +356,7 @@ select_multiple_toggles_without_closing :: proc(t: ^testing.T) {
 			select_test_values = nil
 		}
 
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "multi",
 				multiple = true,
@@ -365,11 +365,11 @@ select_multiple_toggles_without_closing :: proc(t: ^testing.T) {
 				on_values_change = select_test_replace_values,
 			},
 		)
-		defer select_ctx_pop()
+		defer select_test_ctx_pop()
 
 		select_set_value("a", "A")
 		select_set_value("b", "B")
-		testing.expect(t, Select_Is_Open())
+		testing.expect(t, select_content_is_active(select_ctx_top()))
 		testing.expect_value(t, len(select_test_values), 2)
 
 		select_set_value("a", "A")
@@ -395,7 +395,7 @@ select_controlled_multiple_callback_does_not_alias_source_values :: proc(t: ^tes
 		}
 
 		append(&select_test_values, strings.clone("a"), strings.clone("b"))
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "controlled-multi",
 				multiple = true,
@@ -404,7 +404,7 @@ select_controlled_multiple_callback_does_not_alias_source_values :: proc(t: ^tes
 				on_values_change = select_test_replace_values,
 			},
 		)
-		defer select_ctx_pop()
+		defer select_test_ctx_pop()
 
 		ctx := select_ctx_top()
 		select_copy_values_into_ctx(ctx, select_test_values[:])
@@ -605,7 +605,6 @@ select_public_queries_are_empty_outside_context :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		testing.expect(t, !Select_Is_Open())
 		testing.expect_value(t, Select_Get_Value(), "")
 		testing.expect_value(t, len(Select_Get_Values()), 0)
 	})
@@ -616,8 +615,8 @@ select_public_queries_cover_single_and_multiple_values :: proc(t: ^testing.T) {
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		select_ctx_push({value = "one", open = true})
-		testing.expect(t, Select_Is_Open())
+		select_test_ctx_push({value = "one", open = true})
+		testing.expect(t, select_content_is_active(select_ctx_top()))
 		testing.expect_value(t, Select_Get_Value(), "one")
 		values := Select_Get_Values()
 		testing.expect_value(t, len(values), 1)
@@ -626,11 +625,11 @@ select_public_queries_cover_single_and_multiple_values :: proc(t: ^testing.T) {
 			testing.expect_value(t, values[0], "one")
 		}
 
-		select_ctx_pop()
-		select_ctx_push({multiple = true, listbox = true})
+		select_test_ctx_pop()
+		select_test_ctx_push({multiple = true, listbox = true})
 		ctx := select_ctx_top()
 		select_copy_values_into_ctx(ctx, []string{"one", "", "one", "two"})
-		testing.expect(t, Select_Is_Open())
+		testing.expect(t, select_content_is_active(select_ctx_top()))
 		testing.expect_value(t, Select_Get_Value(), "one")
 		values = Select_Get_Values()
 		testing.expect_value(t, len(values), 2)
@@ -640,7 +639,7 @@ select_public_queries_cover_single_and_multiple_values :: proc(t: ^testing.T) {
 			testing.expect_value(t, values[1], "two")
 		}
 
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -659,7 +658,7 @@ select_runtime_initializes_and_shutdown_resets_state :: proc(t: ^testing.T) {
 			testing.expect_value(t, rt.cache_value, "lpha")
 		}
 
-		select_ctx_push({select_key = "runtime"})
+		select_test_ctx_push({select_key = "runtime"})
 		select_shutdown()
 		testing.expect(t, select_runtimes == nil)
 		testing.expect_value(t, select_ctx_depth, 0)
@@ -676,7 +675,7 @@ select_value_text_resolves_placeholder_labels_and_multiple_fallbacks :: proc(t: 
 		testing.expect_value(t, text, "Pick")
 		testing.expect(t, !has_value)
 
-		select_ctx_push({select_key = "labels", value = "a"})
+		select_test_ctx_push({select_key = "labels", value = "a"})
 		text, has_value = select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "a")
 		testing.expect(t, has_value)
@@ -690,14 +689,14 @@ select_value_text_resolves_placeholder_labels_and_multiple_fallbacks :: proc(t: 
 		text, has_value = select_value_resolve_text({config = {placeholder = "Pick"}})
 		testing.expect_value(t, text, "b")
 		testing.expect(t, has_value)
-		select_ctx_pop()
+		select_test_ctx_pop()
 
-		select_ctx_push({select_key = "multi-labels", multiple = true})
+		select_test_ctx_push({select_key = "multi-labels", multiple = true})
 		ctx = select_ctx_top()
 		select_copy_values_into_ctx(ctx, []string{"a", "b"})
 		_ = select_register_option("a", "Alpha", "option-a", false)
 		testing.expect_value(t, select_resolve_value_label(ctx), "Alpha, b")
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -707,7 +706,7 @@ select_open_state_honors_disabled_listbox_and_highlight :: proc(t: ^testing.T) {
 		defer select_shutdown()
 
 		select_test_open = false
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "open-controlled",
 				on_open_change = select_test_on_open,
@@ -728,17 +727,17 @@ select_open_state_honors_disabled_listbox_and_highlight :: proc(t: ^testing.T) {
 			testing.expect_value(t, rt.highlight, 0)
 		}
 
-		select_ctx_pop()
+		select_test_ctx_pop()
 
-		select_ctx_push({disabled = true})
+		select_test_ctx_push({disabled = true})
 		select_set_open(true)
 		testing.expect(t, !select_ctx_top().open)
-		select_ctx_pop()
+		select_test_ctx_pop()
 
-		select_ctx_push({listbox = true, open = true})
+		select_test_ctx_push({listbox = true, open = true})
 		select_set_open(false)
 		testing.expect(t, select_ctx_top().open)
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -749,7 +748,7 @@ select_single_value_controlled_callback_closes_and_disabled_blocks :: proc(t: ^t
 
 		select_test_value = ""
 		select_test_open = true
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "controlled-value",
 				open = true,
@@ -763,14 +762,14 @@ select_single_value_controlled_callback_closes_and_disabled_blocks :: proc(t: ^t
 		testing.expect_value(t, ctx.value_label, "a")
 		testing.expect(t, !ctx.open)
 		testing.expect(t, !select_test_open)
-		select_ctx_pop()
+		select_test_ctx_pop()
 
 		select_test_value = ""
-		select_ctx_push({disabled = true, on_value_change = select_test_on_value})
+		select_test_ctx_push({disabled = true, on_value_change = select_test_on_value})
 		select_set_value("blocked", "Blocked")
 		testing.expect_value(t, select_test_value, "")
 		testing.expect_value(t, select_ctx_top().value, "")
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -779,7 +778,7 @@ select_highlight_navigation_wraps_skips_disabled_and_commits :: proc(t: ^testing
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		select_ctx_push({select_key = "keyboard", open = true, highlight = -1})
+		select_test_ctx_push({select_key = "keyboard", open = true, highlight = -1})
 		ctx := select_ctx_top()
 		_ = select_register_option("a", "A", "a", false)
 		_ = select_register_option("b", "B", "b", true)
@@ -797,7 +796,7 @@ select_highlight_navigation_wraps_skips_disabled_and_commits :: proc(t: ^testing
 		testing.expect_value(t, ctx.value, "c")
 		testing.expect_value(t, ctx.value_label, "C")
 		testing.expect(t, !ctx.open)
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -806,7 +805,7 @@ select_keyboard_open_navigate_commit_and_escape_consume_keys :: proc(t: ^testing
 	with_widget_env(t, proc(t: ^testing.T) {
 		defer select_shutdown()
 
-		select_ctx_push({select_key = "keys"})
+		select_test_ctx_push({select_key = "keys"})
 		ctx := select_ctx_top()
 		_ = select_register_option("a", "A", "a", false)
 
@@ -826,11 +825,13 @@ select_keyboard_open_navigate_commit_and_escape_consume_keys :: proc(t: ^testing
 		testing.expect(t, o.shortcut_key_consumed(.RETURN))
 
 		select_set_open(true)
+		o.w_ctx.keys = {}
 		widget_test_press_shortcut(.ESCAPE)
 		select_handle_typing_keys()
+		Popover_Process_Dismissal(ctx.popup)
 		testing.expect(t, !ctx.open)
 		testing.expect(t, o.shortcut_key_consumed(.ESCAPE))
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -841,7 +842,7 @@ select_wrapper_callbacks_preserve_user_handlers :: proc(t: ^testing.T) {
 
 		select_test_trigger_clicks = 0
 		select_test_option_clicks = 0
-		select_ctx_push(
+		select_test_ctx_push(
 			{
 				select_key = "wrappers",
 				trigger_user_click = select_test_on_trigger_click,
@@ -855,7 +856,7 @@ select_wrapper_callbacks_preserve_user_handlers :: proc(t: ^testing.T) {
 		option_on_click({frame_state = {value = "a", text = "A"}})
 		testing.expect_value(t, select_ctx_top().value, "a")
 		testing.expect_value(t, select_test_option_clicks, 1)
-		select_ctx_pop()
+		select_test_ctx_pop()
 	})
 }
 
@@ -1067,4 +1068,24 @@ select_content_press_is_owned_and_does_not_dismiss :: proc(t: ^testing.T) {
 
 		testing.expect(t, select_test_open)
 	})
+}
+
+@(private)
+select_test_ctx_push :: proc(ctx: Select_Ctx) {
+	select_ctx_push(ctx)
+	if !ctx.listbox {
+		select_ctx_top().popup = popover_ctx_push({
+			open = ctx.open,
+			disabled = ctx.disabled,
+			on_open_change = select_on_popover_open_change,
+		})
+	}
+}
+
+@(private)
+select_test_ctx_pop :: proc() {
+	if !select_ctx_top().listbox {
+		popover_ctx_pop()
+	}
+	select_ctx_pop()
 }

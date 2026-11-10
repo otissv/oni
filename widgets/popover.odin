@@ -17,6 +17,7 @@ Popover_Config :: struct {
 Popover root per-frame state merged with resolved style and open flag.
 */
 Popover_State :: struct {
+	popup:             Popover_Handle,
 	using frame_state: o.Widget_Frame_State,
 	config:            o.Resolved_Widget_Config,
 	open:              bool,
@@ -132,19 +133,19 @@ Popover :: proc(props: Popover_Props) {
 	handlers := widget_lifecycle_handlers(props_resolved, Popover_State)
 	should_auto_focus := widget_should_auto_focus(config, key)
 
-	popover_ctx_push(
+	popup := popover_ctx_push(
 		{
 			popover_key = key,
 			open = open,
 			disabled = disabled,
-			on_open_change = props.on_open_change,
+			on_open_change = popover_on_open_change,
+			user_on_open_change = props.on_open_change,
 		},
 	)
 	defer popover_ctx_pop()
+	frame_state.popup = popup
 
 	if o.ui_pass() == .Layout {
-		popover_ctx_top().pointer_owned = false
-
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -276,7 +277,7 @@ Popover :: proc(props: Popover_Props) {
 		frame_state.is_hovered,
 	)
 
-	popover_handle_dismiss(key)
+	Popover_Process_Dismissal(popup)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

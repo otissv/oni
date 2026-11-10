@@ -103,8 +103,8 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
-		if popover_ctx_ok() {
-			popover_set_trigger(key, layout_id, {})
+		if select_ctx_ok() {
+			popover_set_trigger(select_ctx_top().popup, key, layout_id, {})
 		}
 
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
@@ -150,8 +150,8 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
 
-	if popover_ctx_ok() {
-		popover_set_trigger(key, layout_id, rect)
+	if select_ctx_ok() {
+		popover_set_trigger(select_ctx_top().popup, key, layout_id, rect)
 	}
 
 	select_note_trigger_width(rect.w)
@@ -168,8 +168,8 @@ Select_Trigger :: proc(props: Select_Trigger_Props) {
 		config,
 	)
 
-	if frame_state.is_hovered && popover_ctx_ok() {
-		popover_note_pointer()
+	if frame_state.is_hovered && select_ctx_ok() {
+		select_note_pointer()
 	}
 
 	widget_handle_scroll_wheel(layout_id, config, frame_state.is_hovered, key, props.on_scroll)

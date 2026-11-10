@@ -17,6 +17,7 @@ Context_Menu_Config :: struct {
 Context menu root per-frame state merged with resolved style and open flag.
 */
 Context_Menu_State :: struct {
+	popup:             Popover_Handle,
 	using frame_state: o.Widget_Frame_State,
 	config:            o.Resolved_Widget_Config,
 	open:              bool,
@@ -142,14 +143,13 @@ Context_Menu :: proc(props: Context_Menu_Props) {
 		},
 	)
 	defer context_menu_ctx_pop()
+	frame_state.popup = context_menu_ctx_top().popup
 
 	if open {
 		context_menu_restore_anchor_into_ctx()
 	}
 
 	if o.ui_pass() == .Layout {
-		context_menu_ctx_top().pointer_owned = false
-
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
 			handlers,
 			layout_id,
@@ -281,7 +281,7 @@ Context_Menu :: proc(props: Context_Menu_Props) {
 		frame_state.is_hovered,
 	)
 
-	context_menu_handle_dismiss(key)
+	Popover_Process_Dismissal(frame_state.popup)
 
 	widget_draw_box_border(layout_id, rect, radius, border, border_color)
 

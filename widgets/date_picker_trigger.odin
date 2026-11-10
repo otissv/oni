@@ -106,8 +106,8 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
-		if popover_ctx_ok() {
-			popover_set_trigger(key, layout_id, {})
+		if date_picker_ctx_ok() {
+			popover_set_trigger(date_picker_ctx_top().popup, key, layout_id, {})
 		}
 
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(
@@ -155,8 +155,8 @@ Date_Picker_Trigger :: proc(props: Date_Picker_Trigger_Props) {
 	frame_state.is_focused = widget_is_focused(key)
 	rect := o.ui_layout_rect(layout_id)
 
-	if popover_ctx_ok() {
-		popover_set_trigger(key, layout_id, rect)
+	if date_picker_ctx_ok() {
+		popover_set_trigger(date_picker_ctx_top().popup, key, layout_id, rect)
 	}
 
 	widget_handle_interaction(
