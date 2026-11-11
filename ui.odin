@@ -95,6 +95,7 @@ ui_begin_frame :: proc() {
 	widget_ctx_sync()
 	ui_init()
 	state.ui.frame += 1
+	widget_menubar_begin_frame()
 	state.ui.pass = .Layout
 	theme_widget_style_invalidate()
 	clear(&state.ui.layout_ids_prev)
@@ -109,6 +110,7 @@ ui_begin_frame :: proc() {
 		layout_frame_arena_chain_reset(&state.ui.render_scratch)
 	}
 
+	widget_focus_scopes_begin_frame()
 	w_ctx.auto_element_index = 0
 
 	if w_ctx.tab_order != nil {
@@ -164,6 +166,7 @@ ui_end_layout_pass :: proc() {
 	layout_finalize_stack_order()
 	layout_resolve_pointer_hit()
 
+	widget_focus_scopes_resolve()
 	widget_prune_focus()
 	widget_process_tab_navigation()
 	shortcut_process()

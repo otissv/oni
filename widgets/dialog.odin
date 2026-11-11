@@ -102,7 +102,9 @@ Renders a composable modal dialog root.
 
 `Dialog_Trigger`, `Dialog_Scrim`, `Dialog_Content`, `Dialog_Cancel`, and
 `Dialog_Action` must be descendants. Scrim and content paint in `.OVERLAY`
-space while open.
+space while open. Focus stays within the topmost open dialog, wraps on Tab /
+Shift+Tab, and returns to the previous control after closure. Empty dialogs
+retain focus on the root.
 */
 Dialog :: proc(props: Dialog_Props) {
 	cfg := props.config
@@ -159,6 +161,14 @@ Dialog :: proc(props: Dialog_Props) {
 
 		if !skip_layout {
 			can_interact := widget_can_interact(handlers, &frame_state)
+
+			scope := -1
+			if open {
+				scope = o.widget_focus_scope_begin(key)
+			}
+			defer {
+				if scope >= 0 do o.widget_focus_scope_end(scope)
+			}
 
 			if can_interact && should_auto_focus {
 				widget_apply_auto_focus(key, true)

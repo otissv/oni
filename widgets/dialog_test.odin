@@ -524,3 +524,145 @@ dialog_overlay_panel_joins_paint_list_overlay :: proc(t: ^testing.T) {
 		testing.expect(t, found)
 	})
 }
+
+@(private)
+dialog_focus_test_tree :: proc(open: bool) {
+	Button({config = {id = "before", tabbable = set.Tabbable(true)}})
+	Dialog({config = {id = "focus-dialog", open = open}, child = proc(_: Dialog_State) {
+		Dialog_Trigger({config = {id = "focus-trigger"}})
+		Dialog_Content({child = proc(_: Dialog_Content_Props_State) {
+			Button({config = {id = "first", tabbable = set.Tabbable(true)}})
+			Button({config = {id = "disabled", disabled = set.Disabled(true), tabbable = set.Tabbable(true)}})
+			Button({config = {id = "last", tabbable = set.Tabbable(true)}})
+		}})
+	}})
+	Button({config = {id = "after", tabbable = set.Tabbable(true)}})
+}
+
+@(test)
+dialog_focus_trap_wraps_blocks_escape_and_restores_trigger :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		dialog_focus_test_tree(false)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		dialog_focus_test_tree(false)
+		testing.expect(t, FocusElement("focus-trigger"))
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		dialog_focus_test_tree(true)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		dialog_focus_test_tree(true)
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		o.focus_prev()
+		testing.expect_value(t, o.w_ctx.focused_id, "last")
+		o.focus_next()
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		testing.expect(t, !FocusElement("after"))
+		testing.expect(t, !FocusElement("focus-trigger"))
+		o.widget_set_focused_id("before")
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		dialog_focus_test_tree(false)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "focus-trigger")
+		o.focus_next()
+		testing.expect_value(t, o.w_ctx.focused_id, "after")
+		widget_test_end_frame()
+	})
+}
+
+@(test)
+dialog_without_content_holds_focus_on_root :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		Button({config = {id = "background"}})
+		Dialog({config = {id = "empty-dialog", open = true}})
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "empty-dialog")
+		o.focus_next()
+		testing.expect_value(t, o.w_ctx.focused_id, "empty-dialog")
+		widget_test_end_frame()
+	})
+}
+
+@(test)
+dialog_tab_and_shift_tab_use_current_modal_order :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		dialog_focus_test_tree(true)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		o.widget_set_focused_id("last")
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		dialog_focus_test_tree(true)
+		widget_test_finish_layout()
+		o.w_ctx.keys[int(o.Scancode.TAB)].pressed = true
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		testing.expect(t, o.shortcut_key_consumed(.TAB))
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		dialog_focus_test_tree(true)
+		widget_test_finish_layout()
+		o.w_ctx.keys[int(o.Scancode.TAB)].pressed = true
+		o.state.input.modifiers.shift = true
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "last")
+		widget_test_end_frame()
+	})
+}
+
+@(test)
+dialog_root_auto_focus_preserves_opener_for_restoration :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		Button({config = {id = "opener", tabbable = set.Tabbable(true)}})
+		o.widget_set_focused_id("opener")
+		Dialog({config = {
+			id = "auto-dialog", open = true,
+			tabbable = set.Tabbable(true), auto_focus = set.Bool(true),
+		}})
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "auto-dialog")
+		widget_test_end_frame()
+
+		widget_test_begin_layout()
+		Button({config = {id = "opener", tabbable = set.Tabbable(true)}})
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		testing.expect_value(t, o.w_ctx.focused_id, "opener")
+		widget_test_end_frame()
+	})
+}
+
+@(test)
+dialog_pointer_focus_cannot_clear_focus_or_focus_background :: proc(t: ^testing.T) {
+	with_widget_env(t, proc(t: ^testing.T) {
+		widget_test_begin_layout()
+		dialog_focus_test_tree(true)
+		widget_test_finish_layout()
+		widget_test_begin_draw()
+		o.w_ctx.left_mouse.pressed = true
+		focused := true
+		got, lost := widget_handle_pointer_focus("first", true, true, false, &focused)
+		testing.expect(t, !got && !lost)
+		testing.expect(t, focused)
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		focused = false
+		got, lost = widget_handle_pointer_focus("after", true, false, true, &focused)
+		testing.expect(t, !got && !lost && !focused)
+		testing.expect_value(t, o.w_ctx.focused_id, "first")
+		widget_test_end_frame()
+	})
+}

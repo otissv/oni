@@ -34,6 +34,8 @@ Sets keyboard focus, owning auto-generated ids across temp allocator wipes.
 */
 widget_set_focused_id :: proc(id: Widget_ID) {
 	if w_ctx == nil do return
+	if !widget_focus_scope_allows(id) do return
+	if id == w_ctx.focused_id do return
 	if w_ctx.focused_id_owned {
 		widget_release_key(w_ctx.focused_id)
 	}
@@ -69,6 +71,7 @@ Appends an element to this frame's tab order in declaration order.
 Call during the layout pass for widgets with tabbable set.
 */
 register_tabbable :: proc(element_id: Widget_ID) {
+	if w_ctx.focus_scope_excluded > 0 do return
 	if w_ctx.tab_order == nil {
 		w_ctx.tab_order = make([dynamic]Widget_ID)
 	}
@@ -446,7 +449,10 @@ Call during UI shutdown.
 */
 widget_ctx_shutdown :: proc() {
 	if w_ctx == nil do return
+	delete(w_ctx.menubars)
+	w_ctx.menubars = nil
 
+	widget_focus_scopes_shutdown()
 	if w_ctx.tab_order != nil {
 		delete(w_ctx.tab_order)
 		w_ctx.tab_order = nil
@@ -478,11 +484,13 @@ widget_ctx_shutdown :: proc() {
 Clears focus when the focused element is no longer in the tab order.
 */
 widget_prune_focus :: proc() {
+	if w_ctx.focus_scopes_ready && len(w_ctx.focus_scopes) > 0 do return
 	if w_ctx.focused_id == "" do return
 
 	for id in w_ctx.tab_order {
 		if id == w_ctx.focused_id do return
 	}
+	if _, valid := widget_menubar_focus_anchor(w_ctx.focused_id); valid do return
 
 	widget_set_focused_id("")
 }
@@ -493,14 +501,23 @@ Moves focus to the next or previous tabbable element in declaration order.
 Returns false when the tab order is empty.
 */
 widget_focus_tab :: proc(reverse: bool) -> bool {
-	n := len(w_ctx.tab_order)
+	order := w_ctx.tab_order[:]
+	if w_ctx.focus_scopes_ready && len(w_ctx.focus_scopes) > 0 {
+		scope := w_ctx.focus_scopes[w_ctx.focus_scope_active]
+		order = order[scope.start:scope.end]
+	}
+	n := len(order)
 	if n == 0 do return false
 
 	previous_id := w_ctx.focused_id
 
 	current_idx := -1
-	for id, i in w_ctx.tab_order {
-		if id == w_ctx.focused_id {
+	focus_anchor := w_ctx.focused_id
+	if anchor, valid := widget_menubar_focus_anchor(focus_anchor); valid {
+		focus_anchor = anchor
+	}
+	for id, i in order {
+		if id == focus_anchor {
 			current_idx = i
 			break
 		}
@@ -517,9 +534,16 @@ widget_focus_tab :: proc(reverse: bool) -> bool {
 		if next_idx >= n do next_idx = 0
 	}
 
-	next_id := w_ctx.tab_order[next_idx]
+	next_id := order[next_idx]
 	if next_id == previous_id do return false
 
+	return widget_change_navigation_focus(next_id)
+}
+
+// Shares focus notifications between Tab traversal and modal focus transitions.
+widget_change_navigation_focus :: proc(next_id: Widget_ID) -> bool {
+	if next_id == w_ctx.focused_id || !widget_focus_scope_allows(next_id) do return false
+	previous_id := w_ctx.focused_id
 	// Keep previous_id alive for same-frame lost-focus checks; release at begin_frame.
 	previous_id_owned := w_ctx.focused_id_owned
 	w_ctx.focused_id_owned = false

@@ -58,11 +58,11 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 
 ### 1.1 Widgets & overlays
 
-- [ ] First-class **tooltip** (delay, one active)
+- [x] First-class **tooltip** (delay, one active)
 - [x] **Context menu** (`Context_Menu` / Trigger / Content / Item / Separator; Escape + outside dismiss; items tabbable)
-- [ ] **Menu bar** (app chrome; arrow + Enter navigation across menus)
+- [x] **Menu bar** (app chrome; arrow + Enter navigation across menus)
 - [x] **Dialog** (`Dialog` / Trigger / Scrim / Content / Actions; Escape + outside dismiss on `.OVERLAY`)
-- [ ] Hard **focus trap** while a Dialog is open (Tab stays inside modal chrome)
+- [x] Hard **focus trap** while a Dialog is open (Tab / Shift+Tab wrap inside modal chrome; nested dialogs, empty fallback, and focus restoration)
 - [x] **Dropdown**: one shared popup control API for Popover, Select, Date_Picker and Context_Menu; scoped ownership and shared dismissal — no second overlay system
 - [x] Select 
 - [x] Popover 
@@ -77,7 +77,7 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 ### 1.2 Layout & style gaps
 
 - [ ] `aspect_ratio` on `Widget_Config` (not modeled; SVG intrinsic sizing is separate)
-- [~] Overflow scrollports work; harden edge cases (nested scroll, sticky + scroll)
+- [x] Overflow scrollports work; harden edge cases (nested scroll, sticky + scroll)
 - [x] Flex sizing: axis `.SHRINK` (content basis; share deficit; ignore leftover) shipped; CSS-style `flex-shrink` / `flex-basis` fields still open
 - [ ] `theme_light` / `theme_dark` presets + runtime switch demo
 - [ ] Optional Noto Arabic / CJK fixtures + demo routes (RTL / mixed / CJK wrap)
@@ -100,7 +100,7 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [ ] F3 (or settings) debug overlay: FPS, draw calls, batch flushes, atlas stats
 - [ ] Log / toast for non-fatal errors; structured GPU device-loss quit path
 - [ ] Release GPU path (device creation still defaults to debug mode); multi-backend shaders beyond SPIR-V when needed
-- [~] Native vector/SVG performance: API, composition, reload and correctness coverage implemented; full corrected M2/M8/composition and ordinary-UI regression gates still required ([VECTOR.md](VECTOR.md))
+- [x] Native vector/SVG performance: API, composition, reload and correctness coverage implemented; full corrected M2/M8/composition and ordinary-UI regression gates still required ([VECTOR.md](VECTOR.md))
 - [x] Production build script (`build_production.sh`: static `-o:speed` binary, staged assets, SDL bundle, package tarball)
 - [ ] CI: `test_all.sh` + hot-reload/production builds on push; Darwin / Windows watch parity
 

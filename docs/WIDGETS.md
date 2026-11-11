@@ -298,14 +298,17 @@ Package is `oni_widgets`. Import engine as `o`, set helpers as `set`. App code i
 | Forms | `Checkbox`, `Radio` / `Radio_Group`, `Slider`, `Text_Input`, `Rich_Text_Input`, `Select` with Trigger/Value/Option parts |
 | Structured data | `Table` with Caption/Head/Heading/Body/Row/Cell/Foot; `Shortcuts_Table` |
 | Date and color | `Calendar`, `Date_Picker` with Input/Trigger/Value; `Color_Picker` and parts |
-| Overlays | `Popover`, `Dialog`, `Context_Menu` and parts; `Error_Banner` |
+| Overlays | `Popover`, `Dialog`, `Context_Menu` and parts; `Error_Banner`; [Menubar](MENUBAR.md) with controlled categories, checkable items, and submenus |
 | Disclosure/navigation | `Tabs` with List/Trigger/Content; `Collapsible` with Trigger/Content; `Accordion` with Item/Trigger/Content |
 | Progress | `Progress`, Label/Value/Track/Indicator; controlled display value, no value-change callback |
 | Native vectors | `Vector` / `Svg`; frame-snapshotted config, fit and error callbacks; see [VECTOR.md](VECTOR.md) |
+| Native OS pickers | Not widgets: `Open_File_Dialog` / `Save_File_Dialog` / `Pick_Folder` with owned `File_Dialog_Result`; wire from `Button` `on_click` into controlled `Text_Input` path state; see [NATIVE_DIALOGS.md](NATIVE_DIALOGS.md) |
 
 Accordion stores selection in caller-owned `config.value: []string`, with `multiple` and `prevent_collapse` policies. `on_value_change` receives a frame-temporary slice of caller-owned strings; copy the slice into app storage to retain it. Item values identify the controlled selection. Its compound context is scoped to the root call rather than a persistent widget graph.
 
 Dialog renders on `.OVERLAY` with Escape/outside dismissal. A hard modal focus trap remains open work; the presence of Dialog chrome does not imply Tab is confined to the dialog. Tooltip, menu bar and host input-capture flags also remain open; see [ROAD_MAP.md](ROAD_MAP.md).
+
+Native file and folder pickers are modal engine APIs, not `oni/widgets` declarations. Call them from deliberate main-thread input handlers, destroy every result, and keep selected paths in app-owned storage.
 
 ## Ids and focus
 

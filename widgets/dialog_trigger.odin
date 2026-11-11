@@ -124,6 +124,12 @@ Dialog_Trigger :: proc(props: Dialog_Trigger_Props) {
 	}
 
 	if o.ui_pass() == .Layout {
+		// The opener and its children belong to the page behind the modal.
+		excluded := dialog_ctx_ok() && dialog_ctx_top().open
+		if excluded do o.w_ctx.focus_scope_excluded += 1
+		defer {
+			if excluded do o.w_ctx.focus_scope_excluded -= 1
+		}
 		dialog_trigger_set_trigger(key, layout_id, {})
 
 		skip_layout, ran_unmount := widget_run_layout_lifecycle(

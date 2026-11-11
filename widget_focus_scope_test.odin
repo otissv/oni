@@ -1,0 +1,226 @@
+#+test
+package oni
+
+import "core:testing"
+import "core:strings"
+
+@(test)
+focus_scope_traps_navigation_and_rejects_escape :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		register_tabbable("outside")
+		widget_set_focused_id("outside")
+		scope := widget_focus_scope_begin("panel")
+		register_tabbable("first")
+		register_tabbable("last")
+		widget_focus_scope_end(scope)
+		register_tabbable("after")
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "first")
+		testing.expect(t, w_ctx.tab_focus_changed)
+		testing.expect_value(t, w_ctx.tab_focus_previous_id, "outside")
+		testing.expect(t, focus_prev())
+		testing.expect_value(t, w_ctx.focused_id, "last")
+		testing.expect(t, focus_next())
+		testing.expect_value(t, w_ctx.focused_id, "first")
+		widget_set_focused_id("outside")
+		testing.expect_value(t, w_ctx.focused_id, "first")
+		widget_set_focused_id("")
+		testing.expect_value(t, w_ctx.focused_id, "first")
+	})
+}
+
+@(test)
+focus_scope_empty_nested_and_close_restore :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		register_tabbable("trigger")
+		widget_set_focused_id("trigger")
+		outer := widget_focus_scope_begin("outer")
+		register_tabbable("outer-button")
+		widget_focus_scope_end(outer)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "outer-button")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("trigger")
+		outer = widget_focus_scope_begin("outer")
+		register_tabbable("outer-button")
+		inner := widget_focus_scope_begin("inner")
+		widget_focus_scope_end(inner)
+		widget_focus_scope_end(outer)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "inner")
+		testing.expect(t, !focus_next())
+		widget_set_focused_id("outer-button")
+		testing.expect_value(t, w_ctx.focused_id, "inner")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("trigger")
+		outer = widget_focus_scope_begin("outer")
+		register_tabbable("outer-button")
+		widget_focus_scope_end(outer)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "outer-button")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("trigger")
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "trigger")
+	})
+}
+
+@(test)
+focus_scope_recovers_removed_target_and_closes_entire_nested_stack :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		register_tabbable("opener")
+		widget_set_focused_id("opener")
+		outer := widget_focus_scope_begin("outer")
+		register_tabbable("removed")
+		widget_focus_scope_end(outer)
+		widget_focus_scopes_resolve()
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		outer = widget_focus_scope_begin("outer")
+		register_tabbable("replacement")
+		inner := widget_focus_scope_begin("inner")
+		register_tabbable("inner-button")
+		widget_focus_scope_end(inner)
+		widget_focus_scope_end(outer)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "inner-button")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		widget_focus_scopes_resolve()
+		widget_prune_focus()
+		testing.expect_value(t, w_ctx.focused_id, "opener")
+		testing.expect_value(t, len(w_ctx.focus_scopes), 0)
+	})
+}
+
+@(test)
+focus_scope_keeps_valid_focus_and_recovers_removed_or_disabled_target :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		scope := widget_focus_scope_begin("modal")
+		register_tabbable("first")
+		register_tabbable("second")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		widget_set_focused_id("second")
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		scope = widget_focus_scope_begin("modal")
+		register_tabbable("first")
+		register_tabbable("second")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "second")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		scope = widget_focus_scope_begin("modal")
+		register_tabbable("first")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "first")
+		testing.expect(t, !focus_next())
+	})
+}
+
+@(test)
+focus_scope_replacement_retains_original_return_target :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		register_tabbable("opener")
+		widget_set_focused_id("opener")
+		scope := widget_focus_scope_begin("old-modal")
+		register_tabbable("old-button")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		scope = widget_focus_scope_begin("new-modal")
+		register_tabbable("new-button")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "new-button")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		widget_focus_scopes_resolve()
+		widget_prune_focus()
+		testing.expect_value(t, w_ctx.focused_id, "opener")
+	})
+}
+
+@(test)
+focus_scope_closing_background_modal_preserves_top_modal_return_path :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		register_tabbable("opener")
+		widget_set_focused_id("opener")
+		scope := widget_focus_scope_begin("lower")
+		register_tabbable("lower-button")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		scope = widget_focus_scope_begin("lower")
+		register_tabbable("lower-button")
+		widget_focus_scope_end(scope)
+		scope = widget_focus_scope_begin("upper")
+		register_tabbable("upper-button")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		scope = widget_focus_scope_begin("upper")
+		register_tabbable("upper-button")
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "upper-button")
+
+		widget_focus_scopes_begin_frame()
+		clear(&w_ctx.tab_order)
+		register_tabbable("opener")
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "opener")
+	})
+}
+
+@(test)
+focus_scope_owns_keys_and_return_focus_across_frames :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		widget_focus_scopes_begin_frame()
+		opener := strings.clone("ephemeral-opener")
+		widget_set_focused_id(opener)
+		delete(opener)
+		key := strings.clone("ephemeral-modal")
+		scope := widget_focus_scope_begin(key)
+		delete(key)
+		widget_focus_scope_end(scope)
+		widget_focus_scopes_resolve()
+		testing.expect_value(t, w_ctx.focused_id, "ephemeral-modal")
+
+		widget_focus_scopes_begin_frame()
+		register_tabbable("ephemeral-opener")
+		widget_focus_scopes_resolve()
+		widget_prune_focus()
+		testing.expect_value(t, w_ctx.focused_id, "ephemeral-opener")
+	})
+}

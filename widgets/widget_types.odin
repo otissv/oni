@@ -59,11 +59,11 @@ GetElementById :: proc(id: string) -> (static_id: string, ok: bool) {
 /*
 Moves keyboard focus to the element registered under the given id.
 
-Returns false when no element with that id has been registered this frame.
+Returns false when the id is unregistered or outside the active modal focus scope.
 */
 FocusElement :: proc(id: string) -> bool {
 	element_id, ok := GetElementById(id)
-	if !ok do return false
+	if !ok || !o.widget_focus_scope_allows(element_id) do return false
 
 	o.widget_set_focused_id(element_id)
 	return true
@@ -169,6 +169,7 @@ Shutdown :: proc() {
 	calendar_shutdown()
 	date_picker_shutdown()
 	popover_shutdown()
+	tooltip_shutdown()
 	dialog_shutdown()
 	collapsible_shutdown()
 	accordion_shutdown()

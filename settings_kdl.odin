@@ -978,6 +978,12 @@ settings_kdl_parse_widget_kind :: proc(s: string) -> (Widget_Kind, bool) {
 		return .COLLAPSIBLE_TRIGGER, true
 	case "collapsible-content":
 		return .COLLAPSIBLE_CONTENT, true
+	case "tooltip":
+		return .TOOLTIP, true
+	case "tooltip-trigger":
+		return .TOOLTIP_TRIGGER, true
+	case "tooltip-content":
+		return .TOOLTIP_CONTENT, true
 	case "progress":
 		return .PROGRESS, true
 	case "progress-label":

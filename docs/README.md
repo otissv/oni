@@ -18,6 +18,7 @@ Implementation guidance and feature status were checked against the source on 20
 | [VECTOR.md](VECTOR.md) | Paths, strokes, paints, composition, SVG assets/instances, widgets and release gates |
 | [SVG-SUPPORTED-PROFILE.md](SVG-SUPPORTED-PROFILE.md) | Normative SVG syntax, limits, diagnostics and exclusions |
 | [APP.md](APP.md) | Build/runtime requirements and current UI/HUD feature checklist |
+| [NATIVE_DIALOGS.md](NATIVE_DIALOGS.md) | File open/save and folder pick: modal contract, options, ownership and cleanup |
 | [ROAD_MAP.md](ROAD_MAP.md) | Remaining toolkit work, consumer gameplay, audio and editor sequencing |
 
 ## Consumer setup and builds

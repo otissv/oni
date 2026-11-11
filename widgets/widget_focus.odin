@@ -55,7 +55,7 @@ widget_handle_pointer_focus :: proc(
 	got_focus: bool,
 	lost_focus: bool,
 ) {
-	if !tabbable do return
+	if !tabbable || !o.widget_focus_scope_allows(element_id) do return
 
 	if !o.w_ctx.left_mouse.pressed do return
 
@@ -82,6 +82,10 @@ widget_handle_pointer_focus :: proc(
 			return
 		}
 
+		if !o.widget_focus_scope_allows("") {
+			is_focused^ = o.w_ctx.focused_id == element_id
+			return
+		}
 		o.widget_set_focused_id("")
 		is_focused^ = false
 		lost_focus = true
@@ -112,7 +116,7 @@ static id map yet (labels are often declared before their control), so this
 also matches the layout-pass tab order.
 */
 widget_focus_for_id :: proc(for_id: string) -> bool {
-	if for_id == "" {
+	if for_id == "" || !o.widget_focus_scope_allows(for_id) {
 
 		return false
 	}

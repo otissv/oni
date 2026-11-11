@@ -183,7 +183,14 @@ Layout_Popup_Align :: enum {
 	END,
 }
 
+Layout_Popup_Side :: enum {
+	BOTTOM,
+	RIGHT,
+	LEFT,
+}
+
 Layout_Popup_Anchor :: struct {
+	side:        Layout_Popup_Side,
 	anchor_id:   UI_Id,
 	floating_id: UI_Id,
 	gap:         f32,
@@ -4713,6 +4720,7 @@ layout_anchor_popup :: proc(
 	margin: f32,
 	match_width := true,
 	align: Layout_Popup_Align = .START,
+	side: Layout_Popup_Side = .BOTTOM,
 ) {
 	if state == nil || state.ui.pass != .Layout do return
 
@@ -4725,6 +4733,7 @@ layout_anchor_popup :: proc(
 			margin = max(margin, 0),
 			match_width = match_width,
 			align = align,
+			side = side,
 		},
 	)
 }
@@ -4902,6 +4911,7 @@ layout_resolve_anchors :: proc() {
 		anchor := &state.ui.layout.nodes[anchor_index]
 		floating := &state.ui.layout.nodes[floating_index]
 		rect := floating.rect
+
 		rect.x = anchor.rect.x
 		rect.y = anchor.rect.y + anchor.rect.h + relation.gap
 
@@ -4935,12 +4945,32 @@ layout_resolve_anchors :: proc() {
 		floating := &state.ui.layout.nodes[floating_index]
 		rect := floating.rect
 
+		if relation.side != .BOTTOM {
+			left := viewport.x + relation.margin
+			right := max(left, viewport.x + viewport.w - relation.margin)
+			top := viewport.y + relation.margin
+			bottom := max(top, viewport.y + viewport.h - relation.margin)
+			space_right := max(0, right - anchor_rect.x - anchor_rect.w - relation.gap)
+			space_left := max(0, anchor_rect.x - relation.gap - left)
+			prefer_right := relation.side == .RIGHT
+			place_right := prefer_right ? (rect.w <= space_right || space_right >= space_left) : !(rect.w <= space_left || space_left >= space_right)
+			available := place_right ? space_right : space_left
+			rect.w = min(rect.w, available)
+			preferred_h := floating.desired.y > 0 ? floating.desired.y : rect.h
+			rect.h = min(preferred_h, bottom - top)
+			rect.x = place_right ? anchor_rect.x + anchor_rect.w + relation.gap : anchor_rect.x - relation.gap - rect.w
+			rect.y = clamp(anchor_rect.y, top, max(top, bottom - rect.h))
+			floating.rect = rect
+			layout_finalize_after_rect(floating)
+
+			continue
+		}
 		if relation.match_width && !relation.use_point {
 			rect.w = max(rect.w, anchor_rect.w)
 		}
 
 		top := viewport.y + relation.margin
-		bottom := viewport.y + viewport.h - relation.margin
+		bottom := max(top, viewport.y + viewport.h - relation.margin)
 		below_y := anchor_rect.y + anchor_rect.h + relation.gap
 		above_bottom := anchor_rect.y - relation.gap
 		available_below := max(0, bottom - below_y)
@@ -4954,7 +4984,8 @@ layout_resolve_anchors :: proc() {
 			(preferred_h > available_above && available_below >= available_above)
 		available := place_below ? available_below : available_above
 
-		rect.h = min(preferred_h, available)
+		rect.h = min(preferred_h, min(available, bottom - top))
+		rect.w = min(rect.w, max(0, viewport.w - 2 * relation.margin))
 		switch relation.align {
 		case .START:
 			rect.x = anchor_rect.x
@@ -4964,9 +4995,10 @@ layout_resolve_anchors :: proc() {
 			rect.x = anchor_rect.x + (anchor_rect.w - rect.w) * 0.5
 		}
 		min_x := viewport.x + relation.margin
-		max_x := viewport.x + viewport.w - relation.margin - rect.w
+		max_x := max(min_x, viewport.x + viewport.w - relation.margin - rect.w)
 		rect.x = clamp(rect.x, min_x, max_x)
 		rect.y = place_below ? below_y : above_bottom - rect.h
+		rect.y = clamp(rect.y, top, max(top, bottom - rect.h))
 		floating.rect = rect
 		layout_finalize_after_rect(floating)
 	}

@@ -184,6 +184,18 @@ Widget_Mouse_Key_State :: struct {
 }
 
 
+// Keys and saved focus are owned; tab ranges borrow the current frame's order.
+Widget_Focus_Scope :: struct {
+	key:          Widget_ID,
+	return_focus: Widget_ID,
+	return_scope: int,
+	parent:       int,
+	order:        int,
+	start:        int,
+	end:          int,
+	seen:         bool,
+}
+
 /*
 Global per-frame widget input context: focus, mouse, keys, and hover tracking.
 
@@ -191,6 +203,13 @@ Lives inside State (Persistent) so hot reload rebinds the same heap storage.
 Cross-frame string fields own auto-generated ids; user-facing ids are borrowed.
 */
 Widget_Context :: struct {
+	menubars:                   map[UI_Id]Menubar_Runtime,
+	focus_scopes:               [dynamic]Widget_Focus_Scope,
+	focus_scopes_ready:         bool,
+	focus_scope_excluded:       int,
+	focus_scope_parent:         int,
+	focus_scope_order:          int,
+	focus_scope_active:         int,
 	// Widget id that received auto-focus this frame (may be owned).
 	auto_focused_id:             Widget_ID,
 	// True when `auto_focused_id` was allocated by the engine and must be freed.
@@ -556,6 +575,12 @@ Widget_Kind :: enum {
 	COLLAPSIBLE_TRIGGER,
 	// Collapsible in-flow content panel.
 	COLLAPSIBLE_CONTENT,
+	// Tooltip root.
+	TOOLTIP,
+	// Tooltip hover trigger.
+	TOOLTIP_TRIGGER,
+	// Tooltip floating content panel.
+	TOOLTIP_CONTENT,
 	// Progress root.
 	PROGRESS,
 	// Progress accessible label.
@@ -584,6 +609,16 @@ Widget_Kind :: enum {
 	ACCORDION_TRIGGER,
 	// In-flow accordion disclosure panel.
 	ACCORDION_CONTENT,
+	MENUBAR,
+	MENUBAR_TRIGGER,
+	MENUBAR_CONTENT,
+	MENUBAR_ITEM,
+	MENUBAR_CHECKBOX_ITEM,
+	MENUBAR_RADIO_ITEM,
+	MENUBAR_SUB_TRIGGER,
+	MENUBAR_SUB_CONTENT,
+	MENUBAR_GROUP,
+	MENUBAR_SEPARATOR,
 }
 
 /*
