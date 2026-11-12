@@ -179,6 +179,7 @@ batch_init_creates_gpu_buffers_and_destroy_clears :: proc(t: ^testing.T) {
 			// Dual ping-pong slots are both initialized.
 			testing.expect(t, state.gpu_state.batches[1].vertex_buffer != nil)
 			testing.expect(t, state.gpu_state.batches[1].index_buffer != nil)
+			testing.expect_value(t, state.gpu_state.batches[1].dpi, state.dpi)
 			testing.expect_value(t, state.gpu_state.batch_index, 0)
 			append(&batch_current().indices, u16(0))
 			append(&batch_current().segments, Batch_Segment{})
@@ -573,6 +574,22 @@ batch_finalize_segments_noop_without_key :: proc(t: ^testing.T) {
 			testing.expect_value(t, len(batch_current().segments), 0)
 		},
 	)
+}
+
+@(test)
+batch_axis_quad_culls_solid_outside_clip_without_cropping_chrome :: proc(t: ^testing.T) {
+	with_batch_cpu_env(t, proc(t: ^testing.T) {
+		draw_push_clip({10, 10, 20, 20})
+		batch_check_key(TEXTURE_WHITE_ID)
+		batch_push_axis_quad({40, 40, 10, 10}, {}, {255, 255, 255, 255}, {}, {10, 10}, {4, 4, 4, 4}, {}, .Solid)
+		testing.expect_value(t, len(batch_current().vertices), 0)
+		testing.expect_value(t, len(batch_current().indices), 0)
+
+		batch_push_axis_quad({5, 5, 20, 20}, {}, {255, 255, 255, 255}, {}, {20, 20}, {4, 4, 4, 4}, {}, .Solid)
+		testing.expect_value(t, len(batch_current().vertices), 4)
+		testing.expect_value(t, batch_current().vertices[0].pos, Vec2{5, 5})
+		testing.expect_value(t, batch_current().vertices[2].pos, Vec2{25, 25})
+	})
 }
 
 // ---------------------------------------------------------------------------

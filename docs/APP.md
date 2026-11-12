@@ -24,7 +24,7 @@ Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Dual-source blen
 | HarfBuzz | Text shaping |
 | `inotify-tools` (Linux) | Hot-reload file watch |
 
-Development flags: `-vet -strict-style -debug`. Production flags: `-vet -strict-style -o:speed -disable-assert`. Collections and optional local SDL linker flags come from `oni/odin_collections.sh`.
+Development flags: `-vet -strict-style -debug -o:speed`. Speed optimization keeps the per-frame UI rebuild responsive; `-debug` alone defaults to unoptimized code. Debug information, assertions, bounds checks and SDL GPU diagnostics remain enabled, although optimized locals and stepping may differ in the debugger and compilation takes longer. Production flags: `-vet -strict-style -o:speed -disable-assert`. Collections and optional local SDL linker flags come from `oni/odin_collections.sh`.
 
 Run these from the consumer root; scripts resolve that root as the parent of `oni/` unless `ONI_PROJECT_ROOT` is set. Development uses `./oni/scripts/build_hot_reload.sh run` (`build`, `restart` and `stop` are also available). Production uses `./oni/scripts/build_production.sh build`, then `run`, `smoke` or `package`; output and staged assets live under `build/production/`. The release host is copied from `templates/release/main.odin` when missing. On Linux the package bundles non-GPU shared libraries under `lib/` with `$ORIGIN/lib` rpath; Vulkan ICDs remain OS-provided. `ONI_APP_NAME` overrides the binary name and `ONI_SMOKE_FRAMES` controls smoke duration (default 3).
 

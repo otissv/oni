@@ -1385,6 +1385,35 @@ widget_prune_keeps_static_id_mapped_keys :: proc(t: ^testing.T) {
 }
 
 @(test)
+widget_prune_uses_runtime_keys_across_all_interaction_maps :: proc(t: ^testing.T) {
+	with_ui_env(t, proc(t: ^testing.T) {
+		register_static_id("label", "runtime-key")
+		register_tabbable("tab-key")
+		w_ctx.focused_id = "focus-key"
+		keys := [4]string{"runtime-key", "tab-key", "focus-key", "stale-key"}
+		for key in keys {
+			_ = widget_scroll_ensure(key)
+			widget_text_edit_set_caret(key, "text", 2)
+		}
+
+		widget_prune_element_maps()
+		for key in keys[:3] {
+			testing.expect(t, key in w_ctx.scroll_offsets)
+			testing.expect(t, key in w_ctx.text_edit_states)
+		}
+		testing.expect(t, "stale-key" not_in w_ctx.scroll_offsets)
+		testing.expect(t, "stale-key" not_in w_ctx.text_edit_states)
+
+		clear(&w_ctx.static_ids)
+		clear(&w_ctx.tab_order)
+		w_ctx.focused_id = ""
+		widget_prune_element_maps()
+		testing.expect_value(t, len(w_ctx.scroll_offsets), 0)
+		testing.expect_value(t, len(w_ctx.text_edit_states), 0)
+	})
+}
+
+@(test)
 widget_process_tab_ignores_unpressed_and_empty :: proc(t: ^testing.T) {
 	with_ui_env(
 		t,

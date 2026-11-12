@@ -32,7 +32,7 @@ BUILD_LOCK_FILE="${OUT_DIR}/.build.lock"
 LIB_EXT="$ONI_LIB_EXT"
 OS="$ONI_OS"
 
-ODIN_FLAGS=(-vet -strict-style -debug)
+ODIN_FLAGS=(-vet -strict-style -debug -o:speed)
 FONT_LIBS=("$(oni_font_libs)")
 
 check_project_layout() {

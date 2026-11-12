@@ -138,6 +138,7 @@ batch_init :: proc() {
 	for i in 0 ..< len(state.gpu_state.batches) {
 		state.gpu_state.batch_index = i
 		b := batch_current()
+		b.dpi = state.dpi
 		b.vertex_capacity = BATCH_INITIAL_VERT_CAPACITY
 		b.index_capacity = BATCH_INITIAL_VERT_CAPACITY * 6
 		batch_create_gpu_buffers()
@@ -628,6 +629,15 @@ batch_push_axis_quad :: proc(
 	   snap_device ||
 	   mode == .Textured_Text {
 		screen = batch_snap_rect_to_pixels(screen)
+	}
+
+	if mode == .Solid || mode == .Line {
+		visible := rect_intersect(screen, batch_current_clip())
+
+		if visible.w <= 0 || visible.h <= 0 {
+
+			return
+		}
 	}
 
 	x0, y0 := screen.x, screen.y

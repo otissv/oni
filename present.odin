@@ -125,7 +125,6 @@ present_ui_frame :: proc() {
 
 	if uploaded {
 		draw_begin(cmd_buf, render_pass, state.dpi)
-		draw_flush()
 		draw_end()
 	}
 	sdl.EndGPURenderPass(render_pass)

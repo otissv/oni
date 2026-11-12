@@ -79,23 +79,6 @@ register_tabbable :: proc(element_id: Widget_ID) {
 }
 
 @(private)
-element_key_is_active :: proc(key: string) -> bool {
-	if key == string(w_ctx.focused_id) do return true
-
-	for id in w_ctx.tab_order {
-		if string(id) == key do return true
-	}
-
-	if w_ctx.static_ids != nil {
-		for _, static_id in w_ctx.static_ids {
-			if string(static_id) == key do return true
-		}
-	}
-
-	return false
-}
-
-@(private)
 widget_map_delete_key :: proc(m: ^map[string]bool, key: string) {
 	delete_key(m, key)
 	widget_release_key(key)
@@ -379,10 +362,19 @@ widget_scroll_auto_reveal_clear :: proc() {
 Removes stale hover and pointer-down entries for elements no longer in the UI.
 */
 widget_prune_element_maps :: proc() {
+	active := make(map[string]struct{}, len(w_ctx.tab_order) + len(w_ctx.static_ids) + 1, context.temp_allocator)
+	active[string(w_ctx.focused_id)] = {}
+	for id in w_ctx.tab_order {
+		active[string(id)] = {}
+	}
+	for _, id in w_ctx.static_ids {
+		active[string(id)] = {}
+	}
+
 	if w_ctx.element_was_hovered != nil {
 		remove_keys := make([dynamic]string, context.temp_allocator)
 		for key in w_ctx.element_was_hovered {
-			if !element_key_is_active(key) {
+			if key not_in active {
 				append(&remove_keys, key)
 			}
 		}
@@ -394,7 +386,7 @@ widget_prune_element_maps :: proc() {
 	if w_ctx.element_pointer_down != nil {
 		remove_keys := make([dynamic]string, context.temp_allocator)
 		for key in w_ctx.element_pointer_down {
-			if !element_key_is_active(key) {
+			if key not_in active {
 				append(&remove_keys, key)
 			}
 		}
@@ -406,7 +398,7 @@ widget_prune_element_maps :: proc() {
 	if w_ctx.scroll_offsets != nil {
 		remove_keys := make([dynamic]string, context.temp_allocator)
 		for key in w_ctx.scroll_offsets {
-			if !element_key_is_active(key) {
+			if key not_in active {
 				append(&remove_keys, key)
 			}
 		}
@@ -419,7 +411,7 @@ widget_prune_element_maps :: proc() {
 	if w_ctx.scroll_auto_reveal != nil {
 		remove_keys := make([dynamic]string, context.temp_allocator)
 		for key in w_ctx.scroll_auto_reveal {
-			if !element_key_is_active(key) {
+			if key not_in active {
 				append(&remove_keys, key)
 			}
 		}
@@ -432,7 +424,7 @@ widget_prune_element_maps :: proc() {
 	if w_ctx.text_edit_states != nil {
 		remove_keys := make([dynamic]string, context.temp_allocator)
 		for key in w_ctx.text_edit_states {
-			if !element_key_is_active(key) {
+			if key not_in active {
 				append(&remove_keys, key)
 			}
 		}

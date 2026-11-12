@@ -106,6 +106,15 @@ with_present_env :: proc(t: ^testing.T, body: proc(t: ^testing.T)) {
 // ---------------------------------------------------------------------------
 
 @(test)
+present_frame_submits_ui_batch_once :: proc(t: ^testing.T) {
+	with_present_env(t, proc(t: ^testing.T) {
+		test_hook_batch_record_pipeline_binds = true
+		present_frame(present_test_quad_draw)
+		testing.expect_value(t, len(test_batch_pipeline_binds), 1)
+	})
+}
+
+@(test)
 present_frame_noop_when_cannot_render :: proc(t: ^testing.T) {
 	with_engine_env(
 		t,
