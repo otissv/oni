@@ -21,7 +21,7 @@ gpu_ui_multisample_pipeline_rejects_missing_device :: proc(t: ^testing.T) {
 		gpu_create_ui_layout_pipeline(
 			nil,
 			.R8G8B8A8_UNORM,
-			frag_shader_code,
+			.UI_Fragment,
 			gpu_blend_state(),
 			sample_count = ._4,
 			depth_stencil_format = .D24_UNORM_S8_UINT,
@@ -74,7 +74,7 @@ gpu_vector_msaa_lcd_readback :: proc(t: ^testing.T) {
 	ui := gpu_create_ui_layout_pipeline(
 		state.gpu,
 		.R8G8B8A8_UNORM,
-		frag_shader_code,
+		.UI_Fragment,
 		gpu_blend_state(),
 		sample_count = ._4,
 		depth_stencil_format = depth_format,

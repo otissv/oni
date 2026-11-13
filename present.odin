@@ -17,6 +17,8 @@ present_frame :: proc(draw: Draw_Proc) {
 	if !state.can_render || state.window == nil || state.gpu == nil do return
 	if state.gpu_state.pipeline == nil do return
 	if theme == nil do return
+	debug_overlay_begin_present()
+	defer debug_overlay_end_present(sdl.GetTicksNS())
 
 	// Adopt decode completions before draw. Newly decoded textures stay Pending
 	// until upload flush below publishes Ready for the next UI frame.
@@ -117,6 +119,8 @@ present_ui_frame :: proc() {
 		log_errorf("SDL_BeginGPURenderPass failed: %s", sdl.GetError())
 		if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
 			log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
+		} else {
+			state.debug_overlay.current.presented = true
 		}
 		batch_reset()
 
@@ -131,6 +135,8 @@ present_ui_frame :: proc() {
 
 	if !sdl.SubmitGPUCommandBuffer(cmd_buf) || test_hook_present_fail_submit {
 		log_errorf("SDL_SubmitGPUCommandBuffer failed: %s", sdl.GetError())
+	} else {
+		state.debug_overlay.current.presented = true
 	}
 
 	batch_reset()

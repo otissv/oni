@@ -9,10 +9,6 @@ import "core:sync"
 import "core:testing"
 import sdl "vendor:sdl3"
 
-@(private)
-dual_source_test_vert_code := #load("shaders/dual_source_test.spv.vert")
-@(private)
-dual_source_test_frag_code := #load("shaders/dual_source_test.spv.frag")
 
 /*
 CPU-only GPU state for blend / projection / destroy-nil paths.
@@ -604,8 +600,8 @@ gpu_dual_source_colored_blend_matches_skia_math :: proc(t: ^testing.T) {
 			}
 			defer sdl.ReleaseGPUTexture(state.gpu, target)
 
-			vert := gpu_load_shader(state.gpu, dual_source_test_vert_code, .VERTEX, 0, 0)
-			frag := gpu_load_shader(state.gpu, dual_source_test_frag_code, .FRAGMENT, 0, 0)
+			vert := gpu_load_shader(state.gpu, .Probe_Vertex)
+			frag := gpu_load_shader(state.gpu, .Probe_Fragment)
 			if vert == nil || frag == nil {
 				testing.expectf(t, false, "dual-source shader load failed: %s", sdl.GetError())
 
@@ -978,11 +974,11 @@ gpu_load_shader_loads_embedded_vert_and_frag :: proc(t: ^testing.T) {
 	with_gpu_device_env(
 		t,
 		proc(t: ^testing.T) {
-			vert := gpu_load_shader(state.gpu, vert_shader_code, .VERTEX, 1, 0)
+			vert := gpu_load_shader(state.gpu, .UI_Vertex)
 			testing.expect(t, vert != nil)
 			if vert != nil do sdl.ReleaseGPUShader(state.gpu, vert)
 
-			frag := gpu_load_shader(state.gpu, frag_shader_code, .FRAGMENT, 0, 1)
+			frag := gpu_load_shader(state.gpu, .UI_Fragment)
 			testing.expect(t, frag != nil)
 			if frag != nil do sdl.ReleaseGPUShader(state.gpu, frag)
 		},
@@ -990,12 +986,12 @@ gpu_load_shader_loads_embedded_vert_and_frag :: proc(t: ^testing.T) {
 }
 
 @(test)
-gpu_load_shader_empty_code_returns_nil :: proc(t: ^testing.T) {
+gpu_load_shader_invalid_id_returns_nil :: proc(t: ^testing.T) {
 	with_gpu_device_env(
 		t,
 		proc(t: ^testing.T) {
-			testing.expect(t, gpu_load_shader(state.gpu, {}, .VERTEX, 1, 0) == nil)
-			testing.expect(t, gpu_load_shader(state.gpu, {}, .FRAGMENT, 0, 1) == nil)
+			testing.expect(t, gpu_load_shader(state.gpu, GPU_Shader(-1)) == nil)
+			testing.expect(t, gpu_load_shader(state.gpu, GPU_Shader(len(gpu_shader_assets))) == nil)
 		},
 	)
 }
@@ -1006,10 +1002,10 @@ gpu_load_shader_vert_hook_returns_nil :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			test_hook_gpu_fail_vert_shader = true
-			vert := gpu_load_shader(state.gpu, vert_shader_code, .VERTEX, 1, 0)
+			vert := gpu_load_shader(state.gpu, .UI_Vertex)
 			testing.expect(t, vert == nil)
 
-			frag := gpu_load_shader(state.gpu, frag_shader_code, .FRAGMENT, 0, 1)
+			frag := gpu_load_shader(state.gpu, .UI_Fragment)
 			testing.expect(t, frag != nil)
 			if frag != nil do sdl.ReleaseGPUShader(state.gpu, frag)
 		},
@@ -1022,10 +1018,10 @@ gpu_load_shader_frag_hook_returns_nil :: proc(t: ^testing.T) {
 		t,
 		proc(t: ^testing.T) {
 			test_hook_gpu_fail_frag_shader = true
-			frag := gpu_load_shader(state.gpu, frag_shader_code, .FRAGMENT, 0, 1)
+			frag := gpu_load_shader(state.gpu, .UI_Fragment)
 			testing.expect(t, frag == nil)
 
-			vert := gpu_load_shader(state.gpu, vert_shader_code, .VERTEX, 1, 0)
+			vert := gpu_load_shader(state.gpu, .UI_Vertex)
 			testing.expect(t, vert != nil)
 			if vert != nil do sdl.ReleaseGPUShader(state.gpu, vert)
 		},
@@ -1495,7 +1491,7 @@ gpu_lcd_rgb_edge_coverage_and_gray_fallback_readback :: proc(t: ^testing.T) {
 			ui_pipeline := gpu_create_ui_layout_pipeline(
 				state.gpu,
 				.R8G8B8A8_UNORM,
-				frag_shader_code,
+				.UI_Fragment,
 				gpu_blend_state(),
 			)
 			testing.expect(t, ui_pipeline != nil)

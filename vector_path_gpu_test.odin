@@ -10,7 +10,7 @@ import img "vendor:sdl3/image"
 @(test)
 vector_paths_match_independent_fill_references :: proc(t: ^testing.T) {
 	with_gpu_device_env(t, proc(t: ^testing.T) {
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil { return }
 		batch_init()
@@ -30,7 +30,7 @@ vector_path_shared_instances_keep_independent_paint_and_source_revisions :: proc
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 48, logical_h = 16, drawable_w = 48, drawable_h = 16, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil { return }
 		gpu_update_projection(state.dpi)

@@ -88,7 +88,7 @@ vector_lifecycle_dpi_change_reallocates_vector_msaa_root :: proc(t: ^testing.T) 
 	with_gpu_device_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()
 		defer vector_gpu_shutdown()
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		batch_init()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 640, logical_h = 480, drawable_w = 640, drawable_h = 480, scale = 1}

@@ -315,7 +315,7 @@ vector_benchmark_validate_frame :: proc(t: ^testing.T) {
 @(private)
 vector_benchmark_init_ui_gpu :: proc() -> bool {
 	state.vector.gpu.format = .R8G8B8A8_UNORM
-	state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+	state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 	state.gpu_state.lcd_pipeline = gpu_create_lcd_pipeline(state.gpu, .R8G8B8A8_UNORM)
 	state.gpu_state.sampler = gpu_create_sampler(state.gpu)
 	state.gpu_state.sampler_nearest = gpu_create_sampler(state.gpu, .NEAREST, .NEAREST)

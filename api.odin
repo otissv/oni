@@ -21,6 +21,10 @@ Wake_For :: wake_for
 Wake_Until :: wake_until_ns
 Wake_Deadline :: wake_deadline_ns
 
+Get_Render_Stats :: render_stats
+Debug_Overlay_Visible :: debug_overlay_visible
+Set_Debug_Overlay :: debug_overlay_set_visible
+
 Init_Window :: init_window
 Init :: init
 Can_Render :: can_render
@@ -210,6 +214,12 @@ Open_File_Dialog :: open_file_dialog
 Save_File_Dialog :: save_file_dialog
 Pick_Folder :: pick_folder
 Destroy_File_Dialog_Result :: destroy_file_dialog_result
+
+Get_File_Drag_State :: file_drag_state
+Take_File_Drop :: take_file_drop
+Destroy_File_Drop_Result :: destroy_file_drop_result
+File_Drop_Register_Target :: file_drop_register_target
+File_Drop_Target_Hovered :: file_drop_target_hovered
 
 Clipboard_Get_Text :: clipboard_get_text
 Clipboard_Set_Text :: clipboard_set_text

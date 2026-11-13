@@ -88,18 +88,18 @@ Finish the production app UI surface. Prefer work that unblocks Track 2 HUD and 
 - [x] Open URL
 - [x] Native file open / save-path dialogs (`Open_File_Dialog` / `Save_File_Dialog`) — see [NATIVE_DIALOGS.md](NATIVE_DIALOGS.md)
 - [x] Native folder picker (`Pick_Folder`), including multi-selection
-- [ ] Drag-and-drop files (`SDL_EVENT_DROP_FILE`)
+- [x] Native file-drop transactions, owned window delivery, composable targets, bounded capture and asynchronous image preview ([FILE_DROP.md](FILE_DROP.md))
 - [~] Window mode via settings; persist size / position / maximized across launches
 - [ ] Missing-image checker / pink-black fallback texture for widgets
-- [ ] Ship `assets/ui/icons.png` (or equivalent) icon sheet
 
 ### 1.4 Performance & hardening
 
 - [ ] Virtualized lists (`ui_list_virtualized` or equivalent) for large select / asset lists
 - [x] Frame modes / dirty wake + on-demand present skip ([FRAME_MODES.md](FRAME_MODES.md)); partial dirty-rect region updates deferred
-- [ ] F3 (or settings) debug overlay: FPS, draw calls, batch flushes, atlas stats
+- [x] F3 debug overlay: FPS, draw calls, batch flushes and atlas stats; remappable shortcut and settings-UI API ([DEBUG_OVERLAY.md](DEBUG_OVERLAY.md))
 - [ ] Log / toast for non-fatal errors; structured GPU device-loss quit path
-- [ ] Release GPU path (device creation still defaults to debug mode); multi-backend shaders beyond SPIR-V when needed
+- [x] Release GPU configuration follows `ODIN_DEBUG`: development diagnostics enabled, production diagnostics disabled
+- [~] Multi-backend shaders: SPIR-V / MSL / DXIL bundles, selection and build contracts implemented; native Metal / Direct3D 12 runtime acceptance pending ([SHADERS.md](SHADERS.md))
 - [x] Native vector/SVG performance: API, composition, reload and correctness coverage implemented; full corrected M2/M8/composition and ordinary-UI regression gates still required ([VECTOR.md](VECTOR.md))
 - [x] Production build script (`build_production.sh`: static `-o:speed` binary, staged assets, SDL bundle, package tarball)
 - [ ] CI: `test_all.sh` + hot-reload/production builds on push; Darwin / Windows watch parity
@@ -195,7 +195,7 @@ Explicitly deferred; do not block Tracks 1–2.
 | Accessibility | Focus already exists; a11y tree / AT / screen readers later |
 | Installers / signing | Static build, asset/library staging and tarball packaging already exist; installers/signing follow a shippable demo |
 | SVG / native vector release performance | Implemented behind draw/widget APIs; corrected dense-scene benchmark acceptance remains open, see [VECTOR.md](VECTOR.md) |
-| Multi-backend GPU (MSL / DXIL) | When non-Vulkan targets matter |
+| Multi-backend GPU native acceptance | MSL / DXIL implementation exists; run native Metal / Direct3D 12 release checks ([SHADERS.md](SHADERS.md)) |
 | Offline sprite atlas bake | Separate asset pipeline; not the runtime glyph atlas |
 
 ---

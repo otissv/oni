@@ -10,14 +10,15 @@ Production HUD / app UI on the hot-reload stack (`main.odin` host + `app/` DLL).
 
 ## System requirements
 
-Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Dual-source blend is required for LCD text.
+Oni renders through **SDL3 GPU with SPIR-V / MSL / DXIL** for Vulkan / Metal / Direct3D 12. Dual-source blend is required for LCD text. See [SHADERS.md](SHADERS.md) for build tooling and native backend validation.
 
 ### Build / link
 
 | Dependency | Role |
 | ---------- | ---- |
 | [Odin](https://odin-lang.org/) | Compiler |
-| `glslc` | Compiles `oni/shaders/` UI, LCD, vector and probe shaders to SPIR-V |
+| Python 3.10+ | Verifies shader bundle hashes on builds |
+| `glslc` + SDL_shadercross (DXC enabled) | Rebuilds UI, LCD, vector and probe bundles in all three formats when needed |
 | SDL3 | Window, input, SDL_GPU (pinned build under `oni/third_party/sdl3/` when used) |
 | SDL3_image | Texture loading |
 | FreeType | Font rasterization (gray + LCD) |
@@ -25,6 +26,8 @@ Oni renders through **SDL3 GPU with SPIR-V** (Vulkan on Linux). Dual-source blen
 | `inotify-tools` (Linux) | Hot-reload file watch |
 
 Development flags: `-vet -strict-style -debug -o:speed`. Speed optimization keeps the per-frame UI rebuild responsive; `-debug` alone defaults to unoptimized code. Debug information, assertions, bounds checks and SDL GPU diagnostics remain enabled, although optimized locals and stepping may differ in the debugger and compilation takes longer. Production flags: `-vet -strict-style -o:speed -disable-assert`. Collections and optional local SDL linker flags come from `oni/odin_collections.sh`.
+
+GPU debugging follows the engine's compile-time `ODIN_DEBUG` value: `-debug` enables SDL GPU diagnostics, while builds without `-debug` disable them. Optimization and assertion flags do not control GPU debugging. Device creation checks every required property and fails if configuration cannot be applied; both modes advertise SPIR-V, MSL and DXIL and require indirect draw first-instance support and dual-source blending. The same policy applies to hot-reload app libraries and statically linked hosts.
 
 Run these from the consumer root; scripts resolve that root as the parent of `oni/` unless `ONI_PROJECT_ROOT` is set. Development uses `./oni/scripts/build_hot_reload.sh run` (`build`, `restart` and `stop` are also available). Production uses `./oni/scripts/build_production.sh build`, then `run`, `smoke` or `package`; output and staged assets live under `build/production/`. The release host is copied from `templates/release/main.odin` when missing. On Linux the package bundles non-GPU shared libraries under `lib/` with `$ORIGIN/lib` rpath; Vulkan ICDs remain OS-provided. `ONI_APP_NAME` overrides the binary name and `ONI_SMOKE_FRAMES` controls smoke duration (default 3).
 
@@ -88,7 +91,7 @@ VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/intel_icd.x86_64.json ./oni/scripts/bui
 | `gamepad.odin` | Gamepad polling (+ shortcut binds) | [x] |
 | `log.odin` / `error.odin` | Logging + structured errors | [x] |
 | File open/save / folder | Native modal pickers; owned results | [x] |
-| File drag-drop | Native drop events | [ ] |
+| File drag-drop | Native transactions and composable targets | [x] |
 
 ### Core types (stable)
 
@@ -166,7 +169,7 @@ Popover chrome uses `space = .POPOVER` / `Popover_Begin`; Dialog and framework c
 ### Deliverables
 
 - [x] `oni/shaders/ui.vert` / `ui.frag` (+ LCD fragment path)
-- [x] SPIR-V compile in build script
+- [x] Offline SPIR-V / MSL / DXIL shader bundle compilation and verification
 - [x] `GPU_State`: pipelines, sampler, white 1×1, projection
 - [x] Ortho `0..logical_w`, `0..logical_h`, Y-down logical space
 - [x] Triangle list, blended alpha, dual-source LCD pipeline
@@ -432,7 +435,7 @@ The implicit `Popover_Is_Open()` / `Popover_Set_Open(open)`, `Context_Menu_Is_Op
 | Open URL (`Open_URL` / allowlisted schemes) | [x] |
 | File open/save dialogs | [x] `Open_File_Dialog` / `Save_File_Dialog` |
 | Folder pick | [x] `Pick_Folder`, including multi-selection |
-| Drag and drop (`SDL_EVENT_DROP_FILE`) | [ ] |
+| Drag and drop (`SDL_EVENT_DROP_FILE`) | [x] `File_Drop_Target` and `Take_File_Drop` ([FILE_DROP.md](FILE_DROP.md)) |
 | Persist window size/position/maximized | [~] mode via settings; geometry restore open |
 | Multi-monitor DPI | [x] dpi events; [ ] dialog re-center when dialogs exist |
 
@@ -441,7 +444,7 @@ Native dialogs use one modal, main-thread API with explicit result ownership; se
 ### Checkpoint
 
 - [ ] Open file dialog loads path into a text field
-- [ ] Drag image onto window loads preview in `Image`
+- [x] Drag image onto File Drop target loads an asynchronous `Image` preview
 - [x] Copy/paste between app and external text editor
 - [ ] Restart app restores window geometry
 
@@ -455,7 +458,7 @@ Native dialogs use one modal, main-thread API with explicit result ownership; se
 - [x] On-demand present skip when wake-only and not oneshot dirty (`Request_Frame`); partial dirty-rect region updates deferred
 - [ ] `ui_list_virtualized(count, row_h, body)`
 - [ ] Virtualization used by select / asset lists
-- [ ] F3 (or settings) debug overlay: FPS, draw_call_count, batch_flush_count, atlas stats
+- [x] F3 debug overlay: FPS, draw calls, batch flushes, atlas stats; settings-UI visibility API ([DEBUG_OVERLAY.md](DEBUG_OVERLAY.md))
 - [ ] Log frame spikes > 33 ms
 - [x] Glyph atlas recovery, pooled raster workers and multi-texture batching — see [ATLAS.md](ATLAS.md)
 - [x] Shaped-line caching, frame-arena layout scratch and async texture decode/deferred uploads
@@ -465,7 +468,7 @@ Native dialogs use one modal, main-thread API with explicit result ownership; se
 
 - [ ] 10k-row virtual list scrolls at 60 FPS
 - [x] Dirty / on-demand mode keeps idle CPU low (wait + wake-only present skip; caret uses `Request_Frame`)
-- [ ] Debug overlay shows batch / atlas stats without stuttering
+- [x] Debug overlay batch / atlas stats: GPU readback at 1×/2× DPI, bounded text storage and leak-checked cleanup
 
 ---
 
@@ -496,7 +499,7 @@ Native dialogs use one modal, main-thread API with explicit result ownership; se
 
 ### `oni/scripts/build_hot_reload.sh`
 
-- [x] Compile UI, LCD, vector and probe shaders to SPIR-V
+- [x] Compile UI, LCD, vector and probe shaders to SPIR-V / MSL / DXIL
 - [x] Link FreeType + HarfBuzz
 - [x] Build host + `app` shared library; watch `oni/` and `app/`
 - [x] Development runs from consumer root and reads its `assets/`; production stages assets beside the release binary
@@ -552,7 +555,7 @@ flowchart TD
     S8 --> S9 --> S10 --> S11 --> S12 --> S13
 ```
 
-**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, cached shaping, LCD text, async assets and native vectors). Dialog, Context_Menu, Progress, Collapsible and Accordion are implemented. Open work concentrates in **10** (tooltip/menu bar/focus trap), remaining **11** (DnD / geometry persist), **12** (virtualization / debug overlay / vector release performance), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
+**Progress snapshot:** Sections **1–9** are largely shipped (form widgets, shortcuts, text edit, scroll, grid, production atlas, cached shaping, LCD text, async assets and native vectors). Dialog, Context_Menu, Progress, Collapsible and Accordion are implemented. Open work concentrates in **10** (tooltip/menu bar/focus trap), remaining **11** (DnD / geometry persist), **12** (virtualization / vector release performance), and **13** (toasts, fallbacks, document-browser demo). Platform game, audio, and editor are **not** in this file — see [ROAD_MAP.md](ROAD_MAP.md).
 
 ---
 

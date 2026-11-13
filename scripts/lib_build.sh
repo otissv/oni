@@ -23,18 +23,6 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
 	fi
 fi
 
-SHADER_DIR="${ONI_ROOT}/shaders"
-UI_FRAG="${SHADER_DIR}/ui.frag"
-UI_VERT="${SHADER_DIR}/ui.vert"
-UI_SPV_FRAG="${SHADER_DIR}/ui.spv.frag"
-UI_SPV_VERT="${SHADER_DIR}/ui.spv.vert"
-UI_LCD_FRAG="${SHADER_DIR}/ui_lcd.frag"
-UI_LCD_SPV_FRAG="${SHADER_DIR}/ui_lcd.spv.frag"
-DUAL_FRAG="${SHADER_DIR}/dual_source_test.frag"
-DUAL_VERT="${SHADER_DIR}/dual_source_test.vert"
-DUAL_SPV_FRAG="${SHADER_DIR}/dual_source_test.spv.frag"
-DUAL_SPV_VERT="${SHADER_DIR}/dual_source_test.spv.vert"
-
 oni_when_os() {
 	case "$(uname -s)" in
 	Darwin) echo "darwin" ;;
@@ -136,8 +124,8 @@ oni_check_build_deps() {
 		missing+=("odin (https://odin-lang.org/)")
 	fi
 
-	if ! command -v glslc > /dev/null 2>&1; then
-		missing+=("glslc (Vulkan SDK / shaderc package)")
+	if ! command -v python3 > /dev/null 2>&1; then
+		missing+=("python3 (shader bundle verification / build)")
 	fi
 
 	if ! oni_has_sdl3_image; then
@@ -164,71 +152,5 @@ oni_check_build_deps() {
 }
 
 oni_build_shaders() {
-	if ! command -v glslc > /dev/null 2>&1; then
-		echo "glslc not found. Install the Vulkan SDK (or a package that provides glslc)."
-		return 1
-	fi
-
-	local -a pids=()
-	local compiled=false
-	local vector_shader vector_source vector_output
-	for vector_shader in vector.vert vector.frag vector_solid.vert; do
-		vector_source="${SHADER_DIR}/${vector_shader}"
-		vector_output="${SHADER_DIR}/${vector_shader%.*}.spv.${vector_shader##*.}"
-		if [[ ! -f "$vector_output" || "$vector_source" -nt "$vector_output" ]]; then
-			echo "Compiling ${vector_shader}"
-			glslc "$vector_source" -o "$vector_output" &
-			pids+=($!)
-			compiled=true
-		fi
-	done
-
-	if [[ ! -f "$UI_SPV_FRAG" || "$UI_FRAG" -nt "$UI_SPV_FRAG" ]]; then
-		echo "Compiling ui.frag"
-		glslc "$UI_FRAG" -o "$UI_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ ! -f "$UI_SPV_VERT" || "$UI_VERT" -nt "$UI_SPV_VERT" ]]; then
-		echo "Compiling ui.vert"
-		glslc "$UI_VERT" -o "$UI_SPV_VERT" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ ! -f "$UI_LCD_SPV_FRAG" || "$UI_LCD_FRAG" -nt "$UI_LCD_SPV_FRAG" ]]; then
-		echo "Compiling ui_lcd.frag"
-		glslc "$UI_LCD_FRAG" -o "$UI_LCD_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ -f "$DUAL_FRAG" && (! -f "$DUAL_SPV_FRAG" || "$DUAL_FRAG" -nt "$DUAL_SPV_FRAG") ]]; then
-		echo "Compiling dual_source_test.frag"
-		glslc "$DUAL_FRAG" -o "$DUAL_SPV_FRAG" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	if [[ -f "$DUAL_VERT" && (! -f "$DUAL_SPV_VERT" || "$DUAL_VERT" -nt "$DUAL_SPV_VERT") ]]; then
-		echo "Compiling dual_source_test.vert"
-		glslc "$DUAL_VERT" -o "$DUAL_SPV_VERT" &
-		pids+=($!)
-		compiled=true
-	fi
-
-	local status=0
-	for pid in "${pids[@]+"${pids[@]}"}"; do
-		if ! wait "$pid"; then
-			status=1
-		fi
-	done
-	if ((status != 0)); then
-		return 1
-	fi
-
-	if [[ "$compiled" == false ]]; then
-		echo "Shaders up to date"
-	fi
+	python3 "${ONI_ROOT}/scripts/build_shaders.py"
 }

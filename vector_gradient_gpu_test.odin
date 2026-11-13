@@ -10,7 +10,7 @@ import img "vendor:sdl3/image"
 @(test)
 vector_gradients_match_independent_references :: proc(t: ^testing.T) {
 	with_gpu_device_env(t, proc(t: ^testing.T) {
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil {
 			return
@@ -31,7 +31,7 @@ vector_gradient_instances_keep_independent_paints_on_shared_mesh :: proc(t: ^tes
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 64, logical_h = 32, drawable_w = 64, drawable_h = 32, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil {
 			return

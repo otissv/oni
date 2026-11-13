@@ -1,0 +1,1 @@
+{"type":"run","run":"2026-11-11-code-guidelines-16abb0","skill":"code-guidelines","scope":"path gpu_shaders.odin gpu_shader_assets.odin gpu.odin vector_gpu.odin scripts/build_shaders.py scripts/test_build_shaders.py scripts/lib_build.sh scripts/build_hot_reload.sh scripts/test_all.sh","date":"2026-11-11T19:12:46.363Z","head":"9060d2c7a860","branch":"main"}

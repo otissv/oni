@@ -20,7 +20,8 @@ draw_mode_f32 :: proc(mode: Draw_Mode) -> f32 {
 	return f32(mode)
 }
 
-BATCH_INITIAL_VERT_CAPACITY :: 64 * 1024
+// Small UIs start below 1 MiB across both GPU slots and grow geometrically.
+BATCH_INITIAL_VERT_CAPACITY :: 4 * 1024
 
 /*
 Identifies a draw batch by texture asset, clip, stack index, sampler, and pipeline.
@@ -878,6 +879,9 @@ indices, missing GPU textures, or LCD without `lcd_pipeline`.
 batch_flush_draws :: proc() {
 	if state.gpu_state.pipeline == nil do return
 	if len(batch_current().segments) == 0 do return
+	if state.debug_overlay.recording {
+		state.debug_overlay.current.batch_flushes += 1
+	}
 
 	ubo := GPU_Proj_UBO {
 		proj = state.gpu_state.proj_mat,
@@ -1042,5 +1046,6 @@ batch_flush_draws :: proc() {
 			0,
 			0,
 		)
+		debug_overlay_record_draw(1)
 	}
 }

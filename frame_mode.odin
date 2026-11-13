@@ -166,6 +166,7 @@ frame_work_pending :: proc() -> bool {
 	if state.frame_dirty do return true
 
 	if assets_io_has_completions() do return true
+	if debug_overlay_refresh_due(frame_now_ns()) do return true
 
 	return frame_wake_active(frame_now_ns())
 }
@@ -209,6 +210,7 @@ frame_wait_if_idle :: proc() {
 			timeout_ms = max(remaining_ms, i32(0))
 		}
 	}
+	timeout_ms = debug_overlay_wait_timeout(now, timeout_ms)
 
 	event: sdl.Event
 	if sdl.WaitEventTimeout(&event, timeout_ms) {
@@ -244,7 +246,7 @@ frame_should_present :: proc(entered_dirty: bool) -> bool {
 
 	if frame_pacing_effective() == .Continuous do return true
 
-	return entered_dirty || state.frame_dirty
+	return entered_dirty || state.frame_dirty || debug_overlay_refresh_due(frame_now_ns())
 }
 
 /*

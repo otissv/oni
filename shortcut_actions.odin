@@ -5,6 +5,7 @@ Shortcut_Action_Type :: enum {
 	SHORTCUT_APP_QUIT,
 	SHORTCUT_HOST_RELOAD,
 	SHORTCUT_HOST_RESTART,
+	SHORTCUT_DEBUG_TOGGLE_OVERLAY,
 
 	// View
 	SHORTCUT_VIEW_ZOOM_IN,
@@ -42,6 +43,7 @@ shortcut_action_types: [Shortcut_Action_Type]string = {
 	.SHORTCUT_APP_QUIT                 = "app.quit",
 	.SHORTCUT_HOST_RELOAD              = "host.reload",
 	.SHORTCUT_HOST_RESTART             = "host.restart",
+	.SHORTCUT_DEBUG_TOGGLE_OVERLAY     = "debug.toggle_overlay",
 
 	// View
 	.SHORTCUT_VIEW_ZOOM_IN             = "view.zoom_in",
@@ -78,6 +80,7 @@ shortcut_labels: [Shortcut_Action_Type]string = {
 	.SHORTCUT_APP_QUIT                 = "Quit",
 	.SHORTCUT_HOST_RELOAD              = "Hot Reload",
 	.SHORTCUT_HOST_RESTART             = "Hot Restart",
+	.SHORTCUT_DEBUG_TOGGLE_OVERLAY     = "Toggle Debug Overlay",
 
 	// View
 	.SHORTCUT_VIEW_ZOOM_IN             = "Zoom In",
@@ -111,6 +114,7 @@ shortcut_labels: [Shortcut_Action_Type]string = {
 
 
 register_shortcut_actions :: proc() {
+	shortcut_register_action(.SHORTCUT_DEBUG_TOGGLE_OVERLAY, shortcut_action_debug_overlay)
 	// App
 	shortcut_register_action(Shortcut_Action_Type.SHORTCUT_APP_QUIT, shortcut_action_app_quit)
 	shortcut_register_action(
@@ -195,4 +199,9 @@ register_shortcut_actions :: proc() {
 		Shortcut_Action_Type.SHORTCUT_EDIT_NEWLINE,
 		text_edit_action_nav_key,
 	)
+}
+
+@(private)
+shortcut_action_debug_overlay :: proc(_: ^Shortcut_Event) {
+	debug_overlay_set_visible(!debug_overlay_visible())
 }

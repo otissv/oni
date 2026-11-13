@@ -1,0 +1,6 @@
+# Shader fingerprints must be stable across platforms.
+shaders/* text eol=lf
+shaders/*.spv.* binary
+shaders/*.dxil.* binary
+scripts/build_shaders.py text eol=lf
+gpu_shader_assets.odin text eol=lf

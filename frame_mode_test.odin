@@ -183,6 +183,14 @@ run_frame_on_demand_skips_when_idle :: proc(t: ^testing.T) {
 @(test)
 run_frame_on_demand_wake_only_skips_present :: proc(t: ^testing.T) {
 	with_runtime_window_env(t, proc(t: ^testing.T) {
+		// This case tests wake deadlines without live OS window/input events.
+		previous_filter: sdl.EventFilter
+		previous_userdata: rawptr
+		_ = sdl.GetEventFilter(&previous_filter, &previous_userdata)
+		sdl.SetEventFilter(proc "c" (_: rawptr, _: ^sdl.Event) -> bool { return false }, nil)
+		defer sdl.SetEventFilter(previous_filter, previous_userdata)
+		sdl.FlushEvents(.FIRST, .LAST)
+		test_hook_keyboard_override = true
 		test_hook_skip_frame_wait = true
 		frame_mode_set(.On_Demand)
 		state.frame_dirty = false

@@ -1185,6 +1185,20 @@ font_atlas_grows_when_hot_glyphs_fill_tiny_atlas :: proc(t: ^testing.T) {
 }
 
 @(test)
+font_small_atlas_grows_directly_to_fit_large_glyph :: proc(t: ^testing.T) {
+	with_font_gpu_fixtures(t, proc(inter, pixel: Font_Handle, t: ^testing.T) {
+		_ = inter
+		_ = pixel
+		testing.expect(t, texture_atlas_init())
+		state.textures.max_2d_texture_size = 2048
+		testing.expect(t, font_atlas_recover_space(1200, 32))
+		testing.expect_value(t, state.textures.atlas.width, i32(2048))
+		testing.expect(t, texture_atlas_can_fit(1200, 32))
+		testing.expect_value(t, len(state.textures.overflow), 0)
+	})
+}
+
+@(test)
 font_atlas_try_grow_refuses_past_hard_or_device_max :: proc(t: ^testing.T) {
 	with_font_gpu_fixtures(
 		t,

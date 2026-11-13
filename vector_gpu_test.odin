@@ -38,7 +38,7 @@ vector_gpu_reuses_completed_slot_upload_storage :: proc(t: ^testing.T) {
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 32, logical_h = 32, drawable_w = 32, drawable_h = 32, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil { return }
 		gpu_update_projection(state.dpi)
@@ -81,7 +81,7 @@ vector_gpu_composition_case :: proc(t: ^testing.T, fail_mask: bool) {
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 32, logical_h = 32, drawable_w = 32, drawable_h = 32, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		state.gpu_state.sampler = gpu_create_sampler(state.gpu)
 		state.gpu_state.white_texture = gpu_create_white_texture(state.gpu)
 		testing.expect(t, state.gpu_state.pipeline != nil && state.gpu_state.sampler != nil && state.gpu_state.white_texture != nil)

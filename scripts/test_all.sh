@@ -34,6 +34,7 @@ USE_ASAN=false
 USE_VALGRIND=false
 REPORT_MEMORY=false
 REQUIRE_VECTOR_GPU=false
+GPU_BACKEND=""
 PACKAGES=()
 
 usage() {
@@ -50,6 +51,7 @@ Options:
   --valgrind          After building, re-run each test binary under Valgrind
   --report-memory     Always print per-test memory usage (even with no leaks)
   --require-vector-gpu  Fail if vector MSAA/LCD real-GPU checks cannot run (includes oni)
+  --gpu-backend NAME    Require vulkan, metal or direct3d12; includes real-GPU checks
   -h, --help          Show this help
 
 Always enabled:
@@ -190,6 +192,18 @@ while (($# > 0)); do
 		REQUIRE_VECTOR_GPU=true
 		shift
 		;;
+	--gpu-backend)
+		if (($# < 2)); then
+			echo "--gpu-backend requires vulkan, metal or direct3d12" >&2
+			exit 1
+		fi
+		case "$2" in
+		vulkan | metal | direct3d12) GPU_BACKEND="$2" ;;
+		*) echo "Unsupported GPU backend: $2" >&2; exit 1 ;;
+		esac
+		REQUIRE_VECTOR_GPU=true
+		shift 2
+		;;
 	-*)
 		echo "Unknown option: $1" >&2
 		usage >&2
@@ -222,6 +236,11 @@ if $REQUIRE_VECTOR_GPU; then
 	fi
 fi
 
+if [[ -n "$GPU_BACKEND" ]]; then
+	export SDL_GPU_DRIVER="$GPU_BACKEND"
+	TEST_DEFINES+=(-define:ONI_TEST_GPU_DRIVER="$GPU_BACKEND")
+fi
+
 for pkg in "${PACKAGES[@]}"; do
 	found=false
 	for known in "${ALL_PACKAGES[@]}"; do
@@ -243,6 +262,10 @@ if ! command -v odin >/dev/null 2>&1; then
 fi
 
 mkdir -p "$OUT_DIR"
+
+# Every package imports the same embedded registry; reject stale bundles first.
+python3 "${SCRIPT_DIR}/test_build_shaders.py"
+python3 "${SCRIPT_DIR}/build_shaders.py" --check
 
 failed=()
 passed=()

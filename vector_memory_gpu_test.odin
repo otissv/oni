@@ -86,7 +86,7 @@ vector_gpu_shared_msaa_shutdown_releases_root_and_pipelines :: proc(t: ^testing.
 	with_gpu_device_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()
 		defer vector_gpu_shutdown()
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		state.gpu_state.sampler = gpu_create_sampler(state.gpu)
 		state.gpu_state.white_texture = gpu_create_white_texture(state.gpu)
 		testing.expect(t, state.gpu_state.pipeline != nil && state.gpu_state.sampler != nil && state.gpu_state.white_texture != nil)
@@ -146,7 +146,7 @@ vector_gpu_one_hundred_cycles_retire_both_frame_slots :: proc(t: ^testing.T) {
 	with_gpu_device_env(t, proc(t: ^testing.T) {
 		defer vector_scene_shutdown()
 		defer vector_gpu_shutdown()
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil { return }
 		batch_init()

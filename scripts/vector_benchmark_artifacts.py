@@ -14,6 +14,84 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "fixtures/vector/benchmark/manifest.toml"
 
+_METRIC_ROWS = (
+    ("Throughput", "completed_fps", lambda v: f"{v:.3f} fps"),
+    ("Throughput", "fps", lambda v: f"{v:.3f} fps"),
+    ("CPU p95", "cpu_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("CPU p99", "cpu_p99_ms", lambda v: f"{v:.3f} ms"),
+    ("Prepare p95", "prepare_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Update p95", "update_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Paint p95", "paint_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Encode p95", "encode_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Fence p95", "fence_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Upload p95", "upload_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Record p95", "record_p95_ms", lambda v: f"{v:.3f} ms"),
+    ("Iter/s", "iterations_per_second", lambda v: f"{v:.3f}"),
+    ("Sample work", "sample_work", str),
+    ("Peak pool", "peak_pool_bytes", lambda v: f"{v:,} B"),
+    ("Peak GPU", "peak_gpu_bytes", lambda v: f"{v:,} B"),
+)
+
+
+def _report_rows(report):
+    rows = []
+    seen_fps = False
+    for label, key, fmt in _METRIC_ROWS:
+        if key not in report:
+            continue
+        if key in {"completed_fps", "fps"}:
+            if seen_fps:
+                continue
+            seen_fps = True
+        rows.append((label, fmt(report[key])))
+    if "frames" in report:
+        warmup = report.get("warmup", 0)
+        rows.insert(0, ("Frames", f"{report['frames']} measured / {warmup} warmup"))
+    if "icons" in report:
+        rows.append(("Icons", str(report["icons"])))
+    if report.get("gpu_name"):
+        gpu = report["gpu_name"]
+        backend = report.get("backend")
+        if backend:
+            gpu = f"{gpu} ({backend})"
+        rows.append(("GPU", gpu))
+    if report.get("manifest_hash"):
+        digest = report["manifest_hash"]
+        rows.append(("Manifest", digest if len(digest) <= 16 else f"{digest[:16]}…"))
+    if report.get("error") not in {None, "", "None"}:
+        rows.append(("Error", str(report["error"])))
+    return rows
+
+
+def print_console_table(report):
+    name = report.get("test") or report.get("workload") or "benchmark"
+    isolation = report.get("isolation", "full")
+    accepted = report.get("accepted")
+    if accepted is True:
+        gate = "PASS"
+    elif accepted is False:
+        gate = "FAIL"
+    else:
+        gate = "n/a"
+    exit_status = report.get("exit_status")
+    header = f"{name}  isolation={isolation}"
+    body = [("Release gate", gate)]
+    if exit_status is not None:
+        body.append(("Exit status", str(exit_status)))
+    body.extend(_report_rows(report))
+    label_w = max(len(label) for label, _ in body) if body else 8
+    inner = max(label_w + 12, len(header) + 4)
+    border = "+" + "-" * (inner + 2) + "+"
+    print(border)
+    print(f"| {header:<{inner}} |")
+    print(border)
+    for label, value in body:
+        line = f"{label:<{label_w}}  {value}"
+        if len(line) > inner:
+            line = line[: inner - 1] + "…"
+        print(f"| {line:<{inner}} |")
+    print(border)
+
 
 def verify():
     data = tomllib.loads(MANIFEST.read_text())
@@ -66,6 +144,7 @@ def record(name, status, started, isolation="full"):
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / f"{time.time_ns()}-{name}-{isolation}.json"
     destination.write_text(json.dumps(report, indent=2) + "\n")
+    print_console_table(report)
     print(destination)
 
 

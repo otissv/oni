@@ -409,11 +409,21 @@ connect/disconnect. App/view/host shortcuts are dispatched via shortcut_process.
 */
 poll_events :: proc() {
 	event: sdl.Event
+	drop_events, drop_bytes := 0, 0
 
 	for sdl.PollEvent(&event) {
 		request_frame()
 
 		#partial switch event.type {
+		case .DROP_BEGIN, .DROP_POSITION, .DROP_FILE, .DROP_TEXT, .DROP_COMPLETE:
+			window_id: sdl.WindowID
+			window_w, window_h: i32
+			if state.window != nil {
+				window_id = sdl.GetWindowID(state.window)
+				_ = sdl.GetWindowSize(state.window, &window_w, &window_h)
+			}
+			drop_bytes += file_drop_process_event(event.drop, window_id, {f32(window_w), f32(window_h)})
+			drop_events += 1
 		case .QUIT:
 			state.running = false
 
@@ -551,6 +561,12 @@ poll_events :: proc() {
 		case .WINDOW_LEAVE_FULLSCREEN:
 			state.fullscreen = false
 
+		case .WINDOW_MINIMIZED:
+			state.debug_overlay.minimized = true
+
+		case .WINDOW_RESTORED, .WINDOW_MAXIMIZED:
+			state.debug_overlay.minimized = false
+
 		case .WINDOW_FOCUS_LOST:
 			input_clear_keyboard_mouse()
 			if state.window_focused {
@@ -561,6 +577,12 @@ poll_events :: proc() {
 			if !state.window_focused {
 				state.window_focused = true
 			}
+		}
+
+		if drop_events >= FILE_DROP_EVENTS_PER_POLL || drop_bytes >= FILE_DROP_BYTES_PER_POLL {
+			request_frame()
+
+			break
 		}
 	}
 
@@ -603,6 +625,7 @@ Resets running to true; re-syncs gamepad state if a device is connected.
 Call after realloc, reset, or when app state is rebuilt.
 */
 reset_input_state :: proc() {
+	file_drop_cancel()
 	gamepad := state.gamepad
 	gamepad_instance_id := state.gamepad_instance_id
 
@@ -652,7 +675,7 @@ create_window :: proc(config: Window_Config) -> bool {
 		return false
 	}
 
-	state.gpu = gpu_create_device(true)
+	state.gpu = gpu_create_device(ODIN_DEBUG)
 	if test_hook_create_window_fail == .Gpu && state.gpu != nil {
 		sdl.DestroyGPUDevice(state.gpu)
 		state.gpu = nil
@@ -777,6 +800,7 @@ Frees input text buffer and nulls window/gpu handles; call on app exit.
 */
 shutdown :: proc() {
 	if state == nil do return
+	state.debug_overlay = {}
 
 	gamepad_close()
 	ui_shutdown()
@@ -964,6 +988,11 @@ copy_state_fields :: proc(dst: ^State, src: ^State) {
 	dst.shortcuts = src.shortcuts
 	dst.settings = src.settings
 	dst.errors = src.errors
+	dst.debug_overlay = src.debug_overlay
+	if dst != src {
+		dst.file_drop = src.file_drop
+		src.file_drop = {}
+	}
 	dst.gamepad = src.gamepad
 	dst.gamepad_instance_id = src.gamepad_instance_id
 

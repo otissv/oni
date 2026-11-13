@@ -32,7 +32,7 @@ BUILD_LOCK_FILE="${OUT_DIR}/.build.lock"
 LIB_EXT="$ONI_LIB_EXT"
 OS="$ONI_OS"
 
-ODIN_FLAGS=(-vet -strict-style -debug -o:speed)
+ODIN_FLAGS=(-vet -strict-style -debug)
 FONT_LIBS=("$(oni_font_libs)")
 
 check_project_layout() {
@@ -62,7 +62,7 @@ build_app_locked() {
 
 	check_build_deps || return 1
 	check_project_layout || return 1
-	build_shaders
+	build_shaders || return 1
 	echo "Compiling app${LIB_EXT}"
 
 	staging="$(mktemp -d "${OUT_DIR}/staging.XXXXXX")"
@@ -99,6 +99,7 @@ build_app() {
 build_host() {
 	check_build_deps || return 1
 	check_project_layout || return 1
+	build_shaders || return 1
 	echo "Building $(basename "$HOST_EXE")"
 	(
 		cd "$PROJECT_ROOT"

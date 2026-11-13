@@ -7,12 +7,6 @@ import "core:time"
 import sdl "vendor:sdl3"
 
 @(private)
-vector_vert_code := #load("shaders/vector.spv.vert")
-@(private)
-vector_solid_vert_code := #load("shaders/vector_solid.spv.vert")
-@(private)
-vector_frag_code := #load("shaders/vector.spv.frag")
-@(private)
 VECTOR_GPU_BUDGET :: u64(256 * 1024 * 1024)
 @(private)
 VECTOR_TARGET_POOL_BUDGET :: u64(64 * 1024 * 1024)
@@ -212,21 +206,21 @@ vector_gpu_init :: proc(format: sdl.GPUTextureFormat) -> bool {
 	}
 
 	// Colour-only and depth-compatible MSAA UI/LCD pairs match the root target.
-	g.ui_pipeline = gpu_create_ui_layout_pipeline(state.gpu, format, frag_shader_code, gpu_blend_state(), sample_count = ._4)
-	g.ui_pipeline_depth = gpu_create_ui_layout_pipeline(state.gpu, format, frag_shader_code, gpu_blend_state(), sample_count = ._4, depth_stencil_format = depth_format)
+	g.ui_pipeline = gpu_create_ui_layout_pipeline(state.gpu, format, .UI_Fragment, gpu_blend_state(), sample_count = ._4)
+	g.ui_pipeline_depth = gpu_create_ui_layout_pipeline(state.gpu, format, .UI_Fragment, gpu_blend_state(), sample_count = ._4, depth_stencil_format = depth_format)
 	g.lcd_pipeline = gpu_create_lcd_pipeline(state.gpu, format, sample_count = ._4)
 	g.lcd_pipeline_depth = gpu_create_lcd_pipeline(state.gpu, format, sample_count = ._4, depth_stencil_format = depth_format)
 	if g.ui_pipeline == nil || g.ui_pipeline_depth == nil || g.lcd_pipeline == nil || g.lcd_pipeline_depth == nil {
 		return false
 	}
 
-	vert := gpu_load_shader(state.gpu, vector_vert_code, .VERTEX, 1, 0)
-	solid_vert := gpu_load_shader(state.gpu, vector_solid_vert_code, .VERTEX, 1, 0)
+	vert := gpu_load_shader(state.gpu, .Vector_Vertex)
+	solid_vert := gpu_load_shader(state.gpu, .Vector_Solid_Vertex)
 	if test_hook_vector_fail_solid_shader && solid_vert != nil {
 		sdl.ReleaseGPUShader(state.gpu, solid_vert)
 		solid_vert = nil
 	}
-	frag := gpu_load_shader(state.gpu, vector_frag_code, .FRAGMENT, 1, 3)
+	frag := gpu_load_shader(state.gpu, .Vector_Fragment)
 	defer {
 		if solid_vert != nil { sdl.ReleaseGPUShader(state.gpu, solid_vert) }
 		if vert != nil {
@@ -873,6 +867,7 @@ vector_gpu_draw_clip_mesh :: proc(
 		record.command * u32(size_of(sdl.GPUIndexedIndirectDrawCommand)),
 		1,
 	)
+	debug_overlay_record_draw(1)
 }
 
 @(private)
@@ -970,6 +965,7 @@ vector_gpu_draw_list :: proc(
 					sdl.PushGPUFragmentUniformData(cmd, 0, &paint, u32(size_of(paint)))
 					count := merged_commands > 0 ? merged_commands : 1
 					sdl.DrawGPUIndexedPrimitivesIndirect(pass, frame.buffers[.Indirect], record.command * u32(size_of(sdl.GPUIndexedIndirectDrawCommand)), count)
+					debug_overlay_record_draw(count)
 				}
 			}
 		}
@@ -1440,6 +1436,7 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 	state.vector.gpu.encode_attempts = 0
 	state.vector.gpu.atlas_disabled = false
 	for _ in 0 ..< attempts {
+		diagnostics := state.debug_overlay.current
 		state.vector.gpu.encode_attempts += 1
 		cmd := sdl.AcquireGPUCommandBuffer(state.gpu)
 		if cmd == nil {
@@ -1453,6 +1450,7 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 		}
 
 		cancelled := sdl.CancelGPUCommandBuffer(cmd)
+		state.debug_overlay.current = diagnostics
 		if cancelled && failed == -2 {
 			vector_gpu_reset_after_cancelled_encode()
 			// The slot fence was waited before encoding. Its cancelled command
@@ -1486,6 +1484,12 @@ vector_gpu_prepare_frame :: proc(format: sdl.GPUTextureFormat, background: sdl.F
 
 @(private)
 vector_gpu_present :: proc() -> bool {
+	diagnostics := state.debug_overlay.current
+	defer {
+		if !state.debug_overlay.current.presented {
+			state.debug_overlay.current = diagnostics
+		}
+	}
 	format := sdl.GetGPUSwapchainTextureFormat(state.gpu, state.window)
 	background := sdl.FColor(color_to_f32(theme.background))
 	cmd := vector_gpu_prepare_frame(format, background)
@@ -1529,6 +1533,7 @@ vector_gpu_present :: proc() -> bool {
 		load_op = .LOAD,
 		filter = .NEAREST,
 	})
+	if state.debug_overlay.recording do state.debug_overlay.current.blits += 1
 	vector_gpu_submit_frame(cmd)
 	return true
 }
@@ -1546,6 +1551,7 @@ vector_gpu_submit_frame :: proc(cmd: ^sdl.GPUCommandBuffer) {
 
 		return
 	}
+	if state.debug_overlay.recording do state.debug_overlay.current.presented = true
 
 	vector_gpu_advance_frame()
 }

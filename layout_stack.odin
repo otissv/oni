@@ -538,8 +538,8 @@ layout_hit_point_in_node :: proc(node: ^Layout_Node, mouse: Vec2) -> bool {
 }
 
 @(private)
-layout_hit_test_list :: proc(list: []int, space: Draw_Space) -> (UI_Id, bool) {
-	mouse := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
+layout_hit_test_list :: proc(list: []int, space: Draw_Space, point: Vec2) -> (UI_Id, bool) {
+	mouse := point
 	if space == .ARTBOARD {
 		mouse = View_Screen_To_World(mouse)
 	}
@@ -563,22 +563,23 @@ layout_resolve_pointer_hit :: proc() {
 	w_ctx.pointer_hit_valid = false
 	w_ctx.pointer_hit_ui_id = {}
 
-	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_overlay[:], .OVERLAY); ok {
+	point := Vec2{w_ctx.mouse_x, w_ctx.mouse_y}
+	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_overlay[:], .OVERLAY, point); ok {
 		w_ctx.pointer_hit_ui_id = id
 		w_ctx.pointer_hit_valid = true
 		return
 	}
-	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_popover[:], .POPOVER); ok {
+	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_popover[:], .POPOVER, point); ok {
 		w_ctx.pointer_hit_ui_id = id
 		w_ctx.pointer_hit_valid = true
 		return
 	}
-	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_screen[:], .SCREEN); ok {
+	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_screen[:], .SCREEN, point); ok {
 		w_ctx.pointer_hit_ui_id = id
 		w_ctx.pointer_hit_valid = true
 		return
 	}
-	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_artboard[:], .ARTBOARD); ok {
+	if id, ok := layout_hit_test_list(state.ui.layout.paint_list_artboard[:], .ARTBOARD, point); ok {
 		w_ctx.pointer_hit_ui_id = id
 		w_ctx.pointer_hit_valid = true
 		return

@@ -4,7 +4,8 @@ import "core:strings"
 import "core:sync"
 import sdl "vendor:sdl3"
 
-ATLAS_DEFAULT_SIZE :: 2048
+// Start with 1 MiB per CPU/GPU copy; the existing grow/repack path expands on demand.
+ATLAS_DEFAULT_SIZE :: 512
 ATLAS_HARD_MAX :: 8192
 ATLAS_PADDING :: 1
 ATLAS_OVERFLOW_CAP :: 2

@@ -12,7 +12,7 @@ vector_stroke_overlap_keeps_single_translucent_coverage :: proc(t: ^testing.T) {
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 64, logical_h = 32, drawable_w = 64, drawable_h = 32, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil {
 			return
@@ -76,7 +76,7 @@ vector_stroke_non_scaling_and_reflection_render :: proc(t: ^testing.T) {
 		defer vector_gpu_shutdown()
 		state.ui.pass = .Draw
 		state.dpi = {logical_w = 96, logical_h = 32, drawable_w = 96, drawable_h = 32, scale = 1}
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil {
 			return

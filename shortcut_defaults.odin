@@ -1,9 +1,14 @@
 package oni
 
 /*
-Universal builtins: host reload/restart. Applies to every app type.
+Universal builtins: debug overlay and host reload/restart. Applies to every app type.
 */
 shortcut_defaults_universal :: proc() {
+	shortcut_bind_key({
+		id = shortcut_action_types[.SHORTCUT_DEBUG_TOGGLE_OVERLAY],
+		chord = {key = .F3}, scope = .Global,
+		enabled = true, source = .Builtin,
+	})
 	shortcut_bind_key(
 		{
 			id = shortcut_action_types[.SHORTCUT_HOST_RELOAD],

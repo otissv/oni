@@ -4,10 +4,6 @@ import "core:fmt"
 import "core:math/linalg"
 import sdl "vendor:sdl3"
 
-vert_shader_code := #load("shaders/ui.spv.vert")
-frag_shader_code := #load("shaders/ui.spv.frag")
-lcd_frag_shader_code := #load("shaders/ui_lcd.spv.frag")
-
 /*
 Per-vertex data for the UI shader: position, UVs, colors, radii, and borders.
 */
@@ -63,32 +59,38 @@ GPU_State :: struct {
 }
 
 /*
-Creates an SDL GPU shader from embedded SPIR-V bytecode.
-
-Wraps CreateGPUShader with the UI shader entrypoint and format settings.
+Creates a shader from the embedded format supported by this SDL GPU device.
+Resource counts and stage come from the build-verified shader registry.
 */
 gpu_load_shader :: proc(
 	device: ^sdl.GPUDevice,
-	code: []u8,
-	stage: sdl.GPUShaderStage,
-	num_uniform_buffers: u32,
-	num_samplers: u32,
+	id: GPU_Shader,
 ) -> ^sdl.GPUShader {
+	if device == nil || int(id) < 0 || int(id) >= len(gpu_shader_assets) {
+		sdl.SetError("Oni shader creation requires a device and a valid shader ID")
+		return nil
+	}
+	asset := gpu_shader_assets[id]
+	selected, ok := gpu_shader_select(asset, sdl.GetGPUShaderFormats(device))
+	if !ok {
+		sdl.SetError("Oni shader bundle does not support this GPU device's shader formats")
+		return nil
+	}
 	shader := sdl.CreateGPUShader(
 		device,
 		{
-			code_size = len(code),
-			code = raw_data(code),
-			entrypoint = "main",
-			format = {.SPIRV},
-			stage = stage,
-			num_uniform_buffers = num_uniform_buffers,
-			num_samplers = num_samplers,
+			code_size = len(selected.code),
+			code = raw_data(selected.code),
+			entrypoint = selected.entrypoint,
+			format = selected.format,
+			stage = asset.stage,
+			num_uniform_buffers = asset.num_uniform_buffers,
+			num_samplers = asset.num_samplers,
 		},
 	)
 	if shader != nil &&
-	   ((test_hook_gpu_fail_vert_shader && stage == .VERTEX) ||
-			   (test_hook_gpu_fail_frag_shader && stage == .FRAGMENT)) {
+	   ((test_hook_gpu_fail_vert_shader && asset.stage == .VERTEX) ||
+			   (test_hook_gpu_fail_frag_shader && asset.stage == .FRAGMENT)) {
 		sdl.ReleaseGPUShader(device, shader)
 		return nil
 	}
@@ -96,26 +98,45 @@ gpu_load_shader :: proc(
 }
 
 /*
-Creates an SDL GPU device with SPIR-V shaders and dual-source blending enabled.
-
-Dual-source is required for LCD text (Phase C). Device create fails when the
-backend cannot enable it (Vulkan without dualSrcBlend).
+Creates GPU device properties. The caller owns the returned properties and must
+destroy them. Returns zero on failure, releasing any partially configured set.
 */
-gpu_create_device :: proc(debug_mode := true) -> ^sdl.GPUDevice {
+gpu_create_device_properties :: proc(debug_mode: bool) -> sdl.PropertiesID {
 	props := sdl.CreateProperties()
+	if props == 0 {
+		return 0
+	}
+
+	if !sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true) ||
+	   !sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_DXIL_BOOLEAN, true) ||
+	   !sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_MSL_BOOLEAN, true) ||
+	   !sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug_mode) ||
+	   !sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, true) ||
+	   !sdl.SetBooleanProperty(
+		props,
+		sdl.PROP_GPU_DEVICE_CREATE_FEATURE_DUAL_SOURCE_BLENDING_BOOLEAN,
+		true,
+	) {
+		sdl.DestroyProperties(props)
+		return 0
+	}
+
+	return props
+}
+
+/*
+Creates an SDL GPU device with SPIR-V, DXIL and MSL shaders available.
+
+Debug mode must be explicit. Engine startup uses ODIN_DEBUG so development builds
+enable GPU diagnostics and production builds disable them. Dual-source blending
+is required for LCD text; creation fails when the backend cannot enable it.
+*/
+gpu_create_device :: proc(debug_mode: bool) -> ^sdl.GPUDevice {
+	props := gpu_create_device_properties(debug_mode)
 	if props == 0 {
 		return nil
 	}
 	defer sdl.DestroyProperties(props)
-
-	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true)
-	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, debug_mode)
-	_ = sdl.SetBooleanProperty(props, sdl.PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, true)
-	_ = sdl.SetBooleanProperty(
-		props,
-		sdl.PROP_GPU_DEVICE_CREATE_FEATURE_DUAL_SOURCE_BLENDING_BOOLEAN,
-		true,
-	)
 
 	return sdl.CreateGPUDeviceWithProperties(props)
 }
@@ -257,16 +278,13 @@ gpu_ui_vertex_layout :: proc() -> (
 
 /*
 Builds a graphics pipeline with UI_Vertex layout, shared vertex shader, and
-the given fragment SPIR-V + color-target blend state.
-
-`frag_uniform_buffers` is 0 for the UI pipeline and 1 for LCD (subpixel order).
+the given fragment shader and color-target blend state.
 */
 gpu_create_ui_layout_pipeline :: proc(
 	gpu: ^sdl.GPUDevice,
 	format: sdl.GPUTextureFormat,
-	frag_code: []u8,
+	frag_shader: GPU_Shader,
 	blend: sdl.GPUColorTargetBlendState,
-	frag_uniform_buffers: u32 = 0,
 	sample_count: sdl.GPUSampleCount = ._1,
 	depth_stencil_format: sdl.GPUTextureFormat = .INVALID,
 ) -> ^sdl.GPUGraphicsPipeline {
@@ -274,14 +292,8 @@ gpu_create_ui_layout_pipeline :: proc(
 		return nil
 	}
 
-	vert := gpu_load_shader(gpu, vert_shader_code, .VERTEX, 1, 0)
-	frag := gpu_load_shader(
-		gpu,
-		frag_code,
-		.FRAGMENT,
-		frag_uniform_buffers,
-		ATLAS_SAMPLER_SLOTS,
-	)
+	vert := gpu_load_shader(gpu, .UI_Vertex)
+	frag := gpu_load_shader(gpu, frag_shader)
 
 	defer {
 		if vert != nil do sdl.ReleaseGPUShader(gpu, vert)
@@ -339,7 +351,7 @@ gpu_create_ui_layout_pipeline :: proc(
 /*
 Builds the UI graphics pipeline with vertex layout matching UI_Vertex.
 
-Loads embedded SPIR-V shaders, configures SRC_ALPHA blend for the swapchain
+Loads backend-matched embedded shaders, configures SRC_ALPHA blend for the swapchain
 format, and returns nil if shader compilation or pipeline creation fails.
 */
 gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GPUGraphicsPipeline {
@@ -348,7 +360,7 @@ gpu_create_pipeline :: proc(gpu: ^sdl.GPUDevice, window: ^sdl.Window) -> ^sdl.GP
 	}
 
 	format := sdl.GetGPUSwapchainTextureFormat(gpu, window)
-	pipeline := gpu_create_ui_layout_pipeline(gpu, format, frag_shader_code, gpu_blend_state())
+	pipeline := gpu_create_ui_layout_pipeline(gpu, format, .UI_Fragment, gpu_blend_state())
 	if test_hook_gpu_fail_pipeline && pipeline != nil {
 		sdl.ReleaseGPUGraphicsPipeline(gpu, pipeline)
 
@@ -377,9 +389,8 @@ gpu_create_lcd_pipeline :: proc(
 	pipeline := gpu_create_ui_layout_pipeline(
 		gpu,
 		format,
-		lcd_frag_shader_code,
+		.LCD_Fragment,
 		gpu_dual_source_blend_state(),
-		1,
 		sample_count,
 		depth_stencil_format,
 	)

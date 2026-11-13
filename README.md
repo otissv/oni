@@ -9,14 +9,15 @@ Oni is a **framework package** you vendor (usually as `./oni`). Your project own
 | Dependency | Role |
 | ---------- | ---- |
 | [Odin](https://odin-lang.org/) | Compiler |
-| `glslc` | Compiles UI shaders to SPIR-V |
+| Python 3.10+ | Verifies and builds embedded shader bundles |
+| `glslc` + SDL_shadercross (DXC enabled) | Required when rebuilding SPIR-V, MSL and DXIL assets; see [SHADERS.md](docs/SHADERS.md) |
 | SDL3 | Window, input, SDL_GPU (pinned build: `third_party/sdl3/`) |
 | SDL3_image | Texture loading |
 | FreeType | Font rasterization |
 | HarfBuzz | Text shaping |
 | `inotify-tools` (Linux) | Hot-reload file watch |
 
-Runtime needs a working **Vulkan ICD** (`vulkaninfo --summary`). Hybrid machines often need the iGPU ICD installed even when a discrete GPU is preferred. Build the pinned SDL with `./third_party/sdl3/build_sdl3.sh` (linked via `odin_collections.sh`).
+Runtime uses Vulkan (SPIR-V), Metal (MSL) or Direct3D 12 (DXIL), selected by SDL. Vulkan needs a working ICD (`vulkaninfo --summary`); hybrid machines often need the iGPU ICD installed even when a discrete GPU is preferred. Build the pinned SDL with `./third_party/sdl3/build_sdl3.sh` (linked via `odin_collections.sh`). See [shader backends and native validation](docs/SHADERS.md).
 
 ## Consumer layout
 
@@ -48,6 +49,7 @@ From the consumer project (scripts resolve the project as the parent of `oni/`):
 ```
 
 In-app: **F5** force reload, **F6** force restart.
+**F3** toggles [engine diagnostics](docs/DEBUG_OVERLAY.md): FPS, draw calls, batch flushes and glyph-atlas statistics.
 
 **Production:**
 
@@ -80,7 +82,7 @@ Uses `-vet -strict-style -debug` and tracking-allocator leak checks. Prefer `tes
 | ---- | ---- |
 | `*.odin`, `widgets/`, `set/` | Engine: GPU, layout, draw, fonts, UI frame |
 | `api.odin` | Public PascalCase engine API |
-| `shaders/` | UI shaders (SPIR-V via `#load`) |
+| `shaders/` | GLSL sources and embedded SPIR-V / MSL / DXIL bundles |
 | `libs/colors`, `libs/tengu` | Standalone libs (`-collection:libs=...`) |
 | `templates/` | Starter host + app |
 | `scripts/` | Hot-reload + production build and test runners |

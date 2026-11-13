@@ -674,6 +674,10 @@ runtime_migrate_state_copies_fields_and_releases_input :: proc(t: ^testing.T) {
 	src.gamepad_instance_id = 3
 	src.force_reload = true
 	src.force_restart = true
+	src.debug_overlay.visible = true
+	src.debug_overlay.stats.draw_calls = 17
+	src.debug_overlay.text[0] = 'O'
+	src.debug_overlay.text_length = 1
 	append(&src.input.text_input, 'a', 'b', 'c')
 
 	migrate_state(&dst, &src)
@@ -700,6 +704,10 @@ runtime_migrate_state_copies_fields_and_releases_input :: proc(t: ^testing.T) {
 	testing.expect_value(t, dst.perf_frequency, u64(99))
 	testing.expect_value(t, dst.last_counter, u64(7))
 	testing.expect_value(t, dst.ui.frame, u64(12))
+	testing.expect(t, dst.debug_overlay.visible)
+	testing.expect_value(t, dst.debug_overlay.stats.draw_calls, u64(17))
+	testing.expect_value(t, dst.debug_overlay.text[0], u8('O'))
+	testing.expect_value(t, dst.debug_overlay.text_length, 1)
 	testing.expect(t, dst.gamepad == src.gamepad)
 	testing.expect_value(t, dst.gamepad_instance_id, sdl.JoystickID(3))
 	// Input heap is released from src and not transferred to dst.

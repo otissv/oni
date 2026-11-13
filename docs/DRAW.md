@@ -227,7 +227,7 @@ Radii and border widths are multiplied by [`view_artboard_zoom`](../view.odin#L1
 | [`gpu_init`](../gpu.odin#L610) | Pipeline, sampler, 1×1 white texture, batches, projection |
 | [`gpu_reload`](../gpu.odin#L698) | Recreate GPU resources after hot reload |
 | [`gpu_destroy`](../gpu.odin#L573) | Release pipeline, sampler, textures, batch buffers |
-| [`gpu_create_pipeline`](../gpu.odin#L345) | UI graphics pipeline from embedded SPIR-V |
+| [`gpu_create_pipeline`](../gpu.odin#L345) | UI graphics pipeline from backend-matched embedded shaders ([SHADERS.md](SHADERS.md)) |
 | [`gpu_load_shader`](../gpu.odin#L70) | Load vert/frag bytecode |
 | [`gpu_ui_vertex_layout`](../gpu.odin#L204) | Vertex attribute layout matching `UI_Vertex` |
 | [`gpu_blend_state`](../gpu.odin#L152) | Straight-alpha UI blending; vector fragments use separate premultiplied blending |

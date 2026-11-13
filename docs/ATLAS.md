@@ -11,7 +11,7 @@ Production means the **full** stack below: recovery (evict / repack / grow / ove
 | Scope | Glyphs + optional small UI packs only |
 | Primary | Single shared atlas (`state.textures.atlas`); overflow sheets allowed under cap |
 | On full | 1) evict cold → 2) repack if fragmented → 3) grow if under cap → 4) overflow atlas → 5) soft-fail + structured error |
-| Growth | Power-of-two from 2048 → `min(device max, ATLAS_HARD_MAX)` (e.g. 8192); at most one doubling step per `font_atlas_try_grow` call |
+| Growth | Power-of-two from 512 → `min(device max, ATLAS_HARD_MAX)` (e.g. 8192); normally doubles; skips intermediate sizes for large glyphs, with one repack per `font_atlas_try_grow` call |
 | Eviction | Frame-stamp residency; never evict current-frame, pinned, or prefetched (until pin expires) |
 | Repack | Compacts survivors; rewrites all `Font_Glyph_Entry.region`; bumps atlas `generation` |
 | Prefetch | Explicit API + optional locale/UI charset at face load / route change |
@@ -30,9 +30,9 @@ Production means the **full** stack below: recovery (evict / repack / grow / ove
 
 **Do not ship grow-only or overflow-only.** Eviction + repack before growth; growth before overflow; overflow ships with multi-texture/bindless draw (or an explicit device capability fallback that is tested).
 
-Current constants are `ATLAS_DEFAULT_SIZE = 2048`, `ATLAS_HARD_MAX = 8192`, `ATLAS_OVERFLOW_CAP = 2`, `ATLAS_SAMPLER_SLOTS = 4`, `ATLAS_EVICT_COLD_FRAMES = 3` and `ATLAS_PREFETCH_PIN_FRAMES = 5`. The raster pool has at most four workers.
+Current constants are `ATLAS_DEFAULT_SIZE = 512`, `ATLAS_HARD_MAX = 8192`, `ATLAS_OVERFLOW_CAP = 2`, `ATLAS_SAMPLER_SLOTS = 4`, `ATLAS_EVICT_COLD_FRAMES = 3` and `ATLAS_PREFETCH_PIN_FRAMES = 5`. The raster pool has at most four workers.
 
-Current baseline: dynamic shelf packer (`ATLAS_DEFAULT_SIZE` 2048, capped grow + overflow) in `texture.odin`; glyph cache in `font_shaper.odin` / `font.odin`; bounded FreeType raster pool then **serial** pack in `font.odin`; multi-atlas batch path (`tex0`–`tex3` + per-vertex slot) in font draw / `batch.odin` with tested `Fallback_Split`.
+Current baseline: dynamic shelf packer (`ATLAS_DEFAULT_SIZE` 512, capped grow + overflow) in `texture.odin`; glyph cache in `font_shaper.odin` / `font.odin`; bounded FreeType raster pool then **serial** pack in `font.odin`; multi-atlas batch path (`tex0`–`tex3` + per-vertex slot) in font draw / `batch.odin` with tested `Fallback_Split`.
 
 ---
 
@@ -118,13 +118,13 @@ _Fill with unused glyphs → pack new glyph succeeds after evict+repack; current
 
 **Prompt scope:** Grow primary atlas when evict+repack is not enough. Depends on Group C (repack-into-larger).
 
-1. Constants: `ATLAS_DEFAULT_SIZE = 2048`, `ATLAS_HARD_MAX` (e.g. 8192).
+1. Constants: `ATLAS_DEFAULT_SIZE = 512`, `ATLAS_HARD_MAX` (e.g. 8192).
 2. Probe GPU max 2D texture size at device create; effective max = `min(hard, device)`.
-3. On pack failure after eviction attempt: `new_size = min(old * 2, effective_max)`.
+3. On pack failure after eviction attempt: start at `min(old * 2, effective_max)`, then double up to the cap until the requested padded glyph fits; repack once at the final size.
 4. If `new_size == old` → stop (Group E handles overflow).
 5. Repack into `new_size`; update `Atlas_State` dimensions; log once old → new.
 
-**Status:** Implemented. `ATLAS_HARD_MAX=8192`; `gpu_probe_max_2d_texture_size` (CreateGPUTexture power-of-two probe, cached in `textures.max_2d_texture_size`, also from `gpu_init`). Recover: evict+same-size repack → `font_atlas_try_grow` (`min(old*2, effective_max)`, `font_atlas_repack(new_size)`, log old→new). At cap → false for Group E.
+**Status:** Implemented. `ATLAS_HARD_MAX=8192`; `gpu_probe_max_2d_texture_size` (CreateGPUTexture power-of-two probe, cached in `textures.max_2d_texture_size`, also from `gpu_init`). Recover: evict+same-size repack → `font_atlas_try_grow` (capped doubling to fit the padded glyph, `font_atlas_repack(new_size)` once, log old→new). At cap → false for Group E.
 
 **Exit:** 
 - Tiny test atlas (e.g. 64) fills → grows → pack succeeds; refuses past hard/device max.

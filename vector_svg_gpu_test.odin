@@ -10,7 +10,7 @@ import img "vendor:sdl3/image"
 @(test)
 vector_svg_fills_match_reference :: proc(t: ^testing.T) {
 	with_gpu_device_env(t, proc(t: ^testing.T) {
-		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+		state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 		testing.expect(t, state.gpu_state.pipeline != nil)
 		if state.gpu_state.pipeline == nil {
 			return

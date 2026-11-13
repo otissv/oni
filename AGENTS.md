@@ -22,7 +22,7 @@ Oni is an immediate-mode, props-declared UI toolkit on SDL3 + SDL_GPU with engin
 |------|------|
 | `*.odin`, `widgets/`, `set/` | Engine: GPU, layout, draw, fonts, UI frame, hot-reload lifecycle |
 | `api.odin` | Public PascalCase aliases for the engine API |
-| `shaders/` | UI shaders (SPIR-V embedded via `#load`) |
+| `shaders/` | GLSL + SPIR-V / MSL / DXIL bundles embedded via `#load` |
 | `assets/fonts/` | Engine default Inter faces (`#directory`; fallback when settings.kdl has no faces) |
 | `libs/colors`, `libs/tengu` | Standalone libs via `-collection:libs=...` |
 | `templates/main.odin` | Starter hot-reload host |
@@ -66,7 +66,7 @@ Flags: `-vet -strict-style -o:speed -disable-assert` (no `-debug`, no DLL). Crea
 
 Override project root if needed: `ONI_PROJECT_ROOT=/path/to/project ./oni/scripts/build_hot_reload.sh run`.
 
-Needs `odin`, `glslc`, SDL3, SDL3_image, FreeType, HarfBuzz; Linux watch needs `inotify-tools`.
+Needs `odin`, Python 3.10+, SDL3, SDL3_image, FreeType, HarfBuzz; Linux watch needs `inotify-tools`. Shader rebuilds require `glslc` + SDL_shadercross with DXC support; current checked-in bundles need no shader compiler. See `docs/SHADERS.md`.
 
 ## Tests
 
@@ -240,7 +240,7 @@ Own state; pass `dt` in **seconds**; use `*_Params(T)` structs and `Animatable(T
 
 - Match surrounding Odin style; build already enforces `-vet` and `-strict-style`
 - Prefer small, focused procs; document non-obvious exported/hot-reload entry points
-- Keep shaders in `shaders/`; rebuild runs `glslc` via the build script
+- Keep shaders in `shaders/`; rebuild runs `scripts/build_shaders.py` (`glslc` + shadercross; SPIR-V / MSL / DXIL)
 - Do not commit `build/`, `game_hot_reload`, production binaries under `build/production/`, or compiled `.so`/`.dll`/`.dylib`
 
 ## Boundaries

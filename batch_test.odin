@@ -135,7 +135,7 @@ batch_draw_mode_f32_matches_enum_ordinals :: proc(t: ^testing.T) {
 	expect_close(t, draw_mode_f32(.Line), 2)
 	expect_close(t, draw_mode_f32(.Textured_Rounded), 3)
 	expect_close(t, draw_mode_f32(.Textured_Text), 4)
-	testing.expect_value(t, BATCH_INITIAL_VERT_CAPACITY, 64 * 1024)
+	testing.expect_value(t, BATCH_INITIAL_VERT_CAPACITY, 4 * 1024)
 }
 
 // ---------------------------------------------------------------------------

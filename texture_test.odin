@@ -1630,7 +1630,7 @@ texture_atlas_rebuild_logs_and_survives_upload_failure :: proc(t: ^testing.T) {
 @(test)
 texture_constants_and_default_atlas_size :: proc(t: ^testing.T) {
 	testing.expect_value(t, ATLAS_PADDING, 1)
-	testing.expect_value(t, ATLAS_DEFAULT_SIZE, 2048)
+	testing.expect_value(t, ATLAS_DEFAULT_SIZE, 512)
 	testing.expect_value(t, ATLAS_HARD_MAX, 8192)
 	testing.expect_value(t, ATLAS_OVERFLOW_CAP, 2)
 	testing.expect_value(t, ATLAS_SAMPLER_SLOTS, 4)

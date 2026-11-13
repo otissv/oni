@@ -19,6 +19,8 @@ Oni’s generic wake API if another frame is needed.
 
 The selected `Frame_Mode` resolves each iteration to `Frame_Pacing.Continuous` or `.On_Demand`; `Focused` chooses between them using window focus. There is no separate optional focus flag.
 
+The [F3 debug overlay](DEBUG_OVERLAY.md) requests a diagnostic refresh every 250 ms while visible and otherwise idle, without changing the selected mode. It stops diagnostic wakeups when hidden or minimized. These diagnostic presentations count toward displayed FPS.
+
 ## How they work
 
 ### Continuous

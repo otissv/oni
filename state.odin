@@ -101,6 +101,8 @@ State :: struct {
 		f5, f6: bool,
 	},
 	errors:              Error_State,
+	debug_overlay:       Debug_Overlay_State,
+	file_drop:           File_Drop_Context,
 }
 
 state: ^State

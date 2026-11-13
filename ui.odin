@@ -41,6 +41,7 @@ ui_init :: proc() {
 Tears down widget storage, scope/style stacks, and layout state.
 */
 ui_shutdown :: proc() {
+	file_drop_shutdown()
 	widget_ctx_sync()
 	if state.ui.widgets != nil {
 		clear(&state.ui.widgets)
@@ -92,6 +93,7 @@ Starts a new UI frame and resets transient per-frame state.
 Clears scope/style stacks, layout tree, widget input, and auto ids.
 */
 ui_begin_frame :: proc() {
+	file_drop_begin_ui_frame()
 	widget_ctx_sync()
 	ui_init()
 	state.ui.frame += 1
@@ -165,6 +167,7 @@ ui_end_layout_pass :: proc() {
 	layout_resolve_anchors()
 	layout_finalize_stack_order()
 	layout_resolve_pointer_hit()
+	file_drop_resolve_targets()
 
 	widget_focus_scopes_resolve()
 	widget_prune_focus()
@@ -205,7 +208,7 @@ ui_end_frame :: proc() {
 Runs each UI builder through layout and draw passes, then ends the frame.
 
 Each proc is invoked twice: once to measure, once to render. Framework overlay
-chrome (error banner) is appended after app UI on both passes.
+chrome (error banner and diagnostics) is appended after app UI on both passes.
 */
 error_banner_ui: proc()
 
@@ -230,6 +233,7 @@ render :: proc(ui: ..proc()) {
 		if error_banner_ui != nil {
 			error_banner_ui()
 		}
+		debug_overlay_ui()
 
 		ui_end_layout_pass()
 
@@ -238,6 +242,7 @@ render :: proc(ui: ..proc()) {
 		if error_banner_ui != nil {
 			error_banner_ui()
 		}
+		debug_overlay_ui()
 
 		ui_end_frame()
 	}

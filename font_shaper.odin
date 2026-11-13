@@ -1335,8 +1335,9 @@ PRESERVE: hard breaks with CRLF normalization and tab expansion.
 BALANCE: soft-wrap at break opportunities within max_w, then rebalance.
 Unbreakable runs wider than max_w overflow; they are never split mid-word.
 
-On cache hit (and after insert on miss), returns a borrow of the persistent cache
-entry. Otherwise returns frame-arena or heap-owned lines. Release with
+With cache enabled, returns a borrow on hit or after insertion. Set cache=false
+for changing diagnostics that should only occupy frame storage. Otherwise returns
+frame-arena or heap-owned lines. Release with
 font_shape_lines_release when not borrowing into layout-owned node.text.
 */
 font_shape_line_build :: proc(
@@ -1349,6 +1350,7 @@ font_shape_line_build :: proc(
 	tab_size: f32,
 	wrap: Text_Wrap_Kind,
 	direction: Text_Direction_Kind,
+	cache: bool = true,
 ) -> Font_Shape_Lines {
 	if face == nil || len(text) == 0 do return {}
 
@@ -1374,19 +1376,16 @@ font_shape_line_build :: proc(
 
 	defer if preprocess_heap do delete(shape_text)
 
-	font_shape_cache_ensure_dpi()
-	key := font_shape_cache_key(
-		face_id,
-		shape_text,
-		letter_spacing,
-		word_spacing,
-		tab_size,
-		wrap,
-		max_w,
-		direction,
-	)
-	if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
-		return Font_Shape_Lines{lines = cached, borrowed = true}
+	key: Font_Shape_Cache_Key
+	if cache {
+		font_shape_cache_ensure_dpi()
+		key = font_shape_cache_key(
+			face_id, shape_text, letter_spacing, word_spacing,
+			tab_size, wrap, max_w, direction,
+		)
+		if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
+			return Font_Shape_Lines{lines = cached, borrowed = true}
+		}
 	}
 
 	shaped := font_shape(face, shape_text, direction)
@@ -1413,8 +1412,8 @@ font_shape_line_build :: proc(
 	}
 	if len(result) == 0 do return {}
 
+	if !cache do return Font_Shape_Lines{lines = result, borrowed = false}
 	font_shape_cache_insert(key, shape_text, result)
-
 	if cached, ok := font_shape_cache_lookup(key, shape_text); ok {
 		if !layout_uses_frame_arena() {
 			font_destroy_shaped_lines(result)

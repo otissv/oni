@@ -608,11 +608,10 @@ atlas_compact :: proc() -> bool {
 }
 
 /*
-Doubles atlas size (capped) and repacks survivors so a padded w×h pack can fit.
+Grows atlas size geometrically (capped) and repacks survivors once.
 
-`new_size = min(old * 2, effective_max)`. Returns false when already at the
-effective max (Group E overflow) or the requested glyph still exceeds the new
-edge. At most one growth step per call.
+Normally doubles; a large glyph can skip intermediate sizes to fit its padded
+dimensions. Returns false at the effective max or when the glyph exceeds it.
 */
 font_atlas_try_grow :: proc(w, h: i32) -> bool {
 	if state == nil || state.textures.atlas.texture_id == INVALID_ASSET_ID {
@@ -635,6 +634,10 @@ font_atlas_try_grow :: proc(w, h: i32) -> bool {
 	}
 
 	pad := i32(ATLAS_PADDING)
+	for new_size < effective && (w + pad > new_size || h + pad > new_size) {
+		new_size = min(new_size * 2, effective)
+	}
+
 	if w + pad > new_size || h + pad > new_size {
 		return false
 	}

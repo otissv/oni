@@ -21,6 +21,8 @@ Layout_Measure :: struct {
 	runs:            []Layout_Text_Run,
 	rich:            bool,
 	tag_diagnostics: bool,
+	// Dynamic diagnostic text uses frame-owned shapes, avoiding persistent cache growth.
+	transient_text: bool,
 }
 
 /*
@@ -1116,6 +1118,7 @@ layout_text_measure_at_wrap_w :: proc(node: ^Layout_Node, wrap_w: f32) -> Vec2 {
 		config.tab_size,
 		wrap,
 		direction,
+		cache = !node.measure.transient_text,
 	)
 	defer font_shape_lines_release(shaped)
 
@@ -1370,6 +1373,7 @@ layout_text_build :: proc(node: ^Layout_Node, wrap_w: f32) {
 		config.tab_size,
 		wrap,
 		direction,
+		cache = !node.measure.transient_text,
 	)
 	if len(shaped.lines) == 0 do return
 

@@ -9,7 +9,7 @@ import img "vendor:sdl3/image"
 vector_composition_gpu_setup :: proc(t: ^testing.T, w, h: i32) -> bool {
 	state.ui.pass = .Draw
 	state.dpi = {logical_w = w, logical_h = h, drawable_w = w, drawable_h = h, scale = 1}
-	state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, frag_shader_code, gpu_blend_state())
+	state.gpu_state.pipeline = gpu_create_ui_layout_pipeline(state.gpu, .R8G8B8A8_UNORM, .UI_Fragment, gpu_blend_state())
 	state.gpu_state.sampler = gpu_create_sampler(state.gpu)
 	state.gpu_state.white_texture = gpu_create_white_texture(state.gpu)
 	testing.expect(t, state.gpu_state.pipeline != nil && state.gpu_state.sampler != nil && state.gpu_state.white_texture != nil)
